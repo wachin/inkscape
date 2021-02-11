@@ -1,0 +1,23 @@
+# All source files whose translatable messages should not be seen as of now
+../src/3rdparty/autotrace/autotrace.c
+../src/3rdparty/autotrace/autotrace.h
+../src/3rdparty/autotrace/color.c
+../src/3rdparty/autotrace/config.h
+../src/3rdparty/autotrace/intl.h
+../src/live_effects/lpe-dynastroke.cpp
+../src/live_effects/lpe-lattice.cpp
+../src/live_effects/lpe-path_length.cpp
+../src/live_effects/lpe-recursiveskeleton.cpp
+../src/live_effects/lpe-skeleton.cpp
+../src/live_effects/lpe-test-doEffect-stack.cpp
+../src/live_effects/lpe-text_label.cpp
+
+../share/ui/dialog-filter-editor.glade
+
+../src/actions/actions-base.cpp
+../src/actions/actions-file.cpp
+../src/actions/actions-object.cpp
+../src/actions/actions-output.cpp
+../src/actions/actions-selection.cpp
+../src/actions/actions-transform.cpp
+../src/actions/actions-window.cpp
