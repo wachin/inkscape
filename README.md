@@ -1,22 +1,21 @@
+
+
+                     "Inkscape has moved their source code to GitLab, but I've put it here to compile the 32-bit version  
+                         
+                     Inkscape ha movido su código fuente a GitLab, pero lo he puesto aquí para compilar la versión de 32 bits"  
+                         
+                     Washington Indacochea Delgado (Wachín)  
+                     [https://facilitarelsoftwarelibre.blogspot.com](https://facilitarelsoftwarelibre.blogspot.com)
+                     wachin.id@gmail.com
+                         
+
+
 Inkscape. Draw Freely.
 ======================
 
 ![](Freedom_Machine_by_Rizky_Djati_Munggaran_CC-By-SA.png)
 
-[https://facilitarelsoftwarelibre.blogspot.com](https://facilitarelsoftwarelibre.blogspot.com)
-
-
-
-
-"Inkscape has moved their source code to GitLab, but I've put it here to compile the 32-bit version
-
-Inkscape ha movido su código fuente a GitLab, pero lo he puesto aquí para compilar la versión de 32 bits"   
-
-                         Washington Indacochea Delgado (Wachín)
-                         wachin.id@gmail.com
-                         
-
-
+  
 [https://www.inkscape.org/](https://www.inkscape.org/)
 
 Inkscape is an open source drawing tool with capabilities similar to
