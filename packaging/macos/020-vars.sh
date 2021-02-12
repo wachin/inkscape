@@ -27,17 +27,17 @@ export MAKEFLAGS="-j $CORES"
 ### target OS version ##########################################################
 
 # The current build setup is
-#   - Xcode 11.6
+#   - Xcode 12
 #   - OS X El Capitan 10.11 SDK (part of Xcode 7.3.1)
 #   - macOS Catalina 10.15.6
 
-export MACOSX_DEPLOYMENT_TARGET=10.11
+SDK_VERSION=10.11
 [ -z $SDKROOT_DIR ] && SDKROOT_DIR=/opt/sdks
-export SDKROOT=$SDKROOT_DIR/MacOSX${MACOSX_DEPLOYMENT_TARGET}.sdk
+export SDKROOT=$SDKROOT_DIR/MacOSX${SDK_VERSION}.sdk
 
 ### build system/toolset version ###############################################
 
-TOOLSET_VERSION=0.37.3
+TOOLSET_VERSION=0.37.6
 
 ### ramdisk ####################################################################
 
@@ -76,6 +76,7 @@ export CCACHE_DIR=$TOOLSET_ROOT_DIR/ccache
 
 OPT_DIR=$WRK_DIR/opt
 BIN_DIR=$OPT_DIR/bin
+INC_DIR=$OPT_DIR/include
 LIB_DIR=$OPT_DIR/lib
 SRC_DIR=$OPT_DIR/src
 TMP_DIR=$OPT_DIR/tmp
@@ -137,13 +138,13 @@ APP_PLIST=$APP_CON_DIR/Info.plist
 PY3_MAJOR=3
 PY3_MINOR=8
 PY3_PATCH=5
-PY3_BUILD=1  # custom framework build number
+PY3_BUILD=2  # custom framework build number
 
 ### download URLs for dependencies #############################################
 
 # https://github.com/dehesselle/gtk-osx
 # Forked from https://gitlab.gnome.org/GNOME/gtk-osx
-URL_GTK_OSX=https://raw.githubusercontent.com/dehesselle/gtk-osx/inkscape-1.0.x-8
+URL_GTK_OSX=https://raw.githubusercontent.com/dehesselle/gtk-osx/inkscape-1.0.x-10
 URL_GTK_OSX_SETUP=$URL_GTK_OSX/gtk-osx-setup.sh
 URL_GTK_OSX_MODULESET=$URL_GTK_OSX/modulesets-stable/gtk-osx.modules
 
@@ -179,8 +180,8 @@ URL_TOOLSET=https://github.com/dehesselle/mibap/releases/download/v$TOOLSET_VERS
 PYTHON_CAIROCFFI=cairocffi==1.1.0
 # https://lxml.de
 # https://github.com/lxml/lxml
-PYTHON_LXML_SRC=https://lxml.de/files/lxml-4.5.2.tgz
-PYTHON_LXML=$SRC_DIR/$(basename -s .tgz $PYTHON_LXML_SRC)-cp$PY3_MAJOR$PY3_MINOR-cp$PY3_MAJOR$PY3_MINOR-macosx_${MACOSX_DEPLOYMENT_TARGET/./_}_x86_64.whl
+# https://github.com/dehesselle/py3framework
+PYTHON_LXML=$(dirname $URL_PYTHON)/lxml-4.5.2-cp$PY3_MAJOR$PY3_MINOR-cp$PY3_MAJOR$PY3_MINOR-macosx_10_9_x86_64.whl
 # https://github.com/numpy/numpy
 PYTHON_NUMPY=numpy==1.19.1
 # https://pygobject.readthedocs.io/en/latest/
@@ -199,7 +200,7 @@ PYTHON_CAIROSVG=cairosvg==2.4.2
 # create DMG
 # https://dmgbuild.readthedocs.io/en/latest/
 # https://github.com/al45tair/dmgbuild
-PYTHON_DMGBUILD=dmgbuild==1.3.3
+PYTHON_DMGBUILD="biplist==1.0.3 dmgbuild==1.4.2"
 
 ### path #######################################################################
 

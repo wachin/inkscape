@@ -135,6 +135,7 @@ SPDesktop::SPDesktop()
     , interaction_disabled_counter(0)
     , waiting_cursor(false)
     , showing_dialogs(false)
+    , rotation_locked(false)
     , guides_active(false)
     , gr_item(nullptr)
     , gr_point_type(POINT_LG_BEGIN)
@@ -244,6 +245,9 @@ SPDesktop::init (SPNamedView *nv, SPCanvas *aCanvas, Inkscape::UI::View::EditWid
         // Start in normal mode, default
         setDisplayModeNormal();
     }
+
+    // Get default locked status
+    rotation_locked = prefs->getBool("/options/rotationlock");
 
     // The order in which these canvas items are added determines the z-order. It's therefore
     // important to add the tempgroup (which will contain the snapindicator) before adding the

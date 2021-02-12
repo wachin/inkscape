@@ -125,6 +125,7 @@
          <verb verb-id="FlipHorizontal" check="yes"/>
          <verb verb-id="FlipVertical" check="yes"/>
          <separator/>
+         <verb verb-id="ToggleRotationLock" check="yes" />
          <verb verb-id="RotateZero"/>
        </submenu>
        <separator/>

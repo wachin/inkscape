@@ -125,7 +125,7 @@ R"=====(
     </eventcontext>
 
     <eventcontext id="text"  usecurrent="0" gradientdrag="1"
-                       font_sample="AaBbCcIiPpQq12369$\342\202\254\302\242?.;/()"
+                       font_sample="AaBbCcIiPpQq12369$€¢?.;/()"
                        show_sample_in_list="1" use_svg2="1"
                   style="fill:black;fill-opacity:1;line-height:1.25;stroke:none;font-family:sans-serif;font-style:normal;font-weight:normal;font-size:40px;" selcue="1"/>
 
@@ -310,6 +310,7 @@ R"=====(
     <group id="selection" layerdeselect="1" />
     <group id="createbitmap"/>
     <group id="compassangledisplay" value="0"/>
+    <group id="middlemousezoom" value="1"/>
     <group id="maskobject" topmost="1" remove="1"/>
     <group id="blurquality" value="0"/>
     <group id="filterquality" value="1"/>

@@ -292,17 +292,21 @@ bool SPLPEItem::performOnePathEffect(SPCurve *curve, SPShape *current, Inkscape:
  */
 bool SPLPEItem::optimizeTransforms()
 {
-    bool ret = true;
     if (dynamic_cast<SPGroup *>(this)) {
+        return false;
+    }
+    auto* mask_path = this->getMaskObject();
+    if(mask_path) {
+        return false;
+    }
+    auto* clip_path = this->getClipObject();
+    if(clip_path) {
         return false;
     }
     PathEffectList path_effect_list(*this->path_effect_list);
     for (auto &lperef : path_effect_list) {
         if (!lperef) {
             continue;
-        }
-        if (!ret) {
-            break;
         }
         LivePathEffectObject *lpeobj = lperef->lpeobject;
         if (lpeobj) {
@@ -314,12 +318,13 @@ bool SPLPEItem::optimizeTransforms()
                     dynamic_cast<Inkscape::LivePathEffect::LPELattice2 *>(lpe) ||
                     dynamic_cast<Inkscape::LivePathEffect::LPEBool *>(lpe) ||
                     dynamic_cast<Inkscape::LivePathEffect::LPECopyRotate *>(lpe)) {
-                    ret = false;
+                    return false;
                 }
             }
         }
     }
-    return ret;
+    Inkscape::Preferences *prefs = Inkscape::Preferences::get();
+    return !prefs->getBool("/options/preservetransform/value", false);
 }
 
 /**
@@ -360,6 +365,7 @@ sp_lpe_item_update_patheffect (SPLPEItem *lpeitem, bool wholetree, bool write)
     g_return_if_fail (SP_IS_OBJECT (lpeitem));
     g_return_if_fail (SP_IS_LPE_ITEM (lpeitem));
 
+    // Do not check for LPE item to allow LPE work on clips/mask
     if (!lpeitem->pathEffectsEnabled())
         return;
 

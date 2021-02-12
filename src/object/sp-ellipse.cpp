@@ -163,9 +163,11 @@ void SPGenericEllipse::set(SPAttributeEnum key, gchar const *value)
         break;
 
     case SP_ATTR_SODIPODI_OPEN:
-        // This is only for reading in old files so rely on constructor to set default.
-        if (!value) { // Only set if not "true"
+        // This is for reading in old files.
+        if ((!value) || strcmp(value,"true")) {
             this->arc_type = SP_GENERIC_ELLIPSE_ARC_TYPE_SLICE;
+        } else {
+            this->arc_type = SP_GENERIC_ELLIPSE_ARC_TYPE_ARC;
         }
         this->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG);
         break;
@@ -680,6 +682,9 @@ void SPGenericEllipse::position_set(gdouble x, gdouble y, gdouble rx, gdouble ry
     }
 
     this->arc_type = (GenericEllipseArcType)prefs->getInt("/tools/shapes/arc/arc_type", 0);
+    if (_isSlice()) {
+        this->type = SP_GENERIC_ELLIPSE_ARC;
+    }
 
     this->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG);
 }

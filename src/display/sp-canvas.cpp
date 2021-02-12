@@ -932,12 +932,25 @@ void SPCanvasGroup::remove(SPCanvasItem *item)
 
 G_DEFINE_TYPE(SPCanvas, sp_canvas, GTK_TYPE_WIDGET);
 
+static void sp_canvas_finalize(GObject *object)
+{
+    SPCanvas *canvas = SP_CANVAS(object);
+
+#if defined(HAVE_LIBLCMS2)
+    using S = decltype(canvas->_cms_key);
+    canvas->_cms_key.~S();
+#endif
+
+    G_OBJECT_CLASS(sp_canvas_parent_class)->finalize(object);
+}
+
 void sp_canvas_class_init(SPCanvasClass *klass)
 {
     GObjectClass   *object_class = G_OBJECT_CLASS(klass);
     GtkWidgetClass *widget_class = GTK_WIDGET_CLASS(klass);
 
     object_class->dispose = SPCanvas::dispose;
+    object_class->finalize = sp_canvas_finalize;
 
     widget_class->realize              = SPCanvas::handle_realize;
     widget_class->unrealize            = SPCanvas::handle_unrealize;
@@ -988,7 +1001,7 @@ static void sp_canvas_init(SPCanvas *canvas)
 
     canvas->_forced_redraw_count = 0;
     canvas->_forced_redraw_limit = -1;
-
+    canvas->_in_full_redraw = false;
     // Split view controls
     canvas->_spliter = Geom::OptIntRect();
     canvas->_spliter_area = Geom::OptIntRect();
@@ -1062,9 +1075,6 @@ void SPCanvas::dispose(GObject *object)
     }
 
     canvas->shutdownTransients();
-#if defined(HAVE_LIBLCMS2)
-    canvas->_cms_key.~ustring();
-#endif
     if (G_OBJECT_CLASS(sp_canvas_parent_class)->dispose) {
         (* G_OBJECT_CLASS(sp_canvas_parent_class)->dispose)(object);
     }
@@ -2593,7 +2603,11 @@ void SPCanvas::addIdle()
     if (_idle_id == 0) {
         Inkscape::Preferences *prefs = Inkscape::Preferences::get();
         guint redrawPriority = prefs->getIntLimited("/options/redrawpriority/value", G_PRIORITY_HIGH_IDLE, G_PRIORITY_HIGH_IDLE, G_PRIORITY_DEFAULT_IDLE);
-
+        SPCanvas *canvas = SP_CANVAS(this);
+        if (canvas->_in_full_redraw) {
+            canvas->_in_full_redraw = false;
+            redrawPriority = G_PRIORITY_DEFAULT_IDLE;
+        }
 #ifdef DEBUG_PERFORMANCE
         _idle_time = g_get_monotonic_time();
 #endif
@@ -2780,6 +2794,8 @@ void SPCanvas::requestRedraw(int x0, int y0, int x1, int y1)
 }
 void SPCanvas::requestFullRedraw()
 {
+    SPCanvas *canvas = SP_CANVAS(this);
+    canvas->_in_full_redraw = true;
     dirtyAll();
     addIdle();
 }

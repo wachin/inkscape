@@ -40,15 +40,13 @@ private:
     OriginalItemParam linkeditem;
     EnumParam<Clonelpemethod> method;
     TextParam attributes;
-    Glib::ustring old_attributes;
     TextParam css_properties;
-    Glib::ustring old_css_properties;
     BoolParam allow_transforms;
-    const gchar * linked;
+    Glib::ustring old_attributes;
+    Glib::ustring old_css_properties;
+    Glib::ustring linked;
     bool listening;
-    bool is_updating;
     bool sync;
-    sigc::connection modified_connection;
     sigc::connection deleted_connection;
     LPECloneOriginal(const LPECloneOriginal&) = delete;
     LPECloneOriginal& operator=(const LPECloneOriginal&) = delete;

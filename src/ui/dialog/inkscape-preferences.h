@@ -212,6 +212,7 @@ protected:
     UI::Widget::PrefSpinUnit    _steps_scale;
     UI::Widget::PrefSpinUnit    _steps_inset;
     UI::Widget::PrefSpinButton  _steps_zoom;
+    UI::Widget::PrefCheckButton _middle_mouse_zoom;
     UI::Widget::PrefSpinButton  _steps_rotate;
 
     UI::Widget::PrefRadioButton _t_sel_trans_obj;
@@ -388,6 +389,7 @@ protected:
     UI::Widget::PrefCheckButton _ui_partialdynamic;
     UI::Widget::ZoomCorrRulerSlider _ui_zoom_correction;
     UI::Widget::PrefCheckButton _ui_yaxisdown;
+    UI::Widget::PrefCheckButton _ui_rotationlock;
 
     //Spellcheck
     UI::Widget::PrefCombo       _spell_language;
