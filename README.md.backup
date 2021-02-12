@@ -1,12 +1,15 @@
 
 
-                     "Inkscape has moved their source code to GitLab, but I've put it here to compile the 32-bit version  
+      "Inkscape has moved their source code to GitLab,  
+       but I've put it here to compile the 32-bit version  
                          
-                     Inkscape ha movido su código fuente a GitLab, pero lo he puesto aquí para compilar la versión de 32 bits"  
+      Inkscape ha movido su código fuente a GitLab,   
+      pero lo he puesto aquí para compilar la   
+      versión de 32 bits"  
                          
-                     Washington Indacochea Delgado (Wachín)  
-                     [https://facilitarelsoftwarelibre.blogspot.com](https://facilitarelsoftwarelibre.blogspot.com)
-                     wachin.id@gmail.com
+      Washington Indacochea Delgado (Wachín)  
+      [https://facilitarelsoftwarelibre.blogspot.com](https://facilitarelsoftwarelibre.blogspot.com)
+      wachin.id@gmail.com
                          
 
 
