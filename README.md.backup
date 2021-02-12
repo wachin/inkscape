@@ -7,8 +7,10 @@
       pero lo he puesto aquí para compilar la   
       versión de 32 bits"  
                          
-      Washington Indacochea Delgado (Wachín)  
+      Washington Indacochea Delgado (Wachín)
+        
       [https://facilitarelsoftwarelibre.blogspot.com](https://facilitarelsoftwarelibre.blogspot.com)
+      
       wachin.id@gmail.com
                          
 
