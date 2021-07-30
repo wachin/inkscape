@@ -22,6 +22,7 @@
 #include "display/curve.h"
 #include "xml/repr.h"
 #include "sp-path.h"
+#include "sp-use.h"
 #include "3rdparty/adaptagrams/libavoid/router.h"
 #include "document.h"
 #include "sp-item-group.h"
@@ -35,7 +36,7 @@ SPConnEndPair::SPConnEndPair(SPPath *const owner)
     , _transformed_connection()
 {
     for (unsigned handle_ix = 0; handle_ix <= 1; ++handle_ix) {
-        this->_connEnd[handle_ix] = new SPConnEnd(SP_OBJECT(owner));
+        this->_connEnd[handle_ix] = new SPConnEnd(owner);
         this->_connEnd[handle_ix]->_changed_connection
             = this->_connEnd[handle_ix]->ref.changedSignal()
             .connect(sigc::bind(sigc::ptr_fun(sp_conn_end_href_changed),
@@ -77,10 +78,12 @@ void SPConnEndPair::release()
 
 void sp_conn_end_pair_build(SPObject *object)
 {
-    object->readAttr( "inkscape:connector-type" );
-    object->readAttr( "inkscape:connection-start" );
-    object->readAttr( "inkscape:connection-end" );
-    object->readAttr( "inkscape:connector-curvature" );
+    object->readAttr(SPAttr::CONNECTOR_TYPE);
+    object->readAttr(SPAttr::CONNECTION_START);
+    object->readAttr(SPAttr::CONNECTION_START_POINT);
+    object->readAttr(SPAttr::CONNECTION_END);
+    object->readAttr(SPAttr::CONNECTION_END_POINT);
+    object->readAttr(SPAttr::CONNECTOR_CURVATURE);
 }
 
 
@@ -93,10 +96,10 @@ static void avoid_conn_transformed(Geom::Affine const */*mp*/, SPItem *moved_ite
 }
 
 
-void SPConnEndPair::setAttr(unsigned const key, gchar const *const value)
+void SPConnEndPair::setAttr(const SPAttr key, gchar const *const value)
 {
     switch (key) {
-    case SP_ATTR_CONNECTOR_TYPE:
+    case SPAttr::CONNECTOR_TYPE:
         if (value && (strcmp(value, "polyline") == 0 || strcmp(value, "orthogonal") == 0)) {
             int new_conn_type = strcmp(value, "polyline") ? SP_CONNECTOR_ORTHOGONAL : SP_CONNECTOR_POLYLINE;
 
@@ -123,7 +126,7 @@ void SPConnEndPair::setAttr(unsigned const key, gchar const *const value)
             }
         }
         break;
-    case SP_ATTR_CONNECTOR_CURVATURE:
+    case SPAttr::CONNECTOR_CURVATURE:
         if (value) {
             _connCurvature = g_strtod(value, nullptr);
             if (_connRef && _connRef->isInitialised()) {
@@ -132,21 +135,37 @@ void SPConnEndPair::setAttr(unsigned const key, gchar const *const value)
             }
         }
         break;
-    case SP_ATTR_CONNECTION_START:
-    case SP_ATTR_CONNECTION_END:
-        this->_connEnd[(key == SP_ATTR_CONNECTION_START ? 0 : 1)]->setAttacherHref(value, _path);
+    case SPAttr::CONNECTION_START:
+        this->_connEnd[0]->setAttacherHref(value);
+        break;
+    case SPAttr::CONNECTION_START_POINT:
+        this->_connEnd[0]->setAttacherSubHref(value);
+        break;
+    case SPAttr::CONNECTION_END:
+        this->_connEnd[1]->setAttacherHref(value);
+        break;
+    case SPAttr::CONNECTION_END_POINT:
+        this->_connEnd[1]->setAttacherSubHref(value);
         break;
     }
 }
 
 void SPConnEndPair::writeRepr(Inkscape::XML::Node *const repr) const
 {
-    char const * const attr_strs[] = {"inkscape:connection-start", "inkscape:connection-end"};
+    char const * const attrs[] = {
+        "inkscape:connection-start", "inkscape:connection-end"};
+    char const * const point_attrs[] = {
+        "inkscape:connection-start-point", "inkscape:connection-end-point"};
     for (unsigned handle_ix = 0; handle_ix < 2; ++handle_ix) {
         const Inkscape::URI* U = this->_connEnd[handle_ix]->ref.getURI();
         if (U) {
             auto str = U->str();
-            repr->setAttribute(attr_strs[handle_ix], str);
+            repr->setAttribute(attrs[handle_ix], str);
+        }
+        const Inkscape::URI* P = this->_connEnd[handle_ix]->sub_ref.getURI();
+        if (P) {
+            auto str = P->str();
+            repr->setAttribute(point_attrs[handle_ix], str);
         }
     }
     if (_connType == SP_CONNECTOR_POLYLINE || _connType == SP_CONNECTOR_ORTHOGONAL) {
@@ -157,7 +176,29 @@ void SPConnEndPair::writeRepr(Inkscape::XML::Node *const repr) const
 
 void SPConnEndPair::getAttachedItems(SPItem *h2attItem[2]) const {
     for (unsigned h = 0; h < 2; ++h) {
-        h2attItem[h] = this->_connEnd[h]->ref.getObject();
+        auto obj = this->_connEnd[h]->ref.getObject();
+        auto sub_obj = this->_connEnd[h]->sub_ref.getObject();
+
+        if(sub_obj) {
+            // For sub objects, we have to go fishing for the virtual/shadow
+            // object which has the correct position for this use/symbol
+            SPUse *use = dynamic_cast<SPUse *>(obj);
+            if(use) {
+                auto root = use->root();
+                bool found = false;
+                for (auto& child: root->children) {
+                    if(!g_strcmp0(child.getAttribute("id"), sub_obj->getId())) {
+                        h2attItem[h] = (SPItem *) &child;
+                        found = true;
+                    }
+                }
+                if(!found) {
+                    g_warning("Couldn't find sub connector point!");
+                }
+            }
+        } else {
+            h2attItem[h] = obj;
+        }
 
         // Deal with the case of the attached object being an empty group.
         // A group containing no items does not have a valid bbox, so
@@ -177,7 +218,7 @@ void SPConnEndPair::getAttachedItems(SPItem *h2attItem[2]) const {
 
 void SPConnEndPair::getEndpoints(Geom::Point endPts[]) const
 {
-    SPCurve const *curve = _path->getCurveForEdit(true);
+    SPCurve const *curve = _path->curveForEdit();
     SPItem *h2attItem[2] = {nullptr};
     getAttachedItems(h2attItem);
     Geom::Affine i2d = _path->i2doc_affine();
@@ -213,7 +254,7 @@ bool SPConnEndPair::isOrthogonal() const
 
 static void redrawConnectorCallback(void *ptr)
 {
-    SPPath *path = SP_PATH(ptr);
+    auto path = static_cast<SPPath *>(ptr);
     if (path->document == nullptr) {
         // This can happen when the document is being destroyed.
         return;
@@ -251,7 +292,7 @@ void SPConnEndPair::_updateEndPoints()
 }
 
 
-bool SPConnEndPair::isAutoRoutingConn()
+bool SPConnEndPair::isAutoRoutingConn() const
 {
     return _connType != SP_CONNECTOR_NOAVOID;
 }
@@ -327,7 +368,7 @@ bool SPConnEndPair::reroutePathFromLibavoid()
         return false;
     }
 
-    SPCurve *curve = _path->getCurve(true);
+    SPCurve *curve = _path->curve();
 
     recreateCurve(curve, _connRef, _connCurvature);
 

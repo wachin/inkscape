@@ -32,13 +32,9 @@
 #include "selection.h"
 #include "verbs.h"
 
-#include "display/sp-canvas-item.h"
-#include "display/sp-canvas.h"
 
 #include "object/sp-rect.h"
 #include "object/sp-namedview.h"
-
-#include "ui/pixmaps/cursor-rect.xpm"
 
 #include "ui/shape-editor.h"
 #include "ui/tools/rect-tool.h"
@@ -58,7 +54,7 @@ const std::string& RectTool::getPrefsPath() {
 const std::string RectTool::prefsPath = "/tools/shapes/rect";
 
 RectTool::RectTool()
-    : ToolBase(cursor_rect_xpm)
+    : ToolBase("rect.svg")
     , rect(nullptr)
     , rx(0)
     , ry(0)
@@ -66,7 +62,7 @@ RectTool::RectTool()
 }
 
 void RectTool::finish() {
-    sp_canvas_item_ungrab(SP_CANVAS_ITEM(this->desktop->acetate));
+    ungrabCanvasEvents();
     
     this->finishItem();
     this->sel_changed_connection.disconnect();
@@ -142,7 +138,7 @@ bool RectTool::item_handler(SPItem* item, GdkEvent* event) {
 
     switch (event->type) {
     case GDK_BUTTON_PRESS:
-        if ( event->button.button == 1 && !this->space_panning) {
+        if ( event->button.button == 1) {
             Inkscape::setup_for_drag_start(desktop, this, event);
         }
         break;
@@ -170,7 +166,7 @@ bool RectTool::root_handler(GdkEvent* event) {
     
     switch (event->type) {
     case GDK_BUTTON_PRESS:
-        if (event->button.button == 1 && !this->space_panning) {
+        if (event->button.button == 1) {
             Geom::Point const button_w(event->button.x, event->button.y);
 
             // save drag origin
@@ -194,20 +190,13 @@ bool RectTool::root_handler(GdkEvent* event) {
             m.unSetup();
             this->center = button_dt;
 
-            sp_canvas_item_grab(SP_CANVAS_ITEM(desktop->acetate),
-                                ( GDK_KEY_PRESS_MASK |
-                                  GDK_BUTTON_RELEASE_MASK       |
-                                  GDK_POINTER_MOTION_MASK       |
-                                  GDK_POINTER_MOTION_HINT_MASK       |
-                                  GDK_BUTTON_PRESS_MASK ),
-                                nullptr, event->button.time);
-
+            grabCanvasEvents();
             ret = TRUE;
         }
         break;
     case GDK_MOTION_NOTIFY:
         if ( dragging
-             && (event->motion.state & GDK_BUTTON1_MASK) && !this->space_panning)
+             && (event->motion.state & GDK_BUTTON1_MASK))
         {
             if ( this->within_tolerance
                  && ( abs( (gint) event->motion.x - this->xp ) < this->tolerance )
@@ -238,7 +227,7 @@ bool RectTool::root_handler(GdkEvent* event) {
         break;
     case GDK_BUTTON_RELEASE:
         this->xp = this->yp = 0;
-        if (event->button.button == 1 && !this->space_panning) {
+        if (event->button.button == 1) {
             dragging = false;
             sp_event_context_discard_delayed_snap_event(this);
 
@@ -259,7 +248,7 @@ bool RectTool::root_handler(GdkEvent* event) {
 
             this->item_to_select = nullptr;
             ret = TRUE;
-            sp_canvas_item_ungrab(SP_CANVAS_ITEM(desktop->acetate));
+            ungrabCanvasEvents();
         }
         break;
     case GDK_KEY_PRESS:
@@ -307,7 +296,7 @@ bool RectTool::root_handler(GdkEvent* event) {
 
         case GDK_KEY_space:
             if (dragging) {
-                sp_canvas_item_ungrab(SP_CANVAS_ITEM(desktop->acetate));
+                ungrabCanvasEvents();
                 dragging = false;
                 sp_event_context_discard_delayed_snap_event(this);
                 
@@ -377,7 +366,7 @@ void RectTool::drag(Geom::Point const pt, guint state) {
         this->rect->transform = SP_ITEM(desktop->currentLayer())->i2doc_affine().inverse();
         this->rect->updateRepr();
 
-        desktop->canvas->forceFullRedrawAfterInterruptions(5);
+        forced_redraws_start(5);
     }
 
     Geom::Rect const r = Inkscape::snap_rectangular_box(desktop, this->rect, pt, this->center, state);
@@ -458,7 +447,7 @@ void RectTool::finishItem() {
         this->rect->updateRepr();
         this->rect->doWriteTransform(this->rect->transform, nullptr, true);
 
-        this->desktop->canvas->endForcedFullRedraws();
+        forced_redraws_stop();
         
         this->desktop->getSelection()->set(this->rect);
 
@@ -470,7 +459,7 @@ void RectTool::finishItem() {
 
 void RectTool::cancel(){
     this->desktop->getSelection()->clear();
-    sp_canvas_item_ungrab(SP_CANVAS_ITEM(this->desktop->acetate));
+    ungrabCanvasEvents();
 
     if (this->rect != nullptr) {
         this->rect->deleteObject();
@@ -482,7 +471,7 @@ void RectTool::cancel(){
     this->yp = 0;
     this->item_to_select = nullptr;
 
-    this->desktop->canvas->endForcedFullRedraws();
+    forced_redraws_stop();
 
     DocumentUndo::cancel(this->desktop->getDocument());
 }

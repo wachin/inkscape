@@ -26,34 +26,10 @@
  * Routines for SPCurve and for its Geom::PathVector
  */
 
-/* Constructors */
-
-/**
- * The returned curve's state is as if SPCurve::reset has just been called on it.
- */
-SPCurve::SPCurve()
-  : _refcount(1),
-    _pathv()
-{}
-
-SPCurve::SPCurve(Geom::PathVector  pathv)
-  : _refcount(1),
-    _pathv(std::move(pathv))
-{}
-
-//concat constructor
-SPCurve::SPCurve(std::list<SPCurve *> const& l) : _refcount(1)
-{
-    for (auto c:l) {
-        _pathv.insert( _pathv.end(), c->get_pathvector().begin(), c->get_pathvector().end() );
-    }
-}
-
-
-SPCurve *
+SPCurve::smart_pointer //
 SPCurve::new_from_rect(Geom::Rect const &rect, bool all_four_sides)
 {
-    SPCurve *c =  new SPCurve();
+    auto c = std::make_unique<SPCurve>();
 
     Geom::Point p = rect.corner(0);
     c->moveto(p);
@@ -104,65 +80,59 @@ SPCurve::get_segment_count() const
 
 /**
  * Increase _refcount of curve.
- *
- * \todo should this be shared with other refcounting code?
  */
-SPCurve *
+SPCurve::smart_pointer //
 SPCurve::ref()
 {
     _refcount += 1;
 
-    return this;
+    return smart_pointer(this);
 }
 
 /**
  * Decrease refcount of curve, with possible destruction.
- *
- * \todo should this be shared with other refcounting code?
  */
-SPCurve *
-SPCurve::unref()
+void SPCurve::_unref()
 {
     _refcount -= 1;
 
     if (_refcount < 1) {
         delete this;
     }
-
-    return nullptr;
 }
 
 /**
  * Create new curve from this curve's pathvector array.
  */
-SPCurve *
+SPCurve::smart_pointer //
 SPCurve::copy() const
 {
-    return new SPCurve(_pathv);
+    return std::make_unique<SPCurve>(_pathv);
 }
 
 /**
- * Return new curve that is the concatenation of all curves in list.
+ * Return a copy of `curve` or NULL if `curve` is NULL
  */
-SPCurve *
-SPCurve::concat(std::list<SPCurve *> l){
-    return new SPCurve(l);
-};
+SPCurve::smart_pointer //
+SPCurve::copy(SPCurve const *curve)
+{
+    return curve ? curve->copy() : nullptr;
+}
 
 /**
  * Returns a list of new curves corresponding to the subpaths in \a curve.
  * 2geomified
  */
-std::list<SPCurve *>
+std::list<SPCurve::smart_pointer> //
 SPCurve::split() const
 {
-    std::list<SPCurve *> l;
+    std::list<smart_pointer> l;
 
     for (const auto & path_it : _pathv) {
         Geom::PathVector newpathv;
         newpathv.push_back(path_it);
         SPCurve * newcurve = new SPCurve(newpathv);
-        l.push_back(newcurve);
+        l.emplace_back(newcurve);
     }
 
     return l;
@@ -339,8 +309,7 @@ SPCurve::is_closed() const
 /**
  * True if both curves are equal
  */
-bool
-SPCurve::is_equal(SPCurve * other) const
+bool SPCurve::is_equal(SPCurve const *other) const
 {
     if(other == nullptr) {
         return false;
@@ -416,10 +385,10 @@ SPCurve::first_path() const
 /**
  * Return first point of first subpath or nothing when the path is empty.
  */
-boost::optional<Geom::Point>
+std::optional<Geom::Point>
 SPCurve::first_point() const
 {
-    boost::optional<Geom::Point> retval;
+    std::optional<Geom::Point> retval;
 
     if (!is_empty()) {
         retval = _pathv.front().initialPoint();
@@ -434,10 +403,10 @@ SPCurve::first_point() const
  * returns the first point of the second path, if it exists. If there is no 2nd path, it returns the
  * first point of the first path.
  */
-boost::optional<Geom::Point>
+std::optional<Geom::Point>
 SPCurve::second_point() const
 {
-    boost::optional<Geom::Point> retval;
+    std::optional<Geom::Point> retval;
     if (!is_empty()) {
         if (_pathv.front().empty()) {
             // first path is only a moveto
@@ -458,10 +427,10 @@ SPCurve::second_point() const
 /**
  * Return the second-last point of last subpath or first point when that last subpath has only a moveto.
  */
-boost::optional<Geom::Point>
+std::optional<Geom::Point>
 SPCurve::penultimate_point() const
 {
-    boost::optional<Geom::Point> retval;
+    std::optional<Geom::Point> retval;
     if (!is_empty()) {
         Geom::Path const &lastpath = _pathv.back();
         if (!lastpath.empty()) {
@@ -479,10 +448,10 @@ SPCurve::penultimate_point() const
  * Return last point of last subpath or nothing when the curve is empty.
  * If the last path is only a moveto, then return that point.
  */
-boost::optional<Geom::Point>
+std::optional<Geom::Point>
 SPCurve::last_point() const
 {
-    boost::optional<Geom::Point> retval;
+    std::optional<Geom::Point> retval;
 
     if (!is_empty()) {
         retval = _pathv.back().finalPoint();
@@ -497,12 +466,10 @@ SPCurve::last_point() const
  * with all its markers drawn facing the other direction.
  * Reverses the order of subpaths as well
  **/
-SPCurve *
+SPCurve::smart_pointer //
 SPCurve::create_reverse() const
 {
-    SPCurve *new_curve = new SPCurve(_pathv.reversed());
-
-    return new_curve;
+    return std::make_unique<SPCurve>(_pathv.reversed());
 }
 
 /**
@@ -511,14 +478,18 @@ SPCurve::create_reverse() const
  * if \a use_lineto is true, combine \a this's last path and \a curve2's first path and add the rest of the paths in \a curve2 to \a this.
  */
 void
-SPCurve::append(SPCurve const *curve2,
+SPCurve::append(SPCurve const &curve2,
                 bool use_lineto)
 {
-    if (curve2->is_empty())
+    append(curve2._pathv, use_lineto);
+}
+void SPCurve::append(Geom::PathVector const &pathv, bool use_lineto)
+{
+    if (pathv.empty())
         return;
 
     if (use_lineto) {
-        Geom::PathVector::const_iterator it = curve2->_pathv.begin();
+        Geom::PathVector::const_iterator it = pathv.begin();
         if ( ! _pathv.empty() ) {
             Geom::Path & lastpath = _pathv.back();
             lastpath.appendNew<Geom::LineSegment>( (*it).initialPoint() );
@@ -527,11 +498,11 @@ SPCurve::append(SPCurve const *curve2,
             _pathv.push_back( (*it) );
         }
 
-        for (++it; it != curve2->_pathv.end(); ++it) {
+        for (++it; it != pathv.end(); ++it) {
             _pathv.push_back( (*it) );
         }
     } else {
-        for (const auto & it : curve2->_pathv) {
+        for (const auto &it : pathv) {
             _pathv.push_back( it );
         }
     }
@@ -540,41 +511,37 @@ SPCurve::append(SPCurve const *curve2,
 /**
  * Append \a c1 to \a this with possible fusing of close endpoints. If the end of this curve and the start of c1 are within tolerance distance,
  * then the startpoint of c1 is moved to the end of this curve and the first subpath of c1 is appended to the last subpath of this curve.
- * When one of the curves (this curve or the argument curve) is closed, the returned value is NULL; otherwise the returned value is this curve.
  * When one of the curves is empty, this curves path becomes the non-empty path.
+ *
+ * @param tolerance Tolerance for endpoint fusion (applied to x and y separately)
+ * @return False if one of the curves (this curve or the argument curve) is closed, true otherwise.
  */
-SPCurve *
-SPCurve::append_continuous(SPCurve const *c1, double tolerance)
+bool SPCurve::append_continuous(SPCurve const &c1, double tolerance)
 {
-    using Geom::X;
-    using Geom::Y;
-
-    g_return_val_if_fail(c1 != nullptr, NULL);
-    if ( this->is_closed() || c1->is_closed() ) {
-        return nullptr;
+    if (is_closed() || c1.is_closed()) {
+        return false;
     }
 
-    if (c1->is_empty()) {
-        return this;
+    if (c1.is_empty()) {
+        return true;
     }
 
     if (this->is_empty()) {
-        _pathv = c1->_pathv;
-        return this;
+        _pathv = c1._pathv;
+        return true;
     }
 
-    if ( (fabs((*this->last_point())[X] - (*c1->first_point())[X]) <= tolerance)
-         && (fabs((*this->last_point())[Y] - (*c1->first_point())[Y]) <= tolerance) )
-    {
+    if ((fabs(last_point()->x() - c1.first_point()->x()) <= tolerance) &&
+        (fabs(last_point()->y() - c1.first_point()->y()) <= tolerance)) {
     // c1's first subpath can be appended to this curve's last subpath
-        Geom::PathVector::const_iterator path_it = c1->_pathv.begin();
+        Geom::PathVector::const_iterator path_it = c1._pathv.begin();
         Geom::Path & lastpath = _pathv.back();
 
         Geom::Path newfirstpath(*path_it);
         newfirstpath.setInitial(lastpath.finalPoint());
         lastpath.append( newfirstpath );
 
-        for (++path_it; path_it != c1->_pathv.end(); ++path_it) {
+        for (++path_it; path_it != c1._pathv.end(); ++path_it) {
             _pathv.push_back( (*path_it) );
         }
 
@@ -582,7 +549,7 @@ SPCurve::append_continuous(SPCurve const *c1, double tolerance)
         append(c1, true);
     }
 
-    return this;
+    return true;
 }
 
 /**

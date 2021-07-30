@@ -44,9 +44,9 @@ void SPFePointLight::build(SPDocument *document, Inkscape::XML::Node *repr) {
 	SPObject::build(document, repr);
 
     //Read values of key attributes from XML nodes into object.
-    this->readAttr( "x" );
-    this->readAttr( "y" );
-    this->readAttr( "z" );
+    this->readAttr(SPAttr::X);
+    this->readAttr(SPAttr::Y);
+    this->readAttr(SPAttr::Z);
 
 //is this necessary?
     document->addResource("fepointlight", this);
@@ -67,11 +67,11 @@ void SPFePointLight::release() {
 /**
  * Sets a specific value in the SPFePointLight.
  */
-void SPFePointLight::set(SPAttributeEnum key, gchar const *value) {
+void SPFePointLight::set(SPAttr key, gchar const *value) {
     gchar *end_ptr;
 
     switch (key) {
-    case SP_ATTR_X:
+    case SPAttr::X:
         end_ptr = nullptr;
 
         if (value) {
@@ -93,7 +93,7 @@ void SPFePointLight::set(SPAttributeEnum key, gchar const *value) {
             this->parent->parent->requestModified(SP_OBJECT_MODIFIED_FLAG);
         }
         break;
-    case SP_ATTR_Y:
+    case SPAttr::Y:
         end_ptr = nullptr;
 
         if (value) {
@@ -115,7 +115,7 @@ void SPFePointLight::set(SPAttributeEnum key, gchar const *value) {
             this->parent->parent->requestModified(SP_OBJECT_MODIFIED_FLAG);
         }
         break;
-    case SP_ATTR_Z:
+    case SPAttr::Z:
         end_ptr = nullptr;
 
         if (value) {
@@ -150,9 +150,9 @@ void SPFePointLight::set(SPAttributeEnum key, gchar const *value) {
 void SPFePointLight::update(SPCtx *ctx, guint flags) {
     if (flags & SP_OBJECT_MODIFIED_FLAG) {
         /* do something to trigger redisplay, updates? */
-        this->readAttr( "x" );
-        this->readAttr( "y" );
-        this->readAttr( "z" );
+        this->readAttr(SPAttr::X);
+        this->readAttr(SPAttr::Y);
+        this->readAttr(SPAttr::Z);
     }
 
     SPObject::update(ctx, flags);
@@ -167,11 +167,11 @@ Inkscape::XML::Node* SPFePointLight::write(Inkscape::XML::Document *doc, Inkscap
     }
 
     if (this->x_set)
-        sp_repr_set_css_double(repr, "x", this->x);
+        repr->setAttributeCssDouble("x", this->x);
     if (this->y_set)
-        sp_repr_set_css_double(repr, "y", this->y);
+        repr->setAttributeCssDouble("y", this->y);
     if (this->z_set)
-        sp_repr_set_css_double(repr, "z", this->z);
+        repr->setAttributeCssDouble("z", this->z);
 
     SPObject::write(doc, repr, flags);
 

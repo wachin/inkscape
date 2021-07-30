@@ -153,7 +153,7 @@ void SVGPreview::showImage(Glib::ustring &theFileName)
             std::cerr << "SVGPreview::showImage: Failed to open file: " << theFileName << std::endl;
         } else {
 
-            std::string token;
+            Glib::ustring token;
 
             Glib::MatchInfo match_info;
             Glib::RefPtr<Glib::Regex> regex1 = Glib::Regex::create("width=\"(.*)\"");
@@ -444,7 +444,8 @@ bool SVGPreview::set(Glib::ustring &fileName, int dialogType)
 
 
 SVGPreview::SVGPreview()
-    : document(nullptr)
+    : Gtk::Box(Gtk::ORIENTATION_VERTICAL)
+    , document(nullptr)
     , viewer(nullptr)
     , showingNoPreview(false)
 {

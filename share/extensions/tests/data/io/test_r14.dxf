@@ -621,7 +621,7 @@ AcDbEntity
   8
 Layer_1
  62
-7
+2
 100
 AcDbPolyline
  90
@@ -1009,7 +1009,7 @@ AcDbEntity
   8
 Layer_1
  62
-7
+4
 100
 AcDbSpline
  70
@@ -1111,7 +1111,7 @@ AcDbEntity
   8
 Layer_1
  62
-7
+3
 100
 AcDbPolyline
  90
@@ -1139,7 +1139,7 @@ AcDbEntity
   8
 Layer_1
  62
-7
+32
 100
 AcDbPolyline
  90
@@ -1167,7 +1167,7 @@ AcDbEntity
   8
 Layer_1
  62
-7
+5
 100
 AcDbPolyline
  90
@@ -1201,7 +1201,7 @@ AcDbEntity
   8
 Layer_1
  62
-7
+212
 100
 AcDbSpline
  70
@@ -1303,7 +1303,7 @@ AcDbEntity
   8
 Layer_1
  62
-7
+1
 100
 AcDbPolyline
  90

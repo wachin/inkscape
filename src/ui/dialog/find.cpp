@@ -55,7 +55,7 @@ namespace UI {
 namespace Dialog {
 
 Find::Find()
-    : UI::Widget::Panel("/dialogs/find", SP_VERB_DIALOG_FIND),
+    : DialogBase("/dialogs/find", "Find"),
 
       entry_find(_("F_ind:"), _("Find objects by their content or properties (exact or partial match)")),
       entry_replace(_("R_eplace:"), _("Replace match with this value")),
@@ -65,7 +65,6 @@ Find::Find()
       check_scope_selection(_("Sele_ction")),
       check_searchin_text(_("_Text")),
       check_searchin_property(_("_Properties")),
-      vbox_searchin(false, false),
       frame_searchin(_("Search in")),
       frame_scope(_("Scope")),
 
@@ -81,6 +80,8 @@ Find::Find()
       check_attributevalue(_("Attri_bute value")),
       check_style(_("_Style")),
       check_font(_("F_ont")),
+      check_desc(_("_Desc")),
+      check_title(_("Title")),
       frame_properties(_("Properties")),
 
       check_alltypes(_("All types")),
@@ -99,17 +100,31 @@ Find::Find()
       check_offsets(_("Offsets")),
       frame_types(_("Object types")),
 
+      _left_size_group(Gtk::SizeGroup::create(Gtk::SIZE_GROUP_HORIZONTAL)),
+      _right_size_group(Gtk::SizeGroup::create(Gtk::SIZE_GROUP_HORIZONTAL)),
+
       status(""),
       button_find(_("_Find")),
       button_replace(_("_Replace All")),
       _action_replace(false),
       blocked(false),
-      desktop(nullptr),
-      deskTrack()
+
+      hbox_searchin(Gtk::ORIENTATION_HORIZONTAL),
+      vbox_scope(Gtk::ORIENTATION_VERTICAL),
+      vbox_searchin(Gtk::ORIENTATION_VERTICAL),
+      vbox_options1(Gtk::ORIENTATION_VERTICAL),
+      vbox_options2(Gtk::ORIENTATION_VERTICAL),
+      hbox_options(Gtk::ORIENTATION_HORIZONTAL),
+      vbox_expander(Gtk::ORIENTATION_VERTICAL),
+      hbox_properties(Gtk::ORIENTATION_HORIZONTAL),
+      vbox_properties1(Gtk::ORIENTATION_VERTICAL),
+      vbox_properties2(Gtk::ORIENTATION_VERTICAL),
+      vbox_types1(Gtk::ORIENTATION_VERTICAL),
+      vbox_types2(Gtk::ORIENTATION_VERTICAL),
+      hbox_types(Gtk::ORIENTATION_HORIZONTAL),
+      hboxbutton_row(Gtk::ORIENTATION_HORIZONTAL)
 
 {
-    _left_size_group = Gtk::SizeGroup::create(Gtk::SIZE_GROUP_HORIZONTAL);
-    _right_size_group = Gtk::SizeGroup::create(Gtk::SIZE_GROUP_HORIZONTAL);
     button_find.set_use_underline();
     button_find.set_tooltip_text(_("Select all objects matching the selection criteria"));
     button_replace.set_use_underline();
@@ -137,7 +152,7 @@ Find::Find()
     check_include_locked.set_tooltip_text(_("Include locked objects in search"));
     check_include_locked.set_active(false);
     check_ids.set_use_underline();
-    check_ids.set_tooltip_text(_("Search id name"));
+    check_ids.set_tooltip_text(_("Search ID name"));
     check_ids.set_active(true);
     check_attributename.set_use_underline();
     check_attributename.set_tooltip_text(_("Search attribute name"));
@@ -151,6 +166,12 @@ Find::Find()
     check_font.set_use_underline();
     check_font.set_tooltip_text(_("Search fonts"));
     check_font.set_active(false);
+    check_desc.set_use_underline();
+    check_desc.set_tooltip_text(_("Search description"));
+    check_desc.set_active(false);
+    check_title.set_use_underline();
+    check_title.set_tooltip_text(_("Search title"));
+    check_title.set_active(false);
     check_alltypes.set_use_underline();
     check_alltypes.set_tooltip_text(_("Search all object types"));
     check_alltypes.set_active(true);
@@ -225,12 +246,16 @@ Find::Find()
     vbox_properties1.pack_start(check_ids, Gtk::PACK_SHRINK);
     vbox_properties1.pack_start(check_style, Gtk::PACK_SHRINK);
     vbox_properties1.pack_start(check_font, Gtk::PACK_SHRINK);
+    vbox_properties1.pack_start(check_desc, Gtk::PACK_SHRINK);
+    vbox_properties1.pack_start(check_title, Gtk::PACK_SHRINK);
     vbox_properties2.pack_start(check_attributevalue, Gtk::PACK_SHRINK);
     vbox_properties2.pack_start(check_attributename, Gtk::PACK_SHRINK);
     vbox_properties2.set_valign(Gtk::ALIGN_START);
     _left_size_group->add_widget(check_ids);
     _left_size_group->add_widget(check_style);
     _left_size_group->add_widget(check_font);
+    _left_size_group->add_widget(check_desc);
+    _left_size_group->add_widget(check_title);
     _right_size_group->add_widget(check_attributevalue);
     _right_size_group->add_widget(check_attributename);
     hbox_properties.set_spacing(4);
@@ -282,17 +307,18 @@ Find::Find()
     hboxbutton_row.pack_start(status, true, true);
     hboxbutton_row.pack_end(box_buttons, true, true);
 
-    Gtk::Box *contents = _getContents();
-    contents->set_spacing(6);
-    contents->pack_start(entry_find, false, false);
-    contents->pack_start(entry_replace, false, false);
-    contents->pack_start(hbox_searchin, false, false);
-    contents->pack_start(expander_options, false, false);
-    contents->pack_end(hboxbutton_row, false, false);
+    set_spacing(6);
+    pack_start(entry_find, false, false);
+    pack_start(entry_replace, false, false);
+    pack_start(hbox_searchin, false, false);
+    pack_start(expander_options, false, false);
+    pack_end(hboxbutton_row, false, false);
 
     checkProperties.push_back(&check_ids);
     checkProperties.push_back(&check_style);
     checkProperties.push_back(&check_font);
+    checkProperties.push_back(&check_desc);
+    checkProperties.push_back(&check_title);
     checkProperties.push_back(&check_attributevalue);
     checkProperties.push_back(&check_attributename);
 
@@ -326,53 +352,27 @@ Find::Find()
     onSearchinText();
     onToggleAlltypes();
 
-    desktopChangeConn = deskTrack.connectDesktopChanged( sigc::mem_fun(*this, &Find::setTargetDesktop) );
-    deskTrack.connect(GTK_WIDGET(gobj()));
-
     show_all_children();
-
-    Inkscape::Selection *selection = SP_ACTIVE_DESKTOP->getSelection();
-    SPItem *item = selection->singleItem();
-    if (item) {
-        if (dynamic_cast<SPText *>(item) || dynamic_cast<SPFlowtext *>(item)) {
-            gchar *str;
-            str = sp_te_get_string_multiline (item);
-            entry_find.getEntry()->set_text(str);
-        }
-    }
 
     button_find.set_can_default();
     //button_find.grab_default(); // activatable by Enter
     entry_find.getEntry()->grab_focus();
 }
 
-Find::~Find()
+void Find::desktopReplaced()
 {
-    desktopChangeConn.disconnect();
-    selectChangedConn.disconnect();
-    deskTrack.disconnect();
-}
-
-void Find::setDesktop(SPDesktop *desktop)
-{
-    Panel::setDesktop(desktop);
-    deskTrack.setBase(desktop);
-}
-
-void Find::setTargetDesktop(SPDesktop *desktop)
-{
-    if (this->desktop != desktop) {
-        if (this->desktop) {
-            selectChangedConn.disconnect();
-        }
-        this->desktop = desktop;
-        if (desktop && desktop->selection) {
-            selectChangedConn = desktop->selection->connectChanged(sigc::hide(sigc::mem_fun(*this, &Find::onSelectionChange)));
+    if (auto selection = getSelection()) {
+        SPItem *item = selection->singleItem();
+        if (item && entry_find.getEntry()->get_text_length() == 0) {
+            Glib::ustring str = sp_te_get_string_multiline(item);
+            if (!str.empty()) {
+                entry_find.getEntry()->set_text(str);
+            }
         }
     }
 }
 
-void Find::onSelectionChange()
+void Find::selectionChanged(Selection *selection)
 {
     if (!blocked) {
         status.set_text("");
@@ -430,18 +430,40 @@ bool Find::find_strcmp(const gchar *str, const gchar *find, bool exact, bool cas
     return (std::string::npos != find_strcmp_pos(str, find, exact, casematch));
 }
 
+bool Find::item_desc_match (SPItem *item, const gchar *text, bool exact, bool casematch, bool replace)
+{
+    gchar* desc  = item->desc();
+    bool found = find_strcmp(desc, text, exact, casematch);
+    if (found && replace) {
+        Glib::ustring r = find_replace(desc, text, entry_replace.getEntry()->get_text().c_str(), exact, casematch, replace);
+        item->setDesc(r.c_str());
+    }
+    g_free(desc);
+    return found;
+}
+
+bool Find::item_title_match (SPItem *item, const gchar *text, bool exact, bool casematch, bool replace)
+{
+    gchar* title = item->title();
+    bool found = find_strcmp(title, text, exact, casematch);
+    if (found && replace) {
+        Glib::ustring r = find_replace(title, text, entry_replace.getEntry()->get_text().c_str(), exact, casematch, replace);
+        item->setTitle(r.c_str());
+    }
+    g_free(title);
+    return found;
+}
+
 bool Find::item_text_match (SPItem *item, const gchar *find, bool exact, bool casematch, bool replace/*=false*/)
 {
     if (item->getRepr() == nullptr) {
         return false;
     }
 
-    if (dynamic_cast<SPText *>(item) || dynamic_cast<SPFlowtext *>(item)) {
-        const gchar *item_text = sp_te_get_string_multiline (item);
-        if (item_text == nullptr) {
-            return false;
-        }
-        bool found = find_strcmp(item_text, find, exact, casematch);
+    Glib::ustring item_text = sp_te_get_string_multiline(item);
+
+    if (!item_text.empty()) {
+        bool found = find_strcmp(item_text.c_str(), find, exact, casematch);
 
         if (found && replace) {
             Glib::ustring ufind = find;
@@ -455,7 +477,7 @@ bool Find::item_text_match (SPItem *item, const gchar *find, bool exact, bool ca
             }
 
             gchar* replace_text  = g_strdup(entry_replace.getEntry()->get_text().c_str());
-            gsize n = find_strcmp_pos(item_text, ufind.c_str(), exact, casematch);
+            gsize n = find_strcmp_pos(item_text.c_str(), ufind.c_str(), exact, casematch);
             static Inkscape::Text::Layout::iterator _begin_w;
             static Inkscape::Text::Layout::iterator _end_w;
             while (n != std::string::npos) {
@@ -463,7 +485,7 @@ bool Find::item_text_match (SPItem *item, const gchar *find, bool exact, bool ca
                 _end_w = layout->charIndexToIterator(n + strlen(find));
                 sp_te_replace(item, _begin_w, _end_w, replace_text);
                 item_text = sp_te_get_string_multiline (item);
-                n = find_strcmp_pos(item_text, ufind.c_str(), exact, casematch, n + strlen(replace_text) + 1);
+                n = find_strcmp_pos(item_text.c_str(), ufind.c_str(), exact, casematch, n + strlen(replace_text) + 1);
             }
 
             g_free(replace_text);
@@ -562,9 +584,8 @@ bool Find::item_attrvalue_match(SPItem *item, const gchar *text, bool exact, boo
         return false;
     }
 
-    Inkscape::Util::List<Inkscape::XML::AttributeRecord const> iter = item->getRepr()->attributeList();
-    for (; iter; ++iter) {
-        const gchar* key = g_quark_to_string(iter->key);
+    for (const auto & iter:item->getRepr()->attributeList()) {
+        const gchar* key = g_quark_to_string(iter.key);
         gchar *attr_value = g_strdup(item->getRepr()->attribute(key));
         bool found = find_strcmp(attr_value, text, exact, casematch);
         if (found) {
@@ -672,6 +693,8 @@ std::vector<SPItem*> Find::filter_fields (std::vector<SPItem*> &l, bool exact, b
         bool ids = check_ids.get_active();
         bool style = check_style.get_active();
         bool font = check_font.get_active();
+        bool desc = check_desc.get_active();
+        bool title = check_title.get_active();
         bool attrname  = check_attributename.get_active();
         bool attrvalue = check_attributevalue.get_active();
 
@@ -757,6 +780,36 @@ std::vector<SPItem*> Find::filter_fields (std::vector<SPItem*> &l, bool exact, b
                 }
             }
         }
+        if (desc) {
+            for (std::vector<SPItem*>::const_reverse_iterator i=in.rbegin(); in.rend() != i; ++i) {
+                SPObject *obj = *i;
+                SPItem *item = dynamic_cast<SPItem *>(obj);
+                g_assert(item != nullptr);
+                if (item_desc_match(item, text, exact, casematch)) {
+                    if (out.end()==find(out.begin(),out.end(),*i)) {
+                        out.push_back(*i);
+                        if (_action_replace) {
+                            item_desc_match(item, text, exact, casematch, _action_replace);
+                        }
+                    }
+                }
+            }
+        }
+        if (title) {
+            for (std::vector<SPItem*>::const_reverse_iterator i=in.rbegin(); in.rend() != i; ++i) {
+                SPObject *obj = *i;
+                SPItem *item = dynamic_cast<SPItem *>(obj);
+                g_assert(item != nullptr);
+                if (item_title_match(item, text, exact, casematch)) {
+                    if (out.end()==find(out.begin(),out.end(),*i)) {
+                        out.push_back(*i);
+                        if (_action_replace) {
+                            item_title_match(item, text, exact, casematch, _action_replace);
+                        }
+                    }
+                }
+            }
+        }
 
     }
 
@@ -791,7 +844,8 @@ bool Find::item_type_match (SPItem *item)
 			   dynamic_cast<SPFlowtspan *>(item) || dynamic_cast<SPFlowpara *>(item)) {
         return (all || check_texts.get_active());
 
-    } else if (dynamic_cast<SPGroup *>(item) && !desktop->isLayer(item) ) { // never select layers!
+    } else if (dynamic_cast<SPGroup *>(item) &&
+               !getDesktop()->isLayer(item)) { // never select layers!
         return (all || check_groups.get_active());
 
     } else if (dynamic_cast<SPUse *>(item)) {
@@ -839,6 +893,7 @@ std::vector<SPItem*> &Find::all_items (SPObject *r, std::vector<SPItem*> &l, boo
         return l; // we're not interested in metadata
     }
 
+    auto desktop = getDesktop();
     for (auto& child: r->children) {
         SPItem *item = dynamic_cast<SPItem *>(&child);
         if (item && !child.cloned && !desktop->isLayer(item)) {
@@ -853,7 +908,8 @@ std::vector<SPItem*> &Find::all_items (SPObject *r, std::vector<SPItem*> &l, boo
 
 std::vector<SPItem*> &Find::all_selection_items (Inkscape::Selection *s, std::vector<SPItem*> &l, SPObject *ancestor, bool hidden, bool locked)
 {
-	auto itemlist= s->items();
+    auto desktop = getDesktop();
+    auto itemlist = s->items();
     for (auto i=boost::rbegin(itemlist); boost::rend(itemlist) != i; ++i) {
         SPObject *obj = *i;
         SPItem *item = dynamic_cast<SPItem *>(obj);
@@ -902,7 +958,7 @@ void Find::onReplace()
 
 void Find::onAction()
 {
-
+    auto desktop = getDesktop();
     bool hidden = check_include_hidden.get_active();
     bool locked = check_include_locked.get_active();
     bool exact = check_exact_match.get_active();

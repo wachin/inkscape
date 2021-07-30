@@ -24,6 +24,7 @@
 
 #include "desktop.h"
 #include "inkscape.h"
+#include "inkscape-window.h"
 #include "path-prefix.h"
 #include "preferences.h"
 #include "script.h"
@@ -32,18 +33,21 @@
 #include "extension/db.h"
 #include "extension/effect.h"
 #include "extension/execution-env.h"
+#include "extension/init.h"
 #include "extension/input.h"
 #include "extension/output.h"
 #include "extension/system.h"
 #include "io/resource.h"
 #include "object/sp-namedview.h"
 #include "object/sp-path.h"
+#include "ui/desktop/menubar.h"
 #include "ui/dialog-events.h"
 #include "ui/tool/control-point-selection.h"
 #include "ui/tool/multi-path-manipulator.h"
 #include "ui/tool/path-manipulator.h"
 #include "ui/tools/node-tool.h"
 #include "ui/view/view.h"
+#include "widgets/desktop-widget.h"
 #include "xml/attribute-record.h"
 #include "xml/node.h"
 
@@ -72,19 +76,21 @@ void Script::pump_events () {
     the given interpreter to a custom one per user.
 */
 const std::map<std::string, Script::interpreter_t> Script::interpreterTab = {
+    // clang-format off
 #ifdef _WIN32
-        { "perl",    {"perl-interpreter",    {"wperl"             }}},
-        { "python",  {"python-interpreter",  {"pythonw"           }}},
+    { "perl",    {"perl-interpreter",    {"wperl"             }}},
+    { "python",  {"python-interpreter",  {"pythonw"           }}},
 #elif defined __APPLE__
-        { "perl",    {"perl-interpreter",    {"perl"              }}},
-        { "python",  {"python-interpreter",  {"python3"           }}},
+    { "perl",    {"perl-interpreter",    {"perl"              }}},
+    { "python",  {"python-interpreter",  {"python3"           }}},
 #else
-        { "perl",    {"perl-interpreter",    {"perl"              }}},
-        { "python",  {"python-interpreter",  {"python3", "python" }}},
+    { "perl",    {"perl-interpreter",    {"perl"              }}},
+    { "python",  {"python-interpreter",  {"python3", "python" }}},
 #endif
-        { "python2", {"python2-interpreter", {"python2", "python" }}},
-        { "ruby",    {"ruby-interpreter",    {"ruby"    }}},
-        { "shell",   {"shell-interpreter",   {"sh"      }}},
+    { "python2", {"python2-interpreter", {"python2", "python" }}},
+    { "ruby",    {"ruby-interpreter",    {"ruby"    }}},
+    { "shell",   {"shell-interpreter",   {"sh"      }}},
+    // clang-format on
 };
 
 
@@ -404,7 +410,7 @@ SPDocument *Script::open(Inkscape::Extension::Input *module,
 
     if (mydoc != nullptr) {
         mydoc->setDocumentBase(nullptr);
-        mydoc->changeUriAndHrefs(filenameArg);
+        mydoc->changeFilenameAndHrefs(filenameArg);
     }
 
     // make sure we don't leak file descriptors from Glib::file_open_tmp
@@ -448,7 +454,7 @@ void Script::save(Inkscape::Extension::Output *module,
 {
     std::list<std::string> params;
     module->paramListString(params);
-    module->set_environment();
+    module->set_environment(doc);
 
     std::string tempfilename_in;
     int tempfd_in = 0;
@@ -495,6 +501,33 @@ void Script::save(Inkscape::Extension::Output *module,
 }
 
 
+void Script::export_raster(Inkscape::Extension::Output *module,
+             const SPDocument *doc,
+             const std::string &png_file,
+             const gchar *filenameArg)
+{
+    if(!module->is_raster()) {
+        g_error("Can not export raster to non-raster extension.");
+        return;
+    }
+
+    std::list<std::string> params;
+    module->paramListString(params);
+    module->set_environment(doc);
+
+    file_listener fileout;
+    int data_read = execute(command, params, png_file, fileout);
+
+    bool success = false;
+    if (data_read > 0) {
+        std::string lfilename = Glib::filename_from_utf8(filenameArg);
+        success = fileout.toFile(lfilename);
+    }
+    if (success == false) {
+        throw Inkscape::Extension::Output::save_failed();
+    }
+    return;
+}
 
 /**
     \return    none
@@ -547,7 +580,7 @@ void Script::effect(Inkscape::Extension::Effect *module,
 
     std::list<std::string> params;
     module->paramListString(params);
-    module->set_environment();
+    module->set_environment(desktop->getDocument());
 
     parent_window = module->get_execution_env()->get_working_dialog();
 
@@ -558,6 +591,18 @@ void Script::effect(Inkscape::Extension::Effect *module,
         Glib::ustring empty;
         file_listener outfile;
         execute(command, params, empty, outfile);
+
+        // Hack to allow for extension manager to reload extensions
+        // TODO: Find a better way to do this, e.g. implement an action and have extensions (or users)
+        //       call that instead when there's a change that requires extensions to reload
+        if (!g_strcmp0(module->get_id(), "org.inkscape.extensions.manager")) {
+            Inkscape::Extension::refresh_user_extensions();
+            InkscapeWindow *window = desktop->getInkscapeWindow();
+            if (window) { // during load, SP_ACTIVE_DESKTOP may be !nullptr, but parent might still be nullptr
+                SPDesktopWidget *dtw = window->get_desktop_widget();
+                reload_menu(desktop, dtw->_menubar);
+            }
+        }
 
         return;
     }
@@ -613,7 +658,7 @@ void Script::effect(Inkscape::Extension::Effect *module,
         SPDocument* vd=doc->doc();
         if (vd != nullptr)
         {
-            mydoc->changeUriAndHrefs(vd->getDocumentURI());
+            mydoc->changeFilenameAndHrefs(vd->getDocumentFilename());
 
             vd->emitReconstructionStart();
             copy_doc(vd->getReprRoot(), mydoc->getReprRoot());
@@ -680,8 +725,6 @@ void Script::copy_doc (Inkscape::XML::Node * oldroot, Inkscape::XML::Node * newr
     }
 
     // For copying attributes in root and in namedview
-    using Inkscape::Util::List;
-    using Inkscape::XML::AttributeRecord;
     std::vector<gchar const *> attribs;
 
     // Must explicitly copy root attributes. This must be done first since
@@ -689,8 +732,8 @@ void Script::copy_doc (Inkscape::XML::Node * oldroot, Inkscape::XML::Node * newr
     // width, height, and viewBox of the root element.
 
     // Make a list of all attributes of the old root node.
-    for (List<AttributeRecord const> iter = oldroot->attributeList(); iter; ++iter) {
-        attribs.push_back(g_quark_to_string(iter->key));
+    for (const auto & iter : oldroot->attributeList()) {
+        attribs.push_back(g_quark_to_string(iter.key));
     }
 
     // Delete the attributes of the old root node.
@@ -699,8 +742,8 @@ void Script::copy_doc (Inkscape::XML::Node * oldroot, Inkscape::XML::Node * newr
     }
 
     // Set the new attributes.
-    for (List<AttributeRecord const> iter = newroot->attributeList(); iter; ++iter) {
-        gchar const *name = g_quark_to_string(iter->key);
+    for (const auto & iter : newroot->attributeList()) {
+        gchar const *name = g_quark_to_string(iter.key);
         oldroot->setAttribute(name, newroot->attribute(name));
     }
 
@@ -850,14 +893,10 @@ int Script::execute (const std::list<std::string> &in_command,
     // assemble the rest of argv
     std::copy(in_params.begin(), in_params.end(), std::back_inserter(argv));
     if (!filein.empty()) {
-        if(Glib::path_is_absolute(filein))
-            argv.push_back(filein);
-        else {
-            std::vector<std::string> buildargs;
-            buildargs.push_back(Glib::get_current_dir());
-            buildargs.push_back(filein);
-            argv.push_back(Glib::build_filename(buildargs));
-        }
+        auto filein_native = Glib::filename_from_utf8(filein);
+        if (!Glib::path_is_absolute(filein_native))
+            filein_native = Glib::build_filename(Glib::get_current_dir(), filein_native);
+        argv.push_back(filein_native);
     }
 
     //for(int i=0;i<argv.size(); ++i){printf("%s ",argv[i].c_str());}printf("\n");
@@ -952,6 +991,10 @@ bool Script::file_listener::read(Glib::IOCondition condition) {
 }
 
 bool Script::file_listener::toFile(const Glib::ustring &name) {
+    return toFile(Glib::filename_from_utf8(name));
+}
+
+bool Script::file_listener::toFile(const std::string &name) {
     try {
         Glib::RefPtr<Glib::IOChannel> stdout_file = Glib::IOChannel::create_from_file(name, "w");
         stdout_file->set_encoding();

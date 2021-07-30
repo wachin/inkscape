@@ -13,10 +13,6 @@
 #ifndef INKSCAPE_UI_DIALOG_FIND_H
 #define INKSCAPE_UI_DIALOG_FIND_H
 
-#include "ui/widget/panel.h"
-#include "ui/widget/entry.h"
-#include "ui/widget/frame.h"
-
 #include <gtkmm/box.h>
 #include <gtkmm/buttonbox.h>
 #include <gtkmm/expander.h>
@@ -24,7 +20,9 @@
 #include <gtkmm/radiobutton.h>
 #include <gtkmm/sizegroup.h>
 
-#include "ui/dialog/desktop-tracker.h"
+#include "ui/dialog/dialog-base.h"
+#include "ui/widget/entry.h"
+#include "ui/widget/frame.h"
 
 class SPItem;
 class SPObject;
@@ -45,11 +43,14 @@ namespace Dialog {
  * Other options allow searching on specific object types and properties.
  */
 
-class Find : public UI::Widget::Panel {
+class Find : public DialogBase
+{
 public:
     Find();
-    ~Find() override;
+    ~Find() override {};
 
+    void desktopReplaced() override;
+    void selectionChanged(Selection *selection) override;
     /**
      * Helper function which returns a new instance of the dialog.
      * getInstance is needed by the dialog manager (Inkscape::UI::Dialog::DialogManager).
@@ -110,6 +111,19 @@ protected:
      *
      */
     bool        item_style_match (SPItem *item, const gchar *text, bool exact, bool casematch, bool replace=false);
+    /**
+     * Returns true if the SPItem 'item' has a <title> or <desc> child that
+     * matches
+     *
+     * @param item the SPItem to check
+     * @param name the value to compare with
+     * @param exact do an exact match
+     * @param casematch match the text case exactly
+     * @param replace replace the value if found
+     *
+     */
+    bool        item_desc_match (SPItem *item, const gchar *text, bool exact, bool casematch, bool replace=false);
+    bool        item_title_match (SPItem *item, const gchar *text, bool exact, bool casematch, bool replace=false);
     /**
      * Returns true if found the SPItem 'item' has the same attribute name
      *
@@ -182,19 +196,6 @@ protected:
      * Currently not working, no known way to do this
      */
     void        squeeze_window();
-    /**
-     * Can be invoked for setting the desktop. Currently not used.
-     */
-    void        setDesktop(SPDesktop *desktop) override;
-    /**
-     * Is invoked by the desktop tracker when the desktop changes.
-     */
-    void        setTargetDesktop(SPDesktop *desktop);
-
-    /**
-     * Called when desktop selection changes
-     */
-    void onSelectionChange();
 
 private:
     Find(Find const &d) = delete;
@@ -214,9 +215,9 @@ private:
     Gtk::RadioButton    check_scope_selection;
     Gtk::RadioButton    check_searchin_text;
     Gtk::RadioButton    check_searchin_property;
-    Gtk::HBox hbox_searchin;
-    Gtk::VBox vbox_scope;
-    Gtk::VBox vbox_searchin;
+    Gtk::Box hbox_searchin;
+    Gtk::Box vbox_scope;
+    Gtk::Box vbox_searchin;
     UI::Widget::Frame frame_searchin;
     UI::Widget::Frame frame_scope;
 
@@ -227,10 +228,10 @@ private:
     Gtk::CheckButton    check_exact_match;
     Gtk::CheckButton    check_include_hidden;
     Gtk::CheckButton    check_include_locked;
-    Gtk::VBox vbox_options1;
-    Gtk::VBox vbox_options2;
-    Gtk::HBox hbox_options;
-    Gtk::VBox vbox_expander;
+    Gtk::Box vbox_options1;
+    Gtk::Box vbox_options2;
+    Gtk::Box hbox_options;
+    Gtk::Box vbox_expander;
     Gtk::Expander  expander_options;
     UI::Widget::Frame frame_options;
 
@@ -242,9 +243,11 @@ private:
     Gtk::CheckButton    check_attributevalue;
     Gtk::CheckButton    check_style;
     Gtk::CheckButton    check_font;
-    Gtk::HBox hbox_properties;
-    Gtk::VBox vbox_properties1;
-    Gtk::VBox vbox_properties2;
+    Gtk::CheckButton    check_desc;
+    Gtk::CheckButton    check_title;
+    Gtk::Box hbox_properties;
+    Gtk::Box vbox_properties1;
+    Gtk::Box vbox_properties2;
     UI::Widget::Frame frame_properties;
 
     /**
@@ -266,9 +269,9 @@ private:
     Gtk::CheckButton    check_clones;
     Gtk::CheckButton    check_images;
     Gtk::CheckButton    check_offsets;
-    Gtk::VBox vbox_types1;
-    Gtk::VBox vbox_types2;
-    Gtk::HBox hbox_types;
+    Gtk::Box vbox_types1;
+    Gtk::Box vbox_types2;
+    Gtk::Box hbox_types;
     UI::Widget::Frame frame_types;
 
     Glib::RefPtr<Gtk::SizeGroup> _left_size_group;
@@ -279,7 +282,7 @@ private:
      */
     std::vector<Gtk::CheckButton *> checkTypes;
 
-    //Gtk::HBox hbox_text;
+    //Gtk::Box hbox_text;
 
     /**
      * Action Buttons and status
@@ -288,7 +291,7 @@ private:
     Gtk::Button button_find;
     Gtk::Button button_replace;
     Gtk::ButtonBox box_buttons;
-    Gtk::HBox hboxbutton_row;
+    Gtk::Box hboxbutton_row;
 
     /**
      *  Finding or replacing
@@ -296,9 +299,6 @@ private:
     bool _action_replace;
     bool blocked;
 
-    SPDesktop *desktop;
-    DesktopTracker deskTrack;
-    sigc::connection desktopChangeConn;
     sigc::connection selectChangedConn;
 };
 

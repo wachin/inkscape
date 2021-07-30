@@ -144,17 +144,17 @@
   <define name="inx.input_extension">
     <element name="input">
       <ref name="inx.input_output_extension.common"/>
-      <optional>
-        <element name="output_extension">
-          <text/>
-        </element>
-      </optional>
     </element>
   </define>
 
   <define name="inx.output_extension">
     <element name="output">
       <ref name="inx.input_output_extension.common"/>
+      <optional>
+        <attribute name="raster">
+          <ref name="data_type_boolean_strict"/>
+        </attribute>
+      </optional>
       <optional>
         <element name="dataloss">
           <ref name="data_type_boolean_strict"/>

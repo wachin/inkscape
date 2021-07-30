@@ -16,8 +16,7 @@
 namespace Gtk {
 class RadioButton;
 class Scale;
-class VBox;
-class HBox;
+class Box;
 }
 
 namespace Inkscape {
@@ -43,7 +42,7 @@ public:
     ~ToleranceSlider();
     void setValue (double);
     void setLimits (double, double);
-    Gtk::VBox* _vbox;
+    Gtk::Box* _vbox;
 private:
     void init (const Glib::ustring& label1, 
             const Glib::ustring& label2, 
@@ -58,7 +57,7 @@ protected:
     void on_scale_changed();
     void on_toggled();
     void update (double val);
-    Gtk::HBox         *_hbox;
+    Gtk::Box          *_hbox;
     Gtk::Scale        *_hscale;
     Gtk::RadioButtonGroup _radio_button_group;
     Gtk::RadioButton  *_button1;

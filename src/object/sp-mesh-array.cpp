@@ -638,13 +638,13 @@ SPMeshNodeArray::SPMeshNodeArray( SPMeshGradient *mg ) {
 
 
 // Copy constructor
-SPMeshNodeArray::SPMeshNodeArray( const SPMeshNodeArray& rhs ) {
+SPMeshNodeArray::SPMeshNodeArray( const SPMeshNodeArray& rhs ) :
+    nodes(rhs.nodes) // This only copies the pointers but it does size the vector of vectors.
+{
 
     built = false;
     mg = nullptr;
     draggers_valid = false;
-
-    nodes = rhs.nodes; // This only copies the pointers but it does size the vector of vectors.
 
     for( unsigned i=0; i < nodes.size(); ++i ) {
         for( unsigned j=0; j < nodes[i].size(); ++j ) {
@@ -761,7 +761,7 @@ bool SPMeshNodeArray::read( SPMeshGradient *mg_in ) {
 
 
                             // Copy path and then replace commas by spaces so we can use stringstream to parse
-                            std::string path_string = *(stop->path_string);
+                            std::string path_string = stop->path_string->raw();
                             std::replace(path_string.begin(),path_string.end(),',',' ');
 
                             // std::cout << "    path_string: " << path_string << std::endl;
@@ -868,7 +868,7 @@ bool SPMeshNodeArray::read( SPMeshGradient *mg_in ) {
 
                     // Copy string and then replace commas by spaces so we can use stringstream to parse XXXX
                     if( patch->tensor_string ) {
-                        std::string tensor_string = *(patch->tensor_string);
+                        std::string tensor_string = patch->tensor_string->raw();
                         std::replace(tensor_string.begin(),tensor_string.end(),',',' ');
 
                         // std::cout << "    tensor_string: " << tensor_string << std::endl;
@@ -955,8 +955,8 @@ void SPMeshNodeArray::write( SPMeshGradient *mg ) {
     SPMeshPatchI patch0( &(array->nodes), 0, 0 );
     Geom::Point current_p = patch0.getPoint( 0, 0 ); // Side 0, point 0
 
-    sp_repr_set_svg_double( mesh, "x", current_p[X] );
-    sp_repr_set_svg_double( mesh, "y", current_p[Y] );
+    mesh->setAttributeSvgDouble("x", current_p[X] );
+    mesh->setAttributeSvgDouble("y", current_p[Y] );
 
     Geom::Point current_p2( mg->x.computed, mg->y.computed );
 
@@ -1082,9 +1082,10 @@ static SPColor default_color( SPItem *item ) {
         if ( paint.isColor() ) {
             color = paint.value.color;
         } else if ( paint.isPaintserver() ) {
-            SPObject const *server = item->style->getFillPaintServer();
-            if ( SP_IS_GRADIENT(server) && SP_GRADIENT(server)->getVector() ) {
-                SPStop *firstStop = SP_GRADIENT(server)->getVector()->getFirstStop();
+            auto *server = item->style->getFillPaintServer();
+            auto gradient = dynamic_cast<SPGradient *>(server);
+            if (gradient && gradient->getVector()) {
+                SPStop *firstStop = gradient->getVector()->getFirstStop();
                 if ( firstStop ) {
                     color = firstStop->getColor();
                 }
@@ -1191,8 +1192,8 @@ void SPMeshNodeArray::create( SPMeshGradient *mg, SPItem *item, Geom::OptRect bb
         // std::cout << " start: " << start << "  end: " << end << std::endl;
 
         // IS THIS NECESSARY?
-        sp_repr_set_svg_double( repr, "x", center[Geom::X] + rx * cos(start) );
-        sp_repr_set_svg_double( repr, "y", center[Geom::Y] + ry * sin(start) );
+        repr->setAttributeSvgDouble("x", center[Geom::X] + rx * cos(start) );
+        repr->setAttributeSvgDouble("y", center[Geom::Y] + ry * sin(start) );
 
         guint sections = pcols;
 
@@ -1260,8 +1261,8 @@ void SPMeshNodeArray::create( SPMeshGradient *mg, SPItem *item, Geom::OptRect bb
 
             gdouble s = -3.0/2.0 * M_PI_2;
 
-            sp_repr_set_svg_double( repr, "x", center[Geom::X] + rx * cos(s) );
-            sp_repr_set_svg_double( repr, "y", center[Geom::Y] + ry * sin(s) );
+            repr->setAttributeSvgDouble("x", center[Geom::X] + rx * cos(s) );
+            repr->setAttributeSvgDouble("y", center[Geom::Y] + ry * sin(s) );
 
             gdouble lenx = rx * 4*tan(M_PI_2/4)/3;
             gdouble leny = ry * 4*tan(M_PI_2/4)/3;
@@ -1312,8 +1313,8 @@ void SPMeshNodeArray::create( SPMeshGradient *mg, SPItem *item, Geom::OptRect bb
             // std::cout << "We've got ourselves an star! Sides: " << sides << std::endl;
 
             Geom::Point p0 = sp_star_get_xy( star, SP_STAR_POINT_KNOT1, 0 );
-            sp_repr_set_svg_double( repr, "x", p0[Geom::X] );
-            sp_repr_set_svg_double( repr, "y", p0[Geom::Y] );
+            repr->setAttributeSvgDouble("x", p0[Geom::X] );
+            repr->setAttributeSvgDouble("y", p0[Geom::Y] );
 
             for( guint i = 0; i < sides; ++i ) {
 
@@ -1381,8 +1382,8 @@ void SPMeshNodeArray::create( SPMeshGradient *mg, SPItem *item, Geom::OptRect bb
 
             // Generic
 
-            sp_repr_set_svg_double(repr, "x", bbox->min()[Geom::X]);
-            sp_repr_set_svg_double(repr, "y", bbox->min()[Geom::Y]);
+            repr->setAttributeSvgDouble("x", bbox->min()[Geom::X]);
+            repr->setAttributeSvgDouble("y", bbox->min()[Geom::Y]);
 
             // Get node array size
             guint nrows = prows * 3 + 1;
@@ -2307,7 +2308,7 @@ guint SPMeshNodeArray::color_pick( std::vector<guint> icorners, SPItem* item ) {
     // std::cout << item->i2dt_affine() << std::endl;
     // std::cout << " dt2i: " << std::endl;
     // std::cout << item->dt2i_affine() << std::endl;
-    SPGradient* gr = SP_GRADIENT( mg );
+    SPGradient* gr = mg;
     // if( gr->gradientTransform_set ) {
     //     std::cout << " gradient transform set: " << std::endl;
     //     std::cout << gr->gradientTransform << std::endl;
@@ -2740,10 +2741,9 @@ void SPMeshNodeArray::update_handles( guint corner, std::vector< guint > /*selec
     //         Geom::Point dsx1 = pnodes[0][1]->p - 
 }
 
-
-SPCurve * SPMeshNodeArray::outline_path() {
-
-    SPCurve *outline = new SPCurve();
+std::unique_ptr<SPCurve> SPMeshNodeArray::outline_path() const
+{
+    auto outline = std::make_unique<SPCurve>();
 
     if (nodes.empty() ) {
         std::cerr << "SPMeshNodeArray::outline_path: empty array!" << std::endl;
@@ -2801,9 +2801,8 @@ bool SPMeshNodeArray::fill_box(Geom::OptRect &box) {
         mg->gradientTransform.setIdentity();
     }
 
-    SPCurve *outline = outline_path();
+    auto outline = outline_path();
     Geom::OptRect mesh_bbox = outline->get_pathvector().boundsExact();
-    outline->unref();
 
     if ((*mesh_bbox).width() == 0 || (*mesh_bbox).height() == 0) {
         return false;

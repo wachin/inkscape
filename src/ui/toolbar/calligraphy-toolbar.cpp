@@ -28,19 +28,25 @@
 #include "calligraphy-toolbar.h"
 
 #include <glibmm/i18n.h>
-
 #include <gtkmm/comboboxtext.h>
 #include <gtkmm/separatortoolitem.h>
 
 #include "desktop.h"
 #include "document-undo.h"
+#include "ui/dialog/calligraphic-profile-rename.h"
 #include "ui/icon-names.h"
 #include "ui/simple-pref-pusher.h"
 #include "ui/uxmanager.h"
-#include "ui/dialog/calligraphic-profile-rename.h"
+#include "ui/widget/canvas.h"
+#include "ui/widget/combo-tool-item.h"
 #include "ui/widget/spin-button-tool-item.h"
+#include "ui/widget/unit-tracker.h"
 
 using Inkscape::DocumentUndo;
+using Inkscape::UI::Widget::UnitTracker;
+using Inkscape::Util::Quantity;
+using Inkscape::Util::Unit;
+using Inkscape::Util::unit_table;
 
 std::vector<Glib::ustring> get_presets_list() {
 
@@ -56,10 +62,16 @@ namespace UI {
 namespace Toolbar {
 
 CalligraphyToolbar::CalligraphyToolbar(SPDesktop *desktop)
-    : Toolbar(desktop),
-      _presets_blocked(false)
+    : Toolbar(desktop)
+    , _tracker(new UnitTracker(Inkscape::Util::UNIT_TYPE_LINEAR))
+    , _presets_blocked(false)
 {
     Inkscape::Preferences *prefs = Inkscape::Preferences::get();
+    _tracker->prependUnit(unit_table.getUnit("px"));
+    _tracker->changeLabel("%", 0, true);
+    prefs->getBool("/tools/calligraphic/abs_width")
+        ? _tracker->setActiveUnitByLabel(prefs->getString("/tools/calligraphic/unit"))
+        : _tracker->setActiveUnitByLabel("%");
 
     /*calligraphic profile */
     {
@@ -90,17 +102,27 @@ CalligraphyToolbar::CalligraphyToolbar(SPDesktop *desktop)
         /* Width */
         std::vector<Glib::ustring> labels = {_("(hairline)"), "", "", "", _("(default)"), "", "", "", "", _("(broad stroke)")};
         std::vector<double>        values = {              1,  3,  5, 10,             15, 20, 30, 50, 75,                 100};
-        auto width_val = prefs->getDouble("/tools/calligraphic/width", 15);
-        _width_adj = Gtk::Adjustment::create(width_val, 1, 100, 1.0, 10.0);
-        auto width_item = Gtk::manage(new UI::Widget::SpinButtonToolItem("calligraphy-width", _("Width:"), _width_adj, 1, 0));
+        auto width_val = prefs->getDouble("/tools/calligraphic/width", 15.118);
+        Unit const *unit = unit_table.getUnit(prefs->getString("/tools/calligraphic/unit"));
+        _width_adj = Gtk::Adjustment::create(Quantity::convert(width_val, "px", unit), 0.001, 100, 1.0, 10.0);
+        auto width_item =
+            Gtk::manage(new UI::Widget::SpinButtonToolItem("calligraphy-width", _("Width:"), _width_adj, 0.001, 3));
         width_item->set_tooltip_text(_("The width of the calligraphic pen (relative to the visible canvas area)"));
         width_item->set_custom_numeric_menu_data(values, labels);
-        width_item->set_focus_widget(Glib::wrap(GTK_WIDGET(desktop->canvas)));
+        width_item->set_focus_widget(desktop->canvas);
         _width_adj->signal_value_changed().connect(sigc::mem_fun(*this, &CalligraphyToolbar::width_value_changed));
         _widget_map["width"] = G_OBJECT(_width_adj->gobj());
         // ege_adjustment_action_set_appearance( eact, TOOLBAR_SLIDER_HINT );
         add(*width_item);
+        _tracker->addAdjustment(_width_adj->gobj());
         width_item->set_sensitive(true);
+    }
+
+    /* Unit Menu */
+    {
+        auto unit_menu_ti = _tracker->create_tool_item(_("Units"), "");
+        add(*unit_menu_ti);
+        unit_menu_ti->signal_changed_after().connect(sigc::mem_fun(*this, &CalligraphyToolbar::unit_changed));
     }
 
     /* Use Pressure button */
@@ -136,11 +158,28 @@ CalligraphyToolbar::CalligraphyToolbar(SPDesktop *desktop)
         auto thinning_item = Gtk::manage(new UI::Widget::SpinButtonToolItem("calligraphy-thinning", _("Thinning:"), _thinning_adj, 1, 0));
         thinning_item->set_tooltip_text(("How much velocity thins the stroke (> 0 makes fast strokes thinner, < 0 makes them broader, 0 makes width independent of velocity)"));
         thinning_item->set_custom_numeric_menu_data(values, labels);
-        thinning_item->set_focus_widget(Glib::wrap(GTK_WIDGET(desktop->canvas)));
+        thinning_item->set_focus_widget(desktop->canvas);
         _thinning_adj->signal_value_changed().connect(sigc::mem_fun(*this, &CalligraphyToolbar::velthin_value_changed));
         _widget_map["thinning"] = G_OBJECT(_thinning_adj->gobj());
         add(*thinning_item);
         thinning_item->set_sensitive(true);
+    }
+
+    {
+        /* Mass */
+        std::vector<Glib::ustring> labels = {_("(no inertia)"), _("(slight smoothing, default)"), _("(noticeable lagging)"), "", "", _("(maximum inertia)")};
+        std::vector<double>        values = {              0.0,                                2,                        10, 20, 50,                    100};
+        auto mass_val = prefs->getDouble("/tools/calligraphic/mass", 2.0);
+        _mass_adj = Gtk::Adjustment::create(mass_val, 0.0, 100, 1, 10.0);
+        auto mass_item = Gtk::manage(new UI::Widget::SpinButtonToolItem("calligraphy-mass", _("Mass:"), _mass_adj, 1, 0));
+        mass_item->set_tooltip_text(_("Increase to make the pen drag behind, as if slowed by inertia"));
+        mass_item->set_custom_numeric_menu_data(values, labels);
+        mass_item->set_focus_widget(desktop->canvas);
+        _mass_adj->signal_value_changed().connect(sigc::mem_fun(*this, &CalligraphyToolbar::mass_value_changed));
+        _widget_map["mass"] = G_OBJECT(_mass_adj->gobj());
+        // ege_adjustment_action_set_appearance( eact, TOOLBAR_SLIDER_HINT );
+        add(*mass_item);
+        mass_item->set_sensitive(true);
     }
 
     add(* Gtk::manage(new Gtk::SeparatorToolItem()));
@@ -154,7 +193,7 @@ CalligraphyToolbar::CalligraphyToolbar(SPDesktop *desktop)
         _angle_item = Gtk::manage(new UI::Widget::SpinButtonToolItem("calligraphy-angle", _("Angle:"), _angle_adj, 1, 0));
         _angle_item->set_tooltip_text(_("The angle of the pen's nib (in degrees; 0 = horizontal; has no effect if fixation = 0)"));
         _angle_item->set_custom_numeric_menu_data(values, labels);
-        _angle_item->set_focus_widget(Glib::wrap(GTK_WIDGET(desktop->canvas)));
+        _angle_item->set_focus_widget(desktop->canvas);
         _angle_adj->signal_value_changed().connect(sigc::mem_fun(*this, &CalligraphyToolbar::angle_value_changed));
         _widget_map["angle"] = G_OBJECT(_angle_adj->gobj());
         add(*_angle_item);
@@ -182,7 +221,7 @@ CalligraphyToolbar::CalligraphyToolbar(SPDesktop *desktop)
         auto flatness_item = Gtk::manage(new UI::Widget::SpinButtonToolItem("calligraphy-fixation", _("Fixation:"), _fixation_adj, 1, 0));
         flatness_item->set_tooltip_text(_("Angle behavior (0 = nib always perpendicular to stroke direction, 100 = fixed angle)"));
         flatness_item->set_custom_numeric_menu_data(values, labels);
-        flatness_item->set_focus_widget(Glib::wrap(GTK_WIDGET(desktop->canvas)));
+        flatness_item->set_focus_widget(desktop->canvas);
         _fixation_adj->signal_value_changed().connect(sigc::mem_fun(*this, &CalligraphyToolbar::flatness_value_changed));
         _widget_map["flatness"] = G_OBJECT(_fixation_adj->gobj());
         add(*flatness_item);
@@ -202,7 +241,7 @@ CalligraphyToolbar::CalligraphyToolbar(SPDesktop *desktop)
         // TRANSLATORS: "cap" means "end" (both start and finish) here
         cap_rounding_item->set_tooltip_text(_("Increase to make caps at the ends of strokes protrude more (0 = no caps, 1 = round caps)"));
         cap_rounding_item->set_custom_numeric_menu_data(values, labels);
-        cap_rounding_item->set_focus_widget(Glib::wrap(GTK_WIDGET(desktop->canvas)));
+        cap_rounding_item->set_focus_widget(desktop->canvas);
         _cap_rounding_adj->signal_value_changed().connect(sigc::mem_fun(*this, &CalligraphyToolbar::cap_rounding_value_changed));
         _widget_map["cap_rounding"] = G_OBJECT(_cap_rounding_adj->gobj());
         add(*cap_rounding_item);
@@ -220,7 +259,7 @@ CalligraphyToolbar::CalligraphyToolbar(SPDesktop *desktop)
         auto tremor_item = Gtk::manage(new UI::Widget::SpinButtonToolItem("calligraphy-tremor", _("Tremor:"), _tremor_adj, 1, 0));
         tremor_item->set_tooltip_text(_("Increase to make strokes rugged and trembling"));
         tremor_item->set_custom_numeric_menu_data(values, labels);
-        tremor_item->set_focus_widget(Glib::wrap(GTK_WIDGET(desktop->canvas)));
+        tremor_item->set_focus_widget(desktop->canvas);
         _tremor_adj->signal_value_changed().connect(sigc::mem_fun(*this, &CalligraphyToolbar::tremor_value_changed));
         _widget_map["tremor"] = G_OBJECT(_tremor_adj->gobj());
         // ege_adjustment_action_set_appearance( eact, TOOLBAR_SLIDER_HINT );
@@ -237,29 +276,12 @@ CalligraphyToolbar::CalligraphyToolbar(SPDesktop *desktop)
         auto wiggle_item = Gtk::manage(new UI::Widget::SpinButtonToolItem("calligraphy-wiggle", _("Wiggle:"), _wiggle_adj, 1, 0));
         wiggle_item->set_tooltip_text(_("Increase to make the pen waver and wiggle"));
         wiggle_item->set_custom_numeric_menu_data(values, labels);
-        wiggle_item->set_focus_widget(Glib::wrap(GTK_WIDGET(desktop->canvas)));
+        wiggle_item->set_focus_widget(desktop->canvas);
         _wiggle_adj->signal_value_changed().connect(sigc::mem_fun(*this, &CalligraphyToolbar::wiggle_value_changed));
         _widget_map["wiggle"] = G_OBJECT(_wiggle_adj->gobj());
         // ege_adjustment_action_set_appearance( eact, TOOLBAR_SLIDER_HINT );
         add(*wiggle_item);
         wiggle_item->set_sensitive(true);
-    }
-
-    {
-        /* Mass */
-        std::vector<Glib::ustring> labels = {_("(no inertia)"), _("(slight smoothing, default)"), _("(noticeable lagging)"), "", "", _("(maximum inertia)")};
-        std::vector<double>        values = {              0.0,                                2,                        10, 20, 50,                    100};
-        auto mass_val = prefs->getDouble("/tools/calligraphic/mass", 2.0);
-        _mass_adj = Gtk::Adjustment::create(mass_val, 0.0, 100, 1, 10.0);
-        auto mass_item = Gtk::manage(new UI::Widget::SpinButtonToolItem("calligraphy-mass", _("Mass:"), _mass_adj, 1, 0));
-        mass_item->set_tooltip_text(_("Increase to make the pen drag behind, as if slowed by inertia"));
-        mass_item->set_custom_numeric_menu_data(values, labels);
-        mass_item->set_focus_widget(Glib::wrap(GTK_WIDGET(desktop->canvas)));
-        _mass_adj->signal_value_changed().connect(sigc::mem_fun(*this, &CalligraphyToolbar::mass_value_changed));
-        _widget_map["mass"] = G_OBJECT(_mass_adj->gobj());
-        // ege_adjustment_action_set_appearance( eact, TOOLBAR_SLIDER_HINT );
-        add(*mass_item);
-        mass_item->set_sensitive(true);
     }
 
     show_all();
@@ -275,8 +297,12 @@ CalligraphyToolbar::create(SPDesktop *desktop)
 void
 CalligraphyToolbar::width_value_changed()
 {
+    Unit const *unit = _tracker->getActiveUnit();
+    g_return_if_fail(unit != nullptr);
     auto prefs = Inkscape::Preferences::get();
-    prefs->setDouble( "/tools/calligraphic/width", _width_adj->get_value() );
+    _tracker->getCurrentLabel() == "%" ? prefs->setBool("/tools/calligraphic/abs_width", false)
+                                         : prefs->setBool("/tools/calligraphic/abs_width", true);
+    prefs->setDouble("/tools/calligraphic/width", Quantity::convert(_width_adj->get_value(), unit, "px"));
     update_presets_list();
 }
 
@@ -421,7 +447,6 @@ CalligraphyToolbar::build_presets_list()
     auto presets = get_presets_list();
 
     for (auto & preset : presets) {
-        GtkTreeIter iter;
         Glib::ustring preset_name = prefs->getString(preset + "/name");
 
         if (!preset_name.empty()) {
@@ -490,8 +515,20 @@ CalligraphyToolbar::edit_profile()
     save_profile(nullptr);
 }
 
-void
-CalligraphyToolbar::save_profile(GtkWidget * /*widget*/)
+void CalligraphyToolbar::unit_changed(int /* NotUsed */)
+{
+    Unit const *unit = _tracker->getActiveUnit();
+    g_return_if_fail(unit != nullptr);
+    Inkscape::Preferences *prefs = Inkscape::Preferences::get();
+    _tracker->getCurrentLabel() == "%" ? prefs->setBool("/tools/calligraphic/abs_width", false)
+                                        : prefs->setBool("/tools/calligraphic/abs_width", true);
+    prefs->setDouble("/tools/calligraphic/width",
+                     CLAMP(prefs->getDouble("/tools/calligraphic/width"), Quantity::convert(0.001, unit, "px"),
+                           Quantity::convert(100, unit, "px")));
+    prefs->setString("/tools/calligraphic/unit", unit->abbr);
+}
+
+void CalligraphyToolbar::save_profile(GtkWidget * /*widget*/)
 {
     using Inkscape::UI::Dialog::CalligraphicProfileRename;
     Inkscape::Preferences *prefs = Inkscape::Preferences::get();

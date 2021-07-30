@@ -12,11 +12,14 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
-#include "live_effects/lpe-parallel.h"
-#include "object/sp-shape.h"
+#include "lpe-parallel.h"
+
 #include "display/curve.h"
 
-#include "knotholder.h"
+#include "object/sp-shape.h"
+
+#include "ui/knot/knot-holder.h"
+#include "ui/knot/knot-holder-entity.h"
 
 // TODO due to internal breakage in glibmm headers, this must be last:
 #include <glibmm/i18n.h>
@@ -63,13 +66,14 @@ LPEParallel::~LPEParallel()
 void
 LPEParallel::doOnApply (SPLPEItem const* lpeitem)
 {
-    if (!SP_IS_SHAPE(lpeitem)) {
+    auto shape = dynamic_cast<SPShape const *>(lpeitem);
+    if (!shape) {
         g_warning("LPE parallel can only be applied to shapes (not groups).");
         SPLPEItem * item = const_cast<SPLPEItem*>(lpeitem);
         item->removeCurrentPathEffect(false);
         return;
     }
-    SPCurve const *curve = SP_SHAPE(lpeitem)->_curve;
+    SPCurve const *curve = shape->curve();
 
     A = *(curve->first_point());
     B = *(curve->last_point());
@@ -101,12 +105,14 @@ LPEParallel::doEffect_pwd2 (Geom::Piecewise<Geom::D2<Geom::SBasis> > const & pwd
 void LPEParallel::addKnotHolderEntities(KnotHolder *knotholder, SPDesktop *desktop, SPItem *item) {
     {
         KnotHolderEntity *e = new Pl::KnotHolderEntityLeftEnd(this);
-e->create(desktop, item, knotholder, Inkscape::CTRL_TYPE_LPE, _("Adjust the \"left\" end of the parallel"));
-knotholder->add(e);
+        e->create(desktop, item, knotholder, Inkscape::CANVAS_ITEM_CTRL_TYPE_LPE, "LPE:ParallelLeftEnd",
+                  _("Adjust the \"left\" end of the parallel"));
+        knotholder->add(e);
     }
     {
         KnotHolderEntity *e = new Pl::KnotHolderEntityRightEnd(this);
-        e->create(desktop, item, knotholder, Inkscape::CTRL_TYPE_LPE, _("Adjust the \"right\" end of the parallel"));
+        e->create(desktop, item, knotholder, Inkscape::CANVAS_ITEM_CTRL_TYPE_LPE, "LPE:ParallelRightEnd",
+                  _("Adjust the \"right\" end of the parallel"));
         knotholder->add(e);
     }
 };

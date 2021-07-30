@@ -137,8 +137,8 @@ void SvgBuilder::_init() {
 }
 
 void SvgBuilder::setDocumentSize(double width, double height) {
-    sp_repr_set_svg_double(_root, "width", width);
-    sp_repr_set_svg_double(_root, "height", height);
+    _root->setAttributeSvgDouble("width", width);
+    _root->setAttributeSvgDouble("height", height);
     this->_width = width;
     this->_height = height;
 }
@@ -157,7 +157,7 @@ void SvgBuilder::setAsLayer(char *layer_name) {
  * \brief Sets the current container's opacity
  */
 void SvgBuilder::setGroupOpacity(double opacity) {
-    sp_repr_set_svg_double(_container, "opacity", CLAMP(opacity, 0.0, 1.0));
+    _container->setAttributeSvgDouble("opacity", CLAMP(opacity, 0.0, 1.0));
 }
 
 void SvgBuilder::saveState() {
@@ -254,9 +254,7 @@ static gchar *svgConvertGfxRGB(GfxRGB *color) {
 static void svgSetTransform(Inkscape::XML::Node *node, double c0, double c1,
                             double c2, double c3, double c4, double c5) {
     Geom::Affine matrix(c0, c1, c2, c3, c4, c5);
-    gchar *transform_text = sp_svg_transform_write(matrix);
-    node->setAttribute("transform", transform_text);
-    g_free(transform_text);
+    node->setAttributeOrRemoveIfEmpty("transform", sp_svg_transform_write(matrix));
 }
 
 /**
@@ -706,17 +704,15 @@ gchar *SvgBuilder::_createTilingPattern(GfxTilingPattern *tiling_pattern,
         m[5] = p2u[4] * ittm[1] + p2u[5] * ittm[3] + ittm[5];
     }
     Geom::Affine pat_matrix(m[0], m[1], m[2], m[3], m[4], m[5]);
-    gchar *transform_text = sp_svg_transform_write(pat_matrix);
-    pattern_node->setAttribute("patternTransform", transform_text);
-    g_free(transform_text);
+    pattern_node->setAttributeOrRemoveIfEmpty("patternTransform", sp_svg_transform_write(pat_matrix));
     pattern_node->setAttribute("patternUnits", "userSpaceOnUse");
     // Set pattern tiling
     // FIXME: don't ignore XStep and YStep
     const double *bbox = tiling_pattern->getBBox();
-    sp_repr_set_svg_double(pattern_node, "x", 0.0);
-    sp_repr_set_svg_double(pattern_node, "y", 0.0);
-    sp_repr_set_svg_double(pattern_node, "width", bbox[2] - bbox[0]);
-    sp_repr_set_svg_double(pattern_node, "height", bbox[3] - bbox[1]);
+    pattern_node->setAttributeSvgDouble("x", 0.0);
+    pattern_node->setAttributeSvgDouble("y", 0.0);
+    pattern_node->setAttributeSvgDouble("width", bbox[2] - bbox[0]);
+    pattern_node->setAttributeSvgDouble("height", bbox[3] - bbox[1]);
 
     // Convert BBox for PdfParser
     PDFRectangle box;
@@ -774,10 +770,10 @@ gchar *SvgBuilder::_createGradient(GfxShading *shading, double *matrix, bool for
         GfxAxialShading *axial_shading = static_cast<GfxAxialShading*>(shading);
         double x1, y1, x2, y2;
         axial_shading->getCoords(&x1, &y1, &x2, &y2);
-        sp_repr_set_svg_double(gradient, "x1", x1);
-        sp_repr_set_svg_double(gradient, "y1", y1);
-        sp_repr_set_svg_double(gradient, "x2", x2);
-        sp_repr_set_svg_double(gradient, "y2", y2);
+        gradient->setAttributeSvgDouble("x1", x1);
+        gradient->setAttributeSvgDouble("y1", y1);
+        gradient->setAttributeSvgDouble("x2", x2);
+        gradient->setAttributeSvgDouble("y2", y2);
         extend0 = axial_shading->getExtend0();
         extend1 = axial_shading->getExtend1();
         num_funcs = axial_shading->getNFuncs();
@@ -788,11 +784,11 @@ gchar *SvgBuilder::_createGradient(GfxShading *shading, double *matrix, bool for
         double x1, y1, r1, x2, y2, r2;
         radial_shading->getCoords(&x1, &y1, &r1, &x2, &y2, &r2);
         // FIXME: the inner circle's radius is ignored here
-        sp_repr_set_svg_double(gradient, "fx", x1);
-        sp_repr_set_svg_double(gradient, "fy", y1);
-        sp_repr_set_svg_double(gradient, "cx", x2);
-        sp_repr_set_svg_double(gradient, "cy", y2);
-        sp_repr_set_svg_double(gradient, "r", r2);
+        gradient->setAttributeSvgDouble("fx", x1);
+        gradient->setAttributeSvgDouble("fy", y1);
+        gradient->setAttributeSvgDouble("cx", x2);
+        gradient->setAttributeSvgDouble("cy", y2);
+        gradient->setAttributeSvgDouble("r", r2);
         extend0 = radial_shading->getExtend0();
         extend1 = radial_shading->getExtend1();
         num_funcs = radial_shading->getNFuncs();
@@ -809,9 +805,7 @@ gchar *SvgBuilder::_createGradient(GfxShading *shading, double *matrix, bool for
             Geom::Affine flip(1.0, 0.0, 0.0, -1.0, 0.0, Inkscape::Util::Quantity::convert(_height, "px", "pt"));
             pat_matrix *= flip;
         }
-        gchar *transform_text = sp_svg_transform_write(pat_matrix);
-        gradient->setAttribute("gradientTransform", transform_text);
-        g_free(transform_text);
+        gradient->setAttributeOrRemoveIfEmpty("gradientTransform", sp_svg_transform_write(pat_matrix));
     }
 
     if ( extend0 && extend1 ) {
@@ -855,7 +849,7 @@ void SvgBuilder::_addStopToGradient(Inkscape::XML::Node *gradient, double offset
 
     sp_repr_css_change(stop, css, "style");
     sp_repr_css_attr_unref(css);
-    sp_repr_set_css_double(stop, "offset", offset);
+    stop->setAttributeCssDouble("offset", offset);
 
     gradient->appendChild(stop);
     Inkscape::GC::release(stop);
@@ -998,6 +992,7 @@ std::string SvgBuilder::_BestMatchingFont(std::string PDFname)
  * This array holds info about translating font weight names to more or less CSS equivalents
  */
 static char *font_weight_translator[][2] = {
+    // clang-format off
     {(char*) "bold",        (char*) "bold"},
     {(char*) "light",       (char*) "300"},
     {(char*) "black",       (char*) "900"},
@@ -1014,6 +1009,7 @@ static char *font_weight_translator[][2] = {
     {(char*) "ultralight",  (char*) "200"},
     {(char*) "extralight",  (char*) "200"},
     {(char*) "thin",        (char*) "100"}
+    // clang-format on
 };
 
 /**
@@ -1061,8 +1057,7 @@ void SvgBuilder::updateFont(GfxState *state) {
     if (font->getFamily()) { // if font family is explicitly given use it.
         sp_repr_css_set_property(_font_style, "font-family", font->getFamily()->getCString());
     } else { 
-        int attr_value = 1;
-        sp_repr_get_int(_preferences, "localFonts", &attr_value);
+        int attr_value = _preferences->getAttributeInt("localFonts", 1);
         if (attr_value != 0) {
             // Find the font that best matches the stripped down (orig)name (Bug LP #179589).
             sp_repr_css_set_property(_font_style, "font-family", _BestMatchingFont(font_family).c_str());
@@ -1253,9 +1248,7 @@ void SvgBuilder::_flushText() {
     Geom::Affine text_transform(_text_matrix);
     text_transform[4] = first_glyph.position[0];
     text_transform[5] = first_glyph.position[1];
-    gchar *transform = sp_svg_transform_write(text_transform);
-    text_node->setAttribute("transform", transform);
-    g_free(transform);
+    text_node->setAttributeOrRemoveIfEmpty("transform", sp_svg_transform_write(text_transform));
 
     bool new_tspan = true;
     bool same_coords[2] = {true, true};
@@ -1269,7 +1262,7 @@ void SvgBuilder::_flushText() {
     // Output all buffered glyphs
     while (true) {
         const SvgGlyph& glyph = (*i);
-        std::vector<SvgGlyph>::iterator prev_iterator = i - 1;
+        auto prev_iterator = (i == _glyphs.begin()) ? _glyphs.end() : (i-1);
         // Check if we need to make a new tspan
         if (glyph.style_changed) {
             new_tspan = true;
@@ -1288,12 +1281,12 @@ void SvgBuilder::_flushText() {
             if (tspan_node) {
                 // Set the x and y coordinate arrays
                 if ( same_coords[0] ) {
-                    sp_repr_set_svg_double(tspan_node, "x", last_delta_pos[0]);
+                    tspan_node->setAttributeSvgDouble("x", last_delta_pos[0]);
                 } else {
                     tspan_node->setAttributeOrRemoveIfEmpty("x", x_coords);
                 }
                 if ( same_coords[1] ) {
-                    sp_repr_set_svg_double(tspan_node, "y", last_delta_pos[1]);
+                    tspan_node->setAttributeSvgDouble("y", last_delta_pos[1]);
                 } else {
                     tspan_node->setAttributeOrRemoveIfEmpty("y", y_coords);
                 }
@@ -1335,7 +1328,7 @@ void SvgBuilder::_flushText() {
             }
             new_tspan = false;
         }
-        if ( glyphs_in_a_row > 0 ) {
+        if ( glyphs_in_a_row > 0 && i != _glyphs.begin() ) {
             x_coords.append(" ");
             y_coords.append(" ");
             // Check if we have the same coordinates
@@ -1393,6 +1386,13 @@ void SvgBuilder::addChar(GfxState *state, double x, double y,
                          double originX, double originY,
                          CharCode /*code*/, int /*nBytes*/, Unicode const *u, int uLen) {
 
+    // Skip control characters, found in LaTeX generated PDFs
+    // https://gitlab.com/inkscape/inkscape/-/issues/1369
+    if (uLen > 0 && u[0] < 0x80 && g_ascii_iscntrl(u[0]) && !g_ascii_isspace(u[0])) {
+        g_warning("Skipping ASCII control character %u", u[0]);
+        _text_position += Geom::Point(dx, dy);
+        return;
+    }
 
     bool is_space = ( uLen == 1 && u[0] == 32 );
     // Skip beginning space
@@ -1520,8 +1520,7 @@ Inkscape::XML::Node *SvgBuilder::_createImage(Stream *str, int width, int height
         return nullptr;
     }
     // Decide whether we should embed this image
-    int attr_value = 1;
-    sp_repr_get_int(_preferences, "embedImages", &attr_value);
+    int attr_value = _preferences->getAttributeInt("embedImages", 1);
     bool embed_image = ( attr_value != 0 );
     // Set read/write functions
     std::vector<guchar> png_buffer;
@@ -1666,8 +1665,8 @@ Inkscape::XML::Node *SvgBuilder::_createImage(Stream *str, int width, int height
 
     // Create repr
     Inkscape::XML::Node *image_node = _xml_doc->createElement("svg:image");
-    sp_repr_set_svg_double(image_node, "width", 1);
-    sp_repr_set_svg_double(image_node, "height", 1);
+    image_node->setAttributeSvgDouble("width", 1);
+    image_node->setAttributeSvgDouble("height", 1);
     if( !interpolate ) {
         SPCSSAttr *css = sp_repr_css_attr_new();
         // This should be changed after CSS4 Images widely supported.
@@ -1707,10 +1706,10 @@ Inkscape::XML::Node *SvgBuilder::_createImage(Stream *str, int width, int height
 Inkscape::XML::Node *SvgBuilder::_createMask(double width, double height) {
     Inkscape::XML::Node *mask_node = _xml_doc->createElement("svg:mask");
     mask_node->setAttribute("maskUnits", "userSpaceOnUse");
-    sp_repr_set_svg_double(mask_node, "x", 0.0);
-    sp_repr_set_svg_double(mask_node, "y", 0.0);
-    sp_repr_set_svg_double(mask_node, "width", width);
-    sp_repr_set_svg_double(mask_node, "height", height);
+    mask_node->setAttributeSvgDouble("x", 0.0);
+    mask_node->setAttributeSvgDouble("y", 0.0);
+    mask_node->setAttributeSvgDouble("width", width);
+    mask_node->setAttributeSvgDouble("height", height);
     // Append mask to defs
     if (_is_top_level) {
         _doc->getDefs()->getRepr()->appendChild(mask_node);
@@ -1752,10 +1751,10 @@ void SvgBuilder::addImageMask(GfxState *state, Stream *str, int width, int heigh
 
     // Create a rectangle
     Inkscape::XML::Node *rect = _xml_doc->createElement("svg:rect");
-    sp_repr_set_svg_double(rect, "x", 0.0);
-    sp_repr_set_svg_double(rect, "y", 0.0);
-    sp_repr_set_svg_double(rect, "width", 1.0);
-    sp_repr_set_svg_double(rect, "height", 1.0);
+    rect->setAttributeSvgDouble("x", 0.0);
+    rect->setAttributeSvgDouble("y", 0.0);
+    rect->setAttributeSvgDouble("width", 1.0);
+    rect->setAttributeSvgDouble("height", 1.0);
     svgSetTransform(rect, 1.0, 0.0, 0.0, -1.0, 0.0, 1.0);
     // Get current fill style and set it on the rectangle
     SPCSSAttr *css = sp_repr_css_attr_new();
@@ -1802,9 +1801,7 @@ void SvgBuilder::addMaskedImage(GfxState *state, Stream *str, int width, int hei
         mask_node->appendChild(mask_image_node);
         // Scale the mask to the size of the image
         Geom::Affine mask_transform((double)width, 0.0, 0.0, (double)height, 0.0, 0.0);
-        gchar *transform_text = sp_svg_transform_write(mask_transform);
-        mask_node->setAttribute("maskTransform", transform_text);
-        g_free(transform_text);
+        mask_node->setAttributeOrRemoveIfEmpty("maskTransform", sp_svg_transform_write(mask_transform));
         // Set mask and add image
         gchar *mask_url = g_strdup_printf("url(#%s)", mask_node->attribute("id"));
         image_node->setAttribute("mask", mask_url);

@@ -26,10 +26,15 @@ namespace Widget {
 /**
  * Adds a label with optional icon or suffix to another widget.
  */
-class Labelled : public Gtk::HBox
+class Labelled : public Gtk::Box
 {
-public:
+protected:
+    Gtk::Widget  *_widget;
+    Gtk::Label   *_label;
+    Gtk::Label   *_suffix;
+    Gtk::Image   *_icon;
 
+public:
     /**
      * Construct a Labelled Widget.
      *
@@ -52,7 +57,8 @@ public:
      * Allow the setting of the width of the labelled widget
      */
     void setWidgetSizeRequest(int width, int height);
-    Gtk::Widget const *getWidget() const;
+
+    inline decltype(_widget) getWidget() const { return _widget; }
     Gtk::Label const *getLabel() const;
 
     void setLabelText(const Glib::ustring &str);
@@ -62,13 +68,6 @@ public:
 
 private:
     bool on_mnemonic_activate( bool group_cycling ) override;
-
-protected:
-
-    Gtk::Widget  *_widget;
-    Gtk::Label   *_label;
-    Gtk::Label   *_suffix;
-    Gtk::Image   *_icon;
 };
 
 } // namespace Widget

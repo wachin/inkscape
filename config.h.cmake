@@ -23,20 +23,11 @@
 /* Use AutoPackage? */
 #cmakedefine ENABLE_BINRELOC 1
 
-/* define to 1 if you have lcms version 2.x */
-#cmakedefine HAVE_LIBLCMS2 1
-
 /* always defined to indicate that i18n is enabled */
 #cmakedefine ENABLE_NLS 1
 
-/* Build with OSX .app data dir paths? */
-#cmakedefine ENABLE_OSX_APP_LOCATIONS 1
-
 /* Whether the Cairo PDF backend is available */
 #cmakedefine PANGO_ENABLE_ENGINE 1
-
-/* Build with GDL 3.6 or higher */
-#cmakedefine WITH_GDL_3_6 1
 
 /* Define to 1 if you have the <ieeefp.h> header file. */
 #cmakedefine HAVE_IEEEFP_H 1
@@ -49,9 +40,6 @@
 
 /* Use OpenMP (via cmake) */
 #cmakedefine HAVE_OPENMP 1
-
-/* Use aspell for built-in spellchecker */
-#cmakedefine HAVE_ASPELL 1
 
 /* Use libpoppler for direct PDF import */
 #cmakedefine HAVE_POPPLER 1
@@ -80,8 +68,8 @@
 /* Build in dbus */
 #cmakedefine WITH_DBUS 1
 
-/* enable gtk spelling widget */
-#cmakedefine WITH_GTKSPELL 1
+/* enable gtk spelling widget and built-in spellchecker */
+#cmakedefine WITH_GSPELL 1
 
 /* Image/Graphics Magick++ support for bitmap effects */
 #cmakedefine WITH_MAGICK 1
@@ -92,23 +80,14 @@
 /* Build in libcdr */
 #cmakedefine WITH_LIBCDR 1
 
-/* Build using libcdr 0.1.x */
-#cmakedefine WITH_LIBCDR01 1
-
 /* Build in libvisio */
 #cmakedefine WITH_LIBVISIO 1
-
-/* Build using libvisio 0.1.x */
-#cmakedefine WITH_LIBVISIO01 1
 
 /* Build in libwpg */
 #cmakedefine WITH_LIBWPG 1
 
-/* Build in libwpg-0.2 */
-#cmakedefine WITH_LIBWPG02 1
-
-/* Build in libwpg-0.3 */
-#cmakedefine WITH_LIBWPG03 1
+/* Build in libreadline */
+#cmakedefine WITH_GNU_READLINE 1
 
 /* Define to 1 if your processor stores words with the most significant byte
    first (like Motorola and SPARC, unlike Intel and VAX). */

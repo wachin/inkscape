@@ -12,14 +12,6 @@
 
 #include "line-geometry.h"
 #include "desktop.h"
-#include "desktop-style.h"
-
-#include "display/sp-canvas.h"
-#include "display/sp-ctrlline.h"
-#include "display/sodipodi-ctrl.h"
-#include "ui/control-manager.h"
-
-using Inkscape::ControlManager;
 
 namespace Box3D {
 
@@ -44,9 +36,9 @@ Line::Line(Line const &line)
 
 Line &Line::operator=(Line const &line) = default;
 
-boost::optional<Geom::Point> Line::intersect(Line const &line) {
+std::optional<Geom::Point> Line::intersect(Line const &line) {
     Geom::Coord denom = Geom::dot(v_dir, line.normal);
-    boost::optional<Geom::Point> no_point;
+    std::optional<Geom::Point> no_point;
     if (fabs(denom) < 1e-6)
         return no_point;
 
@@ -64,7 +56,7 @@ void Line::set_direction(Geom::Point const &dir)
 Geom::Point Line::closest_to(Geom::Point const &pt)
 {
 	/* return the intersection of this line with a perpendicular line passing through pt */ 
-    boost::optional<Geom::Point> result = this->intersect(Line(pt, (this->v_dir).ccw(), false));
+    std::optional<Geom::Point> result = this->intersect(Line(pt, (this->v_dir).ccw(), false));
     g_return_val_if_fail (result, Geom::Point (0.0, 0.0));
     return *result;
 }
@@ -170,42 +162,18 @@ side_of_intersection (Geom::Point const &A, Geom::Point const &B, Geom::Point co
     }
 }
 
-boost::optional<Geom::Point> Line::intersection_with_viewbox (SPDesktop *desktop)
+std::optional<Geom::Point> Line::intersection_with_viewbox (SPDesktop *desktop)
 {
-    Geom::Rect vb = desktop->get_display_area();
-    /* remaining viewbox corners */
-    Geom::Point ul (vb.min()[Geom::X], vb.max()[Geom::Y]);
-    Geom::Point lr (vb.max()[Geom::X], vb.min()[Geom::Y]);
+    auto vb = desktop->get_display_area();
 
-    std::pair <Geom::Point, Geom::Point> e = side_of_intersection (vb.min(), lr, vb.max(), ul, this->pt, this->v_dir);
+    std::pair <Geom::Point, Geom::Point> e = side_of_intersection (vb.corner(0), vb.corner(1), vb.corner(2), vb.corner(3), this->pt, this->v_dir);
     if (e.first == e.second) {
         // perspective line lies outside the canvas
-        return boost::optional<Geom::Point>();
+        return std::optional<Geom::Point>();
     }
 
     Line line (e.first, e.second);
     return this->intersect (line);
-}
-
-void create_canvas_point(Geom::Point const &pos, unsigned int size, guint32 rgba)
-{
-    SPDesktop *desktop = SP_ACTIVE_DESKTOP;
-    SPCanvasItem * canvas_pt = sp_canvas_item_new(desktop->getControls(), SP_TYPE_CTRL,
-                          "size", size,
-                          "filled", 1,
-                          "fill_color", rgba,
-                          "stroked", 1,
-                          "stroke_color", 0x000000ff,
-                          NULL);
-    SP_CTRL(canvas_pt)->moveto(pos);
-}
-
-void create_canvas_line(Geom::Point const &p1, Geom::Point const &p2, guint32 rgba)
-{
-    SPDesktop *desktop = SP_ACTIVE_DESKTOP;
-    SPCtrlLine *line = ControlManager::getManager().createControlLine(desktop->getControls(), p1, p2);
-    line->setRgba32(rgba);
-    sp_canvas_item_show(line);
 }
 
 } // namespace Box3D 

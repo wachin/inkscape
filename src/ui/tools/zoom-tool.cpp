@@ -15,16 +15,13 @@
 
 #include <gdk/gdkkeysyms.h>
 
-#include "include/macros.h"
-#include "rubberband.h"
-#include "display/sp-canvas-item.h"
-#include "display/sp-canvas-util.h"
+#include "zoom-tool.h"
+
 #include "desktop.h"
-#include "ui/pixmaps/cursor-zoom.xpm"
-#include "ui/pixmaps/cursor-zoom-out.xpm"
+#include "rubberband.h"
 #include "selection-chemistry.h"
 
-#include "ui/tools/zoom-tool.h"
+#include "include/macros.h"
 
 namespace Inkscape {
 namespace UI {
@@ -37,8 +34,7 @@ const std::string& ZoomTool::getPrefsPath() {
 const std::string ZoomTool::prefsPath = "/tools/zoom";
 
 ZoomTool::ZoomTool()
-    : ToolBase(cursor_zoom_xpm)
-    , grabbed(nullptr)
+    : ToolBase("zoom-in.svg")
     , escaped(false)
 {
 }
@@ -46,12 +42,9 @@ ZoomTool::ZoomTool()
 ZoomTool::~ZoomTool() = default;
 
 void ZoomTool::finish() {
-	this->enableGrDrag(false);
-	
-    if (this->grabbed) {
-        sp_canvas_item_ungrab(this->grabbed);
-        this->grabbed = nullptr;
-    }
+    this->enableGrDrag(false);
+
+    ungrabCanvasEvents();
 
     ToolBase::finish();
 }
@@ -84,7 +77,7 @@ bool ZoomTool::root_handler(GdkEvent* event) {
             Geom::Point const button_w(event->button.x, event->button.y);
             Geom::Point const button_dt(desktop->w2d(button_w));
 
-            if (event->button.button == 1 && !this->space_panning) {
+            if (event->button.button == 1) {
                 // save drag origin
                 xp = (gint) event->button.x;
                 yp = (gint) event->button.y;
@@ -100,22 +93,20 @@ bool ZoomTool::root_handler(GdkEvent* event) {
                                        ? zoom_inc
                                        : 1 / zoom_inc );
 
-                desktop->zoom_relative_keep_point(button_dt, zoom_rel);
+                desktop->zoom_relative(button_dt, zoom_rel);
                 ret = true;
             }
 
-            sp_canvas_item_grab(SP_CANVAS_ITEM(desktop->acetate),
-                                GDK_KEY_PRESS_MASK      | GDK_KEY_RELEASE_MASK |
-                                GDK_BUTTON_PRESS_MASK   | GDK_BUTTON_RELEASE_MASK |
-                                GDK_POINTER_MOTION_MASK | GDK_POINTER_MOTION_HINT_MASK,
-                                nullptr, event->button.time);
-
-            this->grabbed = SP_CANVAS_ITEM(desktop->acetate);
+            grabCanvasEvents(Gdk::KEY_PRESS_MASK      |
+                             Gdk::KEY_RELEASE_MASK    |
+                             Gdk::BUTTON_PRESS_MASK   |
+                             Gdk::BUTTON_RELEASE_MASK |
+                             Gdk::POINTER_MOTION_MASK );
             break;
         }
 
 	case GDK_MOTION_NOTIFY:
-            if ((event->motion.state & GDK_BUTTON1_MASK) && !this->space_panning) {
+            if ((event->motion.state & GDK_BUTTON1_MASK)) {
                 ret = true;
 
                 if ( within_tolerance
@@ -140,7 +131,7 @@ bool ZoomTool::root_handler(GdkEvent* event) {
             Geom::Point const button_w(event->button.x, event->button.y);
             Geom::Point const button_dt(desktop->w2d(button_w));
 
-            if ( event->button.button == 1  && !this->space_panning) {
+            if ( event->button.button == 1) {
                 Geom::OptRect const b = Inkscape::Rubberband::get(desktop)->getRectangle();
 
                 if (b && !within_tolerance && !(GDK_SHIFT_MASK & event->button.state) ) {
@@ -150,18 +141,15 @@ bool ZoomTool::root_handler(GdkEvent* event) {
                                            ? 1 / zoom_inc
                                            : zoom_inc );
 
-                    desktop->zoom_relative_keep_point(button_dt, zoom_rel);
+                    desktop->zoom_relative(button_dt, zoom_rel);
                 }
 
                 ret = true;
             }
 
             Inkscape::Rubberband::get(desktop)->stop();
-			
-            if (this->grabbed) {
-                sp_canvas_item_ungrab(this->grabbed);
-                this->grabbed = nullptr;
-            }
+
+            ungrabCanvasEvents();
 			
             xp = yp = 0;
             escaped = false;
@@ -191,7 +179,7 @@ bool ZoomTool::root_handler(GdkEvent* event) {
 
                 case GDK_KEY_Shift_L:
                 case GDK_KEY_Shift_R:
-                    this->cursor_shape = cursor_zoom_out_xpm;
+                    cursor_filename = "zoom-out.svg";
                     this->sp_event_context_update_cursor();
                     break;
 
@@ -209,7 +197,7 @@ bool ZoomTool::root_handler(GdkEvent* event) {
             switch (get_latin_keyval (&event->key)) {
             	case GDK_KEY_Shift_L:
             	case GDK_KEY_Shift_R:
-                    this->cursor_shape = cursor_zoom_xpm;
+                    cursor_filename = "zoom-in.svg";
                     this->sp_event_context_update_cursor();
                     break;
             	default:

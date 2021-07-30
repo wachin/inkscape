@@ -36,9 +36,9 @@
 
 #include "svg/css-ostringstream.h"
 
-#include "ui/contextmenu.h"
 #include "ui/icon-loader.h"
 #include "ui/icon-names.h"
+#include "ui/desktop/menu-icon-shift.h"
 #include "ui/tools/tool-base.h"
 #include "ui/widget/imagetoggler.h"
 
@@ -88,9 +88,9 @@ void LayersPanel::_styleButton( Gtk::Button& btn, SPDesktop *desktop, unsigned i
     bool set = false;
 
     if ( iconName ) {
-        GtkWidget *child = sp_get_icon_image(iconName, GTK_ICON_SIZE_SMALL_TOOLBAR);
-        gtk_widget_show( child );
-        btn.add( *Gtk::manage(Glib::wrap(child)) );
+        auto child = Glib::wrap(sp_get_icon_image(iconName, GTK_ICON_SIZE_SMALL_TOOLBAR));
+        child->show();
+        btn.add(*child);
         btn.set_relief(Gtk::RELIEF_NONE);
         set = true;
     }
@@ -100,9 +100,9 @@ void LayersPanel::_styleButton( Gtk::Button& btn, SPDesktop *desktop, unsigned i
         if ( verb ) {
             SPAction *action = verb->get_action(Inkscape::ActionContext(desktop));
             if ( !set && action && action->image ) {
-                GtkWidget *child = sp_get_icon_image(action->image, GTK_ICON_SIZE_SMALL_TOOLBAR);
-                gtk_widget_show( child );
-                btn.add( *Gtk::manage(Glib::wrap(child)) );
+                auto child = Glib::wrap(sp_get_icon_image(action->image, GTK_ICON_SIZE_SMALL_TOOLBAR));
+                child->show();
+                btn.add(*child);
                 set = true;
             }
 
@@ -150,10 +150,10 @@ Gtk::MenuItem& LayersPanel::_addPopupItem( SPDesktop *desktop, unsigned int code
 
 void LayersPanel::_fireAction( unsigned int code )
 {
-    if ( _desktop ) {
+    if (auto desktop = getDesktop()) {
         Verb *verb = Verb::get( code );
         if ( verb ) {
-            SPAction *action = verb->get_action(Inkscape::ActionContext(_desktop));
+            SPAction *action = verb->get_action(Inkscape::ActionContext(desktop));
             if ( action ) {
                 sp_action_perform( action, nullptr );
 //             } else {
@@ -182,11 +182,12 @@ void LayersPanel::_takeAction( int val )
 bool LayersPanel::_executeAction()
 {
     // Make sure selected layer hasn't changed since the action was triggered
+    auto desktop = getDesktop();
     if ( _pending
          && (
              (_pending->_actionCode == BUTTON_NEW || _pending->_actionCode == DRAGNDROP)
-             || !( (_desktop && _desktop->currentLayer())
-                   && (_desktop->currentLayer() != _pending->_target)
+             || !( (desktop && desktop->currentLayer())
+                   && (desktop->currentLayer() != _pending->_target)
                  )
              )
         ) {
@@ -325,7 +326,8 @@ bool LayersPanel::_checkForUpdated(const Gtk::TreePath &/*path*/, const Gtk::Tre
 }
 
 void LayersPanel::_selectLayer( SPObject *layer ) {
-    if ( !layer || (_desktop && _desktop->doc() && (layer == _desktop->doc()->getRoot())) ) {
+    auto document = getDocument();
+    if (!layer || (document && (layer == document->getRoot()))) {
         if ( _tree.get_selection()->count_selected_rows() != 0 ) {
             _tree.get_selection()->unselect_all();
         }
@@ -357,15 +359,12 @@ bool LayersPanel::_checkForSelected(const Gtk::TreePath &path, const Gtk::TreeIt
 
 void LayersPanel::_layersChanged()
 {
-//    g_message("_layersChanged()");
-    if (_desktop) {
-        SPDocument* document = _desktop->doc();
-        g_return_if_fail(document != nullptr); // bug #158: Crash on File>Quit
-        SPRoot* root = document->getRoot();
-        if ( root ) {
+    if (auto document = getDocument()) {
+        if (auto root = document->getRoot()) {
             _selectedConnection.block();
-            if ( _desktop->layer_manager && _desktop->layer_manager->includes( root ) ) {
-                SPObject* target = _desktop->currentLayer();
+            auto desktop = getDesktop();
+            if (desktop->layer_manager && desktop->layer_manager->includes( root ) ) {
+                SPObject* target = desktop->currentLayer();
                 _store->clear();
 
     #if DUMP_LAYERS
@@ -380,10 +379,11 @@ void LayersPanel::_layersChanged()
 
 void LayersPanel::_addLayer( SPDocument* doc, SPObject* layer, Gtk::TreeModel::Row* parentRow, SPObject* target, int level )
 {
-    if ( _desktop && _desktop->layer_manager && layer && (level < _maxNestDepth) ) {
-        unsigned int counter = _desktop->layer_manager->childCount(layer);
+    auto desktop = getDesktop();
+    if (desktop && desktop->layer_manager && layer && (level < _maxNestDepth) ) {
+        unsigned int counter = desktop->layer_manager->childCount(layer);
         for ( unsigned int i = 0; i < counter; i++ ) {
-            SPObject *child = _desktop->layer_manager->nthChildOf(layer, i);
+            SPObject *child = desktop->layer_manager->nthChildOf(layer, i);
             if ( child ) {
 #if DUMP_LAYERS
                 g_message(" %3d    layer:%p  {%s}   [%s]", level, child, child->getId(), child->label() );
@@ -426,16 +426,16 @@ SPObject* LayersPanel::_selectedLayer()
 
 void LayersPanel::_pushTreeSelectionToCurrent()
 {
-    // TODO hunt down the possible API abuse in getting NULL
-    if ( _desktop && _desktop->layer_manager && _desktop->currentRoot() ) {
+    auto desktop = getDesktop();
+    if (desktop && desktop->layer_manager && desktop->currentRoot() ) {
         SPObject* inTree = _selectedLayer();
         if ( inTree ) {
-            SPObject* curr = _desktop->currentLayer();
-            if ( curr != inTree ) {
-                _desktop->layer_manager->setCurrentLayer( inTree );
+            SPObject* curr = desktop->currentLayer();
+            if (curr != inTree) {
+                desktop->layer_manager->setCurrentLayer(inTree);
             }
         } else {
-            _desktop->layer_manager->setCurrentLayer( _desktop->doc()->getRoot() );
+            desktop->layer_manager->setCurrentLayer(getDocument()->getRoot());
         }
     }
 }
@@ -485,8 +485,6 @@ void LayersPanel::_preToggle( GdkEvent const *event )
 
 void LayersPanel::_toggled( Glib::ustring const& str, int targetCol )
 {
-    g_return_if_fail(_desktop != nullptr);
-
     Gtk::TreeModel::Children::iterator iter = _tree.get_model()->get_iter(str);
     Gtk::TreeModel::Row row = *iter;
 
@@ -494,7 +492,8 @@ void LayersPanel::_toggled( Glib::ustring const& str, int targetCol )
 
     SPObject* obj = row[_model->_colObject];
     SPItem* item = ( obj && SP_IS_ITEM(obj) ) ? SP_ITEM(obj) : nullptr;
-    if ( item ) {
+
+    if (getDocument() && item) {
         switch ( targetCol ) {
             case COL_VISIBLE:
             {
@@ -502,8 +501,7 @@ void LayersPanel::_toggled( Glib::ustring const& str, int targetCol )
                 row[_model->_colVisible] = newValue;
                 item->setHidden( !newValue  );
                 item->updateRepr();
-                DocumentUndo::done( _desktop->doc() , SP_VERB_DIALOG_LAYERS,
-                                    newValue? _("Unhide layer") : _("Hide layer"));
+                DocumentUndo::done(getDocument(), SP_VERB_DIALOG_LAYERS, newValue? _("Unhide layer") : _("Hide layer"));
             }
             break;
 
@@ -513,18 +511,19 @@ void LayersPanel::_toggled( Glib::ustring const& str, int targetCol )
                 row[_model->_colLocked] = newValue;
                 item->setLocked( newValue );
                 item->updateRepr();
-                DocumentUndo::done( _desktop->doc() , SP_VERB_DIALOG_LAYERS,
-                                    newValue? _("Lock layer") : _("Unlock layer"));
+                DocumentUndo::done(getDocument(), SP_VERB_DIALOG_LAYERS, newValue? _("Lock layer") : _("Unlock layer"));
             }
             break;
         }
     }
-    Inkscape::SelectionHelper::fixSelection(_desktop);
+    Inkscape::SelectionHelper::fixSelection(getDesktop());
 }
 
 bool LayersPanel::_handleButtonEvent(GdkEventButton* event)
 {
     static unsigned doubleclick = 0;
+    auto document = getDocument();
+    auto desktop = getDesktop();
 
     if ( (event->type == GDK_BUTTON_PRESS) && (event->button == 3) ) {
         // TODO - fix to a better is-popup function
@@ -580,17 +579,16 @@ bool LayersPanel::_handleButtonEvent(GdkEventButton* event)
                     Gtk::TreeModel::Row row = *iter;
                     SPObject *obj = row[_model->_colObject];
                     if (col == _tree.get_column(COL_VISIBLE - 1)) {
-                        _desktop->toggleLayerSolo( obj );
-                        DocumentUndo::maybeDone(_desktop->doc(), "layer:solo", SP_VERB_LAYER_SOLO, _("Toggle layer solo"));
+                        desktop->toggleLayerSolo( obj );
+                        DocumentUndo::maybeDone(document, "layer:solo", SP_VERB_LAYER_SOLO, _("Toggle layer solo"));
                     } else if (col == _tree.get_column(COL_LOCKED - 1)) {
-                        _desktop->toggleLockOtherLayers( obj );
-                        DocumentUndo::maybeDone(_desktop->doc(), "layer:lockothers", SP_VERB_LAYER_LOCK_OTHERS, _("Lock other layers"));
+                        desktop->toggleLockOtherLayers(obj);
+                        DocumentUndo::maybeDone(document, "layer:lockothers", SP_VERB_LAYER_LOCK_OTHERS, _("Lock other layers"));
                     }
                 }
             }
         }
     }
-
 
     if ( (event->type == GDK_2BUTTON_PRESS) && (event->button == 1) ) {
         doubleclick = 1;
@@ -658,9 +656,9 @@ bool LayersPanel::_handleDragDrop(const Glib::RefPtr<Gdk::DragContext>& /*contex
 void LayersPanel::_doTreeMove( )
 {
     if (_dnd_source &&  _dnd_source->getRepr() ) {
-        if(!_dnd_target){
+        if (!_dnd_target) {
             _dnd_source->doWriteTransform(_dnd_source->i2doc_affine() * _dnd_source->document->getRoot()->i2doc_affine().inverse());
-        }else{
+        } else {
             SPItem* parent = _dnd_into ? _dnd_target : dynamic_cast<SPItem*>(_dnd_target->parent);
             if(parent){
                 Geom::Affine move = _dnd_source->i2doc_affine() * parent->i2doc_affine().inverse();
@@ -670,8 +668,7 @@ void LayersPanel::_doTreeMove( )
         _dnd_source->moveTo(_dnd_target, _dnd_into);
         _selectLayer(_dnd_source);
         _dnd_source = nullptr;
-        DocumentUndo::done( _desktop->doc() , SP_VERB_NONE,
-                                            _("Move layer"));
+        DocumentUndo::done(getDocument(), SP_VERB_NONE, _("Move layer"));
     }
 }
 
@@ -686,14 +683,14 @@ void LayersPanel::_handleEdited(const Glib::ustring& path, const Glib::ustring& 
 
 void LayersPanel::_renameLayer(Gtk::TreeModel::Row row, const Glib::ustring& name)
 {
-    if ( row && _desktop && _desktop->layer_manager) {
+    auto desktop = getDesktop();
+    if (row && desktop && desktop->layer_manager) {
         SPObject* obj = row[_model->_colObject];
-        if ( obj ) {
+        if (obj) {
             gchar const* oldLabel = obj->label();
             if ( !name.empty() && (!oldLabel || name != oldLabel) ) {
-                _desktop->layer_manager->renameLayer( obj, name.c_str(), FALSE );
-                DocumentUndo::done( _desktop->doc() , SP_VERB_NONE,
-                                                    _("Rename layer"));
+                desktop->layer_manager->renameLayer( obj, name.c_str(), FALSE );
+                DocumentUndo::done(getDocument(), SP_VERB_NONE, _("Rename layer"));
             }
 
         }
@@ -731,20 +728,18 @@ bool LayersPanel::_rowSelectFunction( Glib::RefPtr<Gtk::TreeModel> const & /*mod
 /**
  * Constructor
  */
-LayersPanel::LayersPanel() :
-    UI::Widget::Panel("/dialogs/layers", SP_VERB_DIALOG_LAYERS),
-    deskTrack(),
-    _maxNestDepth(20),
-    _desktop(nullptr),
-    _model(nullptr),
-    _pending(nullptr),
-    _toggleEvent(nullptr),
-    _compositeSettings(SP_VERB_DIALOG_LAYERS, "layers",
-                       UI::Widget::SimpleFilterModifier::ISOLATION |
-                       UI::Widget::SimpleFilterModifier::BLEND |
-                       UI::Widget::SimpleFilterModifier::OPACITY |
-                       UI::Widget::SimpleFilterModifier::BLUR),
-    desktopChangeConn()
+LayersPanel::LayersPanel()
+    : DialogBase("/dialogs/layers", "Layers")
+    , _maxNestDepth(20)
+    , _model(nullptr)
+    , _pending(nullptr)
+    , _toggleEvent(nullptr)
+    , _compositeSettings(SP_VERB_DIALOG_LAYERS, "layers",
+                         UI::Widget::SimpleFilterModifier::ISOLATION |
+                         UI::Widget::SimpleFilterModifier::BLEND |
+                         UI::Widget::SimpleFilterModifier::OPACITY |
+                         UI::Widget::SimpleFilterModifier::BLUR)
+    , _layersPage(Gtk::ORIENTATION_VERTICAL)
 {
     Inkscape::Preferences *prefs = Inkscape::Preferences::get();
     _maxNestDepth = prefs->getIntLimited("/dialogs/layers/maxDepth", 20, 1, 1000);
@@ -761,7 +756,7 @@ LayersPanel::LayersPanel() :
 
     Inkscape::UI::Widget::ImageToggler *eyeRenderer = Gtk::manage( new Inkscape::UI::Widget::ImageToggler(
         INKSCAPE_ICON("object-visible"), INKSCAPE_ICON("object-hidden")) );
-    int visibleColNum = _tree.append_column("vis", *eyeRenderer) - 1;
+    int visibleColNum = _tree.append_column("V", *eyeRenderer) - 1;
     eyeRenderer->signal_pre_toggle().connect( sigc::mem_fun(*this, &LayersPanel::_preToggle) );
     eyeRenderer->signal_toggled().connect( sigc::bind( sigc::mem_fun(*this, &LayersPanel::_toggled), (int)COL_VISIBLE) );
     eyeRenderer->property_activatable() = true;
@@ -773,7 +768,7 @@ LayersPanel::LayersPanel() :
 
     Inkscape::UI::Widget::ImageToggler * renderer = Gtk::manage( new Inkscape::UI::Widget::ImageToggler(
         INKSCAPE_ICON("object-locked"), INKSCAPE_ICON("object-unlocked")) );
-    int lockedColNum = _tree.append_column("lock", *renderer) - 1;
+    int lockedColNum = _tree.append_column("L", *renderer) - 1;
     renderer->signal_pre_toggle().connect( sigc::mem_fun(*this, &LayersPanel::_preToggle) );
     renderer->signal_toggled().connect( sigc::bind( sigc::mem_fun(*this, &LayersPanel::_toggled), (int)COL_LOCKED) );
     renderer->property_activatable() = true;
@@ -789,7 +784,8 @@ LayersPanel::LayersPanel() :
 
     _tree.set_expander_column( *_tree.get_column(nameColNum) );
     _tree.set_search_column(nameColNum + 1);
-	
+    _tree.set_enable_search(false);
+
     _compositeSettings.setSubject(&_subject);
 
     _selectedConnection = _tree.get_selection()->signal_changed().connect( sigc::mem_fun(*this, &LayersPanel::_pushTreeSelectionToCurrent) );
@@ -821,9 +817,10 @@ LayersPanel::LayersPanel() :
     _layersPage.pack_end(_compositeSettings, Gtk::PACK_SHRINK);
     _layersPage.pack_end(_buttonsRow, Gtk::PACK_SHRINK);
 
-    _getContents()->pack_start(_layersPage, Gtk::PACK_EXPAND_WIDGET);
+    pack_start(_layersPage, Gtk::PACK_EXPAND_WIDGET);
 
-    SPDesktop* targetDesktop = getDesktop();
+    // This is wrong, because Desktop may change at any time.
+    SPDesktop *targetDesktop = dynamic_cast<SPDesktop *>(getApp()->get_active_view());
 
     Gtk::Button* btn = Gtk::manage( new Gtk::Button() );
     _styleButton( *btn, targetDesktop, SP_VERB_LAYER_NEW, INKSCAPE_ICON("list-add"), C_("Layers", "New") );
@@ -835,19 +832,19 @@ LayersPanel::LayersPanel() :
     btn->signal_clicked().connect( sigc::bind( sigc::mem_fun(*this, &LayersPanel::_takeAction), (int)BUTTON_BOTTOM) );
     _watchingNonBottom.push_back( btn );
     _buttonsPrimary.pack_end(*btn, Gtk::PACK_SHRINK);
-    
+
     btn = Gtk::manage( new Gtk::Button() );
     _styleButton( *btn, targetDesktop, SP_VERB_LAYER_LOWER, INKSCAPE_ICON("go-down"), C_("Layers", "Dn") );
     btn->signal_clicked().connect( sigc::bind( sigc::mem_fun(*this, &LayersPanel::_takeAction), (int)BUTTON_DOWN) );
     _watchingNonBottom.push_back( btn );
     _buttonsPrimary.pack_end(*btn, Gtk::PACK_SHRINK);
-    
+
     btn = Gtk::manage( new Gtk::Button() );
     _styleButton( *btn, targetDesktop, SP_VERB_LAYER_RAISE, INKSCAPE_ICON("go-up"), C_("Layers", "Up") );
     btn->signal_clicked().connect( sigc::bind( sigc::mem_fun(*this, &LayersPanel::_takeAction), (int)BUTTON_UP) );
     _watchingNonTop.push_back( btn );
     _buttonsPrimary.pack_end(*btn, Gtk::PACK_SHRINK);
-    
+
     btn = Gtk::manage( new Gtk::Button() );
     _styleButton( *btn, targetDesktop, SP_VERB_LAYER_TO_TOP, INKSCAPE_ICON("go-top"), C_("Layers", "Top") );
     btn->signal_clicked().connect( sigc::bind( sigc::mem_fun(*this, &LayersPanel::_takeAction), (int)BUTTON_TOP) );
@@ -863,7 +860,7 @@ LayersPanel::LayersPanel() :
     btn->signal_clicked().connect( sigc::bind( sigc::mem_fun(*this, &LayersPanel::_takeAction), (int)BUTTON_DELETE) );
     _watching.push_back( btn );
     _buttonsSecondary.pack_start(*btn, Gtk::PACK_SHRINK);
-    
+
     _buttonsRow.pack_start(_buttonsSecondary, Gtk::PACK_EXPAND_WIDGET);
     _buttonsRow.pack_end(_buttonsPrimary, Gtk::PACK_EXPAND_WIDGET);
 
@@ -901,7 +898,7 @@ LayersPanel::LayersPanel() :
         _popupMenu.show_all_children();
 
         // Install CSS to shift icons into the space reserved for toggles (i.e. check and radio items).
-        _popupMenu.signal_map().connect(sigc::mem_fun(static_cast<ContextMenu*>(&_popupMenu), &ContextMenu::ShiftIcons));
+        _popupMenu.signal_map().connect(sigc::bind<Gtk::MenuShell *>(sigc::ptr_fun(shift_icons), &_popupMenu));
     }
     // -------------------------------------------------------
 
@@ -922,17 +919,15 @@ LayersPanel::LayersPanel() :
     show_all_children();
 
     // restorePanelPrefs();
-
-    // Connect this up last
-    desktopChangeConn = deskTrack.connectDesktopChanged( sigc::mem_fun(*this, &LayersPanel::setDesktop) );
-    deskTrack.connect(GTK_WIDGET(gobj()));
 }
 
 LayersPanel::~LayersPanel()
 {
-    setDesktop(nullptr);
-
     _compositeSettings.setSubject(nullptr);
+    _layerChangedConnection.disconnect();
+    _layerUpdatedConnection.disconnect();
+    _changedConnection.disconnect();
+    _subject.setDesktop(nullptr);
 
     if ( _model )
     {
@@ -950,42 +945,25 @@ LayersPanel::~LayersPanel()
         gdk_event_free( _toggleEvent );
         _toggleEvent = nullptr;
     }
-
-    desktopChangeConn.disconnect();
-    deskTrack.disconnect();
 }
 
-
-void LayersPanel::setDesktop( SPDesktop* desktop )
+void LayersPanel::desktopReplaced()
 {
-    Panel::setDesktop(desktop);
-
-    if ( desktop != _desktop ) {
-        _layerChangedConnection.disconnect();
-        _layerUpdatedConnection.disconnect();
-        _changedConnection.disconnect();
-        if ( _desktop ) {
-            _desktop = nullptr;
+    _layerChangedConnection.disconnect();
+    _layerUpdatedConnection.disconnect();
+    _changedConnection.disconnect();
+    _subject.setDesktop(getDesktop());
+    if (auto desktop = getDesktop()) {
+        //setLabel(document->name);
+        LayerManager *mgr = desktop->layer_manager;
+        if (mgr) {
+            _layerChangedConnection = mgr->connectCurrentLayerChanged( sigc::mem_fun(*this, &LayersPanel::_selectLayer) );
+            _layerUpdatedConnection = mgr->connectLayerDetailsChanged( sigc::mem_fun(*this, &LayersPanel::_updateLayer) );
+            _changedConnection = mgr->connectChanged( sigc::mem_fun(*this, &LayersPanel::_layersChanged) );
         }
-
-        _desktop = Panel::getDesktop();
-        if ( _desktop ) {
-            //setLabel( _desktop->doc()->name );
-
-            LayerManager *mgr = _desktop->layer_manager;
-            if ( mgr ) {
-                _layerChangedConnection = mgr->connectCurrentLayerChanged( sigc::mem_fun(*this, &LayersPanel::_selectLayer) );
-                _layerUpdatedConnection = mgr->connectLayerDetailsChanged( sigc::mem_fun(*this, &LayersPanel::_updateLayer) );
-                _changedConnection = mgr->connectChanged( sigc::mem_fun(*this, &LayersPanel::_layersChanged) );
-            }
-
-            _layersChanged();
-        }
+        _layersChanged();
     }
-    deskTrack.setBase(desktop);
 }
-
-
 
 } //namespace Dialogs
 } //namespace UI

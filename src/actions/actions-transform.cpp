@@ -83,41 +83,41 @@ transform_remove(InkscapeApplication *app)
     Inkscape::DocumentUndo::done(app->get_active_document(), 0, "ActionTransformRemoveTransform");
 }
 
-
+// SHOULD REALLY BE DOC LEVEL ACTIONS
 std::vector<std::vector<Glib::ustring>> raw_data_transform =
 {
-   {"transform-translate",       "TransformTranslate",      "Transform",  N_("Translate selected objects (dx,dy).")                 },
-   {"transform-rotate",          "TransformRotate",         "Transform",  N_("Rotate selected objects by degrees.")                 },
-   {"transform-scale",           "TransformScale",          "Transform",  N_("Scale selected objects by scale factor.")             },
-   {"transform-remove",          "TransformRemove",         "Transform",  N_("Remove any transforms from selected objects.")        }
+    // clang-format off
+    {"app.transform-translate",   N_("Translate"),          "Transform",  N_("Translate selected objects (dx,dy)")                 },
+    {"app.transform-rotate",      N_("Rotate"),             "Transform",  N_("Rotate selected objects by degrees")                 },
+    {"app.transform-scale",       N_("Scale"),              "Transform",  N_("Scale selected objects by scale factor")             },
+    {"app.transform-remove",      N_("Remove Transforms"),  "Transform",  N_("Remove any transforms from selected objects")        }
+    // clang-format on
 };
 
-template<class T>
 void
-add_actions_transform(ConcreteInkscapeApplication<T>* app)
+add_actions_transform(InkscapeApplication* app)
 {
     Glib::VariantType Bool(  Glib::VARIANT_TYPE_BOOL);
     Glib::VariantType Int(   Glib::VARIANT_TYPE_INT32);
     Glib::VariantType Double(Glib::VARIANT_TYPE_DOUBLE);
     Glib::VariantType String(Glib::VARIANT_TYPE_STRING);
 
+    auto *gapp = app->gio_app();
+
     // Debian 9 has 2.50.0
 #if GLIB_CHECK_VERSION(2, 52, 0)
 
-    app->add_action_with_parameter( "transform-translate",      String, sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&transform_translate),       app));
-    app->add_action_with_parameter( "transform-rotate",         Double, sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&transform_rotate),          app));
-    app->add_action_with_parameter( "transform-scale",          Double, sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&transform_scale),           app));
-    app->add_action(                "transform-remove",                 sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&transform_remove),          app));
+    // clang-format off
+    gapp->add_action_with_parameter( "transform-translate",      String, sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&transform_translate),       app));
+    gapp->add_action_with_parameter( "transform-rotate",         Double, sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&transform_rotate),          app));
+    gapp->add_action_with_parameter( "transform-scale",          Double, sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&transform_scale),           app));
+    gapp->add_action(                "transform-remove",                 sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&transform_remove),          app));
+    // clang-format on
 
 #endif
 
     app->get_action_extra_data().add_data(raw_data_transform);
 }
-
-
-template void add_actions_transform(ConcreteInkscapeApplication<Gio::Application>* app);
-template void add_actions_transform(ConcreteInkscapeApplication<Gtk::Application>* app);
-
 
 
 /*

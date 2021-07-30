@@ -31,6 +31,8 @@ class UnitTracker;
 namespace Toolbar {
 
 class SelectToolbar : public Toolbar {
+    using parent_type = Toolbar;
+
 private:
     std::unique_ptr<UI::Widget::UnitTracker> _tracker;
 
@@ -39,12 +41,15 @@ private:
     Glib::RefPtr<Gtk::Adjustment>  _adj_w;
     Glib::RefPtr<Gtk::Adjustment>  _adj_h;
     Gtk::ToggleToolButton         *_lock_btn;
+    Gtk::ToggleToolButton         *_select_touch_btn;
     Gtk::ToggleToolButton         *_transform_stroke_btn;
     Gtk::ToggleToolButton         *_transform_corners_btn;
     Gtk::ToggleToolButton         *_transform_gradient_btn;
     Gtk::ToggleToolButton         *_transform_pattern_btn;
 
     std::vector<Gtk::ToolItem *> _context_items;
+
+    std::vector<sigc::connection> _connections;
 
     bool _update;
 
@@ -53,6 +58,7 @@ private:
     void on_inkscape_selection_modified(Inkscape::Selection *selection, guint flags);
     void on_inkscape_selection_changed(Inkscape::Selection *selection);
     void toggle_lock();
+    void toggle_touch();
     void toggle_stroke();
     void toggle_corners();
     void toggle_gradient();
@@ -60,6 +66,8 @@ private:
 
 protected:
     SelectToolbar(SPDesktop *desktop);
+
+    void on_unrealize() override;
 
 public:
     static GtkWidget * create(SPDesktop *desktop);

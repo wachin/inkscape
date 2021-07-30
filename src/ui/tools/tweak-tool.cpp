@@ -33,13 +33,13 @@
 #include "message-context.h"
 #include "path-chemistry.h"
 #include "selection.h"
-#include "splivarot.h"
+#include "style.h"
 #include "verbs.h"
 
-#include "display/canvas-arena.h"
 #include "display/curve.h"
-#include "display/sp-canvas.h"
+#include "display/control/canvas-item-bpath.h"
 
+#include "livarot/Path.h"
 #include "livarot/Shape.h"
 
 #include "object/box3d.h"
@@ -52,25 +52,8 @@
 #include "object/sp-radial-gradient.h"
 #include "object/sp-stop.h"
 #include "object/sp-text.h"
-#include "style.h"
 
-#include "ui/pixmaps/cursor-tweak-attract.xpm"
-#include "ui/pixmaps/cursor-tweak-color.xpm"
-#include "ui/pixmaps/cursor-tweak-less.xpm"
-#include "ui/pixmaps/cursor-tweak-more.xpm"
-#include "ui/pixmaps/cursor-tweak-move-in.xpm"
-#include "ui/pixmaps/cursor-tweak-move-jitter.xpm"
-#include "ui/pixmaps/cursor-tweak-move-out.xpm"
-#include "ui/pixmaps/cursor-tweak-move.xpm"
-#include "ui/pixmaps/cursor-tweak-push.xpm"
-#include "ui/pixmaps/cursor-tweak-repel.xpm"
-#include "ui/pixmaps/cursor-tweak-rotate-clockwise.xpm"
-#include "ui/pixmaps/cursor-tweak-rotate-counterclockwise.xpm"
-#include "ui/pixmaps/cursor-tweak-roughen.xpm"
-#include "ui/pixmaps/cursor-tweak-scale-down.xpm"
-#include "ui/pixmaps/cursor-tweak-scale-up.xpm"
-#include "ui/pixmaps/cursor-tweak-thicken.xpm"
-#include "ui/pixmaps/cursor-tweak-thin.xpm"
+#include "path/path-util.h"
 
 #include "svg/svg.h"
 
@@ -95,7 +78,7 @@ const std::string& TweakTool::getPrefsPath() {
 const std::string TweakTool::prefsPath = "/tools/tweak";
 
 TweakTool::TweakTool()
-    : ToolBase(cursor_push_xpm)
+    : ToolBase("tweak-push.svg")
     , pressure(TC_DEFAULT_PRESSURE)
     , dragging(false)
     , usepressure(false)
@@ -121,7 +104,7 @@ TweakTool::~TweakTool() {
     this->style_set_connection.disconnect();
 
     if (this->dilate_area) {
-        sp_canvas_item_destroy(this->dilate_area);
+        delete this->dilate_area;
         this->dilate_area = nullptr;
     }
 }
@@ -155,79 +138,79 @@ void TweakTool::update_cursor (bool with_shift) {
    switch (this->mode) {
        case TWEAK_MODE_MOVE:
            this->message_context->setF(Inkscape::NORMAL_MESSAGE, _("%s. Drag to <b>move</b>."), sel_message);
-           this->cursor_shape = cursor_tweak_move_xpm;
+           cursor_filename = "tweak-move.svg";
            break;
        case TWEAK_MODE_MOVE_IN_OUT:
            this->message_context->setF(Inkscape::NORMAL_MESSAGE, _("%s. Drag or click to <b>move in</b>; with Shift to <b>move out</b>."), sel_message);
            if (with_shift) {
-               this->cursor_shape = cursor_tweak_move_out_xpm;
+               cursor_filename = "tweak-move-out.svg";
            } else {
-               this->cursor_shape = cursor_tweak_move_in_xpm;
+               cursor_filename = "tweak-move-in.svg";
            }
            break;
        case TWEAK_MODE_MOVE_JITTER:
            this->message_context->setF(Inkscape::NORMAL_MESSAGE, _("%s. Drag or click to <b>move randomly</b>."), sel_message);
-           this->cursor_shape = cursor_tweak_move_jitter_xpm;
+            cursor_filename = "tweak-move-jitter.svg";
            break;
        case TWEAK_MODE_SCALE:
            this->message_context->setF(Inkscape::NORMAL_MESSAGE, _("%s. Drag or click to <b>scale down</b>; with Shift to <b>scale up</b>."), sel_message);
            if (with_shift) {
-               this->cursor_shape = cursor_tweak_scale_up_xpm;
+               cursor_filename = "tweak-scale-up.svg";
            } else {
-               this->cursor_shape = cursor_tweak_scale_down_xpm;
+               cursor_filename = "tweak-scale-down.svg";
            }
            break;
        case TWEAK_MODE_ROTATE:
            this->message_context->setF(Inkscape::NORMAL_MESSAGE, _("%s. Drag or click to <b>rotate clockwise</b>; with Shift, <b>counterclockwise</b>."), sel_message);
            if (with_shift) {
-               this->cursor_shape = cursor_tweak_rotate_counterclockwise_xpm;
+               cursor_filename = "tweak-rotate-counterclockwise.svg";
            } else {
-               this->cursor_shape = cursor_tweak_rotate_clockwise_xpm;
+               cursor_filename = "tweak-rotate-clockwise.svg";
            }
            break;
        case TWEAK_MODE_MORELESS:
            this->message_context->setF(Inkscape::NORMAL_MESSAGE, _("%s. Drag or click to <b>duplicate</b>; with Shift, <b>delete</b>."), sel_message);
            if (with_shift) {
-               this->cursor_shape = cursor_tweak_less_xpm;
+               cursor_filename = "tweak-less.svg";
            } else {
-               this->cursor_shape = cursor_tweak_more_xpm;
+               cursor_filename = "tweak-more.svg";
            }
            break;
        case TWEAK_MODE_PUSH:
            this->message_context->setF(Inkscape::NORMAL_MESSAGE, _("%s. Drag to <b>push paths</b>."), sel_message);
-           this->cursor_shape = cursor_push_xpm;
+           cursor_filename = "tweak-push.svg";
            break;
        case TWEAK_MODE_SHRINK_GROW:
            this->message_context->setF(Inkscape::NORMAL_MESSAGE, _("%s. Drag or click to <b>inset paths</b>; with Shift to <b>outset</b>."), sel_message);
            if (with_shift) {
-               this->cursor_shape = cursor_thicken_xpm;
+               cursor_filename = "tweak-outset.svg";
            } else {
-               this->cursor_shape = cursor_thin_xpm;
+               cursor_filename = "tweak-inset.svg";
            }
            break;
        case TWEAK_MODE_ATTRACT_REPEL:
            this->message_context->setF(Inkscape::NORMAL_MESSAGE, _("%s. Drag or click to <b>attract paths</b>; with Shift to <b>repel</b>."), sel_message);
            if (with_shift) {
-               this->cursor_shape = cursor_repel_xpm;
+               cursor_filename = "tweak-repel.svg";
            } else {
-               this->cursor_shape = cursor_attract_xpm;
+               cursor_filename = "tweak-attract.svg";
            }
            break;
        case TWEAK_MODE_ROUGHEN:
            this->message_context->setF(Inkscape::NORMAL_MESSAGE, _("%s. Drag or click to <b>roughen paths</b>."), sel_message);
-           this->cursor_shape = cursor_roughen_xpm;
+           cursor_filename = "tweak-roughen.svg";
            break;
        case TWEAK_MODE_COLORPAINT:
            this->message_context->setF(Inkscape::NORMAL_MESSAGE, _("%s. Drag or click to <b>paint objects</b> with color."), sel_message);
-           this->cursor_shape = cursor_color_xpm;
+           cursor_filename = "tweak-color.svg";
            break;
        case TWEAK_MODE_COLORJITTER:
            this->message_context->setF(Inkscape::NORMAL_MESSAGE, _("%s. Drag or click to <b>randomize colors</b>."), sel_message);
-           this->cursor_shape = cursor_color_xpm;
+           cursor_filename = "tweak-color.svg";
            break;
        case TWEAK_MODE_BLUR:
            this->message_context->setF(Inkscape::NORMAL_MESSAGE, _("%s. Drag or click to <b>increase blur</b>; with Shift to <b>decrease</b>."), sel_message);
-           this->cursor_shape = cursor_color_xpm;
+           cursor_filename = "tweak-color.svg";
            break;
    }
 
@@ -250,18 +233,10 @@ bool TweakTool::set_style(const SPCSSAttr* css) {
 void TweakTool::setup() {
     ToolBase::setup();
 
-    {
-        /* TODO: have a look at sp_dyna_draw_context_setup where the same is done.. generalize? at least make it an arcto! */
-        Geom::PathVector path = Geom::Path(Geom::Circle(0,0,1));
-
-        SPCurve *c = new SPCurve(path);
-
-        this->dilate_area = sp_canvas_bpath_new(this->desktop->getControls(), c);
-        c->unref();
-        sp_canvas_bpath_set_fill(SP_CANVAS_BPATH(this->dilate_area), 0x00000000,(SPWindRule)0);
-        sp_canvas_bpath_set_stroke(SP_CANVAS_BPATH(this->dilate_area), 0xff9900ff, 1.0, SP_STROKE_LINEJOIN_MITER, SP_STROKE_LINECAP_BUTT);
-        sp_canvas_item_hide(this->dilate_area);
-    }
+    dilate_area = new Inkscape::CanvasItemBpath(desktop->getCanvasSketch());
+    dilate_area->set_stroke(0xff9900ff);
+    dilate_area->set_fill(0x0, SP_WIND_RULE_EVENODD);
+    dilate_area->hide();
 
     this->is_drawing = false;
 
@@ -275,7 +250,7 @@ void TweakTool::setup() {
     sp_event_context_read(this, "dos");
     sp_event_context_read(this, "doo");
 
-    this->style_set_connection = this->desktop->connectSetStyle( // catch style-setting signal in this tool
+    this->style_set_connection = desktop->connectSetStyle( // catch style-setting signal in this tool
         //sigc::bind(sigc::ptr_fun(&sp_tweak_context_style_set), this)
    		sigc::mem_fun(this, &TweakTool::set_style)
     );
@@ -328,14 +303,14 @@ static double
 get_dilate_radius (TweakTool *tc)
 {
     // 10 times the pen width:
-    return 500 * tc->width/SP_EVENT_CONTEXT(tc)->desktop->current_zoom();
+    return 500 * tc->width/tc->getDesktop()->current_zoom();
 }
 
 static double
 get_path_force (TweakTool *tc)
 {
     double force = 8 * (tc->usepressure? tc->pressure : TC_DEFAULT_PRESSURE)
-        /sqrt(SP_EVENT_CONTEXT(tc)->desktop->current_zoom());
+        /sqrt(tc->getDesktop()->current_zoom());
     if (force > 3) {
         force += 4 * (force - 3);
     }
@@ -358,7 +333,7 @@ sp_tweak_dilate_recursive (Inkscape::Selection *selection, SPItem *item, Geom::P
         SPBox3D *box = dynamic_cast<SPBox3D *>(item);
         if (box && !is_transform_mode(mode) && !is_color_mode(mode)) {
             // convert 3D boxes to ordinary groups before tweaking their shapes
-            item = box3d_convert_to_group(box);
+            item = box->convert_to_group();
             selection->add(item);
         }
     }
@@ -1026,8 +1001,8 @@ return did;
     static bool
 sp_tweak_dilate (TweakTool *tc, Geom::Point event_p, Geom::Point p, Geom::Point vector, bool reverse)
 {
-    Inkscape::Selection *selection = tc->desktop->getSelection();
-    SPDesktop *desktop = SP_EVENT_CONTEXT(tc)->desktop;
+    SPDesktop *desktop = tc->getDesktop();
+    Inkscape::Selection *selection = desktop->getSelection();
 
     if (selection->isEmpty()) {
         return false;
@@ -1036,7 +1011,7 @@ sp_tweak_dilate (TweakTool *tc, Geom::Point event_p, Geom::Point p, Geom::Point 
     bool did = false;
     double radius = get_dilate_radius(tc);
 
-    SPItem *item_at_point = SP_EVENT_CONTEXT(tc)->desktop->getItemAtPoint(event_p, TRUE);
+    SPItem *item_at_point = tc->getDesktop()->getItemAtPoint(event_p, TRUE);
 
     bool do_fill = false, do_stroke = false, do_opacity = false;
     guint32 fill_goal = sp_desktop_get_color_tool(desktop, "/tools/tweak", true, &do_fill);
@@ -1114,15 +1089,18 @@ sp_tweak_dilate (TweakTool *tc, Geom::Point event_p, Geom::Point p, Geom::Point 
 sp_tweak_update_area (TweakTool *tc)
 {
     double radius = get_dilate_radius(tc);
-    Geom::Affine const sm (Geom::Scale(radius, radius) * Geom::Translate(SP_EVENT_CONTEXT(tc)->desktop->point()));
-    sp_canvas_item_affine_absolute(tc->dilate_area, sm);
-    sp_canvas_item_show(tc->dilate_area);
+    Geom::Affine const sm (Geom::Scale(radius, radius) * Geom::Translate(tc->getDesktop()->point()));
+    
+    Geom::PathVector path = Geom::Path(Geom::Circle(0,0,1)); // Unit circle centered at origin.
+    path *= sm;
+    tc->dilate_area->set_bpath(path);
+    tc->dilate_area->show();
 }
 
     static void
 sp_tweak_switch_mode (TweakTool *tc, gint mode, bool with_shift)
 {
-    auto tb = dynamic_cast<UI::Toolbar::TweakToolbar*>(SP_EVENT_CONTEXT(tc)->desktop->get_toolbar_by_name("TweakToolbar"));
+    auto tb = dynamic_cast<UI::Toolbar::TweakToolbar*>(tc->getDesktop()->get_toolbar_by_name("TweakToolbar"));
 
     if(tb) {
         tb->set_mode(mode);
@@ -1142,7 +1120,7 @@ sp_tweak_switch_mode_temporarily (TweakTool *tc, gint mode, bool with_shift)
     // Juggling about so that prefs have the old value but tc->mode and the button show new mode:
     gint now_mode = prefs->getInt("/tools/tweak/mode", 0);
 
-    auto tb = dynamic_cast<UI::Toolbar::TweakToolbar*>(SP_EVENT_CONTEXT(tc)->desktop->get_toolbar_by_name("TweakToolbar"));
+    auto tb = dynamic_cast<UI::Toolbar::TweakToolbar*>(tc->getDesktop()->get_toolbar_by_name("TweakToolbar"));
 
     if(tb) {
         tb->set_mode(mode);
@@ -1153,8 +1131,8 @@ sp_tweak_switch_mode_temporarily (TweakTool *tc, gint mode, bool with_shift)
     // button has changed prefs, restore
     prefs->setInt("/tools/tweak/mode", now_mode);
     // changing prefs changed tc->mode, restore back :
-   tc->mode = mode;
-   tc->update_cursor(with_shift);
+    tc->mode = mode;
+    tc->update_cursor(with_shift);
 }
 
 bool TweakTool::root_handler(GdkEvent* event) {
@@ -1162,13 +1140,13 @@ bool TweakTool::root_handler(GdkEvent* event) {
 
     switch (event->type) {
         case GDK_ENTER_NOTIFY:
-            sp_canvas_item_show(this->dilate_area);
+            dilate_area->show();
             break;
         case GDK_LEAVE_NOTIFY:
-            sp_canvas_item_hide(this->dilate_area);
+            dilate_area->hide();
             break;
         case GDK_BUTTON_PRESS:
-            if (event->button.button == 1 && !this->space_panning) {
+            if (event->button.button == 1) {
 
                 if (Inkscape::have_viable_layer(desktop, defaultMessageContext()) == false) {
                     return TRUE;
@@ -1181,7 +1159,7 @@ bool TweakTool::root_handler(GdkEvent* event) {
 
                 sp_tweak_extinput(this, event);
 
-                desktop->canvas->forceFullRedrawAfterInterruptions(3);
+                forced_redraws_start(3);
                 this->is_drawing = true;
                 this->is_dilating = true;
                 this->has_dilated = false;
@@ -1198,18 +1176,20 @@ bool TweakTool::root_handler(GdkEvent* event) {
             sp_tweak_extinput(this, event);
 
             // draw the dilating cursor
-                double radius = get_dilate_radius(this);
-                Geom::Affine const sm (Geom::Scale(radius, radius) * Geom::Translate(desktop->w2d(motion_w)));
-                sp_canvas_item_affine_absolute(this->dilate_area, sm);
-                sp_canvas_item_show(this->dilate_area);
+            double radius = get_dilate_radius(this);
+            Geom::Affine const sm (Geom::Scale(radius, radius) * Geom::Translate(desktop->w2d(motion_w)));
+            Geom::PathVector path = Geom::Path(Geom::Circle(0,0,1)); // Unit circle centered at origin.
+            path *= sm;
+            dilate_area->set_bpath(path);
+            dilate_area->show();
 
-                guint num = 0;
-                if (!desktop->selection->isEmpty()) {
-                    num = (guint) boost::distance(desktop->selection->items());
-                }
-                if (num == 0) {
-                    this->message_context->flash(Inkscape::ERROR_MESSAGE, _("<b>Nothing selected!</b> Select objects to tweak."));
-                }
+            guint num = 0;
+            if (!desktop->selection->isEmpty()) {
+                num = (guint) boost::distance(desktop->selection->items());
+            }
+            if (num == 0) {
+                this->message_context->flash(Inkscape::ERROR_MESSAGE, _("<b>Nothing selected!</b> Select objects to tweak."));
+            }
 
             // dilating:
             if (this->is_drawing && ( event->motion.state & GDK_BUTTON1_MASK )) {
@@ -1228,10 +1208,10 @@ bool TweakTool::root_handler(GdkEvent* event) {
             Geom::Point const motion_w(event->button.x, event->button.y);
             Geom::Point const motion_dt(desktop->w2d(motion_w));
 
-            desktop->canvas->endForcedFullRedraws();
+            forced_redraws_stop();
             this->is_drawing = false;
 
-            if (this->is_dilating && event->button.button == 1 && !this->space_panning) {
+            if (this->is_dilating && event->button.button == 1) {
                 if (!this->has_dilated) {
                     // if we did not rub, do a light tap
                     this->pressure = 0.03;

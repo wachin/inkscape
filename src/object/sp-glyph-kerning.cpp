@@ -35,11 +35,11 @@ void SPGlyphKerning::build(SPDocument *document, Inkscape::XML::Node *repr)
 {
     SPObject::build(document, repr);
 
-    this->readAttr( "u1" );
-    this->readAttr( "g1" );
-    this->readAttr( "u2" );
-    this->readAttr( "g2" );
-    this->readAttr( "k" );
+    this->readAttr(SPAttr::U1);
+    this->readAttr(SPAttr::G1);
+    this->readAttr(SPAttr::U2);
+    this->readAttr(SPAttr::G2);
+    this->readAttr(SPAttr::K);
 }
 
 void SPGlyphKerning::release()
@@ -49,9 +49,7 @@ void SPGlyphKerning::release()
 
 GlyphNames::GlyphNames(const gchar* value)
 {
-    if (value) {
-        names = g_strdup(value);
-    }
+    names = value ? g_strdup(value) : nullptr;
 }
 
 GlyphNames::~GlyphNames()
@@ -80,10 +78,10 @@ bool GlyphNames::contains(const char* name)
     return false;
 }
 
-void SPGlyphKerning::set(SPAttributeEnum key, const gchar *value)
+void SPGlyphKerning::set(SPAttr key, const gchar *value)
 {
     switch (key) {
-        case SP_ATTR_U1:
+        case SPAttr::U1:
         {
             if (this->u1) {
                 delete this->u1;
@@ -93,7 +91,7 @@ void SPGlyphKerning::set(SPAttributeEnum key, const gchar *value)
             this->requestModified(SP_OBJECT_MODIFIED_FLAG);
             break;
         }
-        case SP_ATTR_U2:
+        case SPAttr::U2:
         {
             if (this->u2) {
                 delete this->u2;
@@ -103,7 +101,7 @@ void SPGlyphKerning::set(SPAttributeEnum key, const gchar *value)
             this->requestModified(SP_OBJECT_MODIFIED_FLAG);
             break;
         }
-        case SP_ATTR_G1:
+        case SPAttr::G1:
         {
             if (this->g1) {
                 delete this->g1;
@@ -113,7 +111,7 @@ void SPGlyphKerning::set(SPAttributeEnum key, const gchar *value)
             this->requestModified(SP_OBJECT_MODIFIED_FLAG);
             break;
         }
-        case SP_ATTR_G2:
+        case SPAttr::G2:
         {
             if (this->g2) {
                 delete this->g2;
@@ -123,7 +121,7 @@ void SPGlyphKerning::set(SPAttributeEnum key, const gchar *value)
             this->requestModified(SP_OBJECT_MODIFIED_FLAG);
              break;
         }
-        case SP_ATTR_K:
+        case SPAttr::K:
         {
             double number = value ? g_ascii_strtod(value, nullptr) : 0;
             
@@ -148,10 +146,10 @@ void SPGlyphKerning::update(SPCtx *ctx, guint flags)
 {
     if (flags & SP_OBJECT_MODIFIED_FLAG) {
         /* do something to trigger redisplay, updates? */
-        this->readAttr( "u1" );
-        this->readAttr( "u2" );
-        this->readAttr( "g2" );
-        this->readAttr( "k" );
+        this->readAttr(SPAttr::U1);
+        this->readAttr(SPAttr::U2);
+        this->readAttr(SPAttr::G2);
+        this->readAttr(SPAttr::K);
     }
 
     SPObject::update(ctx, flags);

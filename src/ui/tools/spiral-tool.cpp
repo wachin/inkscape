@@ -21,6 +21,8 @@
 #include <gdk/gdkkeysyms.h>
 #include <glibmm/i18n.h>
 
+#include "spiral-tool.h"
+
 #include "context-fns.h"
 #include "desktop-style.h"
 #include "desktop.h"
@@ -30,17 +32,12 @@
 #include "selection.h"
 #include "verbs.h"
 
-#include "display/sp-canvas-item.h"
-#include "display/sp-canvas.h"
-
 #include "include/macros.h"
 
 #include "object/sp-namedview.h"
 #include "object/sp-spiral.h"
 
-#include "ui/pixmaps/cursor-spiral.xpm"
 #include "ui/shape-editor.h"
-#include "ui/tools/spiral-tool.h"
 
 #include "xml/node-event-vector.h"
 
@@ -57,7 +54,7 @@ const std::string& SpiralTool::getPrefsPath() {
 const std::string SpiralTool::prefsPath = "/tools/shapes/spiral";
 
 SpiralTool::SpiralTool()
-    : ToolBase(cursor_spiral_xpm)
+    : ToolBase("spiral.svg")
     , spiral(nullptr)
     , revo(3)
     , exp(1)
@@ -66,9 +63,7 @@ SpiralTool::SpiralTool()
 }
 
 void SpiralTool::finish() {
-    SPDesktop *desktop = this->desktop;
-
-    sp_canvas_item_ungrab(SP_CANVAS_ITEM(desktop->acetate));
+    ungrabCanvasEvents();
 
     this->finishItem();
     this->sel_changed_connection.disconnect();
@@ -154,7 +149,7 @@ bool SpiralTool::root_handler(GdkEvent* event) {
 
     switch (event->type) {
         case GDK_BUTTON_PRESS:
-            if (event->button.button == 1 && !this->space_panning) {
+            if (event->button.button == 1) {
                 dragging = TRUE;
 
                 this->center = Inkscape::setup_for_drag_start(desktop, this, event);
@@ -164,19 +159,13 @@ bool SpiralTool::root_handler(GdkEvent* event) {
                 m.freeSnapReturnByRef(this->center, Inkscape::SNAPSOURCE_NODE_HANDLE);
                 m.unSetup();
 
-                sp_canvas_item_grab(SP_CANVAS_ITEM(desktop->acetate),
-                                    ( GDK_KEY_PRESS_MASK |
-                                      GDK_BUTTON_RELEASE_MASK |
-                                      GDK_POINTER_MOTION_MASK |
-                                      GDK_POINTER_MOTION_HINT_MASK |
-                                      GDK_BUTTON_PRESS_MASK    ),
-                                    nullptr, event->button.time);
+                grabCanvasEvents();
                 ret = TRUE;
             }
             break;
 
         case GDK_MOTION_NOTIFY:
-            if (dragging && (event->motion.state & GDK_BUTTON1_MASK) && !this->space_panning) {
+            if (dragging && (event->motion.state & GDK_BUTTON1_MASK)) {
                 if ( this->within_tolerance
                      && ( abs( (gint) event->motion.x - this->xp ) < this->tolerance )
                      && ( abs( (gint) event->motion.y - this->yp ) < this->tolerance ) ) {
@@ -212,7 +201,7 @@ bool SpiralTool::root_handler(GdkEvent* event) {
 
         case GDK_BUTTON_RELEASE:
             this->xp = this->yp = 0;
-            if (event->button.button == 1 && !this->space_panning) {
+            if (event->button.button == 1) {
                 dragging = FALSE;
                 sp_event_context_discard_delayed_snap_event(this);
 
@@ -233,7 +222,7 @@ bool SpiralTool::root_handler(GdkEvent* event) {
 
                 this->item_to_select = nullptr;
                 ret = TRUE;
-                sp_canvas_item_ungrab(SP_CANVAS_ITEM(desktop->acetate));
+                ungrabCanvasEvents();
             }
             break;
 
@@ -272,7 +261,7 @@ bool SpiralTool::root_handler(GdkEvent* event) {
 
                 case GDK_KEY_space:
                     if (dragging) {
-                        sp_canvas_item_ungrab(SP_CANVAS_ITEM(desktop->acetate));
+                        ungrabCanvasEvents();
                         dragging = false;
                         sp_event_context_discard_delayed_snap_event(this);
 
@@ -325,7 +314,6 @@ bool SpiralTool::root_handler(GdkEvent* event) {
 }
 
 void SpiralTool::drag(Geom::Point const &p, guint state) {
-    SPDesktop *desktop = SP_EVENT_CONTEXT(this)->desktop;
 
     Inkscape::Preferences *prefs = Inkscape::Preferences::get();
     int const snaps = prefs->getInt("/options/rotationsnapsperpi/value", 12);
@@ -348,7 +336,7 @@ void SpiralTool::drag(Geom::Point const &p, guint state) {
         this->spiral->transform = SP_ITEM(desktop->currentLayer())->i2doc_affine().inverse();
         this->spiral->updateRepr();
 
-        desktop->canvas->forceFullRedrawAfterInterruptions(5);
+        forced_redraws_start(5);
     }
 
     SnapManager &m = desktop->namedview->snap_manager;
@@ -399,7 +387,7 @@ void SpiralTool::finishItem() {
         spiral->updateRepr(SP_OBJECT_WRITE_EXT);
         spiral->doWriteTransform(spiral->transform, nullptr, true);
 
-        this->desktop->canvas->endForcedFullRedraws();
+        forced_redraws_stop();
 
         this->desktop->getSelection()->set(this->spiral);
         
@@ -410,8 +398,8 @@ void SpiralTool::finishItem() {
 }
 
 void SpiralTool::cancel() {
-	this->desktop->getSelection()->clear();
-	sp_canvas_item_ungrab(SP_CANVAS_ITEM(this->desktop->acetate));
+    this->desktop->getSelection()->clear();
+    ungrabCanvasEvents();
 
     if (this->spiral != nullptr) {
     	this->spiral->deleteObject();
@@ -423,7 +411,7 @@ void SpiralTool::cancel() {
     this->yp = 0;
     this->item_to_select = nullptr;
 
-    this->desktop->canvas->endForcedFullRedraws();
+    forced_redraws_stop();
 
     DocumentUndo::cancel(this->desktop->getDocument());
 }

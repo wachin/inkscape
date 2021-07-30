@@ -44,8 +44,8 @@ private:
     gboolean            _popup;      // Do we pop-up an entry-completion dialog?
     GtkEntryCompletion *_entry_completion;
     GtkWidget          *_focusWidget; ///< The widget to return focus to
+    GtkCellRenderer    *_cell;
 
-    GtkWidget          *_indicator;
     gint                _active;     // Index of active menu item (-1 if not in list).
     gchar              *_text;       // Text of active menu item or entry box.
     gchar              *_info;       // Text for tooltip info about entry.
@@ -56,13 +56,9 @@ private:
     gpointer            _warning_cb; // Callback for clicking warning icon.
     gint                _warning_cb_id;
     gboolean            _warning_cb_blocked;
-    gchar              *_altx_name;  // Target for Alt-X keyboard shortcut.
 
     // Signals
     sigc::signal<void> _signal_changed;
-
-    void (*changed)   (ComboBoxEntryToolItem* action);
-    void (*activated) (ComboBoxEntryToolItem* action);
 
     static gint get_active_row_from_text(ComboBoxEntryToolItem *action,
                                          const gchar         *target_text,
@@ -71,6 +67,7 @@ private:
     void defocus();
 
     static void combo_box_changed_cb( GtkComboBox* widget, gpointer data );
+    static gboolean combo_box_popup_cb( ComboBoxEntryToolItem* widget, gpointer data );
     static void entry_activate_cb( GtkEntry *widget,
                                    gpointer  data );
     static gboolean match_selected_cb( GtkEntryCompletion *widget,
@@ -94,7 +91,7 @@ public:
                           gpointer      separator_func = nullptr,
                           GtkWidget*    focusWidget    = nullptr);
 
-    gchar*   get_active_text();
+    Glib::ustring get_active_text();
     gboolean set_active_text(const gchar* text, int row=-1);
 
     void     set_entry_width(gint entry_width);
@@ -109,8 +106,6 @@ public:
     void     set_warning(   const gchar* warning_cb );
     void     set_warning_cb(gpointer warning );
     void     set_tooltip(   const gchar* tooltip );
-
-    void     set_altx_name( const gchar* altx_name );
 
     // Accessor methods
     decltype(_model)          get_model()          const {return _model;}

@@ -28,7 +28,7 @@ namespace Glib {
 
 namespace Gtk {
 	class Grid;
-	class VBox;
+	class Box;
 	class Widget;
 }
 
@@ -70,6 +70,23 @@ namespace Gtk {
 #define INKSCAPE_EXTENSION_URI   "http://www.inkscape.org/namespace/inkscape/extension"
 #define INKSCAPE_EXTENSION_NS_NC "extension"
 #define INKSCAPE_EXTENSION_NS    "extension:"
+
+enum ModuleImpType
+{
+    MODULE_EXTENSION,   // implementation/script.h python extensions
+    MODULE_XSLT,        // implementation/xslt.h xml transform extensions
+    MODULE_PLUGIN,      // plugins/*/*.h C++ extensions
+    MODULE_UNKNOWN_IMP  // No implementation, so nothing created.
+};
+enum ModuleFuncType
+{
+    MODULE_INPUT,
+    MODULE_OUTPUT,
+    MODULE_FILTER,
+    MODULE_PRINT,
+    MODULE_PATH_EFFECT,
+    MODULE_UNKNOWN_FUNC
+};
 
 class SPDocument;
 
@@ -144,7 +161,7 @@ public:
     virtual bool  check        ();
     Inkscape::XML::Node *      get_repr     ();
     gchar *       get_id       () const;
-    gchar *       get_name     () const;
+    const gchar * get_name     () const;
     void          deactivate   ();
     bool          deactivated  ();
     void          printFailure (Glib::ustring reason);
@@ -153,10 +170,11 @@ public:
     void          set_execution_env (ExecutionEnv * env) { execution_env = env; };
     ExecutionEnv *get_execution_env () { return execution_env; };
     std::string   get_base_directory() const { return _base_directory; };
-    void          set_base_directory(std::string base_directory) { _base_directory = base_directory; };
+    void          set_base_directory(std::string const &base_directory) { _base_directory = base_directory; };
     std::string   get_dependency_location(const char *name);
-    const char   *get_translation(const char* msgid, const char *msgctxt=nullptr);
-    void          set_environment();
+    const char   *get_translation(const char* msgid, const char *msgctxt=nullptr) const;
+    void          set_environment(const SPDocument *doc=nullptr);
+    ModuleImpType get_implementation_type();
 
 /* Parameter Stuff */
 private:
@@ -207,18 +225,18 @@ private:
 public:
     bool        get_param_bool          (const gchar *name) const;
     int         get_param_int           (const gchar *name) const;
-    float       get_param_float         (const gchar *name) const;
+    double      get_param_float         (const gchar *name) const;
     const char *get_param_string        (const gchar *name) const;
     const char *get_param_optiongroup   (const gchar *name) const;
     guint32     get_param_color         (const gchar *name) const;
 
-    bool get_param_optiongroup_contains (const gchar *name, const char *value) const;
+    bool get_param_optiongroup_contains (const gchar *name, const char   *value) const;
 
-    bool        set_param_bool          (const gchar *name, const bool  value);
-    int         set_param_int           (const gchar *name, const int   value);
-    float       set_param_float         (const gchar *name, const float value);
-    const char *set_param_string        (const gchar *name, const char *value);
-    const char *set_param_optiongroup   (const gchar *name, const char *value);
+    bool        set_param_bool          (const gchar *name, const bool    value);
+    int         set_param_int           (const gchar *name, const int     value);
+    double      set_param_float         (const gchar *name, const double  value);
+    const char *set_param_string        (const gchar *name, const char   *value);
+    const char *set_param_optiongroup   (const gchar *name, const char   *value);
     guint32     set_param_color         (const gchar *name, const guint32 color);
 
 
@@ -236,8 +254,8 @@ public:
 
     /* Extension editor dialog stuff */
 public:
-    Gtk::VBox *get_info_widget();
-    Gtk::VBox *get_params_widget();
+    Gtk::Box *get_info_widget();
+    Gtk::Box *get_params_widget();
 protected:
     inline static void add_val(Glib::ustring labelstr, Glib::ustring valuestr, Gtk::Grid * table, int * row);
 };

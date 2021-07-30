@@ -30,21 +30,21 @@
 #ifndef SEEN_DIALOGS_ITEM_PROPERTIES_H
 #define SEEN_DIALOGS_ITEM_PROPERTIES_H
 
-#include "ui/widget/panel.h"
-#include "ui/widget/frame.h"
 
 #include <gtkmm/checkbutton.h>
+#include <gtkmm/comboboxtext.h>
 #include <gtkmm/entry.h>
 #include <gtkmm/expander.h>
 #include <gtkmm/frame.h>
 #include <gtkmm/spinbutton.h>
 #include <gtkmm/textview.h>
-#include <gtkmm/comboboxtext.h>
 
-#include "ui/dialog/desktop-tracker.h"
+#include "ui/dialog/dialog-base.h"
+#include "ui/widget/scrollprotected.h"
+#include "ui/widget/color-picker.h"
+#include "ui/widget/frame.h"
 
 class SPAttributeTable;
-class SPDesktop;
 class SPItem;
 
 namespace Gtk {
@@ -61,15 +61,17 @@ namespace Dialog {
  * A widget to enter an ID, label, title and description for an object.
  * In addition it allows to edit the properties of an object.
  */
-class ObjectProperties : public Widget::Panel {
+class ObjectProperties : public DialogBase
+{
 public:
     ObjectProperties();
-    ~ObjectProperties() override;
-    
+    ~ObjectProperties() override {};
+
     static ObjectProperties &getInstance() { return *new ObjectProperties(); }
-    
+
     /// Updates entries and other child widgets on selection change, object modification, etc.
-    void update();
+    void update_entries();
+    void selectionChanged(Selection *selection) override;
 
 private:
     bool _blocked;
@@ -84,8 +86,11 @@ private:
     Gtk::Label _label_title; //the label for the object title
     Gtk::Entry _entry_title; //the entry for the object title
 
+    Gtk::Label _label_color; //the label for the object highlight
+    Inkscape::UI::Widget::ColorPicker _highlight_color; // color picker for the object highlight
+
     Gtk::Label _label_image_rendering; // the label for 'image-rendering'
-    Gtk::ComboBoxText _combo_image_rendering; // the combo box text for 'image-rendering'
+    Inkscape::UI::Widget::ScrollProtected<Gtk::ComboBoxText> _combo_image_rendering; // the combo box text for 'image-rendering'
     
     Gtk::Frame  _ft_description; //the frame for the text of the object description
     Gtk::TextView _tv_description; //the text view object showing the object description
@@ -98,18 +103,15 @@ private:
     Gtk::SpinButton _spin_dpi; //the expander for interactivity
     Gtk::Expander _exp_interactivity; //the expander for interactivity
     SPAttributeTable *_attr_table; //the widget for showing the on... names at the bottom
-    
-    SPDesktop *_desktop;
-    DesktopTracker _desktop_tracker;
-    sigc::connection _desktop_changed_connection;
-    sigc::connection _selection_changed_connection;
-    sigc::connection _subselection_changed_connection;
-    
+
     /// Constructor auxiliary function creating the child widgets.
     void _init();
 
     /// Sets object properties (ID, label, title, description) on user input.
     void _labelChanged();
+
+    // Callback for highlight color
+    void _highlightChanged(guint rgba);
 
     /// Callback for 'image-rendering'.
     void _imageRenderingChanged();
@@ -122,14 +124,7 @@ private:
 
     /// Callback for checkbox Preserve Aspect Ratio.
     void _aspectRatioToggled();
-
-    /// Can be invoked for setting the desktop. Currently not used.
-    void _setDesktop(SPDesktop *desktop);
-    
-    /// Is invoked by the desktop tracker when the desktop changes.
-    void _setTargetDesktop(SPDesktop *desktop);
 };
-
 }
 }
 }

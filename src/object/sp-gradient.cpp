@@ -90,7 +90,7 @@ void SPGradient::setSwatch( bool swatch )
     if ( swatch != isSwatch() ) {
         this->swatch = swatch; // to make isSolid() work, this happens first
         gchar const* paintVal = swatch ? (isSolid() ? "solid" : "gradient") : nullptr;
-        setAttribute( "osb:paint", paintVal, nullptr );
+        setAttribute( "inkscape:swatch", paintVal);
 
         requestModified( SP_OBJECT_MODIFIED_FLAG );
     }
@@ -266,9 +266,11 @@ SPGradient::~SPGradient() = default;
 void SPGradient::build(SPDocument *document, Inkscape::XML::Node *repr)
 {
     // Work-around in case a swatch had been marked for immediate collection:
-    if ( repr->attribute("osb:paint") && repr->attribute("inkscape:collect") ) {
+    if ( repr->attribute("inkscape:swatch") && repr->attribute("inkscape:collect") ) {
         repr->removeAttribute("inkscape:collect");
     }
+
+    this->readAttr(SPAttr::STYLE);
 
     SPPaintServer::build(document, repr);
 
@@ -290,11 +292,11 @@ void SPGradient::build(SPDocument *document, Inkscape::XML::Node *repr)
         }
     }
 
-    this->readAttr( "gradientUnits" );
-    this->readAttr( "gradientTransform" );
-    this->readAttr( "spreadMethod" );
-    this->readAttr( "xlink:href" );
-    this->readAttr( "osb:paint" );
+    this->readAttr(SPAttr::GRADIENTUNITS);
+    this->readAttr(SPAttr::GRADIENTTRANSFORM);
+    this->readAttr(SPAttr::SPREADMETHOD);
+    this->readAttr(SPAttr::XLINK_HREF);
+    this->readAttr(SPAttr::INKSCAPE_SWATCH);
 
     // Register ourselves
     document->addResource("gradient", this);
@@ -330,16 +332,16 @@ void SPGradient::release()
 /**
  * Set gradient attribute to value.
  */
-void SPGradient::set(SPAttributeEnum key, gchar const *value)
+void SPGradient::set(SPAttr key, gchar const *value)
 {
 #ifdef OBJECT_TRACE
     std::stringstream temp;
-    temp << "SPGradient::set: " << key  << " " << (value?value:"null");
+    temp << "SPGradient::set: " << sp_attribute_name(key)  << " " << (value?value:"null");
     objectTrace( temp.str() );
 #endif
 
     switch (key) {
-        case SP_ATTR_GRADIENTUNITS:
+        case SPAttr::GRADIENTUNITS:
             if (value) {
                 if (!strcmp(value, "userSpaceOnUse")) {
                     this->units = SP_GRADIENT_UNITS_USERSPACEONUSE;
@@ -356,7 +358,7 @@ void SPGradient::set(SPAttributeEnum key, gchar const *value)
             this->requestModified(SP_OBJECT_MODIFIED_FLAG);
             break;
 
-        case SP_ATTR_GRADIENTTRANSFORM: {
+        case SPAttr::GRADIENTTRANSFORM: {
             Geom::Affine t;
             if (value && sp_svg_transform_read(value, &t)) {
                 this->gradientTransform = t;
@@ -369,7 +371,7 @@ void SPGradient::set(SPAttributeEnum key, gchar const *value)
             this->requestModified(SP_OBJECT_MODIFIED_FLAG);
             break;
         }
-        case SP_ATTR_SPREADMETHOD:
+        case SPAttr::SPREADMETHOD:
             if (value) {
                 if (!strcmp(value, "reflect")) {
                     this->spread = SP_GRADIENT_SPREAD_REFLECT;
@@ -387,7 +389,7 @@ void SPGradient::set(SPAttributeEnum key, gchar const *value)
             this->requestModified(SP_OBJECT_MODIFIED_FLAG);
             break;
 
-        case SP_ATTR_XLINK_HREF:
+        case SPAttr::XLINK_HREF:
             if (value) {
                 try {
                     this->ref->attach(Inkscape::URI(value));
@@ -400,7 +402,7 @@ void SPGradient::set(SPAttributeEnum key, gchar const *value)
             }
             break;
 
-        case SP_ATTR_OSB_SWATCH:
+        case SPAttr::INKSCAPE_SWATCH:
         {
             bool newVal = (value != nullptr);
             bool modified = false;
@@ -412,10 +414,10 @@ void SPGradient::set(SPAttributeEnum key, gchar const *value)
 
             if (newVal) {
                 // Might need to flip solid/gradient
-                Glib::ustring paintVal = ( this->hasStops() && (this->getStopCount() == 0) ) ? "solid" : "gradient";
+                Glib::ustring paintVal = ( this->hasStops() && (this->getStopCount() <= 1) ) ? "solid" : "gradient";
 
                 if ( paintVal != value ) {
-                    this->setAttribute( "osb:paint", paintVal, nullptr );
+                    this->setAttribute( "inkscape:swatch", paintVal);
                     modified = true;
                 }
             }
@@ -476,10 +478,10 @@ void SPGradient::child_added(Inkscape::XML::Node *child, Inkscape::XML::Node *re
     SPObject *ochild = this->get_child_by_repr(child);
     if ( ochild && SP_IS_STOP(ochild) ) {
         this->has_stops = TRUE;
-        if ( this->getStopCount() > 0 ) {
-            gchar const * attr = this->getAttribute("osb:paint");
+        if ( this->getStopCount() > 1 ) {
+            gchar const * attr = this->getAttribute("inkscape:swatch");
             if ( attr && strcmp(attr, "gradient") ) {
-            	this->setAttribute( "osb:paint", "gradient", nullptr );
+               this->setAttribute( "inkscape:swatch", "gradient" );
             }
         }
     }
@@ -520,11 +522,11 @@ void SPGradient::remove_child(Inkscape::XML::Node *child)
         }
     }
 
-    if ( this->getStopCount() == 0 ) {
-        gchar const * attr = this->getAttribute("osb:paint");
+    if ( this->getStopCount() <= 1 ) {
+        gchar const * attr = this->getAttribute("inkscape:swatch");
 
         if ( attr && strcmp(attr, "solid") ) {
-            this->setAttribute( "osb:paint", "solid", nullptr );
+            this->setAttribute( "inkscape:swatch", "solid" );
         }
     }
 
@@ -593,9 +595,11 @@ SPStop* SPGradient::getFirstStop()
 int SPGradient::getStopCount() const
 {
     int count = 0;
-
-    for (SPStop *stop = const_cast<SPGradient*>(this)->getFirstStop(); stop && stop->getNextStop(); stop = stop->getNextStop()) {
-        count++;
+    // fixed off-by one count
+    SPStop *stop = const_cast<SPGradient*>(this)->getFirstStop();
+    while (stop) {
+       count++;
+       stop = stop->getNextStop();
     }
 
     return count;
@@ -646,9 +650,8 @@ Inkscape::XML::Node *SPGradient::write(Inkscape::XML::Document *xml_doc, Inkscap
     }
 
     if ((flags & SP_OBJECT_WRITE_ALL) || this->gradientTransform_set) {
-        gchar *c=sp_svg_transform_write(this->gradientTransform);
-        repr->setAttribute("gradientTransform", c);
-        g_free(c);
+        auto c = sp_svg_transform_write(this->gradientTransform);
+        repr->setAttributeOrRemoveIfEmpty("gradientTransform", c);
     }
 
     if ((flags & SP_OBJECT_WRITE_ALL) || this->spread_set) {
@@ -670,12 +673,12 @@ Inkscape::XML::Node *SPGradient::write(Inkscape::XML::Document *xml_doc, Inkscap
 
     if ( (flags & SP_OBJECT_WRITE_EXT) && this->isSwatch() ) {
         if ( this->isSolid() ) {
-            repr->setAttribute( "osb:paint", "solid" );
+            repr->setAttribute( "inkscape:swatch", "solid" );
         } else {
-            repr->setAttribute( "osb:paint", "gradient" );
+            repr->setAttribute( "inkscape:swatch", "gradient" );
         }
     } else {
-        repr->removeAttribute("osb:paint");
+        repr->removeAttribute("inkscape:swatch");
     }
 
 #ifdef OBJECT_TRACE
@@ -899,7 +902,7 @@ SPGradient::repr_write_vector()
     for (auto & stop : vector.stops) {
         Inkscape::CSSOStringStream os;
         Inkscape::XML::Node *child = xml_doc->createElement("svg:stop");
-        sp_repr_set_css_double(child, "offset", stop.offset);
+        child->setAttributeCssDouble("offset", stop.offset);
         /* strictly speaking, offset an SVG <number> rather than a CSS one, but exponents make no
          * sense for offset proportions. */
         os << "stop-color:" << stop.color.toString() << ";stop-opacity:" << stop.opacity;
@@ -1183,6 +1186,14 @@ SPGradient::create_preview_pattern(double width)
     }
 
     return pat;
+}
+
+bool SPGradient::isSolid() const
+{
+    if (swatch && hasStops() && getStopCount() == 1) {
+        return true;
+    }
+    return false;
 }
 
 /*

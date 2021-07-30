@@ -16,6 +16,7 @@
 #include <gtkmm/radiobutton.h>
 #include <gtkmm/entry.h>
 #include <gtkmm/grid.h>
+#include <gtkmm/hvbox.h>
 
 class SPDesktop;
 class SPObject;
@@ -31,7 +32,7 @@ class Feature;
 /**
  * A container for selecting font variants (OpenType Features).
  */
-class FontVariants : public Gtk::VBox
+class FontVariants : public Gtk::Box
 {
 
 public:
@@ -121,7 +122,7 @@ protected:
     // -----
     Gtk::Expander       _feature_frame;
     Gtk::Grid           _feature_grid;
-    Gtk::VBox           _feature_vbox;
+    Gtk::Box            _feature_vbox;
     Gtk::Entry          _feature_entry;
     Gtk::Label          _feature_label;
     Gtk::Label          _feature_list;

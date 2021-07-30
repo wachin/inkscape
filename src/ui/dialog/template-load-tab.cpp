@@ -31,10 +31,13 @@ namespace Inkscape {
 namespace UI {
 
 TemplateLoadTab::TemplateLoadTab(NewFromTemplate* parent)
-    : _current_keyword("")
+    : Gtk::Box(Gtk::ORIENTATION_HORIZONTAL)
+    , _current_keyword("")
     , _keywords_combo(true)
     , _current_search_type(ALL)
     , _parent_widget(parent)
+    , _tlist_box(Gtk::ORIENTATION_VERTICAL)
+    , _search_box(Gtk::ORIENTATION_HORIZONTAL)
 {
     set_border_width(10);
 
@@ -209,7 +212,7 @@ void TemplateLoadTab::_refreshTemplatesList()
 void TemplateLoadTab::_loadTemplates()
 {
     for(auto &filename: get_filenames(TEMPLATES, {".svg"}, {"default."})) {
-        TemplateData tmp = _processTemplateFile(filename);
+        TemplateData tmp = _processTemplateFile(filename.raw());
         if (tmp.display_name != "")
             _tdata[tmp.display_name] = tmp;
 

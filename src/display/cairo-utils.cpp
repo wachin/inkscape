@@ -159,7 +159,8 @@ Pixbuf::Pixbuf(cairo_surface_t *s)
     : _pixbuf(gdk_pixbuf_new_from_data(
         cairo_image_surface_get_data(s), GDK_COLORSPACE_RGB, TRUE, 8,
         cairo_image_surface_get_width(s), cairo_image_surface_get_height(s),
-        cairo_image_surface_get_stride(s), nullptr, nullptr))
+        cairo_image_surface_get_stride(s),
+        ink_cairo_pixbuf_cleanup, s))
     , _surface(s)
     , _mod_time(0)
     , _pixel_format(PF_CAIRO)
@@ -197,7 +198,6 @@ Pixbuf::~Pixbuf()
 {
     if (_cairo_store) {
         g_object_unref(_pixbuf);
-        cairo_surface_destroy(_surface);
     } else {
         cairo_surface_destroy(_surface);
         g_object_unref(_pixbuf);
@@ -320,14 +320,14 @@ Pixbuf *Pixbuf::create_from_data_uri(gchar const *uri_data, double svgdpi)
     if ((*data) && data_is_image && data_is_svg && data_is_base64) {
         gsize decoded_len = 0;
         guchar *decoded = g_base64_decode(data, &decoded_len);
-        SPDocument *svgDoc = SPDocument::createNewDocFromMem (reinterpret_cast<gchar const *>(decoded), decoded_len, false);
+        std::unique_ptr<SPDocument> svgDoc(
+            SPDocument::createNewDocFromMem(reinterpret_cast<gchar const *>(decoded), decoded_len, false));
         // Check the document loaded properly
         if (svgDoc == nullptr) {
             return nullptr;
         }
         if (svgDoc->getRoot() == nullptr)
         {
-            svgDoc->doUnref();
             return nullptr;
         }
         Inkscape::Preferences *prefs = Inkscape::Preferences::get();
@@ -335,27 +335,30 @@ Pixbuf *Pixbuf::create_from_data_uri(gchar const *uri_data, double svgdpi)
         if (svgdpi && svgdpi > 0) {
             dpi = svgdpi;
         }
-        std::cout << dpi << "dpi" << std::endl;
+
         // Get the size of the document
         Inkscape::Util::Quantity svgWidth = svgDoc->getWidth();
         Inkscape::Util::Quantity svgHeight = svgDoc->getHeight();
         const double svgWidth_px = svgWidth.value("px");
         const double svgHeight_px = svgHeight.value("px");
+        if (svgWidth_px < 0 || svgHeight_px < 0) {
+            g_warning("create_from_data_uri: malformed document: svgWidth_px=%f, svgHeight_px=%f", svgWidth_px,
+                      svgHeight_px);
+            return nullptr;
+        }
+        
+        assert(!pixbuf);
+        Geom::Rect area(0, 0, svgWidth_px, svgHeight_px);
+        pixbuf = sp_generate_internal_bitmap(svgDoc.get(), area, dpi);
+        GdkPixbuf const *buf = pixbuf->getPixbufRaw();
 
-        // Now get the resized values
-        const int scaledSvgWidth  = round(svgWidth_px/(96.0/dpi));
-        const int scaledSvgHeight = round(svgHeight_px/(96.0/dpi));
-
-        GdkPixbuf *buf = sp_generate_internal_bitmap(svgDoc, nullptr, 0, 0, svgWidth_px, svgHeight_px, scaledSvgWidth, scaledSvgHeight, dpi, dpi, (guint32) 0xffffff00, nullptr)->getPixbufRaw();
         // Tidy up
-        svgDoc->doUnref();
         if (buf == nullptr) {
             std::cerr << "Pixbuf::create_from_data: failed to load contents: " << std::endl;
+            delete pixbuf;
             g_free(decoded);
             return nullptr;
         } else {
-            g_object_ref(buf);
-            pixbuf = new Pixbuf(buf);
             pixbuf->_setMimeData(decoded, decoded_len, "svg+xml");
         }
     }
@@ -422,7 +425,7 @@ Pixbuf *Pixbuf::create_from_buffer(gchar *&&data, gsize len, double svgdpi, std:
         {
             if (boost::iequals(fn.substr(idx+1).c_str(), "svg")) {
 
-                SPDocument *svgDoc = SPDocument::createNewDocFromMem (data, len, true);
+                std::unique_ptr<SPDocument> svgDoc(SPDocument::createNewDocFromMem(data, len, true));
 
                 // Check the document loaded properly
                 if (svgDoc == nullptr) {
@@ -430,7 +433,6 @@ Pixbuf *Pixbuf::create_from_buffer(gchar *&&data, gsize len, double svgdpi, std:
                 }
                 if (svgDoc->getRoot() == nullptr)
                 {
-                    svgDoc->doUnref();
                     return nullptr;
                 }
 
@@ -445,16 +447,19 @@ Pixbuf *Pixbuf::create_from_buffer(gchar *&&data, gsize len, double svgdpi, std:
                 Inkscape::Util::Quantity svgHeight = svgDoc->getHeight();
                 const double svgWidth_px = svgWidth.value("px");
                 const double svgHeight_px = svgHeight.value("px");
+                if (svgWidth_px < 0 || svgHeight_px < 0) {
+                    g_warning("create_from_buffer: malformed document: svgWidth_px=%f, svgHeight_px=%f", svgWidth_px,
+                              svgHeight_px);
+                    return nullptr;
+                }
 
-                // Now get the resized values
-                const int scaledSvgWidth  = round(svgWidth_px/(96.0/dpi));
-                const int scaledSvgHeight = round(svgHeight_px/(96.0/dpi));
-
-                buf = sp_generate_internal_bitmap(svgDoc, nullptr, 0, 0, svgWidth_px, svgHeight_px, scaledSvgWidth, scaledSvgHeight, dpi, dpi, (guint32) 0xffffff00, nullptr)->getPixbufRaw();
+                Geom::Rect area(0, 0, svgWidth_px, svgHeight_px);
+                pb = sp_generate_internal_bitmap(svgDoc.get(), area, dpi);
+                buf = pb->getPixbufRaw();
 
                 // Tidy up
-                svgDoc->doUnref();
                 if (buf == nullptr) {
+                    delete pb;
                     return nullptr;
                 }
                 is_svg = true;
@@ -481,11 +486,14 @@ Pixbuf *Pixbuf::create_from_buffer(gchar *&&data, gsize len, double svgdpi, std:
             }
             
             buf = gdk_pixbuf_loader_get_pixbuf(loader);
+            if (buf) {
+                // gdk_pixbuf_loader_get_pixbuf returns a borrowed reference
+                g_object_ref(buf);
+                pb = new Pixbuf(buf);
+            }
         }
 
-        if (buf) {
-            g_object_ref(buf);
-            pb = new Pixbuf(buf);
+        if (pb) {
             pb->_path = fn;
             if (!is_svg) {
                 GdkPixbufFormat *fmt = gdk_pixbuf_loader_get_format(loader);
@@ -749,13 +757,18 @@ feed_curve_to_cairo(cairo_t *cr, Geom::Curve const &c, Geom::Affine const & tran
     break;
     default:
     {
-        if (Geom::EllipticalArc const *a = dynamic_cast<Geom::EllipticalArc const*>(&c)) {
-            if (a->isChord()) {
-                Geom::Point endPoint(a->finalPoint());
+        if (Geom::EllipticalArc const *arc = dynamic_cast<Geom::EllipticalArc const*>(&c)) {
+            if (arc->isChord()) {
+                Geom::Point endPoint(arc->finalPoint());
                 cairo_line_to(cr, endPoint[0], endPoint[1]);
             } else {
-                Geom::Affine xform = a->unitCircleTransform() * trans;
-                Geom::Point ang(a->initialAngle().radians(), a->finalAngle().radians());
+                Geom::Affine xform = arc->unitCircleTransform() * trans;
+                // Don't draw anything if the angle is borked
+                if(std::isnan(arc->initialAngle()) || std::isnan(arc->finalAngle())) {
+                    g_warning("Bad angle while drawing EllipticalArc");
+                    break;
+                }
+
                 // Apply the transformation to the current context
                 cairo_matrix_t cm;
                 cm.xx = xform[0];
@@ -769,10 +782,10 @@ feed_curve_to_cairo(cairo_t *cr, Geom::Curve const &c, Geom::Affine const & tran
                 cairo_transform(cr, &cm);
 
                 // Draw the circle
-                if (a->sweep()) {
-                    cairo_arc(cr, 0, 0, 1, ang[0], ang[1]);
+                if (arc->sweep()) {
+                    cairo_arc(cr, 0, 0, 1, arc->initialAngle(), arc->finalAngle());
                 } else {
-                    cairo_arc_negative(cr, 0, 0, 1, ang[0], ang[1]);
+                    cairo_arc_negative(cr, 0, 0, 1, arc->initialAngle(), arc->finalAngle());
                 }
                 // Revert the current context
                 cairo_restore(cr);
@@ -971,6 +984,19 @@ ink_cairo_pattern_set_matrix(cairo_pattern_t *cp, Geom::Affine const &m)
     cairo_pattern_set_matrix(cp, &cm);
 }
 
+void
+ink_cairo_set_hairline(cairo_t *ct)
+{
+#ifdef CAIRO_HAS_HAIRLINE
+    cairo_set_hairline(ct);
+#else
+    // As a backup, use a device unit of 1
+    double x = 1, y = 1;
+    cairo_device_to_user_distance(ct, &x, &y);
+    cairo_set_line_width(ct, std::min(x, y));
+#endif
+}
+
 /**
  * Create an exact copy of a surface.
  * Creates a surface that has the same type, content type, dimensions and contents
@@ -998,6 +1024,24 @@ ink_cairo_surface_copy(cairo_surface_t *s)
     }
 
     return ns;
+}
+
+/**
+ * Create an exact copy of an image surface.
+ */
+Cairo::RefPtr<Cairo::ImageSurface>
+ink_cairo_surface_copy(Cairo::RefPtr<Cairo::ImageSurface> surface )
+{
+    int width  = surface->get_width();
+    int height = surface->get_height();
+    int stride = surface->get_stride();
+    auto new_surface = Cairo::ImageSurface::create(Cairo::FORMAT_ARGB32, width, height); // device scale?
+
+    surface->flush();
+    memcpy(new_surface->get_data(), surface->get_data(), stride * height);
+    new_surface->mark_dirty(); // Clear caches. Mandatory after messing directly with contents.
+
+    return new_surface;
 }
 
 /**
@@ -1148,6 +1192,30 @@ guint32 ink_cairo_surface_average_color(cairo_surface_t *surface)
     guint32 a = round(af * 255);
     ASSEMBLE_ARGB32(px, a,r,g,b);
     return px;
+}
+// We extract colors from pattern background, if we need to extract sometimes from a gradient we can add
+// a extra parameter with the spot number and use cairo_pattern_get_color_stop_rgba
+// also if the pattern is a image we can pass a boolean like solid = false to get the color by image average ink_cairo_surface_average_color
+guint32 ink_cairo_pattern_get_argb32(cairo_pattern_t *pattern)
+{
+    double red = 0;
+    double green = 0;
+    double blue = 0;
+    double alpha = 0;
+    auto status = cairo_pattern_get_rgba(pattern, &red, &green, &blue, &alpha);
+    if (status != CAIRO_STATUS_PATTERN_TYPE_MISMATCH) {
+        // in ARGB32 format
+        return SP_RGBA32_F_COMPOSE(alpha, red, green, blue);
+    }
+        
+    cairo_surface_t *surface;
+    status = cairo_pattern_get_surface (pattern, &surface);
+    if (status != CAIRO_STATUS_PATTERN_TYPE_MISMATCH) {
+        // first pixel only
+        auto *pxbsurface =  cairo_image_surface_get_data(surface);
+        return *reinterpret_cast<guint32 const *>(pxbsurface);
+    }
+    return 0;
 }
 
 void ink_cairo_surface_average_color(cairo_surface_t *surface, double &r, double &g, double &b, double &a)
@@ -1567,9 +1635,13 @@ guint32 pixbuf_from_argb32(guint32 c)
 void
 convert_pixels_pixbuf_to_argb32(guchar *data, int w, int h, int stride)
 {
+    if (!data || w < 1 || h < 1 || stride < 1) {
+        return;
+    }
+
     for (size_t i = 0; i < h; ++i) {
         guint32 *px = reinterpret_cast<guint32*>(data + i*stride);
-        for (int j = 0; j < w; ++j) {
+        for (size_t j = 0; j < w; ++j) {
             *px = argb32_from_pixbuf(*px);
             ++px;
         }
@@ -1584,9 +1656,12 @@ convert_pixels_pixbuf_to_argb32(guchar *data, int w, int h, int stride)
 void
 convert_pixels_argb32_to_pixbuf(guchar *data, int w, int h, int stride)
 {
+    if (!data || w < 1 || h < 1 || stride < 1) {
+        return;
+    }
     for (size_t i = 0; i < h; ++i) {
         guint32 *px = reinterpret_cast<guint32*>(data + i*stride);
-        for (int j = 0; j < w; ++j) {
+        for (size_t j = 0; j < w; ++j) {
             *px = pixbuf_from_argb32(*px);
             ++px;
         }

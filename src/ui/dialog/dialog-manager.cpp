@@ -1,297 +1,285 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-/**
- * @file
- * Object for managing a set of dialogs, including their signals and
- *        construction/caching/destruction of them.
- */
-/* Authors:
- *   Bryce W. Harrington <bryce@bryceharrington.org>
- *   Jon Phillips <jon@rejon.org>
- *   Gustav Broberg <broberg@kth.se>
- *
- * Copyright (C) 2004-2007 Authors
- *
- * Released under GNU GPL v2+, read the file 'COPYING' for more information.
- */
 
-#include "ui/dialog/dialog-manager.h"
+#include "dialog-manager.h"
 
-#include "style.h"
-#include "ui/dialog/align-and-distribute.h"
-#include "ui/dialog/document-metadata.h"
-#include "ui/dialog/document-properties.h"
-#include "ui/dialog/extension-editor.h"
-#include "ui/dialog/fill-and-stroke.h"
-#include "ui/dialog/filter-editor.h"
-#include "ui/dialog/filter-effects-dialog.h"
-#include "ui/dialog/find.h"
-#include "ui/dialog/glyphs.h"
-#include "ui/dialog/inkscape-preferences.h"
-#include "ui/dialog/input.h"
-#include "ui/dialog/livepatheffect-editor.h"
-#include "ui/dialog/memory.h"
-#include "ui/dialog/messages.h"
-#include "ui/dialog/paint-servers.h"
-#include "ui/dialog/symbols.h"
-#include "ui/dialog/tile.h"
-# include "ui/dialog/tracedialog.h"
+#include <gdkmm/monitor.h>
+#include <limits>
+#include <boost/filesystem.hpp>
+namespace filesystem = boost::filesystem;
+// #include <filesystem> - waiting for compiler on MacOS to catch up to C++x17
 
-#include "ui/dialog/transformation.h"
-#include "ui/dialog/undo-history.h"
-#include "ui/dialog/panel-dialog.h"
-#include "ui/dialog/layers.h"
-#include "ui/dialog/icon-preview.h"
-//#include "ui/dialog/print-colors-preview-dialog.h"
-#include "ui/dialog/clonetiler.h"
-#include "ui/dialog/export.h"
-#include "ui/dialog/object-attributes.h"
-#include "ui/dialog/object-properties.h"
-#include "ui/dialog/objects.h"
-#include "ui/dialog/selectorsdialog.h"
+#include "io/resource.h"
+#include "inkscape-application.h"
+#include "dialog-base.h"
+#include "dialog-container.h"
+#include "dialog-window.h"
+#include "enums.h"
+#include "preferences.h"
 
-#if HAVE_ASPELL
-# include "ui/dialog/spellcheck.h"
-#endif
-
-#include "ui/dialog/tags.h"
-
-#include "ui/dialog/styledialog.h"
-#include "ui/dialog/svg-fonts-dialog.h"
-#include "ui/dialog/text-edit.h"
-#include "ui/dialog/xml-tree.h"
-#include "util/ege-appear-time-tracker.h"
 namespace Inkscape {
 namespace UI {
 namespace Dialog {
 
-namespace {
+std::optional<window_position_t> dm_get_window_position(Gtk::Window &window)
+{
+    std::optional<window_position_t> position = std::nullopt;
 
-using namespace Behavior;
+    const int max = std::numeric_limits<int>::max();
+    int x = max;
+    int y = max;
+    int width = 0;
+    int height = 0;
+    // gravity NW to include window decorations
+    window.property_gravity() = Gdk::GRAVITY_NORTH_WEST;
+    window.get_position(x, y);
+    window.get_size(width, height);
 
-template <typename T, typename B>
-inline Dialog *create() { return PanelDialog<B>::template create<T>(); }
+    if (x != max && y != max && width > 0 && height > 0) {
+        position = window_position_t{x, y, width, height};
+    }
 
+    return position;
 }
 
-/**
- *  This class is provided as a container for Inkscape's various
- *  dialogs.  This allows InkscapeApplication to treat the various
- *  dialogs it invokes, as abstractions.
- *
- *  DialogManager is essentially a cache of dialogs.  It lets us
- *  initialize dialogs lazily - instead of constructing them during
- *  application startup, they're constructed the first time they're
- *  actually invoked by InkscapeApplication.  The constructed
- *  dialog is held here after that, so future invocations of the
- *  dialog don't need to get re-constructed each time.  The memory for
- *  the dialogs are then reclaimed when the DialogManager is destroyed.
- *
- *  In addition, DialogManager also serves as a signal manager for
- *  dialogs.  It provides a set of signals that can be sent to all
- *  dialogs for doing things such as hiding/unhiding them, etc.
- *  DialogManager ensures that every dialog it handles will listen
- *  to these signals.
- *
- */
-DialogManager::DialogManager() {
+void dm_restore_window_position(Gtk::Window &window, const window_position_t &position)
+{
+    // note: Gtk window methods are recommended over low-level Gdk ones to resize and position window
+    window.property_gravity() = Gdk::GRAVITY_NORTH_WEST;
+    window.set_default_size(position.width, position.height);
+    // move & resize positions window on the screen making sure it is not clipped
+    // (meaning it is visible; this works with two monitors too)
+    window.move(position.x, position.y);
+    window.resize(position.width, position.height);
+}
 
-    using namespace Behavior;
+DialogManager &DialogManager::singleton()
+{
+    static DialogManager dm;
+    return dm;
+}
 
-    Inkscape::Preferences *prefs = Inkscape::Preferences::get();
-    int dialogs_type = prefs->getIntLimited("/options/dialogtype/value", DOCK, 0, 1);
+// store complete dialog window state (including its container state)
+void DialogManager::store_state(DialogWindow &wnd)
+{
+    // get window's size and position
+    if (auto pos = dm_get_window_position(wnd)) {
+        if (auto container = wnd.get_container()) {
+            // get container's state
+            auto state = container->get_container_state(&*pos);
 
-    // The preferences dialog is broken, the DockBehavior code resizes it's floating window to the smallest size
-    registerFactory("InkscapePreferences", &create<InkscapePreferences,  FloatingBehavior>);
-
-    if (dialogs_type == FLOATING) {
-        registerFactory("AlignAndDistribute",  &create<AlignAndDistribute,   FloatingBehavior>);
-        registerFactory("DocumentMetadata",    &create<DocumentMetadata,     FloatingBehavior>);
-        registerFactory("DocumentProperties",  &create<DocumentProperties,   FloatingBehavior>);
-        registerFactory("ExtensionEditor",     &create<ExtensionEditor,      FloatingBehavior>);
-        registerFactory("FillAndStroke",       &create<FillAndStroke,        FloatingBehavior>);
-        registerFactory("FilterEffectsDialog", &create<FilterEffectsDialog,  FloatingBehavior>);
-        registerFactory("FilterEditorDialog",  &create<FilterEditorDialog,   FloatingBehavior>);
-        registerFactory("Find",                &create<Find,                 FloatingBehavior>);
-        registerFactory("Glyphs",              &create<GlyphsPanel,          FloatingBehavior>);
-        registerFactory("IconPreviewPanel",    &create<IconPreviewPanel,     FloatingBehavior>);
-        registerFactory("LayersPanel",         &create<LayersPanel,          FloatingBehavior>);
-        registerFactory("ObjectsPanel",        &create<ObjectsPanel,         FloatingBehavior>);
-        registerFactory("TagsPanel",           &create<TagsPanel,            FloatingBehavior>);
-        registerFactory("LivePathEffect",      &create<LivePathEffectEditor, FloatingBehavior>);
-        registerFactory("Memory",              &create<Memory,               FloatingBehavior>);
-        registerFactory("Messages",            &create<Messages,             FloatingBehavior>);
-        registerFactory("ObjectAttributes",    &create<ObjectAttributes,     FloatingBehavior>);
-        registerFactory("ObjectProperties",    &create<ObjectProperties,     FloatingBehavior>);
-//        registerFactory("PrintColorsPreviewDialog",      &create<PrintColorsPreviewDialog,       FloatingBehavior>);
-        registerFactory("SvgFontsDialog",      &create<SvgFontsDialog,       FloatingBehavior>);
-        registerFactory("Swatches",            &create<SwatchesPanel,        FloatingBehavior>);
-        registerFactory("TileDialog",          &create<ArrangeDialog,        FloatingBehavior>);
-        registerFactory("Symbols",             &create<SymbolsDialog,        FloatingBehavior>);
-        registerFactory("PaintServers",        &create<PaintServersDialog,   FloatingBehavior>);
-        registerFactory("StyleDialog",         &create<StyleDialog,          FloatingBehavior>);
-        registerFactory("Trace",               &create<TraceDialog,          FloatingBehavior>);
-
-        registerFactory("Transformation",      &create<Transformation,       FloatingBehavior>);
-        registerFactory("UndoHistory",         &create<UndoHistory,          FloatingBehavior>);
-        registerFactory("InputDevices",        &create<InputDialog,          FloatingBehavior>);
-        registerFactory("TextFont",            &create<TextEdit,             FloatingBehavior>);
-
-#if HAVE_ASPELL
-        registerFactory("SpellCheck",          &create<SpellCheck,           FloatingBehavior>);
-#endif
-
-        registerFactory("Export",              &create<Export,               FloatingBehavior>);
-        registerFactory("CloneTiler",          &create<CloneTiler,           FloatingBehavior>);
-        registerFactory("XmlTree",             &create<XmlTree,              FloatingBehavior>);
-        registerFactory("Selectors",           &create<SelectorsDialog,      FloatingBehavior>);
-
-    } else {
-
-        registerFactory("AlignAndDistribute",  &create<AlignAndDistribute,   DockBehavior>);
-        registerFactory("DocumentMetadata",    &create<DocumentMetadata,     DockBehavior>);
-        registerFactory("DocumentProperties",  &create<DocumentProperties,   DockBehavior>);
-        registerFactory("ExtensionEditor",     &create<ExtensionEditor,      DockBehavior>);
-        registerFactory("FillAndStroke",       &create<FillAndStroke,        DockBehavior>);
-        registerFactory("FilterEffectsDialog", &create<FilterEffectsDialog,  DockBehavior>);
-        registerFactory("FilterEditorDialog",  &create<FilterEditorDialog,   DockBehavior>);
-        registerFactory("Find",                &create<Find,                 DockBehavior>);
-        registerFactory("Glyphs",              &create<GlyphsPanel,          DockBehavior>);
-        registerFactory("IconPreviewPanel",    &create<IconPreviewPanel,     DockBehavior>);
-        registerFactory("LayersPanel",         &create<LayersPanel,          DockBehavior>);
-        registerFactory("ObjectsPanel",        &create<ObjectsPanel,         DockBehavior>);
-        registerFactory("TagsPanel",           &create<TagsPanel,            DockBehavior>);
-        registerFactory("LivePathEffect",      &create<LivePathEffectEditor, DockBehavior>);
-        registerFactory("Memory",              &create<Memory,               DockBehavior>);
-        registerFactory("Messages",            &create<Messages,             DockBehavior>);
-        registerFactory("ObjectAttributes",    &create<ObjectAttributes,     DockBehavior>);
-        registerFactory("ObjectProperties",    &create<ObjectProperties,     DockBehavior>);
-//        registerFactory("PrintColorsPreviewDialog",      &create<PrintColorsPreviewDialog,       DockBehavior>);
-        registerFactory("SvgFontsDialog",      &create<SvgFontsDialog,       DockBehavior>);
-        registerFactory("Swatches",            &create<SwatchesPanel,        DockBehavior>);
-        registerFactory("TileDialog",          &create<ArrangeDialog,        DockBehavior>);
-        registerFactory("Symbols",             &create<SymbolsDialog,        DockBehavior>);
-        registerFactory("PaintServers",        &create<PaintServersDialog,   DockBehavior>);
-        registerFactory("Trace",               &create<TraceDialog,          DockBehavior>);
-
-        registerFactory("Transformation",      &create<Transformation,       DockBehavior>);
-        registerFactory("UndoHistory",         &create<UndoHistory,          DockBehavior>);
-        registerFactory("InputDevices",        &create<InputDialog,          DockBehavior>);
-        registerFactory("TextFont",            &create<TextEdit,             DockBehavior>);
-
-#if HAVE_ASPELL
-        registerFactory("SpellCheck",          &create<SpellCheck,           DockBehavior>);
-#endif
-
-        registerFactory("Export",              &create<Export,               DockBehavior>);
-        registerFactory("CloneTiler",          &create<CloneTiler,           DockBehavior>);
-        registerFactory("XmlTree",             &create<XmlTree,              DockBehavior>);
-        registerFactory("Selectors",           &create<SelectorsDialog,      DockBehavior>);
+            // find dialogs hosted in this window
+            for (auto dlg : *container->get_dialogs()) {
+                _floating_dialogs[dlg.first] = state;
+            }
+        }
     }
 }
 
-DialogManager::~DialogManager() {
-    // TODO:  Disconnect the signals
-    // TODO:  Do we need to explicitly delete the dialogs?
-    //        Appears to cause a segfault if we do
+//
+bool DialogManager::should_open_floating(const Glib::ustring& dialog_type)
+{
+    return _floating_dialogs.count(dialog_type) > 0;
 }
 
+void DialogManager::set_floating_dialog_visibility(DialogWindow* wnd, bool show) {
+    if (!wnd) return;
 
-DialogManager &DialogManager::getInstance()
-{
-    Inkscape::Preferences *prefs = Inkscape::Preferences::get();
-    int dialogs_type = prefs->getIntLimited("/options/dialogtype/value", DOCK, 0, 1);
+    if (show) {
+        if (wnd->is_visible()) return;
 
-    /* Use singleton behavior for floating dialogs */
-    if (dialogs_type == FLOATING) {
-        static DialogManager *instance = nullptr;
-
-        if (!instance)
-            instance = new DialogManager();
-        return *instance;
+        // wnd->present(); - not sure which one is better, show or present...
+        wnd->show();
+        _hidden_dlg_windows.erase(wnd);
+        // re-add it to application; hiding removed it
+        if (auto app = InkscapeApplication::instance()) {
+            app->gtk_app()->add_window(*wnd);
+        }
     }
+    else {
+        if (!wnd->is_visible()) return;
 
-    return *new DialogManager();
+        _hidden_dlg_windows.insert(wnd);
+        wnd->hide();
+    }
 }
 
-/**
- * Registers a dialog factory function used to create the named dialog.
- */
-void DialogManager::registerFactory(gchar const *name,
-                                    DialogManager::DialogFactory factory)
-{
-    registerFactory(g_quark_from_string(name), factory);
-}
+std::vector<DialogWindow*> DialogManager::get_all_floating_dialog_windows() {
+    std::vector<Gtk::Window*> windows = InkscapeApplication::instance()->gtk_app()->get_windows();
 
-/**
- * Registers a dialog factory function used to create the named dialog.
- */
-void DialogManager::registerFactory(GQuark name,
-                                    DialogManager::DialogFactory factory)
-{
-    _factory_map[name] = factory;
-}
-
-/**
- * Fetches the named dialog, creating it if it has not already been
- * created (assuming a factory has been registered for it).
- */
-Dialog *DialogManager::getDialog(gchar const *name) {
-    return getDialog(g_quark_from_string(name));
-}
-
-/**
- * Fetches the named dialog, creating it if it has not already been
- * created (assuming a factory has been registered for it).
- */
-Dialog *DialogManager::getDialog(GQuark name) {
-    DialogMap::iterator dialog_found;
-    dialog_found = _dialog_map.find(name);
-
-    Dialog *dialog=nullptr;
-    if ( dialog_found != _dialog_map.end() ) {
-        dialog = dialog_found->second;
-    } else {
-        FactoryMap::iterator factory_found;
-        factory_found = _factory_map.find(name);
-
-        if ( factory_found != _factory_map.end() ) {
-            dialog = factory_found->second();
-            _dialog_map[name] = dialog;
+    std::vector<DialogWindow*> result(_hidden_dlg_windows.begin(), _hidden_dlg_windows.end());
+    for (auto wnd : windows) {
+        if (auto dlg_wnd = dynamic_cast<DialogWindow*>(wnd)) {
+            result.push_back(dlg_wnd);
         }
     }
 
-    return dialog;
+    return result;
 }
 
-/**
- * Shows the named dialog, creating it if necessary.
- */
-void DialogManager::showDialog(gchar const *name, bool grabfocus) {
-    showDialog(g_quark_from_string(name), grabfocus);
-}
+DialogWindow* DialogManager::find_floating_dialog_window(const Glib::ustring& dialog_type) {
+    auto windows = get_all_floating_dialog_windows();
 
-/**
- * Shows the named dialog, creating it if necessary.
- */
-void DialogManager::showDialog(GQuark name, bool /*grabfocus*/) {
-    bool wantTiming = Inkscape::Preferences::get()->getBool("/dialogs/debug/trackAppear", false);
-    GTimer *timer = (wantTiming) ? g_timer_new() : nullptr; // if needed, must be created/started before getDialog()
-    Dialog *dialog = getDialog(name);
-    if ( dialog ) {
-        if ( wantTiming ) {
-            gchar const * nameStr = g_quark_to_string(name);
-            ege::AppearTimeTracker *tracker = new ege::AppearTimeTracker(timer, dialog->gobj(), nameStr);
-            tracker->setAutodelete(true);
-            timer = nullptr;
+    for (auto dlg_wnd : windows) {
+        if (auto container = dlg_wnd->get_container()) {
+            if (auto dlg = container->get_dialog(dialog_type)) {
+                return dlg_wnd;
+            }
         }
-        // should check for grabfocus, but lp:1348927 prevents it
-        dialog->present();
     }
 
-    if ( timer ) {
-        g_timer_destroy(timer);
-        timer = nullptr;
+    return nullptr;
+}
+
+DialogBase *DialogManager::find_floating_dialog(const Glib::ustring& dialog_type)
+{
+    auto windows = get_all_floating_dialog_windows();
+
+    for (auto dlg_wnd : windows) {
+        if (auto container = dlg_wnd->get_container()) {
+            if (auto dlg = container->get_dialog(dialog_type)) {
+                return dlg;
+            }
+        }
     }
+
+    return nullptr;
+}
+
+std::shared_ptr<Glib::KeyFile> DialogManager::find_dialog_state(const Glib::ustring& dialog_type)
+{
+    auto it = _floating_dialogs.find(dialog_type);
+    if (it != _floating_dialogs.end()) {
+        return it->second;
+    }
+    return nullptr;
+}
+
+const char dialogs_state[] = "dialogs-state-ex.ini";
+const char save_dialog_position[] = "/options/savedialogposition/value";
+const char transient_group[] = "transient";
+const char floating_group[] = "floating";
+
+// list of dialogs sharing the same state
+std::vector<Glib::ustring> DialogManager::count_dialogs(const Glib::KeyFile *state) const
+{
+    std::vector<Glib::ustring> dialogs;
+    if (!state) return dialogs;
+
+    for (auto dlg : _floating_dialogs) {
+        if (dlg.second.get() == state) {
+            dialogs.push_back(dlg.first);
+        }
+    }
+    return dialogs;
+}
+
+void DialogManager::save_dialogs_state(DialogContainer *docking_container)
+{
+    if (!docking_container) return;
+
+    // check if we want to save the state
+    Inkscape::Preferences *prefs = Inkscape::Preferences::get();
+    int save_state = prefs->getInt(save_dialog_position, PREFS_DIALOGS_STATE_SAVE);
+    if (save_state == PREFS_DIALOGS_STATE_NONE) return;
+
+    // save state of docked dialogs and currently open floating ones
+    auto keyfile = docking_container->save_container_state();
+
+    // save transient state of floating dialogs that user might have opened interacting with the app
+    int idx = 1;
+    for (auto dlg : _floating_dialogs) {
+        auto state = dlg.second.get();
+        auto&& type = dlg.first;
+        auto index = std::to_string(idx++);
+        // state may be empty; all that means it that dialog hasn't been opened yet,
+        // but when it is, then it should be open in a floating state
+        keyfile->set_string(transient_group, "state" + index, state ? state->to_data() : "");
+        auto dialogs = count_dialogs(state);
+        if (!state) {
+            dialogs.push_back(type);
+        }
+        keyfile->set_string_list(transient_group, "dialogs" + index, dialogs);
+    }
+    keyfile->set_integer(transient_group, "count", _floating_dialogs.size());
+
+    std::string filename = Glib::build_filename(Inkscape::IO::Resource::profile_path(), dialogs_state);
+    try {
+        keyfile->save_to_file(filename);
+    } catch (Glib::FileError &error) {
+        std::cerr << G_STRFUNC << ": " << error.what() << std::endl;
+    }
+}
+
+// load transient dialog state - it includes state of floating dialogs that may or may not be open
+void DialogManager::load_transient_state(Glib::KeyFile *file)
+{
+    int count = file->get_integer(transient_group, "count");
+    for (int i = 0; i < count; ++i) {
+        auto index = std::to_string(i + 1);
+        auto dialogs = file->get_string_list(transient_group, "dialogs" + index);
+        auto state = file->get_string(transient_group, "state" + index);
+
+        auto keyfile = std::make_shared<Glib::KeyFile>();
+        if (!state.empty()) {
+            keyfile->load_from_data(state);
+        }
+        for (auto type : dialogs) {
+            _floating_dialogs[type] = keyfile;
+        }
+    }
+}
+
+// restore state of dialogs; populate docking container and open visible floating dialogs
+void DialogManager::restore_dialogs_state(DialogContainer *docking_container, bool include_floating)
+{
+    if (!docking_container) return;
+
+    Inkscape::Preferences *prefs = Inkscape::Preferences::get();
+    int save_state = prefs->getInt(save_dialog_position, PREFS_DIALOGS_STATE_SAVE);
+    if (save_state == PREFS_DIALOGS_STATE_NONE) return;
+
+    try {
+        auto keyfile = std::make_unique<Glib::KeyFile>();
+        std::string filename = Glib::build_filename(Inkscape::IO::Resource::profile_path(), dialogs_state);
+        if (filesystem::exists(filename) && keyfile->load_from_file(filename)) {
+            // restore visible dialogs first; that state is up-to-date
+            docking_container->load_container_state(keyfile.get(), include_floating);
+
+            // then load transient data too; it may be older than above
+            if (include_floating) {
+                try {
+                    load_transient_state(keyfile.get());
+                } catch (Glib::Error &error) {
+                    std::cerr << G_STRFUNC << ": transient state not loaded - " << error.what() << std::endl;
+                }
+            }
+        }
+        else {
+            // state not available or not valid; prepare defaults
+            dialog_defaults();
+        }
+    } catch (Glib::Error &error) {
+        std::cerr << G_STRFUNC << ": dialogs state not loaded - " << error.what() << std::endl;
+    }
+}
+
+void DialogManager::remove_dialog_floating_state(const Glib::ustring& dialog_type) {
+    auto it = _floating_dialogs.find(dialog_type);
+    if (it != _floating_dialogs.end()) {
+        _floating_dialogs.erase(it);
+    }
+}
+
+// apply defaults when dialog state cannot be loaded / doesn't exist:
+// here we can define which dialogs should by default be open floating rather then docked
+void DialogManager::dialog_defaults() {
+    std::shared_ptr<Glib::KeyFile> floating;
+    // strings are dialog types
+    _floating_dialogs["DocumentProperties"] = floating;
+    _floating_dialogs["FilterEffects"] = floating;
+    _floating_dialogs["Input"] = floating;
+    _floating_dialogs["Preferences"] = floating;
+    _floating_dialogs["XMLEditor"] = floating;
 }
 
 } // namespace Dialog

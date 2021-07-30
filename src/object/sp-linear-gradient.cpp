@@ -28,35 +28,35 @@ SPLinearGradient::SPLinearGradient() : SPGradient() {
 SPLinearGradient::~SPLinearGradient() = default;
 
 void SPLinearGradient::build(SPDocument *document, Inkscape::XML::Node *repr) {
-    SPGradient::build(document, repr);
+    this->readAttr(SPAttr::X1);
+    this->readAttr(SPAttr::Y1);
+    this->readAttr(SPAttr::X2);
+    this->readAttr(SPAttr::Y2);
 
-    this->readAttr( "x1" );
-    this->readAttr( "y1" );
-    this->readAttr( "x2" );
-    this->readAttr( "y2" );
+    SPGradient::build(document, repr);
 }
 
 /**
  * Callback: set attribute.
  */
-void SPLinearGradient::set(SPAttributeEnum key, const gchar* value) {
+void SPLinearGradient::set(SPAttr key, const gchar* value) {
     switch (key) {
-        case SP_ATTR_X1:
+        case SPAttr::X1:
             this->x1.readOrUnset(value, SVGLength::PERCENT, 0.0, 0.0);
             this->requestModified(SP_OBJECT_MODIFIED_FLAG);
             break;
 
-        case SP_ATTR_Y1:
+        case SPAttr::Y1:
             this->y1.readOrUnset(value, SVGLength::PERCENT, 0.0, 0.0);
             this->requestModified(SP_OBJECT_MODIFIED_FLAG);
             break;
 
-        case SP_ATTR_X2:
+        case SPAttr::X2:
             this->x2.readOrUnset(value, SVGLength::PERCENT, 1.0, 1.0);
             this->requestModified(SP_OBJECT_MODIFIED_FLAG);
             break;
 
-        case SP_ATTR_Y2:
+        case SPAttr::Y2:
             this->y2.readOrUnset(value, SVGLength::PERCENT, 0.0, 0.0);
             this->requestModified(SP_OBJECT_MODIFIED_FLAG);
             break;
@@ -98,19 +98,19 @@ Inkscape::XML::Node* SPLinearGradient::write(Inkscape::XML::Document *xml_doc, I
     }
 
     if ((flags & SP_OBJECT_WRITE_ALL) || this->x1._set) {
-        sp_repr_set_svg_double(repr, "x1", this->x1.computed);
+        repr->setAttributeSvgDouble("x1", this->x1.computed);
     }
 
     if ((flags & SP_OBJECT_WRITE_ALL) || this->y1._set) {
-        sp_repr_set_svg_double(repr, "y1", this->y1.computed);
+        repr->setAttributeSvgDouble("y1", this->y1.computed);
     }
 
     if ((flags & SP_OBJECT_WRITE_ALL) || this->x2._set) {
-        sp_repr_set_svg_double(repr, "x2", this->x2.computed);
+        repr->setAttributeSvgDouble("x2", this->x2.computed);
     }
 
     if ((flags & SP_OBJECT_WRITE_ALL) || this->y2._set) {
-        sp_repr_set_svg_double(repr, "y2", this->y2.computed);
+        repr->setAttributeSvgDouble("y2", this->y2.computed);
     }
 
     SPGradient::write(xml_doc, repr, flags);

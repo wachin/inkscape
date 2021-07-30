@@ -17,22 +17,14 @@
  */
 
 #include <cstring>
-#include <cstdlib>
-
 
 #include <glib.h>
 #include <glibmm.h>
 
-#include <2geom/point.h>
-#include "svg/stringstream.h"
-#include "svg/css-ostringstream.h"
 #include "svg/svg-length.h"
 
 #include "xml/repr.h"
 #include "xml/repr-sorting.h"
-
-
-#define OSB_NS_URI "http://www.openswatchbook.org/uri/2009/osb"
 
 
 struct SPXMLNs {
@@ -107,11 +99,11 @@ static void sp_xml_ns_register_defaults()
 
     defaults[6].uri = g_quark_from_static_string(SP_DC_NS_URI);
     defaults[6].prefix = g_quark_from_static_string("dc");
-    defaults[6].next = &defaults[7];
+    defaults[6].next = &defaults[8];
 
-    defaults[7].uri = g_quark_from_static_string(OSB_NS_URI);
-    defaults[7].prefix = g_quark_from_static_string("osb");
-    defaults[7].next = &defaults[8];
+    //defaults[7].uri = g_quark_from_static_string("https://inkscape.org/namespaces/deprecated/osb");
+    //defaults[7].prefix = g_quark_from_static_string("osb");
+    //defaults[7].next = &defaults[8];
 
     // Inkscape versions prior to 0.44 would write this namespace
     // URI instead of the correct sodipodi namespace; by adding this
@@ -457,196 +449,13 @@ sp_repr_lookup_property_many( Inkscape::XML::Node *repr, Glib::ustring const& pr
 bool sp_repr_is_meta_element(const Inkscape::XML::Node *node)
 {
     if (node == nullptr) return false;
-    if (node->type() != Inkscape::XML::ELEMENT_NODE) return false;
+    if (node->type() != Inkscape::XML::NodeType::ELEMENT_NODE) return false;
     gchar const *name = node->name();
     if (name == nullptr) return false;
     if (!std::strcmp(name, "svg:title")) return true;
     if (!std::strcmp(name, "svg:desc")) return true;
     if (!std::strcmp(name, "svg:metadata")) return true;
     return false;
-}
-
-/**
- * Parses the boolean value of an attribute "key" in repr and sets val accordingly, or to FALSE if
- * the attr is not set.
- *
- * \return TRUE if the attr was set, FALSE otherwise.
- */
-unsigned int sp_repr_get_boolean(Inkscape::XML::Node *repr, gchar const *key, unsigned int *val)
-{
-    gchar const *v;
-
-    g_return_val_if_fail(repr != nullptr, FALSE);
-    g_return_val_if_fail(key != nullptr, FALSE);
-    g_return_val_if_fail(val != nullptr, FALSE);
-
-    v = repr->attribute(key);
-
-    if (v != nullptr) {
-        if (!g_ascii_strcasecmp(v, "true") ||
-            !g_ascii_strcasecmp(v, "yes" ) ||
-            !g_ascii_strcasecmp(v, "y"   ) ||
-            (atoi(v) != 0)) {
-            *val = TRUE;
-        } else {
-            *val = FALSE;
-        }
-        return TRUE;
-    } else {
-        *val = FALSE;
-        return FALSE;
-    }
-}
-
-unsigned int sp_repr_get_int(Inkscape::XML::Node *repr, gchar const *key, int *val)
-{
-    gchar const *v;
-
-    g_return_val_if_fail(repr != nullptr, FALSE);
-    g_return_val_if_fail(key != nullptr, FALSE);
-    g_return_val_if_fail(val != nullptr, FALSE);
-
-    v = repr->attribute(key);
-
-    if (v != nullptr) {
-        *val = atoi(v);
-        return TRUE;
-    }
-
-    return FALSE;
-}
-
-unsigned int sp_repr_get_double(Inkscape::XML::Node *repr, gchar const *key, double *val)
-{
-    g_return_val_if_fail(repr != nullptr, FALSE);
-    g_return_val_if_fail(key != nullptr, FALSE);
-    g_return_val_if_fail(val != nullptr, FALSE);
-
-    gchar const *v = repr->attribute(key);
-
-    if (v != nullptr) {
-        *val = g_ascii_strtod(v, nullptr);
-        return TRUE;
-    }
-
-    return FALSE;
-}
-
-unsigned int sp_repr_set_boolean(Inkscape::XML::Node *repr, gchar const *key, unsigned int val)
-{
-    g_return_val_if_fail(repr != nullptr, FALSE);
-    g_return_val_if_fail(key != nullptr, FALSE);
-
-    repr->setAttribute(key, (val) ? "true" : "false");
-    return true;
-}
-
-unsigned int sp_repr_set_int(Inkscape::XML::Node *repr, gchar const *key, int val)
-{
-    gchar c[32];
-
-    g_return_val_if_fail(repr != nullptr, FALSE);
-    g_return_val_if_fail(key != nullptr, FALSE);
-
-    g_snprintf(c, 32, "%d", val);
-
-    repr->setAttribute(key, c);
-    return true;
-}
-
-/**
- * Set a property attribute to \a val [slightly rounded], in the format
- * required for CSS properties: in particular, it never uses exponent
- * notation.
- */
-unsigned int sp_repr_set_css_double(Inkscape::XML::Node *repr, gchar const *key, double val)
-{
-    g_return_val_if_fail(repr != nullptr, FALSE);
-    g_return_val_if_fail(key != nullptr, FALSE);
-
-    Inkscape::CSSOStringStream os;
-    os << val;
-
-    repr->setAttribute(key, os.str());
-    return true;
-}
-
-/**
- * For attributes where an exponent is allowed.
- *
- * Not suitable for property attributes (fill-opacity, font-size etc.).
- */
-unsigned int sp_repr_set_svg_double(Inkscape::XML::Node *repr, gchar const *key, double val)
-{
-    g_return_val_if_fail(repr != nullptr, FALSE);
-    g_return_val_if_fail(key != nullptr, FALSE);
-    g_return_val_if_fail(val==val, FALSE);//tests for nan
-
-    Inkscape::SVGOStringStream os;
-    os << val;
-
-    repr->setAttribute(key, os.str());
-    return true;
-}
-
-unsigned int sp_repr_set_svg_non_default_double(Inkscape::XML::Node *repr, gchar const *key, double val, double default_value)
-{
-    if (val==default_value){
-        repr->removeAttribute(key);
-        return true;
-    }
-    return sp_repr_set_svg_double(repr, key, val);
-}
-
-/**
- * For attributes where an exponent is allowed.
- *
- * Not suitable for property attributes.
- */
-unsigned int sp_repr_set_svg_length(Inkscape::XML::Node *repr, gchar const *key, SVGLength &val)
-{
-    g_return_val_if_fail(repr != nullptr, FALSE);
-    g_return_val_if_fail(key != nullptr, FALSE);
-
-    repr->setAttribute(key, val.write());
-    return true;
-}
-
-unsigned sp_repr_set_point(Inkscape::XML::Node *repr, gchar const *key, Geom::Point const & val)
-{
-    g_return_val_if_fail(repr != nullptr, FALSE);
-    g_return_val_if_fail(key != nullptr, FALSE);
-
-    Inkscape::SVGOStringStream os;
-    os << val[Geom::X] << "," << val[Geom::Y];
-
-    repr->setAttribute(key, os.str());
-    return true;
-}
-
-unsigned int sp_repr_get_point(Inkscape::XML::Node *repr, gchar const *key, Geom::Point *val)
-{
-    g_return_val_if_fail(repr != nullptr, FALSE);
-    g_return_val_if_fail(key != nullptr, FALSE);
-    g_return_val_if_fail(val != nullptr, FALSE);
-
-    gchar const *v = repr->attribute(key);
-
-    g_return_val_if_fail(v != nullptr, FALSE);
-
-    gchar ** strarray = g_strsplit(v, ",", 2);
-
-    if (strarray && strarray[0] && strarray[1]) {
-        double newx, newy;
-        newx = g_ascii_strtod(strarray[0], nullptr);
-        newy = g_ascii_strtod(strarray[1], nullptr);
-        g_strfreev (strarray);
-        *val = Geom::Point(newx, newy);
-        return TRUE;
-    }
-
-    g_strfreev (strarray);
-    return FALSE;
 }
 
 /*

@@ -19,12 +19,17 @@
 #include "display/drawing-surface.h"
 #include "display/drawing-text.h"
 #include "display/drawing.h"
+
+#include "display/cairo-utils.h"
+#include "display/cairo-templates.h"
+
+#include "display/control/canvas-item-drawing.h"
+#include "ui/widget/canvas.h" // Mark area for redrawing.
+
 #include "nr-filter.h"
 #include "preferences.h"
 #include "style.h"
 
-#include "display/cairo-utils.h"
-#include "display/cairo-templates.h"
 
 #include "object/sp-item.h"
 
@@ -85,7 +90,16 @@ DrawingItem::DrawingItem(Drawing &drawing)
 
 DrawingItem::~DrawingItem()
 {
-    _drawing.signal_item_deleted.emit(this);
+    // Unactivate if active.
+    if (drawing().getCanvasItemDrawing()) {
+        if (drawing().getCanvasItemDrawing()->get_active() == this) {
+            drawing().getCanvasItemDrawing()->set_active(nullptr);
+        }
+    } else {
+        // Can happen, e.g. in Eraser tool.
+        // std::cerr << "DrawingItem::~DrawingItem: Missing CanvasItemDrawing!" << std::endl;
+    }
+
     //if (!_children.empty()) {
     //    g_warning("Removing item with children");
     //}
@@ -320,10 +334,10 @@ DrawingItem::setStyle(SPStyle *style, SPStyle *context_style)
     
     if (style && style->filter.set && style->getFilter()) {
         if (!_filter) {
-            int primitives = SP_FILTER(style->getFilter())->primitive_count();
+            int primitives = style->getFilter()->primitive_count();
             _filter = new Inkscape::Filters::Filter(primitives);
         }
-        SP_FILTER(style->getFilter())->build_renderer(_filter);
+        style->getFilter()->build_renderer(_filter);
     } else {
         // no filter set for this group
         delete _filter;
@@ -473,6 +487,13 @@ DrawingItem::setItemBounds(Geom::OptRect const &bounds)
 void
 DrawingItem::update(Geom::IntRect const &area, UpdateContext const &ctx, unsigned flags, unsigned reset)
 {
+
+    // We don't need to update what is not visible
+    if (!visible()) {
+        _state = STATE_ALL; // Touch the state for future change to this item
+        return;
+    }
+
     bool render_filters = _drawing.renderFilters();
     bool outline = _drawing.outline();
 
@@ -587,8 +608,9 @@ DrawingItem::update(Geom::IntRect const &area, UpdateContext const &ctx, unsigne
             // so this will not execute (cache score threshold must be positive)
             cr.cache_size = _cacheRect()->area() * 4;
             cr.item = this;
-            _drawing._candidate_items.push_front(cr);
-            _cache_iterator = _drawing._candidate_items.begin();
+            auto it = std::lower_bound(_drawing._candidate_items.begin(), _drawing._candidate_items.end(), cr,
+                                       std::greater<CacheRecord>());
+            _cache_iterator = _drawing._candidate_items.insert(it, cr);
             _has_cache_iterator = true;
         }
 
@@ -708,26 +730,16 @@ DrawingItem::render(DrawingContext &dc, Geom::IntRect const &area, unsigned flag
     // Device scale for HiDPI screens (typically 1 or 2)
     int device_scale = dc.surface()->device_scale();
 
-    switch(_antialias){
-        case 0:
-            cairo_set_antialias(dc.raw(), CAIRO_ANTIALIAS_NONE);
-            break;
-        case 1:
-            cairo_set_antialias(dc.raw(), CAIRO_ANTIALIAS_FAST);
-            break;
-        case 2:
-            cairo_set_antialias(dc.raw(), CAIRO_ANTIALIAS_GOOD);
-            break;
-        case 3:
-            cairo_set_antialias(dc.raw(), CAIRO_ANTIALIAS_BEST);
-            break;
-        default: // should not happen
-            g_assert_not_reached();
-    }
+    _applyAntialias(dc, _antialias);
 
     // Render from cache if possible
     // Bypass in case of pattern, see below.
     if (_cached && !(flags & RENDER_BYPASS_CACHE)) {
+        if (_cache && _cache->device_scale() != device_scale) {
+            delete _cache;
+            _cache = nullptr;
+        }
+
         if (_cache) {
             _cache->prepare();
             dc.setOperator(ink_css_blend_to_cairo_operator(_mix_blend_mode));
@@ -815,7 +827,8 @@ DrawingItem::render(DrawingContext &dc, Geom::IntRect const &area, unsigned flag
     ict.paint();
     if (_clip) {
         ict.pushGroup();
-        _clip->clip(ict, *carea); // fixme: carea or area?
+        _clip->setAntialiasing(_antialias); // propagate antialias setting
+        _clip->clip(ict, *carea);
         ict.popGroupToSource();
         ict.setOperator(CAIRO_OPERATOR_IN);
         ict.paint();
@@ -825,6 +838,7 @@ DrawingItem::render(DrawingContext &dc, Geom::IntRect const &area, unsigned flag
     // 2. Render the mask if present and compose it with the clipping path + opacity.
     if (_mask) {
         ict.pushGroup();
+        _mask->setAntialiasing(_antialias); // propagate antialias setting
         _mask->render(ict, *carea, flags);
 
         cairo_surface_t *mask_s = ict.rawTarget();
@@ -890,7 +904,7 @@ DrawingItem::render(DrawingContext &dc, Geom::IntRect const &area, unsigned flag
     dc.setOperator(ink_css_blend_to_cairo_operator(_mix_blend_mode));
     dc.fill();
     dc.setSource(0,0,0,0);
-    // Web isolation only works if parent doesnt have transform
+    // Web isolation only works if parent doesn't have transform
 
 
     // the call above is to clear a ref on the intermediate surface held by dc
@@ -942,6 +956,8 @@ DrawingItem::clip(Inkscape::DrawingContext &dc, Geom::IntRect const &area)
     if (!_visible) return;
     if (!area.intersects(_bbox)) return;
 
+    _applyAntialias(dc, _antialias);
+
     dc.setSource(0,0,0,1);
     dc.pushGroup();
     // rasterize the clipping path
@@ -984,21 +1000,26 @@ DrawingItem::pick(Geom::Point const &p, double delta, unsigned flags)
         return nullptr;
     }
     // ignore invisible and insensitive items unless sticky
-    if (!(flags & PICK_STICKY) && !(_visible && _sensitive))
+    if (!(flags & PICK_STICKY) && !(_visible && _sensitive)) {
         return nullptr;
+    }
 
-    bool outline = _drawing.outline() || _drawing.getOutlineSensitive();
+    bool outline = _drawing.outline() || _drawing.outlineOverlay() || _drawing.getOutlineSensitive();
 
-    if (!_drawing.outline() && !_drawing.getOutlineSensitive()) {
+    if (!_drawing.outline() && !_drawing.outlineOverlay() && !_drawing.getOutlineSensitive()) {
         // pick inside clipping path; if NULL, it means the object is clipped away there
         if (_clip) {
             DrawingItem *cpick = _clip->pick(p, delta, flags | PICK_AS_CLIP);
-            if (!cpick) return nullptr;
+            if (!cpick) {
+                return nullptr;
+            }
         }
         // same for mask
         if (_mask) {
             DrawingItem *mpick = _mask->pick(p, delta, flags);
-            if (!mpick) return nullptr;
+            if (!mpick) {
+                return nullptr;
+            }
         }
     }
 
@@ -1086,7 +1107,16 @@ DrawingItem::_markForRendering()
     if (bkg_root && bkg_root->_parent && bkg_root->_parent->_parent) {
         bkg_root->_invalidateFilterBackground(*dirty);
     }
-    _drawing.signal_request_render.emit(*dirty);
+
+    //_drawing.signal_request_render.emit(*dirty);
+    if (drawing().getCanvasItemDrawing()) {
+        Geom::Rect area = *dirty;
+        drawing().getCanvasItemDrawing()->get_canvas()->redraw_area(area);
+    } else {
+        // Can happen, e.g. Icon Preview dialog.
+        // std::cerr << "DrawingItem::_markForRendering: Missing CanvasItemDrawing!" << std::endl;
+    }
+
 }
 
 void
@@ -1136,7 +1166,12 @@ DrawingItem::_markForUpdate(unsigned flags, bool propagate)
             // up to the root. Do not bother recursing, because it won't change anything.
             // Also do this if we are the root item, because we have no more ancestors
             // to invalidate.
-            _drawing.signal_request_update.emit(this);
+            if (drawing().getCanvasItemDrawing()) {
+                drawing().getCanvasItemDrawing()->request_update();
+            } else {
+                // Can happen, e.g. Eraser tool.
+                // std::cerr << "DrawingItem::_markForUpdate: Missing CanvasItemDrawing!" << std::endl;
+            }
         }
     }
 }
@@ -1189,13 +1224,13 @@ Geom::OptIntRect DrawingItem::_cacheRect()
 {
     Geom::OptIntRect r = _drawbox & _drawing.cacheLimit();
     if (_filter && _drawing.cacheLimit() && _drawing.renderFilters() && r && r != _drawbox) {
-        // we check unfiltered item is emought inside the cache area to  render properly
+        // we check unfiltered item is enough inside the cache area to render properly
         Geom::OptIntRect canvas = r;
         expandByScale(*canvas, 0.5);
         Geom::OptIntRect valid = Geom::intersect(canvas, _bbox);
-        if (!valid) {
+        if (!valid && _bbox) {
             valid = _bbox;
-            // contract the item _bbox to get reduced size to render. $ seems good enought
+            // contract the item _bbox to get reduced size to render. $ seems good enough
             expandByScale(*valid, 0.5);
             // now we get the nearest point to cache area
             Geom::IntPoint center = (*_drawing.cacheLimit()).midpoint();
@@ -1205,6 +1240,27 @@ Geom::OptIntRect DrawingItem::_cacheRect()
         return _drawbox & r;
     }
     return r;
+}
+
+// apply antialias setting to cairo
+void DrawingItem::_applyAntialias(DrawingContext &dc, unsigned _antialias)
+{
+    switch(_antialias) {
+        case 0:
+            cairo_set_antialias(dc.raw(), CAIRO_ANTIALIAS_NONE);
+            break;
+        case 1:
+            cairo_set_antialias(dc.raw(), CAIRO_ANTIALIAS_FAST);
+            break;
+        case 2:
+            cairo_set_antialias(dc.raw(), CAIRO_ANTIALIAS_GOOD);
+            break;
+        case 3:
+            cairo_set_antialias(dc.raw(), CAIRO_ANTIALIAS_BEST);
+            break;
+        default: // should not happen
+            g_assert_not_reached();
+    }
 }
 
 } // end namespace Inkscape

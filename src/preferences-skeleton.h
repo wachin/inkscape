@@ -23,7 +23,7 @@
  * and special handling has to be added to the preferences class to update
  * obsolete versions the user might have. */
 static char const preferences_skeleton[] =
-R"=====(
+    R"=====(
 <inkscape version="1"
   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape">
@@ -68,15 +68,14 @@ R"=====(
     <sodipodi:namedview
        id="base"
        pagecolor="#ffffff"
+       pageopacity="0.0"
+       pagecheckerboard="0"
        bordercolor="#666666"
        borderopacity="1.0"
        objecttolerance="10.0"
        gridtolerance="10.0"
        guidetolerance="10.0"
-       inkscape:pageopacity="0.0"
-       inkscape:pageshadow="2"
-       inkscape:window-width="640"
-       inkscape:window-height="480" />
+       pageshadow="2" />
   </group>
 
   <group id="tools" bounding_box="0">
@@ -103,8 +102,8 @@ R"=====(
     </group>
 
     <eventcontext id="calligraphic" style="fill:black;fill-opacity:1;fill-rule:nonzero;stroke:none;"
-                       mass="2" angle="30" width="15" thinning="10" flatness="90" cap_rounding="0.0" usecurrent="1"
-                       tracebackground="0" usepressure="1" usetilt="0" keep_selected="1">
+                       mass="2" angle="30" width="15.118" thinning="10" flatness="90" cap_rounding="0.0" usecurrent="1"
+                       tracebackground="0" usepressure="1" usetilt="0" keep_selected="1" abs_width="1" unit="mm">
 
       <group id="preset">
         <group id="cp0" name="Dip pen" mass="2" wiggle="0.0" angle="30.0" thinning="10" tremor="0.0" flatness="90" cap_rounding="0.0" tracebackground="0" usepressure="1" usetilt="1" />
@@ -203,7 +202,7 @@ R"=====(
     <group id="textandfont"/>
     <group id="transformation" applyseparately="0"/>
     <group id="align"/>
-    <group id="xml"/>
+    <group id="xml" h="500" w="300" />
     <group id="find"/>
     <group id="spellcheck" w="200" h="250" ignorenumbers="1"/>
     <group id="documentoptions" state="1"/>
@@ -228,8 +227,7 @@ R"=====(
     <group id="iconpreview" />
     <group id="aboutextensions" />
     <group id="treeeditor" />
-    <group id="layers" maxDepth="20"/>
-    <group id="extensioneditor" />
+    <group id="layers" maxDepth="20" w="200" h="300" />
     <group id="trace" state="1" />
     <group id="script" />
     <group id="input" />
@@ -279,7 +277,6 @@ R"=====(
     <group id="keyscroll" value="15"/>
     <group id="wheelscroll" value="40"/>
     <group id="spacebarpans" value="1"/>
-    <group id="wheelzooms" value="0"/>
     <group id="transientpolicy" value="1"/>
     <group id="scrollingacceleration" value="0.4"/>
     <group id="snapdelay" value="0"/>
@@ -293,11 +290,8 @@ R"=====(
     <group id="svgeditor" value="inkscape"/>
     <group id="bitmapautoreload" value="1"/>
     <group id="dialogtype" value="1"/>
-    <group id="dock"
-           cancenterdock="1"
-           dockbarstyle="2"
-           switcherstyle="2"/>
     <group id="dialogsskiptaskbar" value="1"/>
+    <group id="defaultwindowsize" value="2" />
     <group id="arenatilescachesize" value="8192"/>
     <group id="preservetransform" value="0"/>
     <group id="clonecompensation" value="1"/>
@@ -384,6 +378,7 @@ R"=====(
        height="480"
        x="0"
        y="0"
+       maximized="1"
        fullscreen="0"
        id="geometry" />
     <group

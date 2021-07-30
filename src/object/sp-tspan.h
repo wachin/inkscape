@@ -17,9 +17,6 @@
 #include "sp-item.h"
 #include "text-tag-attributes.h"
 
-#define SP_TSPAN(obj) (dynamic_cast<SPTSpan*>((SPObject*)obj))
-#define SP_IS_TSPAN(obj) (dynamic_cast<const SPTSpan*>((SPObject*)obj) != NULL)
-
 enum {
     SP_TSPAN_ROLE_UNSPECIFIED,
     SP_TSPAN_ROLE_PARAGRAPH,
@@ -36,14 +33,18 @@ public:
 
 	void build(SPDocument* doc, Inkscape::XML::Node* repr) override;
 	void release() override;
-	void set(SPAttributeEnum key, const char* value) override;
+	void set(SPAttr key, const char* value) override;
 	void update(SPCtx* ctx, unsigned int flags) override;
 	void modified(unsigned int flags) override;
 	Inkscape::XML::Node* write(Inkscape::XML::Document* doc, Inkscape::XML::Node* repr, unsigned int flags) override;
 
 	Geom::OptRect bbox(Geom::Affine const &transform, SPItem::BBoxType type) const override;
+        const char* typeName() const override;
         const char* displayName() const override;
 };
+
+MAKE_SP_OBJECT_DOWNCAST_FUNCTIONS(SP_TSPAN, SPTSpan)
+MAKE_SP_OBJECT_TYPECHECK_FUNCTIONS(SP_IS_TSPAN, SPTSpan)
 
 #endif /* !INKSCAPE_SP_TSPAN_H */
 

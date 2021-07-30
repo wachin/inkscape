@@ -51,6 +51,7 @@ protected:
     void _setup();
 
     void _onOK();
+    void _onOKimpl();
     void _onDelete();
     void _onDuplicate();
 
@@ -82,6 +83,8 @@ private:
     bool _mode;
     Geom::Point _oldpos;
     gdouble _oldangle;
+
+    void on_sb_activate();
 };
 
 } // namespace

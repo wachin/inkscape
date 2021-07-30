@@ -15,9 +15,6 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
-#define SP_NAMEDVIEW(obj) (dynamic_cast<SPNamedView*>((SPObject*)obj))
-#define SP_IS_NAMEDVIEW(obj) (dynamic_cast<const SPNamedView*>((SPObject*)obj) != NULL)
-
 #include "sp-object-group.h"
 #include "snap.h"
 #include "document.h"
@@ -41,8 +38,8 @@ enum {
 
 class SPNamedView : public SPObjectGroup {
 public:
-	SPNamedView();
-	~SPNamedView() override;
+    SPNamedView();
+    ~SPNamedView() override;
 
     unsigned int editable : 1;
     unsigned int showguides : 1;
@@ -53,6 +50,7 @@ public:
     unsigned int borderlayer : 2;
 
     double zoom;
+    double rotation; // Document rotation in degrees (positive is clockwise)
     double cx;
     double cy;
     int window_width;
@@ -85,6 +83,7 @@ public:
 
     void show(SPDesktop *desktop);
     void hide(SPDesktop const *desktop);
+    void setDefaultAttribute(std::string attribute, std::string preference, std::string fallback);
     void activateGuides(void* desktop, bool active);
     char const *getName() const;
     unsigned int getViewCount();
@@ -95,8 +94,6 @@ public:
     void translateGrids(Geom::Translate const &translation);
     void scrollAllDesktops(double dx, double dy, bool is_scrolling);
     void writeNewGrid(SPDocument *document,int gridtype);
-    bool getSnapGlobal() const;
-    void setSnapGlobal(bool v);
     void setGuides(bool v);
     bool getGuides();
     void lockGuides();
@@ -108,7 +105,7 @@ private:
 protected:
 	void build(SPDocument *document, Inkscape::XML::Node *repr) override;
 	void release() override;
-	void set(SPAttributeEnum key, char const* value) override;
+	void set(SPAttr key, char const* value) override;
 
 	void child_added(Inkscape::XML::Node* child, Inkscape::XML::Node* ref) override;
 	void remove_child(Inkscape::XML::Node* child) override;
@@ -130,6 +127,7 @@ void sp_namedview_guides_toggle_lock(SPDocument *doc, SPNamedView *namedview);
 void sp_namedview_show_grids(SPNamedView *namedview, bool show, bool dirty_document);
 Inkscape::CanvasGrid * sp_namedview_get_first_enabled_grid(SPNamedView *namedview);
 
+MAKE_SP_OBJECT_DOWNCAST_FUNCTIONS(SP_NAMEDVIEW, SPNamedView)
 
 #endif /* !INKSCAPE_SP_NAMEDVIEW_H */
 

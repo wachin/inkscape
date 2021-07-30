@@ -12,7 +12,6 @@
 #include "svg/svg.h"
 #include "svg/svg-color.h"
 #include "svg/stringstream.h"
-#include "ui/tools-switch.h"
 #include "path-chemistry.h"
 #include "extract-uri.h"
 #include <bad-uri-exception.h>
@@ -98,7 +97,7 @@ void LPEPowerMask::tryForkMask()
         Glib::ustring uri = Glib::ustring("url(#") + newmask + Glib::ustring(")");
         Inkscape::XML::Document *xml_doc = document->getReprDoc();
         Inkscape::XML::Node *fork = mask->getRepr()->duplicate(xml_doc);
-        mask = SP_OBJECT(document->getDefs()->appendChildRepr(fork));
+        mask = document->getDefs()->appendChildRepr(fork);
         fork->setAttribute("id", newmask);
         Inkscape::GC::release(fork);
         sp_lpe_item->setAttribute("mask", uri);
@@ -109,32 +108,37 @@ void
 LPEPowerMask::doBeforeEffect (SPLPEItem const* lpeitem){
     //To avoid close of color dialog and better performance on change color
     tryForkMask();
-    SPObject * mask = SP_ITEM(sp_lpe_item)->getMaskObject();
+    SPObject * mask = sp_lpe_item->getMaskObject();
     auto uri_str = uri.param_getSVGValue();
     if (hide_mask && mask) {
-        SP_ITEM(sp_lpe_item)->getMaskRef().detach();
+        sp_lpe_item->getMaskRef().detach();
     } else if (!hide_mask && !mask && !uri_str.empty()) {
-        SP_ITEM(sp_lpe_item)->getMaskRef().try_attach(uri_str.c_str());
+        sp_lpe_item->getMaskRef().try_attach(uri_str.c_str());
     }
-    mask = SP_ITEM(sp_lpe_item)->getMaskObject();
+    mask = sp_lpe_item->getMaskObject();
     if (mask) {
         if (previous_color != background_color.get_value()) {
             previous_color = background_color.get_value();
             setMask();
         } else {
             uri.param_setValue(Glib::ustring(extract_uri(sp_lpe_item->getRepr()->attribute("mask"))), true);
-            SP_ITEM(sp_lpe_item)->getMaskRef().detach();
+            sp_lpe_item->getMaskRef().detach();
             Geom::OptRect bbox = lpeitem->visualBounds();
             if(!bbox) {
                 return;
             }
             uri_str = uri.param_getSVGValue();
-            SP_ITEM(sp_lpe_item)->getMaskRef().try_attach(uri_str.c_str());
+            sp_lpe_item->getMaskRef().try_attach(uri_str.c_str());
 
             Geom::Rect bboxrect = (*bbox);
             bboxrect.expandBy(1);
             mask_box.clear();
             mask_box = Geom::Path(bboxrect);
+            SPDocument *document = getSPDoc();
+            if (!document || !mask) {
+                return;
+            }
+            DocumentUndo::ScopedInsensitive tmp(document);
             setMask();
         }
     } else if(!hide_mask) {
@@ -145,13 +149,12 @@ LPEPowerMask::doBeforeEffect (SPLPEItem const* lpeitem){
 
 void
 LPEPowerMask::setMask(){
-    SPMask *mask = SP_ITEM(sp_lpe_item)->getMaskObject();
+    SPMask *mask = sp_lpe_item->getMaskObject();
     SPObject *elemref = nullptr;
     SPDocument *document = getSPDoc();
     if (!document || !mask) {
         return;
     }
-    Inkscape::XML::Node *root = document->getReprRoot();
     Inkscape::XML::Document *xml_doc = document->getReprDoc();
     Inkscape::XML::Node *box = nullptr;
     Inkscape::XML::Node *filter = nullptr;
@@ -258,9 +261,7 @@ LPEPowerMask::setMask(){
         Glib::ustring css_str;
         sp_repr_css_write_string(css, css_str);
         box->setAttributeOrRemoveIfEmpty("style", css_str);
-        gchar * box_str = sp_svg_write_path( mask_box );
-        box->setAttribute("d" , box_str);
-        g_free(box_str);
+        box->setAttribute("d", sp_svg_write_path(mask_box));
         if (!exist) {
             elemref = mask->appendChildRepr(box);
             Inkscape::GC::release(box);
@@ -317,8 +318,6 @@ void sp_inverse_powermask(Inkscape::Selection *sel) {
             if (lpeitem) {
                 SPMask *mask = lpeitem->getMaskObject();
                 if (mask) {
-                    Inkscape::XML::Document *xml_doc = document->getReprDoc();
-                    Inkscape::XML::Node *parent = mask->getRepr();
                     Effect::createAndApply(POWERMASK, SP_ACTIVE_DOCUMENT, lpeitem);
                     Effect* lpe = lpeitem->getCurrentLPE();
                     if (lpe) {

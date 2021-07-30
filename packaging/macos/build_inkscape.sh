@@ -1,21 +1,26 @@
 #!/usr/bin/env bash
+#
+# SPDX-FileCopyrightText: 2021 René de Hesselle <dehesselle@web.de>
+#
 # SPDX-License-Identifier: GPL-2.0-or-later
-#
-# This file is part of the build pipeline for Inkscape on macOS.
-#
-# ### build_inkscape.sh ###
-# Compile and package Inkscape.
 
-### load settings and functions ################################################
+### description ################################################################
 
-SELF_DIR=$(F=$0; while [ ! -z $(readlink $F) ] && F=$(readlink $F); \
-  cd $(dirname $F); F=$(basename $F); [ -L $F ]; do :; done; echo $(pwd -P))
-for script in $SELF_DIR/0??-*.sh; do source $script; done
+# Compile and package Inkscape
 
-set -e
+### includes ###################################################################
 
-### run scripts to compile and build Inkscape ##################################
+# shellcheck disable=SC1090 # can't point to a single source here
+for script in "$(dirname "${BASH_SOURCE[0]}")"/0??-*.sh; do
+  source "$script";
+done
 
-for script in $SELF_DIR/2??-*.sh; do
+### settings ###################################################################
+
+set -e   # break if one of the called scripts ends in error
+
+### main #######################################################################
+
+for script in "$SELF_DIR"/2??-*.sh; do
   $script
 done

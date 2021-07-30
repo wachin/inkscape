@@ -78,6 +78,7 @@ A4,                         210,    297, mm
 US Letter,                  8.5,     11, in
 US Legal,                   8.5,     14, in
 US Executive,              7.25,   10.5, in
+US Ledger/Tabloid,           11,     17, in
 A0,                         841,   1189, mm
 A1,                         594,    841, mm
 A2,                         420,    594, mm
@@ -124,7 +125,6 @@ E6,                         140,    200, mm
 CSE,                        462,    649, pt
 US #10 Envelope,            9.5,  4.125, in
 DL Envelope,                220,    110, mm
-Ledger/Tabloid,              11,     17, in
 Banner 468x60,              468,     60, px
 Icon 16x16,                  16,     16, px
 Icon 32x32,                  32,     32, px
@@ -132,7 +132,7 @@ Icon 48x48,                  48,     48, px
 ID Card (ISO 7810),       85.60,  53.98, mm
 Business Card (US),         3.5,      2, in
 Business Card (Europe),      85,     55, mm
-Business Card (Aus/NZ),      90,     55, mm
+Business Card (AU/NZ),       90,     55, mm
 Arch A,                       9,     12, in
 Arch B,                      12,     18, in
 Arch C,                      18,     24, in

@@ -17,15 +17,18 @@
 #include <list>
 #include <set>
 
-#include "knot.h"
 #include "selection.h"
 
-#include "object/persp3d.h"
-#include "object/box3d.h"
+#include "display/control/canvas-item-enums.h"
 
-#include "ui/control-manager.h" // TODO break enums out separately
+#include "object/persp3d.h"
 
 class SPBox3D;
+class SPKnot;
+
+namespace Inkscape {
+class CanvasItemCurve;
+}
 
 namespace Box3D {
 
@@ -63,11 +66,11 @@ public:
     void set_pos(Proj::Pt2 const &pt);
     inline bool is_finite() const {
         g_return_val_if_fail (_persp, false);
-        return persp3d_get_VP (_persp, _axis).is_finite();
+        return _persp->get_VP (_axis).is_finite();
     }
     inline Geom::Point get_pos() const {
         g_return_val_if_fail (_persp, Geom::Point (Geom::infinity(), Geom::infinity()));
-        return persp3d_get_VP (_persp,_axis).affine();
+        return _persp->get_VP (_axis).affine();
     }
     inline Persp3D * get_perspective() const {
         return _persp;
@@ -77,10 +80,10 @@ public:
     }
 
     inline bool hasBox (SPBox3D *box) {
-        return persp3d_has_box(_persp, box);
+        return _persp->has_box(box);
     }
     inline unsigned int numberOfBoxes() const {
-        return persp3d_num_boxes(_persp);
+        return _persp->num_boxes();
     }
 
     /* returns all selected boxes sharing this perspective */
@@ -88,19 +91,19 @@ public:
 
     inline void updateBoxDisplays() const {
         g_return_if_fail (_persp);
-        persp3d_update_box_displays(_persp);
+        _persp->update_box_displays();
     }
     inline void updateBoxReprs() const {
         g_return_if_fail (_persp);
-        persp3d_update_box_reprs(_persp);
+        _persp->update_box_reprs();
     }
     inline void updatePerspRepr() const {
         g_return_if_fail (_persp);
-        SP_OBJECT(_persp)->updateRepr(SP_OBJECT_WRITE_EXT);
+        _persp->updateRepr(SP_OBJECT_WRITE_EXT);
     }
     inline void printPt() const {
         g_return_if_fail (_persp);
-        persp3d_get_VP (_persp, _axis).print("");
+        _persp->get_VP (_axis).print("");
     }
     inline char const *axisString () { return Proj::string_from_axis(_axis); }
 
@@ -112,12 +115,6 @@ private:
 };
 
 struct VPDrag;
-
-struct less_ptr : public std::binary_function<VanishingPoint *, VanishingPoint *, bool> {
-    bool operator()(VanishingPoint *vp1, VanishingPoint *vp2) {
-        return GPOINTER_TO_INT(vp1) < GPOINTER_TO_INT(vp2);
-    }
-};
 
 struct VPDragger {
 public:
@@ -143,7 +140,7 @@ public:
 
     unsigned int numberOfBoxes(); // the number of boxes linked to all VPs of the dragger
     VanishingPoint *findVPWithBox(SPBox3D *box);
-    std::set<VanishingPoint*, less_ptr> VPsOfSelectedBoxes();
+    std::set<VanishingPoint*> VPsOfSelectedBoxes();
 
     bool hasPerspective(const Persp3D *persp);
     void mergePerspectives(); // remove duplicate perspectives
@@ -171,7 +168,7 @@ public:
 
     SPDocument *document;
     std::vector<VPDragger *> draggers;
-    std::vector<SPCtrlLine *> lines;
+    std::vector<Inkscape::CanvasItemCurve *> item_curves;
 
     void printDraggers(); // convenience for debugging
     /*
@@ -203,9 +200,9 @@ private:
     //void deselect_all();
 
     /**
-     * Create a line from p1 to p2 and add it to the lines list.
+     * Create a line from p1 to p2 and add it to the item_curves list.
      */
-    void addLine(Geom::Point const &p1, Geom::Point const &p2, Inkscape::CtrlLineType type);
+    void addCurve(Geom::Point const &p1, Geom::Point const &p2, Inkscape::CanvasItemColor color);
 
     Inkscape::Selection *selection;
     sigc::connection sel_changed_connection;

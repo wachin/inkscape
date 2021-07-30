@@ -22,7 +22,7 @@ namespace Text {
 
 // Comment 18 Sept 2019:
 // Cursor code might be simpler if Character was turned into a proper
-// class and kept track of its absolute postion and extent. This would
+// class and kept track of its absolute position and extent. This would
 // make handling multi-line text (including multi-line text using
 // 'white-space:pre') easier. This would also avoid problems where
 // 'dx','dy' moved the character a long distance from its nominal
@@ -276,7 +276,7 @@ Geom::Point Layout::characterAnchorPoint(iterator const &it) const
     }
 }
 
-boost::optional<Geom::Point> Layout::baselineAnchorPoint() const
+std::optional<Geom::Point> Layout::baselineAnchorPoint() const
 {
     iterator pos = this->begin();
     Geom::Point left_pt = this->characterAnchorPoint(pos);
@@ -300,7 +300,7 @@ boost::optional<Geom::Point> Layout::baselineAnchorPoint() const
             return right_pt;
             break;
         default:
-            return boost::optional<Geom::Point>();
+            return std::optional<Geom::Point>();
             break;
     }
 }
@@ -695,7 +695,7 @@ void Layout::simulateLayoutUsingKerning(iterator const &from, iterator const &to
                     dx -= style->word_spacing.computed * getTextLengthMultiplierDue();
                 if (_characters[char_index].char_attributes.is_cursor_position)
                     dx -= style->letter_spacing.computed * getTextLengthMultiplierDue();
-                    dx -= getTextLengthIncrementDue();
+                dx -= getTextLengthIncrementDue();
             }
 
             if (fabs(dx) > 0.0001) {

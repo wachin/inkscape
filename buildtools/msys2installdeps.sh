@@ -34,7 +34,6 @@ pacman -Sy
 # install basic development system, compiler toolchain and build tools
 eval pacman -S $PACMAN_OPTIONS \
 git \
-intltool \
 base-devel \
 $ARCH-toolchain \
 $ARCH-cmake \
@@ -49,7 +48,6 @@ $ARCH-libxslt \
 $ARCH-boost \
 $ARCH-gtk3 \
 $ARCH-gtkmm3 \
-$ARCH-gdl \
 $ARCH-libsoup
 
 # install Inkscape dependencies (optional)
@@ -61,7 +59,7 @@ $ARCH-libvisio \
 $ARCH-libwpg \
 $ARCH-aspell \
 $ARCH-aspell-en \
-$ARCH-gtkspell3
+$ARCH-gspell
 
 # install ImageMagick (as Inkscape requires old version ImageMagick 6 we have to specify it explicitly)
 # to prevent future updates:
@@ -84,18 +82,35 @@ $ARCH-python \
 $ARCH-python-pip \
 $ARCH-python-lxml \
 $ARCH-python-numpy \
+$ARCH-python-cssselect \
 $ARCH-python-pillow \
 $ARCH-python-six \
-$ARCH-python-gobject
+$ARCH-python-gobject \
+$ARCH-python-pyserial \
+$ARCH-python-coverage \
+$ARCH-scour
 
-PACKAGES="coverage pyserial scour"
+# install modules needed by extensions manager
+eval pacman -S $PACMAN_OPTIONS \
+$ARCH-python-appdirs \
+$ARCH-python-msgpack \
+$ARCH-python-lockfile \
+$ARCH-python-cachecontrol \
+$ARCH-python-idna \
+$ARCH-python-urllib3 \
+$ARCH-python-chardet \
+$ARCH-python-certifi \
+$ARCH-python-requests
+
+# install Python modules not provided as MSYS2/MinGW packages
+PACKAGES=""
 for arch in $(eval echo $ARCH); do
   case ${arch} in
     mingw-w64-i686)
-      /mingw32/bin/pip3 install --upgrade ${PACKAGES}
+      #/mingw32/bin/pip3 install --upgrade ${PACKAGES}
       ;;
     mingw-w64-x86_64)
-      /mingw64/bin/pip3 install --upgrade ${PACKAGES}
+      #/mingw64/bin/pip3 install --upgrade ${PACKAGES}
       ;;
   esac
 done

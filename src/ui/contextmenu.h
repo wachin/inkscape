@@ -56,21 +56,15 @@ class ContextMenu : public Gtk::Menu
         ContextMenu(SPDesktop *desktop, SPItem *item);
         ~ContextMenu() override;
 
-        /**
-         * install CSS to shift menu icons into the space reserved for toggles (i.e. check and radio items)
-         *
-         * TODO: This should be private but we already re-use this code in ui/interface.cpp which is not c++ified yet.
-         *       In future ContextMenu and the (to be created) class for the menu bar should then be derived from one common base class.
-         */
-        void ShiftIcons();
     private:
         SPItem *_item; // pointer to the object selected at the time the ContextMenu is created
         SPObject *_object; // pointer to the object selected at the time the ContextMenu is created
         SPDesktop *_desktop; //pointer to the desktop the user was currently working on at the time the ContextMenu is created
         
         int positionOfLastDialog;
-        
+
         Gtk::MenuItem MIGroup; //menu entry to enter a group
+        SPObject *_MIGroup_group; // Group to enter when MIGroup is activated
         Gtk::MenuItem MIParent; //menu entry to leave a group
         
         /**

@@ -812,9 +812,14 @@ void Layout::fitToPathAlign(SVGLength const &startOffset, Path const &path)
     _path_fitted = &path;
 }
 
-SPCurve *Layout::convertToCurves(iterator const &from_glyph, iterator const &to_glyph) const
+std::unique_ptr<SPCurve> Layout::convertToCurves() const
 {
-    std::list<SPCurve *> cc;
+    return convertToCurves(begin(), end());
+}
+
+std::unique_ptr<SPCurve> Layout::convertToCurves(iterator const &from_glyph, iterator const &to_glyph) const
+{
+    auto curve = std::make_unique<SPCurve>();
 
     for (int glyph_index = from_glyph._glyph_index ; glyph_index < to_glyph._glyph_index ; glyph_index++) {
         Geom::Affine glyph_matrix;
@@ -824,15 +829,8 @@ SPCurve *Layout::convertToCurves(iterator const &from_glyph, iterator const &to_
         Geom::PathVector const * pathv = span.font->PathVector(_glyphs[glyph_index].glyph);
         if (pathv) {
             Geom::PathVector pathv_trans = (*pathv) * glyph_matrix;
-            SPCurve *c = new SPCurve(pathv_trans);
-            if (c) cc.push_back(c);
+            curve->append(SPCurve(std::move(pathv_trans)));
         }
-    }
-    SPCurve *curve = new SPCurve(cc);
-
-    for (auto i:cc) {
-        /* fixme: This is dangerous, as we are mixing art_alloc and g_new */
-        i->unref();
     }
 
     return curve;

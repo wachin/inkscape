@@ -1,40 +1,50 @@
 #!/usr/bin/env bash
+#
+# SPDX-FileCopyrightText: 2021 René de Hesselle <dehesselle@web.de>
+#
 # SPDX-License-Identifier: GPL-2.0-or-later
-#
-# This file is part of the build pipeline for Inkscape on macOS.
-#
-# ### 110-sysprep.sh ###
-# System preparation tasks.
 
-### load settings and functions ################################################
+### description ################################################################
 
-SELF_DIR=$(F=$0; while [ ! -z $(readlink $F) ] && F=$(readlink $F); cd $(dirname $F); F=$(basename $F); [ -L $F ]; do :; done; echo $(pwd -P))
-for script in $SELF_DIR/0??-*.sh; do source $script; done
+# This script performs system preparation tasks - basically the tings we need
+# to take care of before even setting up JHBuild. Performing checks
+# like running check_sys_ver are not part of this file (see bottom of
+# 010-init.sh), as that would mean that those checks are only run exactly once,
+# which is not what we want.
 
-### initial information ########################################################
+### includes ###################################################################
 
-echo_info "TOOLSET_ROOT_DIR = $TOOLSET_ROOT_DIR"
-echo_info "WRK_DIR          = $WRK_DIR"
+# shellcheck disable=SC1090 # can't point to a single source here
+for script in "$(dirname "${BASH_SOURCE[0]}")"/0??-*.sh; do
+  source "$script";
+done
 
-### check for presence of SDK ##################################################
+### settings ###################################################################
 
-if [ ! -d $SDKROOT ]; then
-  echo_err "SDK not found: $SDKROOT"
-  exit 1
-fi
+# Nothing here.
 
-### create work directory ######################################################
+### main #######################################################################
 
-[ ! -d $WRK_DIR ] && mkdir -p $WRK_DIR || true
+#---------------------------------------------- print main directory and version
 
-### create temporary directory #################################################
+echo_i "WRK_DIR = $WRK_DIR"
+echo_i "VER_DIR = $VER_DIR"
 
-[ ! -d $TMP_DIR ] && mkdir -p $TMP_DIR || true
+#------------------------------------------------------------ create directories
 
-### create binary directory #################################################
+# We need these directories early on, so we need to create them here.
 
-[ ! -d $BIN_DIR ] && mkdir -p $BIN_DIR || true
+mkdir -p "$HOME"
+mkdir -p "$BIN_DIR"
+mkdir -p "$PKG_DIR"
+mkdir -p "$SRC_DIR"
+mkdir -p "$TMP_DIR"
 
-### create toolset repository directory ########################################
+#---------------------------------------------------------------- install ccache
 
-[ ! -d $TOOLSET_REPO_DIR ] && mkdir -p $TOOLSET_REPO_DIR || true
+ccache_install
+ccache_configure
+
+#------------------------------------------ log relevant versions to release.log
+
+sys_create_log

@@ -22,6 +22,7 @@
 #include <sigc++/sigc++.h>
 #include <vector>
 #include <set>
+#include <gdk/gdk.h>
 #include <glib.h>
 #include <glibmm/ustring.h>
 
@@ -43,6 +44,7 @@ class SPStop;
 
 namespace Inkscape {
 class Selection;
+class CanvasItemCurve;
 } // namespace Inkscape
 
 /**
@@ -125,7 +127,6 @@ struct GrDragger {
 protected:
     void updateControlSizesOverload(SPKnot * knot);
     void updateControlSizes();
-    sigc::connection sizeUpdatedConn;
 
 private:
     sigc::connection _moved_connection;
@@ -135,7 +136,7 @@ private:
     sigc::connection _ungrabbed_connection;
 };
 
-struct SPCtrlLine;
+
 /**
 This is the root class of the gradient dragging machinery. It holds lists of GrDraggers
 and of lines (simple canvas items). It also remembers one of the draggers as selected.
@@ -194,7 +195,7 @@ public: // FIXME: make more of this private!
     std::vector<double> vert_levels;
 
     std::vector<GrDragger *> draggers;
-    std::vector<SPCtrlLine *> lines;
+    std::vector<Inkscape::CanvasItemCurve *> item_curves;
 
     void updateDraggers();
     void refreshDraggers();
@@ -206,6 +207,8 @@ public: // FIXME: make more of this private!
     void selected_move_nowrite(double x, double y, bool scale_radial);
     void selected_move(double x, double y, bool write_repr = true, bool scale_radial = false);
     void selected_move_screen(double x, double y);
+
+    bool key_press_handler(GdkEvent *event);
 
     GrDragger *select_next();
     GrDragger *select_prev();
@@ -226,7 +229,7 @@ private:
     void addDraggersMesh(  SPMeshGradient   *mg, SPItem *item, Inkscape::PaintTarget fill_or_stroke);
     void refreshDraggersMesh(SPMeshGradient *mg, SPItem *item, Inkscape::PaintTarget fill_or_stroke);
 
-    bool styleSet( const SPCSSAttr *css );
+    bool styleSet( const SPCSSAttr *css, bool switch_style);
 
     Glib::ustring makeStopSafeColor( gchar const *str, bool &isNull );
 

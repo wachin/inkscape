@@ -7,8 +7,7 @@
  */
 
 #include "live_effects/parameter/item.h"
-#include "live_effects/lpeobject.h"
-#include "live_effects/lpe-clone-original.h"
+
 #include <glibmm/i18n.h>
 
 #include <gtkmm/button.h>
@@ -75,6 +74,27 @@ ItemParam::param_set_and_write_default()
     param_write_to_repr(defvalue);
 }
 
+SPObject *ItemParam::param_fork()
+{
+    SPObject *newobj = nullptr;
+    SPDocument *document = param_effect->getSPDoc();
+    if (!document) {
+        return newobj;
+    }
+    SPObject *oldobj = ref.getObject();
+
+    if (oldobj) {
+        Inkscape::XML::Document *xml_doc = document->getReprDoc();
+        Inkscape::XML::Node *fork = oldobj->getRepr()->duplicate(xml_doc);
+        newobj = oldobj->parent->appendChildRepr(fork);
+        if (newobj && newobj->getId()) {
+            Glib::ustring id = newobj->getId();
+            linkitem(id);
+        }
+    }
+    return newobj;
+}
+
 bool
 ItemParam::param_readSVGValue(const gchar * strvalue)
 {
@@ -121,21 +141,21 @@ ItemParam::param_getDefaultSVGValue() const
 Gtk::Widget *
 ItemParam::param_newWidget()
 {
-    Gtk::HBox * _widget = Gtk::manage(new Gtk::HBox());
+    Gtk::Box * _widget = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL));
     Gtk::Image *pIcon = Gtk::manage(sp_get_icon_image("edit-clone", Gtk::ICON_SIZE_BUTTON));
     Gtk::Button * pButton = Gtk::manage(new Gtk::Button());
     Gtk::Label* pLabel = Gtk::manage(new Gtk::Label(param_label));
-    static_cast<Gtk::HBox*>(_widget)->pack_start(*pLabel, true, true);
+    _widget->pack_start(*pLabel, true, true);
     pLabel->set_tooltip_text(param_tooltip);
     pButton->set_relief(Gtk::RELIEF_NONE);
     pIcon->show();
     pButton->add(*pIcon);
     pButton->show();
     pButton->signal_clicked().connect(sigc::mem_fun(*this, &ItemParam::on_link_button_click));
-    static_cast<Gtk::HBox*>(_widget)->pack_start(*pButton, true, true);
+    _widget->pack_start(*pButton, true, true);
     pButton->set_tooltip_text(_("Link to item on clipboard"));
 
-    static_cast<Gtk::HBox*>(_widget)->show_all_children();
+    _widget->show_all_children();
 
     return dynamic_cast<Gtk::Widget *> (_widget);
 }
@@ -216,7 +236,7 @@ void
 ItemParam::linked_modified_callback(SPObject *linked_obj, guint /*flags*/)
 {
     emit_changed();
-    SP_OBJECT(param_effect->getLPEObj())->requestModified(SP_OBJECT_MODIFIED_FLAG);
+    param_effect->getLPEObj()->requestModified(SP_OBJECT_MODIFIED_FLAG);
     last_transform = Geom::identity();
 }
 
@@ -235,10 +255,13 @@ ItemParam::linked_transformed_callback(Geom::Affine const *rel_transf, SPItem *m
             // here use moved item because sp_lpe_item never has optimized transforms because clone LPE
             if (sp_lpe_item && !selection->includes(sp_lpe_item) && moved_lpeitem && !last_transform.isTranslation()) {
                 if (!moved_lpeitem->optimizeTransforms()) {
-                    sp_lpe_item->transform *= last_transform.withoutTranslation();
+                    sp_lpe_item->transform *= last_transform;
                 }
-                sp_lpe_item->doWriteTransform(sp_lpe_item->transform);
+            } else if(sp_lpe_item && moved_lpeitem && moved_lpeitem->optimizeTransforms() && last_transform.isTranslation()) {
+                Geom::Affine orig = sp_lpe_item->transform;
+                sp_lpe_item->transform *= orig.inverse() * last_transform.inverse() * orig;  
             }
+            sp_lpe_item->doWriteTransform(sp_lpe_item->transform);
         }
     }
 }
@@ -271,12 +294,11 @@ void
 ItemParam::on_link_button_click()
 {
     Inkscape::UI::ClipboardManager *cm = Inkscape::UI::ClipboardManager::get();
-    const gchar * iid = cm->getFirstObjectID();
-    if (!iid) {
+    auto itemid = cm->getFirstObjectID();
+    if (itemid.empty()) {
         return;
     }
     
-    Glib::ustring itemid(iid);
     linkitem(itemid);
 }
 

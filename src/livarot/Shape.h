@@ -19,7 +19,7 @@
 #include <2geom/point.h>
 
 #include "livarot/LivarotDefs.h"
-#include "object/object-set.h"
+#include "object/object-set.h"   // For BooleanOp
 
 class Path;
 class FloatLigne;
@@ -51,7 +51,6 @@ enum
   shape_polypatch = 2                // a graph without intersection; each face is a polygon (not yet used)
 };
 
-class IntLigne;
 class BitLigne;
 class AlphaLigne;
 

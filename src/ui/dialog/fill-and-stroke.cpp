@@ -29,11 +29,10 @@
 
 #include "ui/icon-loader.h"
 #include "ui/icon-names.h"
-#include "ui/widget/notebook-page.h"
 
-#include "widgets/fill-style.h"
-#include "widgets/paint-selector.h"
-#include "widgets/stroke-style.h"
+#include "ui/widget/fill-style.h"
+#include "ui/widget/stroke-style.h"
+#include "ui/widget/notebook-page.h"
 
 
 namespace Inkscape {
@@ -41,7 +40,7 @@ namespace UI {
 namespace Dialog {
 
 FillAndStroke::FillAndStroke()
-    : UI::Widget::Panel("/dialogs/fillstroke", SP_VERB_DIALOG_FILL_STROKE)
+    : DialogBase("/dialogs/fillstroke", "FillStroke")
     , _page_fill(Gtk::manage(new UI::Widget::NotebookPage(1, 1, true, true)))
     , _page_stroke_paint(Gtk::manage(new UI::Widget::NotebookPage(1, 1, true, true)))
     , _page_stroke_style(Gtk::manage(new UI::Widget::NotebookPage(1, 1, true, true)))
@@ -50,15 +49,11 @@ FillAndStroke::FillAndStroke()
                           UI::Widget::SimpleFilterModifier::BLEND |
                           UI::Widget::SimpleFilterModifier::BLUR |
                           UI::Widget::SimpleFilterModifier::OPACITY)
-    , deskTrack()
-    , targetDesktop(nullptr)
     , fillWdgt(nullptr)
     , strokeWdgt(nullptr)
-    , desktopChangeConn()
 {
-    Gtk::Box *contents = _getContents();
-    contents->set_spacing(2);
-    contents->pack_start(_notebook, true, true);
+    set_spacing(2);
+    pack_start(_notebook, true, true);
 
     _notebook.append_page(*_page_fill, _createPageTabLabel(_("_Fill"), INKSCAPE_ICON("object-fill")));
     _notebook.append_page(*_page_stroke_paint, _createPageTabLabel(_("Stroke _paint"), INKSCAPE_ICON("object-stroke")));
@@ -71,46 +66,35 @@ FillAndStroke::FillAndStroke()
     _layoutPageStrokePaint();
     _layoutPageStrokeStyle();
 
-    contents->pack_end(_composite_settings, Gtk::PACK_SHRINK);
+    pack_end(_composite_settings, Gtk::PACK_SHRINK);
 
     show_all_children();
 
     _composite_settings.setSubject(&_subject);
-
-    // Connect this up last
-    desktopChangeConn = deskTrack.connectDesktopChanged( sigc::mem_fun(*this, &FillAndStroke::setTargetDesktop) );
-    deskTrack.connect(GTK_WIDGET(gobj()));
 }
 
 FillAndStroke::~FillAndStroke()
 {
+    // Disconnect signals from composite settings
     _composite_settings.setSubject(nullptr);
-
-    desktopChangeConn.disconnect();
-    deskTrack.disconnect();
+    fillWdgt->setDesktop(nullptr);
+    strokeWdgt->setDesktop(nullptr);
+    strokeStyleWdgt->setDesktop(nullptr);
+    _subject.setDesktop(nullptr);
 }
 
-void FillAndStroke::setDesktop(SPDesktop *desktop)
+void FillAndStroke::desktopReplaced()
 {
-    Panel::setDesktop(desktop);
-    deskTrack.setBase(desktop);
-}
-
-void FillAndStroke::setTargetDesktop(SPDesktop *desktop)
-{
-    if (targetDesktop != desktop) {
-        targetDesktop = desktop;
-        if (fillWdgt) {
-            sp_fill_style_widget_set_desktop(fillWdgt, desktop);
-        }
-        if (strokeWdgt) {
-            sp_fill_style_widget_set_desktop(strokeWdgt, desktop);
-        }
-        if (strokeStyleWdgt) {
-            sp_stroke_style_widget_set_desktop(strokeStyleWdgt, desktop);
-        }
-        _composite_settings.setSubject(&_subject);
+    if (fillWdgt) {
+        fillWdgt->setDesktop(getDesktop());
     }
+    if (strokeWdgt) {
+        strokeWdgt->setDesktop(getDesktop());
+    }
+    if (strokeStyleWdgt) {
+        strokeStyleWdgt->setDesktop(getDesktop());
+    }
+    _subject.setDesktop(getDesktop());
 }
 
 void FillAndStroke::_onSwitchPage(Gtk::Widget * /*page*/, guint pagenum)
@@ -129,31 +113,30 @@ FillAndStroke::_savePagePref(guint page_num)
 void
 FillAndStroke::_layoutPageFill()
 {
-    fillWdgt = Gtk::manage(sp_fill_style_widget_new());
+    fillWdgt = Gtk::manage(new UI::Widget::FillNStroke(FILL));
     _page_fill->table().attach(*fillWdgt, 0, 0, 1, 1);
 }
 
 void
 FillAndStroke::_layoutPageStrokePaint()
 {
-    strokeWdgt = Gtk::manage(sp_stroke_style_paint_widget_new());
+    strokeWdgt = Gtk::manage(new UI::Widget::FillNStroke(STROKE));
     _page_stroke_paint->table().attach(*strokeWdgt, 0, 0, 1, 1);
 }
 
 void
 FillAndStroke::_layoutPageStrokeStyle()
 {
-    strokeStyleWdgt = sp_stroke_style_line_widget_new();
+    strokeStyleWdgt = Gtk::manage(new UI::Widget::StrokeStyle());
     strokeStyleWdgt->set_hexpand();
     strokeStyleWdgt->set_halign(Gtk::ALIGN_START);
-
     _page_stroke_style->table().attach(*strokeStyleWdgt, 0, 0, 1, 1);
 }
 
 void
 FillAndStroke::showPageFill()
 {
-    present();
+    blink();
     _notebook.set_current_page(0);
     _savePagePref(0);
 
@@ -162,7 +145,7 @@ FillAndStroke::showPageFill()
 void
 FillAndStroke::showPageStrokePaint()
 {
-    present();
+    blink();
     _notebook.set_current_page(1);
     _savePagePref(1);
 }
@@ -170,16 +153,16 @@ FillAndStroke::showPageStrokePaint()
 void
 FillAndStroke::showPageStrokeStyle()
 {
-    present();
+    blink();
     _notebook.set_current_page(2);
     _savePagePref(2);
 
 }
 
-Gtk::HBox&
+Gtk::Box&
 FillAndStroke::_createPageTabLabel(const Glib::ustring& label, const char *label_image)
 {
-    Gtk::HBox *_tab_label_box = Gtk::manage(new Gtk::HBox(false, 4));
+    Gtk::Box *_tab_label_box = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 4));
 
     auto img = Gtk::manage(sp_get_icon_image(label_image, Gtk::ICON_SIZE_MENU));
     _tab_label_box->pack_start(*img);

@@ -1,4 +1,8 @@
 char * stringlst = [
+N_("Fast Crop"),
+N_("Fill and Transparency"),
+N_("Does not filter but adds a filter region"),
+
 N_("Smart Jelly"),
 N_("Bevels"),
 N_("Same as Matte jelly but with more controls"),

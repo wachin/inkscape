@@ -12,8 +12,7 @@
 #ifndef __SP_ATTRIBUTE_SORT_UTIL_H__
 #define __SP_ATTRIBUTE_SORT_UTIL_H__
 
-#include <glibmm/ustring.h>
-#include "xml/sp-css-attr.h"
+#include "xml/node.h"
 
 using Inkscape::XML::Node;
 
@@ -22,35 +21,9 @@ using Inkscape::XML::Node;
  */
 
 /**
- * Sort attributes by name.
+ * Sort attributes and CSS properties by name.
  */
-void sp_attribute_sort_tree(Node *repr);
-
-/**
- * Recursively sort.
- * repr: the root node in a document or any other node.
- */
-void sp_attribute_sort_recursive(Node *repr);
-
-/**
- * Sort one element (attributes).
- */
-void sp_attribute_sort_element(Node *repr);
-
-/**
- * Sort style properties for one element.
- */
-void sp_attribute_sort_style(Node *repr);
-
-/**
- * Sort style_property for a style string
- */
-Glib::ustring sp_attribute_sort_style(Node *repr, gchar const *string);
-
-/**
- * Sort style properties for one CSS.
- */
-void sp_attribute_sort_style(Node* repr, SPCSSAttr *css);
+void sp_attribute_sort_tree(Node& repr);
 
 #endif /* __SP_ATTRIBUTE_SORT_UTIL_H__ */
 

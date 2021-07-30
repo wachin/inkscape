@@ -16,10 +16,11 @@
 #include "message-stack.h"
 #include "snap.h"
 
-#include "display/snap-indicator.h"
+#include "display/control/snap-indicator.h"
 
 #include "object/sp-namedview.h"
 
+#include "ui/modifiers.h"
 #include "ui/tools/tool-base.h"
 
 static const double midpt_1_goldenratio = (1 + goldenratio) / 2;
@@ -46,7 +47,7 @@ bool Inkscape::have_viable_layer(SPDesktop *desktop, MessageContext *message)
             return false;
     }
 
-    if ( !layer || layer->isLocked() ) {
+    if ( layer->isLocked() ) {
             message->flash(Inkscape::ERROR_MESSAGE,
                          _("<b>Current layer is locked</b>. Unlock it to be able to draw on it."));
             return false;
@@ -75,7 +76,7 @@ bool Inkscape::have_viable_layer(SPDesktop *desktop, MessageStack *message)
             return false;
     }
 
-    if ( !layer || layer->isLocked() ) {
+    if ( layer->isLocked() ) {
             message->flash(Inkscape::WARNING_MESSAGE,
                          _("<b>Current layer is locked</b>. Unlock it to be able to draw on it."));
             return false;
@@ -88,18 +89,18 @@ bool Inkscape::have_viable_layer(SPDesktop *desktop, MessageStack *message)
 Geom::Rect Inkscape::snap_rectangular_box(SPDesktop const *desktop, SPItem *item,
                                         Geom::Point const &pt, Geom::Point const &center, int state)
 {
+    desktop->snapindicator->remove_snaptarget();
     Geom::Point p[2];
 
-    bool const shift = state & GDK_SHIFT_MASK;
-    bool const control = state & GDK_CONTROL_MASK;
+    auto confine = Modifiers::Modifier::get(Modifiers::Type::TRANS_CONFINE)->active(state);
+    auto off_center = Modifiers::Modifier::get(Modifiers::Type::TRANS_OFF_CENTER)->active(state);
 
     SnapManager &m = desktop->namedview->snap_manager;
     m.setup(desktop, false, item);
     Inkscape::SnappedPoint snappoint;
 
-    if (control) {
-
-        /* Control is down: we are constrained to producing integer-ratio rectangles */
+    if (confine) {
+        /* We are constrained to producing integer-ratio rectangles */
 
         /* Vector from the centre of the box to the point we are dragging to */
         Geom::Point delta = pt - center;
@@ -128,11 +129,10 @@ Geom::Rect Inkscape::snap_rectangular_box(SPDesktop const *desktop, SPItem *item
         /* p[1] is the dragged point with the integer-ratio constraint */
         p[1] = center + delta;
 
-        if (shift) {
+        if (off_center) {
 
-            /* Shift is down, so our origin is the centre point rather than the corner
-            ** point; this means that corner-point movements are bound to each other.
-            */
+            // Our origin is the centre point rather than the corner point;
+            // this means that corner-point movements are bound to each other.
 
             /* p[0] is the opposite corner of our box */
             p[0] = center - delta;
@@ -172,11 +172,9 @@ Geom::Rect Inkscape::snap_rectangular_box(SPDesktop const *desktop, SPItem *item
             }
         }
 
-    } else if (shift) {
-
-        /* Shift is down, so our origin is the centre point rather than the corner point;
-        ** this means that corner-point movements are bound to each other.
-        */
+    } else if (off_center) {
+        // Our origin is the centre point rather than the corner point;
+        // this means that corner-point movements are bound to each other.
 
         p[1] = pt;
         p[0] = 2 * center - p[1];
@@ -234,7 +232,7 @@ Geom::Point Inkscape::setup_for_drag_start(SPDesktop *desktop, Inkscape::UI::Too
 
     Geom::Point const p(ev->button.x, ev->button.y);
     ec->item_to_select = Inkscape::UI::Tools::sp_event_context_find_item(desktop, p, ev->button.state & GDK_MOD1_MASK, TRUE);
-    return ec->desktop->w2d(p);
+    return ec->getDesktop()->w2d(p);
 }
 
 

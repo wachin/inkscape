@@ -42,11 +42,13 @@ public:
     sigc::connection _image_modified_connection;
     sigc::connection _href_modified_connection;
 
+    bool valid_for(SPObject const *obj) const override;
+
 protected:
 	void build(SPDocument* doc, Inkscape::XML::Node* repr) override;
 	void release() override;
 
-	void set(SPAttributeEnum key, const gchar* value) override;
+	void set(SPAttr key, const gchar* value) override;
 
 	void update(SPCtx* ctx, unsigned int flags) override;
 

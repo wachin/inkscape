@@ -50,6 +50,7 @@
 #include "ui/tools/tool-base.h"
 
 #include "xml/sp-css-attr.h"
+#include "xml/attribute-record.h"
 
 namespace {
 
@@ -183,12 +184,14 @@ sp_desktop_apply_css_recursive(SPObject *o, SPCSSAttr *css, bool skip_lines)
 /**
  * Apply style on selection on desktop.
  */
- void sp_desktop_set_style(SPDesktop *desktop, SPCSSAttr *css, bool change, bool write_current){
-    return sp_desktop_set_style(desktop->getSelection(), desktop, css, change, write_current);
+
+void sp_desktop_set_style(SPDesktop *desktop, SPCSSAttr *css, bool change, bool write_current, bool switch_style)
+{
+    return sp_desktop_set_style(desktop->getSelection(), desktop, css, change, write_current, switch_style);
 }
 
 void
-sp_desktop_set_style(Inkscape::ObjectSet *set, SPDesktop *desktop, SPCSSAttr *css, bool change, bool write_current)
+sp_desktop_set_style(Inkscape::ObjectSet *set, SPDesktop *desktop, SPCSSAttr *css, bool change, bool write_current, bool switch_style)
 {
     if (write_current) {
         Inkscape::Preferences *prefs = Inkscape::Preferences::get();
@@ -207,7 +210,7 @@ sp_desktop_set_style(Inkscape::ObjectSet *set, SPDesktop *desktop, SPCSSAttr *cs
             Box3DSide *side = dynamic_cast<Box3DSide *>(obj);
             if (side) {
                 prefs->mergeStyle(
-                        Glib::ustring("/desktop/") + box3d_side_axes_string(side) + "/style", css_write);
+                        Glib::ustring("/desktop/") + side->axes_string() + "/style", css_write);
             }
         }
         sp_repr_css_attr_unref(css_write);
@@ -217,7 +220,7 @@ sp_desktop_set_style(Inkscape::ObjectSet *set, SPDesktop *desktop, SPCSSAttr *cs
         return;
 
 // 2. Emit signal... See desktop->connectSetStyle in text-tool, tweak-tool, and gradient-drag.
-    bool intercepted = desktop->_set_style_signal.emit(css);
+    bool intercepted = desktop->_set_style_signal.emit(css, switch_style);
 
 /** \todo
  * FIXME: in set_style, compensate pattern and gradient fills, stroke width,
@@ -271,7 +274,8 @@ sp_desktop_get_style(SPDesktop *desktop, bool with_text)
 {
     SPCSSAttr *css = sp_repr_css_attr_new();
     sp_repr_css_merge(css, desktop->current);
-    if (!css->attributeList()) {
+    const auto & l = css->attributeList();
+    if (l.empty()) {
         sp_repr_css_attr_unref(css);
         return nullptr;
     } else {
@@ -406,6 +410,7 @@ sp_desktop_apply_style_tool(SPDesktop *desktop, Inkscape::XML::Node *repr, Glib:
 
     if (prefs->getBool(tool_path + "/usecurrent") && css_current) {
         sp_repr_css_unset_property(css_current, "mix-blend-mode");
+        sp_repr_css_unset_property(css_current, "filter");
         sp_repr_css_set(repr, css_current, "style");
     } else {
         SPCSSAttr *css = prefs->getInheritedStyle(tool_path + "/style");
@@ -768,6 +773,7 @@ objects_query_strokewidth (const std::vector<SPItem*> &objects, SPStyle *style_r
     gdouble prev_sw = -1;
     bool same_sw = true;
     bool noneSet = true; // is stroke set to none?
+    bool prev_hairline;
 
     int n_stroked = 0;
 
@@ -786,6 +792,16 @@ objects_query_strokewidth (const std::vector<SPItem*> &objects, SPStyle *style_r
 
         noneSet &= style->stroke.isNone();
 
+        if (style->stroke_extensions.hairline) {
+            // Can't average a bool. It's true if there's any hairlines in the selection.
+            style_res->stroke_extensions.hairline = true;
+        }
+
+        if (n_stroked > 0 && prev_hairline != style->stroke_extensions.hairline) {
+            same_sw = false;
+        }
+        prev_hairline = style->stroke_extensions.hairline;
+
         Geom::Affine i2d = item->i2dt_affine();
         double sw = style->stroke_width.computed * i2d.descrim();
 
@@ -795,6 +811,8 @@ objects_query_strokewidth (const std::vector<SPItem*> &objects, SPStyle *style_r
             prev_sw = sw;
 
             avgwidth += sw;
+            n_stroked ++;
+        } else if (style->stroke_extensions.hairline) {
             n_stroked ++;
         }
     }

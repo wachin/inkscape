@@ -35,13 +35,13 @@
 #include "sp-path.h"
 #include "preferences.h"
 #include "attributes.h"
+#include "path/path-outline.h" // For bound box calculation
+
 #include "svg/svg.h"
 #include "svg/path-string.h"
 #include "live_effects/lpeobject.h"
 
 #include "helper/mathfns.h" // for triangle_area()
-
-#include "splivarot.h" // for bounding box calculation
 
 #define noSHAPE_VERBOSE
 
@@ -97,18 +97,14 @@ void SPShape::release() {
         }
     }
     
-    if (this->_curve) {
-        this->_curve = this->_curve->unref();
-    }
+    _curve.reset();
     
-    if (this->_curve_before_lpe) {
-        this->_curve_before_lpe = this->_curve_before_lpe->unref();
-    }
+    _curve_before_lpe.reset();
 
     SPLPEItem::release();
 }
 
-void SPShape::set(SPAttributeEnum key, const gchar* value) {
+void SPShape::set(SPAttr key, const gchar* value) {
 	SPLPEItem::set(key, value);
 }
 
@@ -121,6 +117,7 @@ Inkscape::XML::Node* SPShape::write(Inkscape::XML::Document *xml_doc, Inkscape::
 void SPShape::update(SPCtx* ctx, guint flags) {
     // Any update can change the bounding box,
     // so the cached version can no longer be used.
+    // But the idle checker usually is just moving the objects around.
     bbox_vis_cache_is_valid = false;
     bbox_geom_cache_is_valid = false;
 
@@ -164,7 +161,7 @@ void SPShape::update(SPCtx* ctx, guint flags) {
             Inkscape::DrawingShape *sh = dynamic_cast<Inkscape::DrawingShape *>(v->arenaitem);
 
             if (flags & SP_OBJECT_MODIFIED_FLAG) {
-                sh->setPath(this->_curve);
+                sh->setPath(this->_curve.get());
             }
         }
     }
@@ -331,8 +328,10 @@ sp_shape_update_marker_view(SPShape *shape, Inkscape::DrawingItem *ai)
     // position arguments to sp_marker_show_instance, basically counts the amount of markers.
     int counter[4] = {0};
 
-    if (!shape->_curve) return;
-    Geom::PathVector const & pathv = shape->_curve->get_pathvector();
+    if (!shape->curve())
+        return;
+
+    Geom::PathVector const &pathv = shape->curve()->get_pathvector();
     if (pathv.empty()) return;
 
     // the first vertex should get a start marker, the last an end marker, and all the others a mid marker
@@ -457,24 +456,60 @@ void SPShape::modified(unsigned int flags) {
         }
     }
 
-    if (!this->getCurve(TRUE)) { // avoid copy
+    if (flags & SP_OBJECT_MODIFIED_FLAG && style->filter.set) {
+        if (auto filter = style->getFilter()) {
+            filter->update_filter_all_regions();
+        }
+    }
+
+    if (flags != 29 && flags != 253 && !_curve) {
         sp_lpe_item_update_patheffect(this, true, false);
+    } else if (!_curve) {
+        this->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG);
     }
 }
 
 Geom::OptRect SPShape::bbox(Geom::Affine const &transform, SPItem::BBoxType bboxtype) const {
-    // If the object is clipped, the update funcation that invalidates
+    // If the object is clipped, the update function that invalidates
     // the cache doesn't get called if the object is moved, so we need
     // to compare the transformations as well.
-    bool cached = (bboxtype == SPItem::VISUAL_BBOX) ? bbox_vis_cache_is_valid : bbox_geom_cache_is_valid;
-    if (transform != bbox_transform_cache) {
-        bbox_vis_cache_is_valid = false;
-        bbox_geom_cache_is_valid = false;
-    } else if (cached) {
-        return (bboxtype == SPItem::VISUAL_BBOX) ? bbox_vis_cache : bbox_geom_cache;
+
+    if (bboxtype == SPItem::VISUAL_BBOX) {
+        bbox_vis_cache =
+            either_bbox(transform, bboxtype, bbox_vis_cache_is_valid, bbox_vis_cache, bbox_vis_cache_transform);
+        if (bbox_vis_cache) {
+            bbox_vis_cache_transform = transform;
+            bbox_vis_cache_is_valid = true;
+        }
+        return bbox_vis_cache;
+    } else {
+        bbox_geom_cache =
+            either_bbox(transform, bboxtype, bbox_geom_cache_is_valid, bbox_geom_cache, bbox_geom_cache_transform);
+        if (bbox_geom_cache) {
+            bbox_geom_cache_transform = transform;
+            bbox_geom_cache_is_valid = true;
+        }
+        return bbox_geom_cache;
     }
+}
+
+Geom::OptRect SPShape::either_bbox(Geom::Affine const &transform, SPItem::BBoxType bboxtype, bool cache_is_valid,
+                                   Geom::OptRect bbox_cache, Geom::Affine const &transform_cache) const
+{
 
     Geom::OptRect bbox;
+
+    // Return the cache if possible.
+    auto delta = transform_cache.inverse() * transform;
+    if (cache_is_valid && bbox_cache && delta.isTranslation()) {
+
+        // Don't re-adjust the cache if we haven't moved
+        if (!delta.isNonzeroTranslation()) {
+            return bbox_cache;
+        }
+        // delta is pure translation so it's safe to use it as is
+        return *bbox_cache * delta;
+    }
 
     if (!this->_curve || this->_curve->get_pathvector().empty()) {
     	return bbox;
@@ -489,8 +524,8 @@ Geom::OptRect SPShape::bbox(Geom::Affine const &transform, SPItem::BBoxType bbox
     if (bboxtype == SPItem::VISUAL_BBOX) {
         // convert the stroke to a path and calculate that path's geometric bbox
 
-        if (!this->style->stroke.isNone()) {
-            Geom::PathVector *pathv = item_outline(this, true);  // calculate bbox_only
+        if (!this->style->stroke.isNone() && !this->style->stroke_extensions.hairline) {
+            Geom::PathVector *pathv = item_to_outline(this, true);  // calculate bbox_only
 
             if (pathv) {
                 bbox |= bounds_exact_transformed(*pathv, transform);
@@ -659,14 +694,6 @@ Geom::OptRect SPShape::bbox(Geom::Affine const &transform, SPItem::BBoxType bbox
         }
     }
 
-    bbox_transform_cache = transform;
-    if (bboxtype == SPItem::VISUAL_BBOX) {
-        bbox_vis_cache = bbox;
-        bbox_vis_cache_is_valid = true;
-    } else {
-        bbox_geom_cache = bbox;
-        bbox_geom_cache_is_valid = true;
-    }
 
     return bbox;
 }
@@ -700,15 +727,6 @@ void SPShape::print(SPPrintContext* ctx) {
     if (pathv.empty()) {
     	return;
     }
-
-	Inkscape::Preferences *prefs = Inkscape::Preferences::get();
-	gint add_comments = prefs->getBool("/printing/debug/add-label-comments");
-	
-	if (add_comments) {
-		gchar * comment = g_strdup_printf("begin '%s'", this->defaultLabel());
-		ctx->comment(comment);
-		g_free(comment);
-	}
 
     /* fixme: Think (Lauris) */
 	Geom::OptRect pbox, dbox, bbox;
@@ -798,21 +816,14 @@ void SPShape::print(SPPrintContext* ctx) {
             }
         }
     }
-
-	if (add_comments) {
-		gchar * comment = g_strdup_printf("end '%s'",
-		this->defaultLabel());
-		ctx->comment(comment);
-		g_free(comment);
-	}
 }
 
 void SPShape::update_patheffect(bool write)
 {
-    if (SPCurve *c_lpe = this->getCurveForEdit()) {
+    if (auto c_lpe = SPCurve::copy(curveForEdit())) {
         /* if a path has an lpeitem applied, then reset the curve to the _curve_before_lpe.
          * This is very important for LPEs to work properly! (the bbox might be recalculated depending on the curve in shape)*/
-        this->setCurveInsync(c_lpe);
+        this->setCurveInsync(c_lpe.get());
         SPRoot *root = this->document->getRoot();
         if (!sp_version_inside_range(root->version.inkscape, 0, 1, 0, 92)) {
             this->resetClipPathAndMaskLPE();
@@ -820,9 +831,9 @@ void SPShape::update_patheffect(bool write)
 
         bool success = false;
         if (hasPathEffect() && pathEffectsEnabled()) {
-            success = this->performPathEffect(c_lpe, SP_SHAPE(this));
+            success = this->performPathEffect(c_lpe.get(), this);
             if (success) {
-                this->setCurveInsync(c_lpe);
+                this->setCurveInsync(c_lpe.get());
                 this->applyToClipPath(this);
                 this->applyToMask(this);
             }
@@ -830,14 +841,11 @@ void SPShape::update_patheffect(bool write)
         if (write && success) {
             Inkscape::XML::Node *repr = this->getRepr();
             if (c_lpe != nullptr) {
-                gchar *str = sp_svg_write_path(c_lpe->get_pathvector());
-                repr->setAttribute("d", str);
-                g_free(str);
+                repr->setAttribute("d", sp_svg_write_path(c_lpe->get_pathvector()));
             } else {
                 repr->removeAttribute("d");
             }
         }
-        c_lpe->unref();
         this->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG);
     }
 }
@@ -848,7 +856,7 @@ Inkscape::DrawingItem* SPShape::show(Inkscape::Drawing &drawing, unsigned int /*
 
     bool has_markers = this->hasMarkers();
 
-    s->setPath(this->_curve);
+    s->setPath(this->_curve.get());
 
     /* This stanza checks that an object's marker style agrees with
      * the marker objects it has allocated.  sp_shape_set_marker ensures
@@ -1075,116 +1083,86 @@ void SPShape::set_shape() {
 
 /* Shape section */
 
-/**
- * Calls any registered handlers for the set_shape action
- */
+void SPShape::_setCurve(std::unique_ptr<SPCurve> &&new_curve, bool update_display)
+{
+    _curve = std::move(new_curve);
+
+    if (update_display) {
+        requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG);
+    }
+}
+void SPShape::_setCurve(SPCurve const *new_curve, bool update_display)
+{
+    _setCurve(SPCurve::copy(new_curve), update_display);
+}
 
 /**
- * Adds a curve to the shape.  If owner is specified, a reference
- * will be made, otherwise the curve will be copied into the shape.
+ * Adds a curve to the shape.
  * Any existing curve in the shape will be unreferenced first.
  * This routine also triggers a request to update the display.
  */
-void SPShape::setCurve(SPCurve *new_curve, unsigned int owner)
+void SPShape::setCurve(std::unique_ptr<SPCurve> &&new_curve)
 {
-    if (_curve) {
-        _curve = _curve->unref();
-    }
-
-    if (new_curve) {
-        if (owner) {
-            _curve = new_curve->ref();
-        } else {
-            _curve = new_curve->copy();
-        }
-    }
-
-    this->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG);
+    _setCurve(std::move(new_curve), true);
+}
+void SPShape::setCurve(SPCurve const *new_curve)
+{
+    _setCurve(new_curve, true);
 }
 
+/**
+ * Sets _curve_before_lpe to a copy of `new_curve`
+ */
+void SPShape::setCurveBeforeLPE(std::unique_ptr<SPCurve> &&new_curve)
+{
+    _curve_before_lpe = std::move(new_curve);
+}
+void SPShape::setCurveBeforeLPE(SPCurve const *new_curve)
+{
+    setCurveBeforeLPE(SPCurve::copy(new_curve));
+}
 
 /**
- * Sets _curve_before_lpe to refer to the curve.
+ * Same as setCurve() but without updating the display
  */
-void
-SPShape::setCurveBeforeLPE(SPCurve *new_curve, unsigned int owner)
+void SPShape::setCurveInsync(std::unique_ptr<SPCurve> &&new_curve)
+{
+    _setCurve(std::move(new_curve), false);
+}
+void SPShape::setCurveInsync(SPCurve const *new_curve)
+{
+    _setCurve(new_curve, false);
+}
+
+/**
+ * Return a borrowed pointer to the curve (if any exists) or NULL if there is no curve
+ */
+SPCurve *SPShape::curve()
+{
+    return _curve.get();
+}
+SPCurve const *SPShape::curve() const
+{
+    return _curve.get();
+}
+
+/**
+ * Return a borrowed pointer of the curve *before* LPE (if any exists) or NULL if there is no curve
+ */
+SPCurve const *SPShape::curveBeforeLPE() const
+{
+    return _curve_before_lpe.get();
+}
+
+/**
+ * Return a borrowed pointer of the curve for edit
+ */
+SPCurve const *SPShape::curveForEdit() const
 {
     if (_curve_before_lpe) {
-        _curve_before_lpe = _curve_before_lpe->unref();
+        return _curve_before_lpe.get();
     }
-
-    if (new_curve) {
-        if (owner) {
-            _curve_before_lpe = new_curve->ref();
-        } else {
-            _curve_before_lpe = new_curve->copy();
-        }
-    }
-}
-
-/**
- * Same as sp_shape_set_curve but without updating the display
- */
-void SPShape::setCurveInsync(SPCurve *new_curve, unsigned int owner)
-{
-    if (_curve) {
-        _curve = _curve->unref();
-    }
-
-    if (new_curve) {
-        if (owner) {
-            _curve = new_curve->ref();
-        } else {
-            _curve = new_curve->copy();
-        }
-    }
-}
-
-
-/**
- * Return curve (if any exists) or NULL if there is no curve
- * if owner == 0 return a copy
- */
-SPCurve * SPShape::getCurve(unsigned int owner) const
-{
-    if (_curve) {
-        if(owner) {
-            return _curve;
-        }
-        return _curve->copy();
-    }
-
-    return nullptr;
-}
-
-/**
- * Return  curve *before* LPE (if any exists) or NULL if there is no curve
- * if owner == 0 return a copy
- */
-SPCurve * SPShape::getCurveBeforeLPE(unsigned int owner) const
-{
-    if (_curve_before_lpe) {
-        if (owner) {
-            return _curve_before_lpe;
-        }
-        return _curve_before_lpe->copy();
-    } 
-    return nullptr;
-}
-
-/**
- * Return curve for edit
- * if owner == 0 return a copy
- */
-SPCurve * SPShape::getCurveForEdit(unsigned int owner) const
-{
-    if (_curve_before_lpe) {
-        if (owner) {
-            return _curve_before_lpe;
-        }
-        return _curve_before_lpe->copy();
-    }
-    return getCurve(owner);
+    return curve();
 }
 
 void SPShape::snappoints(std::vector<Inkscape::SnapCandidatePoint> &p, Inkscape::SnapPreferences const *snapprefs) const {

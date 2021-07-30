@@ -290,27 +290,26 @@ unsigned sp_text_get_length_upto(SPObject const *item, SPObject const *upto)
 static Inkscape::XML::Node* duplicate_node_without_children(Inkscape::XML::Document *xml_doc, Inkscape::XML::Node const *old_node)
 {
     switch (old_node->type()) {
-        case Inkscape::XML::ELEMENT_NODE: {
+        case Inkscape::XML::NodeType::ELEMENT_NODE: {
             Inkscape::XML::Node *new_node = xml_doc->createElement(old_node->name());
-            Inkscape::Util::List<Inkscape::XML::AttributeRecord const> attributes = old_node->attributeList();
             GQuark const id_key = g_quark_from_string("id");
-            for ( ; attributes ; attributes++) {
-                if (attributes->key == id_key) continue;
-                new_node->setAttribute(g_quark_to_string(attributes->key), attributes->value);
+            for ( const auto & attr: old_node->attributeList() ) {
+                if (attr.key == id_key) continue;
+                new_node->setAttribute(g_quark_to_string(attr.key), attr.value);
             }
             return new_node;
         }
 
-        case Inkscape::XML::TEXT_NODE:
+        case Inkscape::XML::NodeType::TEXT_NODE:
             return xml_doc->createTextNode(old_node->content());
 
-        case Inkscape::XML::COMMENT_NODE:
+        case Inkscape::XML::NodeType::COMMENT_NODE:
             return xml_doc->createComment(old_node->content());
 
-        case Inkscape::XML::PI_NODE:
+        case Inkscape::XML::NodeType::PI_NODE:
             return xml_doc->createPI(old_node->name(), old_node->content());
 
-        case Inkscape::XML::DOCUMENT_NODE:
+        case Inkscape::XML::NodeType::DOCUMENT_NODE:
             return nullptr;   // this had better never happen
     }
     return nullptr;
@@ -424,7 +423,7 @@ Inkscape::Text::Layout::iterator sp_te_insert_line (SPItem *item, Inkscape::Text
 
         if (need_to_wrap) {
 
-            // We'll need to rebuild layout, so store character postion:
+            // We'll need to rebuild layout, so store character position:
             int char_index = layout->iteratorToCharIndex(position);
 
             // Create wrapping tspan.
@@ -464,7 +463,7 @@ Inkscape::Text::Layout::iterator sp_te_insert_line (SPItem *item, Inkscape::Text
         if (split_obj) {
             Inkscape::XML::Document *xml_doc = split_obj->document->getReprDoc();
             Inkscape::XML::Node *new_node = duplicate_node_without_children(xml_doc, split_obj->getRepr());
-            // if we finaly go to a text element without TSpan we mist set content to none
+            // if we finally go to a text element without TSpan we mist set content to none
             // new_node->setContent("");
             split_obj->parent->getRepr()->addChild(new_node, split_obj->getRepr());
             Inkscape::GC::release(new_node);
@@ -500,7 +499,6 @@ Inkscape::Text::Layout::iterator sp_te_insert_line (SPItem *item, Inkscape::Text
         // I think the only case to put here is arbitrary gaps, which nobody uses yet
     }
 
-    item->updateRepr();
     unsigned char_index = layout->iteratorToCharIndex(position);
     te_update_layout_now(item);
     item->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG);
@@ -534,7 +532,7 @@ static void insert_into_spstring(SPString *string_item, Glib::ustring::iterator 
 {
     unsigned char_index = 0;
     unsigned char_count = g_utf8_strlen(utf8, -1);
-    Glib::ustring *string = &SP_STRING(string_item)->string;
+    Glib::ustring *string = &string_item->string;
 
     for (Glib::ustring::iterator it = string->begin() ; it != iter_at ; ++it)
         char_index++;
@@ -629,7 +627,6 @@ sp_te_insert(SPItem *item, Inkscape::Text::Layout::iterator const &position, gch
         }
     }
 
-    item->updateRepr();
     unsigned char_index = layout->iteratorToCharIndex(position);
     te_update_layout_now(item);
     item->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG);
@@ -733,11 +730,10 @@ static SPObject* delete_line_break(SPObject *root, SPObject *item, bool *next_is
     SPCSSAttr *dest_node_attrs = sp_repr_css_attr(new_parent_item->getRepr(), "style");
     SPCSSAttr *this_node_attrs = sp_repr_css_attr(this_repr, "style");
     SPCSSAttr *this_node_attrs_inherited = sp_repr_css_attr_inherited(this_repr, "style");
-    Inkscape::Util::List<Inkscape::XML::AttributeRecord const> attrs = dest_node_attrs->attributeList();
-    for ( ; attrs ; attrs++) {
-        gchar const *key = g_quark_to_string(attrs->key);
+    for ( const auto & attr :dest_node_attrs->attributeList()) {
+        gchar const *key = g_quark_to_string(attr.key);
         gchar const *this_attr = this_node_attrs_inherited->attribute(key);
-        if ((this_attr == nullptr || strcmp(attrs->value, this_attr)) && this_node_attrs->attribute(key) == nullptr)
+        if ((this_attr == nullptr || strcmp(attr.value, this_attr)) && this_node_attrs->attribute(key) == nullptr)
             this_node_attrs->setAttribute(key, this_attr);
     }
     sp_repr_css_attr_unref(this_node_attrs_inherited);
@@ -759,7 +755,7 @@ static void erase_from_spstring(SPString *string_item, Glib::ustring::iterator i
 {
     unsigned char_index = 0;
     unsigned char_count = 0;
-    Glib::ustring *string = &SP_STRING(string_item)->string;
+    Glib::ustring *string = &string_item->string;
 
     for (Glib::ustring::iterator it = string->begin() ; it != iter_from ; ++it){
         char_index++;
@@ -925,16 +921,16 @@ static void sp_te_get_ustring_multiline(SPObject const *root, Glib::ustring *str
 
 /** Gets a text-only representation of the given text or flowroot object,
 replacing line break elements with '\n'. The return value must be free()d. */
-gchar *
+Glib::ustring
 sp_te_get_string_multiline (SPItem const *text)
 {
     Glib::ustring string;
     bool pending_line_break = false;
 
-    if (!SP_IS_TEXT(text) && !SP_IS_FLOWTEXT(text)) return nullptr;
-    sp_te_get_ustring_multiline(text, &string, &pending_line_break);
-    if (string.empty()) return nullptr;
-    return strdup(string.data());
+    if (SP_IS_TEXT(text) || SP_IS_FLOWTEXT(text)) {
+        sp_te_get_ustring_multiline(text, &string, &pending_line_break);
+    }
+    return string;
 }
 
 /** Gets a text-only representation of the characters in a text or flowroot
@@ -999,34 +995,47 @@ sp_te_set_repr_text_multiline(SPItem *text, gchar const *str)
         }
     }
 
-    gchar *p = content;
-    while (p) {
-        gchar *e = strchr (p, '\n');
-        if (is_textpath) {
-            if (e) *e = ' '; // no lines for textpath, replace newlines with spaces
-        } else {
-            if (e) *e = '\0';
-            Inkscape::XML::Node *rtspan;
-            if (SP_IS_TEXT(text)) { // create a tspan for each line
-                rtspan = xml_doc->createElement("svg:tspan");
-                rtspan->setAttribute("sodipodi:role", "line");
-            } else { // create a flowPara for each line
-                rtspan = xml_doc->createElement("svg:flowPara");
-            }
-            Inkscape::XML::Node *rstr = xml_doc->createTextNode(p);
-            rtspan->addChild(rstr, nullptr);
-            Inkscape::GC::release(rstr);
-            repr->appendChild(rtspan);
-            Inkscape::GC::release(rtspan);
-        }
-        p = (e) ? e + 1 : nullptr;
-    }
     if (is_textpath) {
+        gchar *p = content;
+        while (*p != '\0') {
+            if (*p == '\n') {
+                *p = ' '; // No lines for textpath, replace newlines with spaces.
+            }
+            ++p;
+        }
         Inkscape::XML::Node *rstr = xml_doc->createTextNode(content);
         repr->addChild(rstr, nullptr);
         Inkscape::GC::release(rstr);
-    }
+    } else {
+        SPText* sptext = dynamic_cast<SPText *>(text);
+        if (sptext && (sptext->has_inline_size() || sptext->has_shape_inside())) {
+            // Do nothing... we respect newlines (and assume CSS already set to do so).
+            Inkscape::XML::Node *rstr = xml_doc->createTextNode(content);
+            repr->addChild(rstr, nullptr);
+            Inkscape::GC::release(rstr);
+        } else {
+            // Break into tspans with sodipodi:role="line".
+            gchar *p = content;
+            while (p) {
+                gchar *e = strchr (p, '\n');
+                if (e) *e = '\0';
+                Inkscape::XML::Node *rtspan;
+                if (SP_IS_TEXT(text)) { // create a tspan for each line
+                    rtspan = xml_doc->createElement("svg:tspan");
+                    rtspan->setAttribute("sodipodi:role", "line");
+                } else { // create a flowPara for each line
+                    rtspan = xml_doc->createElement("svg:flowPara");
+                }
+                Inkscape::XML::Node *rstr = xml_doc->createTextNode(p);
+                rtspan->addChild(rstr, nullptr);
+                Inkscape::GC::release(rstr);
+                repr->appendChild(rtspan);
+                Inkscape::GC::release(rtspan);
 
+                p = (e) ? e + 1 : nullptr;
+            }
+        }
+    }
     g_free (content);
 }
 
@@ -1471,16 +1480,14 @@ forwards and backwards to make sure we don't miss any attributes that are
 in one but not the other. */
 static bool css_attrs_are_equal(SPCSSAttr const *first, SPCSSAttr const *second)
 {
-    Inkscape::Util::List<Inkscape::XML::AttributeRecord const> attrs = first->attributeList();
-    for ( ; attrs ; attrs++) {
-        gchar const *other_attr = second->attribute(g_quark_to_string(attrs->key));
-        if (other_attr == nullptr || strcmp(attrs->value, other_attr))
+    for ( const auto & attr : first->attributeList()) {
+        gchar const *other_attr = second->attribute(g_quark_to_string(attr.key));
+        if (other_attr == nullptr || strcmp(attr.value, other_attr))
             return false;
     }
-    attrs = second->attributeList();
-    for ( ; attrs ; attrs++) {
-        gchar const *other_attr = first->attribute(g_quark_to_string(attrs->key));
-        if (other_attr == nullptr || strcmp(attrs->value, other_attr))
+    for (const auto & attr : second->attributeList()) {
+        gchar const *other_attr = first->attribute(g_quark_to_string(attr.key));
+        if (other_attr == nullptr || strcmp(attr.value, other_attr))
             return false;
     }
     return true;
@@ -1717,7 +1724,7 @@ static bool tidy_operator_repeated_spans(SPObject **item, bool /*has_text_decora
     }
 
     // merge consecutive spans with identical styles into one
-    if (first_repr->type() != Inkscape::XML::ELEMENT_NODE) return false;
+    if (first_repr->type() != Inkscape::XML::NodeType::ELEMENT_NODE) return false;
     if (strcmp(first_repr->name(), second_repr->name()) != 0) return false;
     if (is_line_break_object(second)) return false;
     gchar const *first_style = first_repr->attribute("style");

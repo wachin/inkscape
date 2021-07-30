@@ -37,7 +37,7 @@
 #include "text-editing.h"
 #include "verbs.h"
 
-#include "display/canvas-grid.h"
+#include "display/control/canvas-grid.h"
 
 #include "extension/effect.h"
 #include "extension/db.h"
@@ -172,6 +172,15 @@ void fix_font_size(SPObject *o)
 }
 
 
+void fix_osb(SPObject *i)
+{
+    if (auto a = i->getAttribute("osb:paint") ){
+        i->setAttribute("inkscape:swatch", a);
+        i->setAttribute("osb:paint", nullptr);
+        i->updateRepr();
+    }
+}
+
 
 // helper function
 void sp_file_text_run_recursive(void (*f)(SPObject *), SPObject *o)
@@ -201,6 +210,14 @@ void sp_file_convert_text_baseline_spacing(SPDocument *doc)
     g_free(oldlocale);
 
     sp_file_text_run_recursive(fix_update, doc->getRoot());
+}
+
+void sp_file_fix_osb(SPObject *o)
+{
+    fix_osb(o);
+    std::vector<SPObject *> cl = o->childList(false);
+    for (auto ci : cl)
+        sp_file_fix_osb(ci);
 }
 
 
@@ -479,9 +496,9 @@ void sp_file_convert_dpi(SPDocument *doc)
         }
 
         if (backup && (response != FILE_DPI_UNCHANGED)) {
-            const char* uri = doc->getDocumentURI();
-            if (uri) {
-                sp_file_save_backup(Glib::ustring(uri));
+            const char* filename = doc->getDocumentFilename();
+            if (filename) {
+                sp_file_save_backup(Glib::ustring(filename));
             }
         }
 

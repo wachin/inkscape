@@ -27,13 +27,12 @@ SPPolyLine::~SPPolyLine() = default;
 void SPPolyLine::build(SPDocument * document, Inkscape::XML::Node * repr) {
     SPShape::build(document, repr);
 
-    this->readAttr("points");
+    this->readAttr(SPAttr::POINTS);
 }
 
-void SPPolyLine::set(SPAttributeEnum key, const gchar* value) {
+void SPPolyLine::set(SPAttr key, const gchar* value) {
     switch (key) {
-	case SP_ATTR_POINTS: {
-            SPCurve * curve;
+	case SPAttr::POINTS: {
             const gchar * cptr;
             char * eptr;
             gboolean hascpt;
@@ -42,7 +41,7 @@ void SPPolyLine::set(SPAttributeEnum key, const gchar* value) {
             	break;
             }
 
-            curve = new SPCurve ();
+            auto curve = std::make_unique<SPCurve>();
             hascpt = FALSE;
 
             cptr = value;
@@ -91,8 +90,7 @@ void SPPolyLine::set(SPAttributeEnum key, const gchar* value) {
                 }
             }
 		
-            this->setCurve(curve);
-            curve->unref();
+            setCurve(std::move(curve));
             break;
 	}
 	default:
@@ -113,6 +111,10 @@ Inkscape::XML::Node* SPPolyLine::write(Inkscape::XML::Document *xml_doc, Inkscap
     SPShape::write(xml_doc, repr, flags);
 
     return repr;
+}
+
+const char* SPPolyLine::typeName() const {
+    return "path";
 }
 
 gchar* SPPolyLine::description() const {

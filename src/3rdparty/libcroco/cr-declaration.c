@@ -191,6 +191,7 @@ cr_declaration_parse_list_from_buf (const guchar * a_str,
         CRParser *parser = NULL;
         CRTknzr *tokenizer = NULL;
         gboolean important = FALSE;
+        gboolean first = TRUE;
 
         g_return_val_if_fail (a_str, NULL);
 
@@ -202,47 +203,36 @@ cr_declaration_parse_list_from_buf (const guchar * a_str,
                         status = CR_ERROR;
                 goto cleanup;
         }
-        status = cr_parser_try_to_skip_spaces_and_comments (parser);
-        if (status != CR_OK)
-                goto cleanup;
 
-        status = cr_parser_parse_declaration (parser, &property,
-                                              &value, &important);
-        if (status != CR_OK || !property) {
+        for (;; first = FALSE) {
+                status = cr_parser_try_to_skip_spaces_and_comments (parser);
                 if (status != CR_OK)
-                        status = CR_ERROR;
-                goto cleanup;
-        }
-        result = cr_declaration_new (NULL, property, value);
-        if (result) {
-                property = NULL;
-                value = NULL;
-                result->important = important;
-        }
-        /*now, go parse the other declarations */
-        for (;;) {
-                guint32 c = 0;
-
-                cr_parser_try_to_skip_spaces_and_comments (parser);
-                status = cr_tknzr_peek_char (tokenizer, &c);
-                if (status != CR_OK) {
-                        if (status == CR_END_OF_INPUT_ERROR)
-                                status = CR_OK;
                         goto cleanup;
+
+                if (!first) {
+                        guint32 c = 0;
+
+                        status = cr_tknzr_peek_char (tokenizer, &c);
+                        if (status != CR_OK) {
+                                goto cleanup;
+                        }
+                        if (c == ';') {
+                                status = cr_tknzr_read_char (tokenizer, &c);
+                        } else {
+                                cr_tknzr_read_char (tokenizer, &c);
+                                continue; // try to keep reading until we reach the end or a ;
+                        }
+                        important = FALSE;
+
+                        status = cr_parser_try_to_skip_spaces_and_comments (parser);
+                        if (status != CR_OK)
+                                goto cleanup;
                 }
-                if (c == ';') {
-                        status = cr_tknzr_read_char (tokenizer, &c);
-                } else {
-                        cr_tknzr_read_char (tokenizer, &c);
-                        continue; // try to keep reading until we reach the end or a ;
-                }
-                important = FALSE;
-                cr_parser_try_to_skip_spaces_and_comments (parser);
+
                 status = cr_parser_parse_declaration (parser, &property,
                                                       &value, &important);
                 if (status != CR_OK || !property) {
                         if (status == CR_END_OF_INPUT_ERROR) {
-                                status = CR_OK; // simply the end of input, do not delete what we got so far, just finish
                                 break;
                         } else {
                                 continue; // even if one declaration is broken, it's no reason to discard others (see http://www.w3.org/TR/CSS21/syndata.html#declaration)
@@ -251,7 +241,11 @@ cr_declaration_parse_list_from_buf (const guchar * a_str,
                 cur_decl = cr_declaration_new (NULL, property, value);
                 if (cur_decl) {
                         cur_decl->important = important;
-                        result = cr_declaration_append (result, cur_decl);
+                        if (result) {
+                                result = cr_declaration_append (result, cur_decl);
+                        } else {
+                                result = cur_decl;
+                        }
                         property = NULL;
                         value = NULL;
                         cur_decl = NULL;
@@ -261,6 +255,10 @@ cr_declaration_parse_list_from_buf (const guchar * a_str,
         }
 
       cleanup:
+
+        if (status == CR_END_OF_INPUT_ERROR && result) {
+                status = CR_OK;
+        }
 
         if (parser) {
                 cr_parser_destroy (parser);
@@ -316,7 +314,7 @@ cr_declaration_append (CRDeclaration * a_this, CRDeclaration * a_new)
  *@a_decls: the declaration to unlink.
  *
  *Unlinks the declaration from the declaration list.
- *case of a successfull completion, NULL otherwise.
+ *case of a successful completion, NULL otherwise.
  *
  *Returns a pointer to the unlinked declaration in
  */
@@ -504,8 +502,7 @@ cr_declaration_to_string (CRDeclaration const * a_this, gulong a_indent)
 {
         GString *stringue = NULL;
 
-        gchar *str = NULL,
-                *result = NULL;
+        gchar *result = NULL;
 
         g_return_val_if_fail (a_this, NULL);
 
@@ -514,14 +511,11 @@ cr_declaration_to_string (CRDeclaration const * a_this, gulong a_indent)
 	if (a_this->property 
 	    && a_this->property->stryng
 	    && a_this->property->stryng->str) {
-		str = g_strndup (a_this->property->stryng->str,
-				 a_this->property->stryng->len);
+                gchar const *str = a_this->property->stryng->str;
 		if (str) {
 			cr_utils_dump_n_chars2 (' ', stringue, 
 						a_indent);
 			g_string_append (stringue, str);
-			g_free (str);
-			str = NULL;
 		} else
                         goto error;
 
@@ -551,10 +545,6 @@ cr_declaration_to_string (CRDeclaration const * a_this, gulong a_indent)
         if (stringue) {
                 g_string_free (stringue, TRUE);
                 stringue = NULL;
-        }
-        if (str) {
-                g_free (str);
-                str = NULL;
         }
 
         return result;

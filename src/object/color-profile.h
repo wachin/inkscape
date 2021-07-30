@@ -48,11 +48,6 @@ public:
 
     bool operator<(ColorProfile const &other) const;
 
-    // we use std::set with pointers to ColorProfile, just having operator< isn't enough to sort these
-    struct pointerComparator {
-        bool operator()(const ColorProfile * const & a, const ColorProfile * const & b) { return (*a) < (*b); };
-    };
-
     friend cmsHPROFILE colorprofile_get_handle( SPDocument*, unsigned int*, char const* );
     friend class CMSSystem;
 
@@ -74,7 +69,6 @@ public:
     static std::set<FilePlusHome> getBaseProfileDirs();
     static std::set<FilePlusHome> getProfileFiles();
     static std::set<FilePlusHomeAndName> getProfileFilesWithNames();
-#if defined(HAVE_LIBLCMS2)
     //icColorSpaceSignature getColorSpace() const;
     ColorSpaceSig getColorSpace() const;
     //icProfileClassSignature getProfileClass() const;
@@ -83,8 +77,6 @@ public:
     cmsHTRANSFORM getTransfFromSRGB8();
     cmsHTRANSFORM getTransfGamutCheck();
     bool GamutCheck(SPColor color);
-
-#endif // defined(HAVE_LIBLCMS2)
 
     char* href;
     char* local;
@@ -98,16 +90,14 @@ protected:
     void build(SPDocument* doc, Inkscape::XML::Node* repr) override;
     void release() override;
 
-    void set(SPAttributeEnum key, char const* value) override;
+    void set(SPAttr key, char const* value) override;
 
     Inkscape::XML::Node* write(Inkscape::XML::Document* doc, Inkscape::XML::Node* repr, unsigned int flags) override;
 };
 
 } // namespace Inkscape
 
-//#define COLORPROFILE_TYPE (Inkscape::colorprofile_get_type())
-#define COLORPROFILE(obj) ((Inkscape::ColorProfile*)obj)
-#define IS_COLORPROFILE(obj) (dynamic_cast<const Inkscape::ColorProfile*>((SPObject*)obj))
+MAKE_SP_OBJECT_TYPECHECK_FUNCTIONS(IS_COLORPROFILE, Inkscape::ColorProfile)
 
 #endif // !SEEN_COLOR_PROFILE_H
 

@@ -40,17 +40,6 @@
 using Inkscape::DocumentUndo;
 
 static SPItem *
-flowtext_in_selection(Inkscape::Selection *selection)
-{
-	auto items = selection->items();
-    for(auto i=items.begin();i!=items.end();++i){
-        if (SP_IS_FLOWTEXT(*i))
-            return *i;
-    }
-    return nullptr;
-}
-
-static SPItem *
 text_or_flowtext_in_selection(Inkscape::Selection *selection)
 {
     auto items = selection->items();
@@ -132,9 +121,9 @@ text_put_on_path()
         text = new_item; // point to the new text
     }
 
-    if (SP_IS_TEXT(text)) {
+    if (auto textitem = dynamic_cast<SPText *>(text)) {
         // Replace any new lines (including sodipodi:role="line") by spaces.
-        dynamic_cast<SPText *>(text)->remove_newlines();
+        textitem->remove_newlines();
     }
 
     Inkscape::Text::Layout const *layout = te_get_layout(text);
@@ -286,6 +275,39 @@ text_remove_all_kerns()
 }
 
 void
+text_flow_shape_subtract()
+{
+    SPDesktop *desktop = SP_ACTIVE_DESKTOP;
+    if (!desktop)
+        return;
+
+    SPDocument *doc = desktop->getDocument();
+    Inkscape::Selection *selection = desktop->getSelection();
+    SPItem *text = text_or_flowtext_in_selection(selection);
+
+    if (SP_IS_TEXT(text)) {
+        // Make list of all shapes.
+        Glib::ustring shapes;
+        auto items = selection->items();
+        for (auto item : items) {
+            if (SP_IS_SHAPE(item)) {
+                if (!shapes.empty()) shapes += " ";
+                shapes += item->getUrl();
+            }
+        }
+
+        // Set 'shape-subtract' property.
+        text->style->shape_subtract.read(shapes.c_str());
+        text->updateRepr();
+
+        DocumentUndo::done(doc, SP_VERB_CONTEXT_TEXT, _("Flow text subtract shape"));
+    } else {
+        // SVG 1.2 Flowed Text
+        desktop->getMessageStack()->flash(Inkscape::WARNING_MESSAGE, _("Subtraction not available for SVG 1.2 Flowed text."));
+    }
+}
+
+void
 text_flow_into_shape()
 {
     SPDesktop *desktop = SP_ACTIVE_DESKTOP;
@@ -301,7 +323,7 @@ text_flow_into_shape()
     SPItem *shape = shape_in_selection(selection);
 
     if (!text || !shape || boost::distance(selection->items()) < 2) {
-        desktop->getMessageStack()->flash(Inkscape::WARNING_MESSAGE, _("Select <b>a text</b> and one or more <b>paths or shapes</b> to flow text into frame."));
+        desktop->getMessageStack()->flash(Inkscape::WARNING_MESSAGE, _("Select <b>a text</b> and one or more <b>paths or shapes</b> to flow text."));
         return;
     }
 
@@ -310,37 +332,34 @@ text_flow_into_shape()
         // SVG 2 Text
 
         if (SP_IS_TEXT(text)) {
-
             // Make list of all shapes.
-            Glib::ustring shape_inside;
+            Glib::ustring shapes;
             auto items = selection->items();
             for (auto item : items) {
                 if (SP_IS_SHAPE(item)) {
-                    shape_inside += "url(#";
-                    shape_inside += item->getId();
-                    shape_inside += ") ";
+                    if (!shapes.empty()) {
+                        shapes += " ";
+                    } else {
+                        // can only take one shape into account for transform compensation
+                        // compensate transform
+                        auto const new_transform = i2i_affine(item->parent, text->parent);
+                        auto const ex = text->transform.descrim() / new_transform.descrim();
+                        static_cast<SPText *>(text)->_adjustFontsizeRecursive(text, ex);
+                        text->transform = new_transform;
+                    }
+
+                    shapes += item->getUrl();
                 }
             }
 
-            // Remove extra space at end.
-            if (shape_inside.length() > 1) {
-                shape_inside.erase (shape_inside.length() - 1);
-            }
-
             // Set 'shape-inside' property.
-            SPCSSAttr* css = sp_repr_css_attr (text->getRepr(), "style");
-            sp_repr_css_set_property (css, "shape-inside", shape_inside.c_str());
-            sp_repr_css_set_property (css, "white-space", "pre"); // Respect new lines.
-            sp_repr_css_set (text->getRepr(), css, "style");
+            text->style->shape_inside.read(shapes.c_str());
+            text->style->white_space.read("pre"); // Respect new lines.
+            text->updateRepr();
+
+            DocumentUndo::done(doc, SP_VERB_CONTEXT_TEXT, _("Flow text into shape"));
         }
-
-        DocumentUndo::done(doc, SP_VERB_CONTEXT_TEXT,
-                           _("Flow text into shape"));
-
-
     } else {
-        // SVG 1.2 Flowed Text
-
         if (SP_IS_TEXT(text) || SP_IS_FLOWTEXT(text)) {
             // remove transform from text, but recursively scale text's fontsize by the expansion
             auto ex = i2i_affine(text, shape->parent).descrim();
@@ -402,18 +421,16 @@ text_flow_into_shape()
                     Inkscape::GC::release(para_repr);
                 }
             }
-    }
+        }
 
-    text->deleteObject(true);
+        text->deleteObject(true);
 
-    DocumentUndo::done(doc, SP_VERB_CONTEXT_TEXT,
-                       _("Flow text into shape"));
+        DocumentUndo::done(doc, SP_VERB_CONTEXT_TEXT, _("Flow text into shape"));
 
-    desktop->getSelection()->set(SP_ITEM(root_object));
+        desktop->getSelection()->set(SP_ITEM(root_object));
 
-    Inkscape::GC::release(root_repr);
-    Inkscape::GC::release(region_repr);
-
+        Inkscape::GC::release(root_repr);
+        Inkscape::GC::release(region_repr);
     }
 }
 
@@ -449,7 +466,8 @@ text_unflow ()
             // font size multiplier
             double ex = (flowtext->transform).descrim();
 
-            if (sp_te_get_string_multiline(flowtext) == nullptr) { // flowtext is empty
+            Glib::ustring text_string = sp_te_get_string_multiline(flowtext);
+            if (text_string.empty()) { // flowtext is empty
                 continue;
             }
 
@@ -464,8 +482,8 @@ text_unflow ()
             Geom::OptRect bbox = flowtext->geometricBounds(flowtext->i2doc_affine());
             if (bbox) {
                 Geom::Point xy = bbox->min();
-                sp_repr_set_svg_double(rtext, "x", xy[Geom::X]);
-                sp_repr_set_svg_double(rtext, "y", xy[Geom::Y]);
+                rtext->setAttributeSvgDouble("x", xy[Geom::X]);
+                rtext->setAttributeSvgDouble("y", xy[Geom::Y]);
             }
 
             /* Create <tspan> */
@@ -473,9 +491,7 @@ text_unflow ()
             rtspan->setAttribute("sodipodi:role", "line"); // otherwise, why bother creating the tspan?
             rtext->addChild(rtspan, nullptr);
 
-            gchar *text_string = sp_te_get_string_multiline(flowtext);
-            Inkscape::XML::Node *text_repr = xml_doc->createTextNode(text_string); // FIXME: transfer all formatting!!!
-            free(text_string);
+            Inkscape::XML::Node *text_repr = xml_doc->createTextNode(text_string.c_str()); // FIXME: transfer all formatting!!!
             rtspan->appendChild(text_repr);
 
             flowtext->parent->getRepr()->appendChild(rtext);
@@ -502,8 +518,8 @@ text_unflow ()
                 Geom::OptRect bbox = text->geometricBounds(text->i2doc_affine());
                 if (bbox) {
                     Geom::Point xy = bbox->min();
-                    sp_repr_set_svg_double(rtext, "x", xy[Geom::X]);
-                    sp_repr_set_svg_double(rtext, "y", xy[Geom::Y]);
+                    rtext->setAttributeSvgDouble("x", xy[Geom::X]);
+                    rtext->setAttributeSvgDouble("y", xy[Geom::Y]);
                 }
 
                 // Remove 'shape-inside' property.
@@ -519,9 +535,9 @@ text_unflow ()
                 for (auto j : text->childList(false)) {
                     SPTSpan* tspan = dynamic_cast<SPTSpan *>(j);
                     if (tspan) {
-                        tspan->getRepr()->setAttribute("x", nullptr);
-                        tspan->getRepr()->setAttribute("y", nullptr);
-                        tspan->getRepr()->setAttribute("sodipodi:role", nullptr);
+                        tspan->getRepr()->removeAttribute("x");
+                        tspan->getRepr()->removeAttribute("y");
+                        tspan->getRepr()->removeAttribute("sodipodi:role");
                     }
                 }
             }

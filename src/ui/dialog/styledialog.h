@@ -15,7 +15,6 @@
 #ifndef STYLEDIALOG_H
 #define STYLEDIALOG_H
 
-#include "style-enums.h"
 #include <glibmm/regex.h>
 #include <gtkmm/adjustment.h>
 #include <gtkmm/builder.h>
@@ -35,14 +34,12 @@
 #include <gtkmm/treestore.h>
 #include <gtkmm/treeview.h>
 #include <gtkmm/viewport.h>
-#include <ui/widget/panel.h>
-
-#include "ui/dialog/desktop-tracker.h"
-
-#include "xml/helper-observer.h"
-
 #include <memory>
 #include <vector>
+
+#include "style-enums.h"
+#include "ui/dialog/dialog-base.h"
+#include "xml/helper-observer.h"
 
 namespace Inkscape {
 
@@ -62,14 +59,17 @@ namespace Dialog {
  *   1. The text node of the style element.
  *   2. The Gtk::TreeModel.
  */
-class StyleDialog : public Widget::Panel {
-
-  public:
-    ~StyleDialog() override;
+class StyleDialog : public DialogBase
+{
+public:
     // No default constructor, noncopyable, nonassignable
     StyleDialog();
+    ~StyleDialog() override;
     StyleDialog(StyleDialog const &d) = delete;
     StyleDialog operator=(StyleDialog const &d) = delete;
+
+    void documentReplaced() override;
+    void selectionChanged(Selection *selection) override;
 
     static StyleDialog &getInstance() { return *new StyleDialog(); }
     void setCurrentSelector(Glib::ustring current_selector);
@@ -90,6 +90,7 @@ class StyleDialog : public Widget::Panel {
     void _nodeAdded(Inkscape::XML::Node &repr);
     void _nodeRemoved(Inkscape::XML::Node &repr);
     void _nodeChanged(Inkscape::XML::Node &repr);
+    void removeObservers();
     /* void _stylesheetChanged( Inkscape::XML::Node &repr ); */
     // Data structure
     class ModelColumns : public Gtk::TreeModel::ColumnRecord {
@@ -166,7 +167,6 @@ class StyleDialog : public Widget::Panel {
     // Update watchers
     std::unique_ptr<Inkscape::XML::NodeObserver> m_nodewatcher;
     std::unique_ptr<Inkscape::XML::NodeObserver> m_styletextwatcher;
-    void _updateWatchers(SPDesktop *);
 
     // Manipulate Tree
     std::vector<SPObject *> _getObjVec(Glib::ustring selector);
@@ -178,16 +178,7 @@ class StyleDialog : public Widget::Panel {
     Inkscape::XML::Node *_textNode; // Track so we know when to add a NodeObserver.
     bool _updating;                 // Prevent cyclic actions: read <-> write, select via dialog <-> via desktop
 
-    // Signals and handlers - External
-    sigc::connection _document_replaced_connection;
-    sigc::connection _desktop_changed_connection;
-    sigc::connection _selection_changed_connection;
-
-    void _handleDocumentReplaced(SPDesktop *desktop, SPDocument *document);
-    void _handleDesktopChanged(SPDesktop *desktop);
-    void _handleSelectionChanged();
     void _closeDialog(Gtk::Dialog *textDialogPtr);
-    DesktopTracker _desktopTracker;
 };
 
 } // namespace Dialog

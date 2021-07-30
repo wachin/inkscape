@@ -38,14 +38,12 @@
 #include "message-stack.h"
 #include "rubberband.h"
 #include "selection.h"
-#include "splivarot.h"
 #include "verbs.h"
 
 #include "display/cairo-utils.h"
 #include "display/drawing-context.h"
 #include "display/drawing-image.h"
 #include "display/drawing.h"
-#include "display/sp-canvas.h"
 
 #include "include/macros.h"
 
@@ -56,14 +54,13 @@
 #include "object/sp-path.h"
 #include "object/sp-root.h"
 
-#include "ui/pixmaps/cursor-paintbucket.xpm"
-
 #include "svg/svg.h"
 
 #include "trace/imagemap.h"
 #include "trace/potrace/inkscape-potrace.h"
 
 #include "ui/shape-editor.h"
+#include "ui/widget/canvas.h"  // Canvas area
 
 #include "xml/node-event-vector.h"
 
@@ -106,7 +103,7 @@ Glib::ustring gap_init[4] = {
 const std::vector<Glib::ustring> FloodTool::gap_list( gap_init, gap_init+4 );
 
 FloodTool::FloodTool()
-    : ToolBase(cursor_paintbucket_xpm)
+    : ToolBase("flood.svg")
     , item(nullptr)
 {
     // TODO: Why does the flood tool use a hardcoded tolerance instead of a pref?
@@ -302,7 +299,6 @@ static inline bool is_pixel_paintable(unsigned char *t) { return (*t & PIXEL_PAI
 static inline bool is_pixel_colored(unsigned char *t) { return (*t & PIXEL_COLORED) == PIXEL_COLORED; }
 
 static inline void mark_pixel_checked(unsigned char *t) { *t |= PIXEL_CHECKED; }
-static inline void mark_pixel_unchecked(unsigned char *t) { *t ^= PIXEL_CHECKED; }
 static inline void mark_pixel_queued(unsigned char *t) { *t |= PIXEL_QUEUED; }
 static inline void mark_pixel_paintable(unsigned char *t) { *t |= PIXEL_PAINTABLE; *t ^= PIXEL_NOT_PAINTABLE; }
 static inline void mark_pixel_not_paintable(unsigned char *t) { *t |= PIXEL_NOT_PAINTABLE; *t ^= PIXEL_PAINTABLE; }
@@ -366,6 +362,10 @@ static void do_trace(bitmap_coords_info bci, guchar *trace_px, SPDesktop *deskto
     unsigned char *trace_t;
 
     GrayMap *gray_map = GrayMapCreate((max_x - min_x + 1), (max_y - min_y + 1));
+    if (!gray_map) {
+        desktop->messageStack()->flash(Inkscape::ERROR_MESSAGE, _("Failed mid-operation, no objects created."));
+        return;
+    }
     unsigned int gray_map_y = 0;
     for (unsigned int y = min_y; y <= max_y; y++) {
         unsigned long *gray_map_t = gray_map->rows[gray_map_y];
@@ -462,9 +462,7 @@ static void do_trace(bitmap_coords_info bci, guchar *trace_px, SPDesktop *deskto
                     sp_svg_transform_read(t_str, &item_t);
                 item_t *= local.inverse();
                 // (we're dealing with unattached repr, so we write to its attr instead of using sp_item_set_transform)
-                gchar *affinestr=sp_svg_transform_write(item_t);
-                pathRepr->setAttribute("transform", affinestr);
-                g_free(affinestr);
+                pathRepr->setAttributeOrRemoveIfEmpty("transform", sp_svg_transform_write(item_t));
             }
 
             Inkscape::Selection *selection = desktop->getSelection();
@@ -742,7 +740,7 @@ static bool sort_fill_queue_horizontal(Geom::Point a, Geom::Point b) {
  * @param is_touch_fill If true, use only the initial contact point in the Rubberband "touch selection" as the fill target color.
  */
 static void sp_flood_do_flood_fill(ToolBase *event_context, GdkEvent *event, bool union_with_selection, bool is_point_fill, bool is_touch_fill) {
-    SPDesktop *desktop = event_context->desktop;
+    SPDesktop *desktop = event_context->getDesktop();
     SPDocument *document = desktop->getDocument();
 
     document->ensureUpToDate();
@@ -758,10 +756,9 @@ static void sp_flood_do_flood_fill(ToolBase *event_context, GdkEvent *event, boo
     // fill areas off the screen can be included in the fill.
     double padding = 1.6;
 
-    Geom::Rect screen = desktop->get_display_area();
-
     // image space is world space with an offset
-    Geom::Rect const screen_world = screen * desktop->d2w();
+    Geom::Rect const screen_world = desktop->getCanvas()->get_area_world();
+    Geom::Rect const screen = screen_world * desktop->w2d();
     Geom::IntPoint const img_dims = (screen_world.dimensions() * padding).ceil();
     Geom::Affine const world2img = Geom::Translate((img_dims - screen_world.dimensions()) / 2.0 - screen_world.min());
     Geom::Affine const doc2img = desktop->doc2dt() * desktop->d2w() * world2img;
@@ -1084,7 +1081,7 @@ bool FloodTool::item_handler(SPItem* item, GdkEvent* event) {
 
     switch (event->type) {
     case GDK_BUTTON_PRESS:
-        if ((event->button.state & GDK_CONTROL_MASK) && event->button.button == 1 && !this->space_panning) {
+        if ((event->button.state & GDK_CONTROL_MASK) && event->button.button == 1) {
             Geom::Point const button_w(event->button.x, event->button.y);
             
             SPItem *item = sp_event_context_find_item (desktop, button_w, TRUE, TRUE);
@@ -1118,7 +1115,7 @@ bool FloodTool::root_handler(GdkEvent* event) {
 
     switch (event->type) {
     case GDK_BUTTON_PRESS:
-        if (event->button.button == 1 && !this->space_panning) {
+        if (event->button.button == 1) {
             if (!(event->button.state & GDK_CONTROL_MASK)) {
                 Geom::Point const button_w(event->button.x, event->button.y);
     
@@ -1138,7 +1135,7 @@ bool FloodTool::root_handler(GdkEvent* event) {
         }
 
     case GDK_MOTION_NOTIFY:
-        if ( dragging && ( event->motion.state & GDK_BUTTON1_MASK ) && !this->space_panning) {
+        if ( dragging && ( event->motion.state & GDK_BUTTON1_MASK )) {
             if ( this->within_tolerance
                  && ( abs( (gint) event->motion.x - this->xp ) < this->tolerance )
                  && ( abs( (gint) event->motion.y - this->yp ) < this->tolerance ) ) {
@@ -1159,35 +1156,27 @@ bool FloodTool::root_handler(GdkEvent* event) {
         break;
 
     case GDK_BUTTON_RELEASE:
-        if (event->button.button == 1 && !this->space_panning) {
+        if (event->button.button == 1) {
             Inkscape::Rubberband *r = Inkscape::Rubberband::get(desktop);
 
             if (r->is_started()) {
-                // set "busy" cursor
+                // set "busy" cursor  THIS LEADS TO CRASHES. USER CAN CHANGE TOOLS AS IT CALLS GTK MAIN LOOP
                 desktop->setWaitingCursor();
 
-                if (SP_IS_EVENT_CONTEXT(this)) { 
-                    // Since setWaitingCursor runs main loop iterations, we may have already left this tool!
-                    // So check if the tool is valid before doing anything
-                    dragging = false;
+                dragging = false;
 
-                    bool is_point_fill = this->within_tolerance;
-                    bool is_touch_fill = event->button.state & GDK_MOD1_MASK;
+                bool is_point_fill = this->within_tolerance;
+                bool is_touch_fill = event->button.state & GDK_MOD1_MASK;
                     
-                    sp_flood_do_flood_fill(this, event, event->button.state & GDK_SHIFT_MASK, is_point_fill, is_touch_fill);
+                sp_flood_do_flood_fill(this, event, event->button.state & GDK_SHIFT_MASK, is_point_fill, is_touch_fill);
                     
-                    desktop->clearWaitingCursor();
-                    // restore cursor when done; note that it may already be different if e.g. user 
-                    // switched to another tool during interruptible tracing or drawing, in which case do nothing
+                desktop->clearWaitingCursor();
 
-                    ret = TRUE;
-                }
+                ret = TRUE;
 
                 r->stop();
 
-                //if (SP_IS_EVENT_CONTEXT(this)) {
                 this->defaultMessageContext()->clear();
-                //}
             }
         }
         break;
@@ -1222,8 +1211,6 @@ void FloodTool::finishItem() {
 
     if (this->item != nullptr) {
         this->item->updateRepr();
-
-        desktop->canvas->endForcedFullRedraws();
 
         desktop->getSelection()->set(this->item);
 

@@ -20,7 +20,7 @@ namespace Bitmap {
 	
 void
 Unsharpmask::applyEffect(Magick::Image* image) {
-	float amount = _amount / 100.0;
+	double amount = _amount / 100.0;
 	image->unsharpmask(_radius, _sigma, amount, _threshold);
 }
 
@@ -37,22 +37,24 @@ Unsharpmask::refreshParameters(Inkscape::Extension::Effect* module) {
 void
 Unsharpmask::init()
 {
-	Inkscape::Extension::build_from_mem(
-		"<inkscape-extension xmlns=\"" INKSCAPE_EXTENSION_URI "\">\n"
-			"<name>" N_("Unsharp Mask") "</name>\n"
-			"<id>org.inkscape.effect.bitmap.unsharpmask</id>\n"
-			"<param name=\"radius\" gui-text=\"" N_("Radius:") "\" type=\"float\" min=\"0.0\" max=\"50.0\">5.0</param>\n"
-			"<param name=\"sigma\" gui-text=\"" N_("Sigma:") "\" type=\"float\" min=\"0.0\" max=\"50.0\">5.0</param>\n"
-			"<param name=\"amount\" gui-text=\"" N_("Amount:") "\" type=\"float\" min=\"0.0\" max=\"100.0\">50.0</param>\n"
-			"<param name=\"threshold\" gui-text=\"" N_("Threshold:") "\" type=\"float\" min=\"0.0\" max=\"50.0\">5.0</param>\n"
-			"<effect>\n"
-				"<object-type>all</object-type>\n"
-				"<effects-menu>\n"
-					"<submenu name=\"" N_("Raster") "\" />\n"
-				"</effects-menu>\n"
-				"<menu-tip>" N_("Sharpen selected bitmap(s) using unsharp mask algorithms") "</menu-tip>\n"
-			"</effect>\n"
-		"</inkscape-extension>\n", new Unsharpmask());
+    // clang-format off
+    Inkscape::Extension::build_from_mem(
+        "<inkscape-extension xmlns=\"" INKSCAPE_EXTENSION_URI "\">\n"
+            "<name>" N_("Unsharp Mask") "</name>\n"
+            "<id>org.inkscape.effect.bitmap.unsharpmask</id>\n"
+            "<param name=\"radius\" gui-text=\"" N_("Radius:") "\" type=\"float\" min=\"0.0\" max=\"50.0\">5.0</param>\n"
+            "<param name=\"sigma\" gui-text=\"" N_("Sigma:") "\" type=\"float\" min=\"0.0\" max=\"50.0\">5.0</param>\n"
+            "<param name=\"amount\" gui-text=\"" N_("Amount:") "\" type=\"float\" min=\"0.0\" max=\"100.0\">50.0</param>\n"
+            "<param name=\"threshold\" gui-text=\"" N_("Threshold:") "\" type=\"float\" min=\"0.0\" max=\"50.0\">5.0</param>\n"
+            "<effect>\n"
+                "<object-type>all</object-type>\n"
+                "<effects-menu>\n"
+                    "<submenu name=\"" N_("Raster") "\" />\n"
+                "</effects-menu>\n"
+                "<menu-tip>" N_("Sharpen selected bitmap(s) using unsharp mask algorithms") "</menu-tip>\n"
+            "</effect>\n"
+        "</inkscape-extension>\n", new Unsharpmask());
+    // clang-format on
 }
 
 }; /* namespace Bitmap */

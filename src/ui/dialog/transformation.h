@@ -12,15 +12,18 @@
 #ifndef INKSCAPE_UI_DIALOG_TRANSFORMATION_H
 #define INKSCAPE_UI_DIALOG_TRANSFORMATION_H
 
-
-#include <gtkmm/notebook.h>
 #include <glibmm/i18n.h>
+#include <gtkmm/checkbutton.h>
+#include <gtkmm/notebook.h>
+#include <gtkmm/radiobutton.h>
 
-#include "ui/widget/panel.h"
+#include "ui/dialog/dialog-base.h"
 #include "ui/widget/notebook-page.h"
 #include "ui/widget/scalar-unit.h"
-#include "ui/dialog/desktop-tracker.h"
 
+namespace Gtk {
+class Button;
+}
 
 namespace Inkscape {
 namespace UI {
@@ -29,19 +32,19 @@ namespace Dialog {
 
 /**
  * Transformation dialog.
- * 
+ *
  * The transformation dialog allows to modify Inkscape objects.
  * 5 transformation operations are currently possible: move, scale,
- * rotate, skew and matrix. 
+ * rotate, skew and matrix.
  */
-class Transformation : public UI::Widget::Panel
+class Transformation : public DialogBase
 {
 
 public:
 
     /**
      * Constructor for Transformation.
-     * 
+     *
      * This does the initialization
      * and layout of the dialog used for transforming SVG objects.  It
      * consists of 5 pages for the 5 operations it handles:
@@ -112,6 +115,9 @@ public:
         PAGE_MOVE, PAGE_SCALE, PAGE_ROTATE, PAGE_SKEW, PAGE_TRANSFORM, PAGE_QTY
     };
 
+    void desktopReplaced() override;
+    void selectionChanged(Inkscape::Selection *selection) override;
+    void selectionModified(Inkscape::Selection *selection, guint flags) override;
     void updateSelection(PageType page, Inkscape::Selection *selection);
 
 protected:
@@ -128,6 +134,7 @@ protected:
     UI::Widget::UnitMenu          _units_scale;
     UI::Widget::UnitMenu          _units_rotate;
     UI::Widget::UnitMenu          _units_skew;
+    UI::Widget::UnitMenu          _units_transform;
 
     UI::Widget::ScalarUnit        _scalar_move_horizontal;
     UI::Widget::ScalarUnit        _scalar_move_vertical;
@@ -141,8 +148,8 @@ protected:
     UI::Widget::Scalar            _scalar_transform_b;
     UI::Widget::Scalar            _scalar_transform_c;
     UI::Widget::Scalar            _scalar_transform_d;
-    UI::Widget::Scalar            _scalar_transform_e;
-    UI::Widget::Scalar            _scalar_transform_f;
+    UI::Widget::ScalarUnit        _scalar_transform_e;
+    UI::Widget::ScalarUnit        _scalar_transform_f;
 
     Gtk::RadioButton         _counterclockwise_rotate;
     Gtk::RadioButton         _clockwise_rotate;
@@ -151,10 +158,6 @@ protected:
     Gtk::CheckButton  _check_scale_proportional;
     Gtk::CheckButton  _check_apply_separately;
     Gtk::CheckButton  _check_replace_matrix;
-
-    SPDesktop *_desktop;
-    DesktopTracker _deskTrack;
-    sigc::connection _desktopChangeConn;
 
     /**
      * Layout the GUI components, and prepare for use
@@ -165,7 +168,7 @@ protected:
     void layoutPageSkew();
     void layoutPageTransform();
 
-    void _apply() override;
+    void _apply();
     void presentPage(PageType page);
 
     void onSwitchPage(Gtk::Widget *page, guint pagenum);
@@ -210,8 +213,6 @@ protected:
     void applyPageSkew(Inkscape::Selection *);
     void applyPageTransform(Inkscape::Selection *);
 
-    void setTargetDesktop(SPDesktop* desktop);
-
 private:
 
     /**
@@ -226,10 +227,10 @@ private:
 
     Gtk::Button *applyButton;
     Gtk::Button *resetButton;
-    Gtk::Button *cancelButton;
 
     sigc::connection _selChangeConn;
     sigc::connection _selModifyConn;
+    sigc::connection _tabSwitchConn;
 };
 
 

@@ -3,7 +3,7 @@
 #define COMMON_CONTEXT_H_SEEN
 
 /*
- * Common drawing mode
+ * Common drawing mode. Base class of Eraser and Calligraphic tools.
  *
  * Authors:
  *   Mitsuru Oka <oka326@parkcity.ne.jp>
@@ -21,9 +21,9 @@
  */
 
 #include "ui/tools/tool-base.h"
-#include "display/sp-canvas-item.h"
 
-struct SPCanvasItem;
+#include <memory>
+
 class SPCurve;
 
 namespace Inkscape {
@@ -35,33 +35,37 @@ namespace Inkscape {
 #define SAMPLING_SIZE 8        /* fixme: ?? */
 
 namespace Inkscape {
+
+class CanvasItemBpath;
+
 namespace UI {
 namespace Tools {
 
 class DynamicBase : public ToolBase {
 public:
-	DynamicBase(gchar const *const *cursor_shape);
-	~DynamicBase() override;
+    DynamicBase(const std::string& cursor_filename);
+    ~DynamicBase() override;
 
-	void set(const Inkscape::Preferences::Entry& val) override;
+    void set(const Inkscape::Preferences::Entry& val) override;
 
 protected:
     /** accumulated shape which ultimately goes in svg:path */
-    SPCurve *accumulated;
+    std::unique_ptr<SPCurve> accumulated;
 
     /** canvas items for "committed" segments */
-    std::vector<SPCanvasItem*> segments;
+    std::vector<Inkscape::CanvasItemBpath *> segments;
 
     /** canvas item for red "leading" segment */
-    SPCanvasItem *currentshape;
+    Inkscape::CanvasItemBpath *currentshape;
+
     /** shape of red "leading" segment */
-    SPCurve *currentcurve;
+    std::unique_ptr<SPCurve> currentcurve;
 
     /** left edge of the stroke; combined to get accumulated */
-    SPCurve *cal1;
+    std::unique_ptr<SPCurve> cal1;
 
     /** right edge of the stroke; combined to get accumulated */
-    SPCurve *cal2;
+    std::unique_ptr<SPCurve> cal2;
 
     /** left edge points for this segment */
     Geom::Point point1[SAMPLING_SIZE];

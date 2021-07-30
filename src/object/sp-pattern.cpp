@@ -66,17 +66,17 @@ void SPPattern::build(SPDocument *doc, Inkscape::XML::Node *repr)
 {
     SPPaintServer::build(doc, repr);
 
-    this->readAttr("patternUnits");
-    this->readAttr("patternContentUnits");
-    this->readAttr("patternTransform");
-    this->readAttr("x");
-    this->readAttr("y");
-    this->readAttr("width");
-    this->readAttr("height");
-    this->readAttr("viewBox");
-    this->readAttr("preserveAspectRatio");
-    this->readAttr("xlink:href");
-    this->readAttr("style");
+    this->readAttr(SPAttr::PATTERNUNITS);
+    this->readAttr(SPAttr::PATTERNCONTENTUNITS);
+    this->readAttr(SPAttr::PATTERNTRANSFORM);
+    this->readAttr(SPAttr::X);
+    this->readAttr(SPAttr::Y);
+    this->readAttr(SPAttr::WIDTH);
+    this->readAttr(SPAttr::HEIGHT);
+    this->readAttr(SPAttr::VIEWBOX);
+    this->readAttr(SPAttr::PRESERVEASPECTRATIO);
+    this->readAttr(SPAttr::XLINK_HREF);
+    this->readAttr(SPAttr::STYLE);
 
     /* Register ourselves */
     doc->addResource("pattern", this);
@@ -99,10 +99,10 @@ void SPPattern::release()
     SPPaintServer::release();
 }
 
-void SPPattern::set(SPAttributeEnum key, const gchar *value)
+void SPPattern::set(SPAttr key, const gchar *value)
 {
     switch (key) {
-        case SP_ATTR_PATTERNUNITS:
+        case SPAttr::PATTERNUNITS:
             if (value) {
                 if (!strcmp(value, "userSpaceOnUse")) {
                     this->_pattern_units = UNITS_USERSPACEONUSE;
@@ -120,7 +120,7 @@ void SPPattern::set(SPAttributeEnum key, const gchar *value)
             this->requestModified(SP_OBJECT_MODIFIED_FLAG);
             break;
 
-        case SP_ATTR_PATTERNCONTENTUNITS:
+        case SPAttr::PATTERNCONTENTUNITS:
             if (value) {
                 if (!strcmp(value, "userSpaceOnUse")) {
                     this->_pattern_content_units = UNITS_USERSPACEONUSE;
@@ -138,7 +138,7 @@ void SPPattern::set(SPAttributeEnum key, const gchar *value)
             this->requestModified(SP_OBJECT_MODIFIED_FLAG);
             break;
 
-        case SP_ATTR_PATTERNTRANSFORM: {
+        case SPAttr::PATTERNTRANSFORM: {
             Geom::Affine t;
 
             if (value && sp_svg_transform_read(value, &t)) {
@@ -153,37 +153,37 @@ void SPPattern::set(SPAttributeEnum key, const gchar *value)
             this->requestModified(SP_OBJECT_MODIFIED_FLAG);
             break;
         }
-        case SP_ATTR_X:
+        case SPAttr::X:
             this->_x.readOrUnset(value);
             this->requestModified(SP_OBJECT_MODIFIED_FLAG);
             break;
 
-        case SP_ATTR_Y:
+        case SPAttr::Y:
             this->_y.readOrUnset(value);
             this->requestModified(SP_OBJECT_MODIFIED_FLAG);
             break;
 
-        case SP_ATTR_WIDTH:
+        case SPAttr::WIDTH:
             this->_width.readOrUnset(value);
             this->requestModified(SP_OBJECT_MODIFIED_FLAG);
             break;
 
-        case SP_ATTR_HEIGHT:
+        case SPAttr::HEIGHT:
             this->_height.readOrUnset(value);
             this->requestModified(SP_OBJECT_MODIFIED_FLAG);
             break;
 
-        case SP_ATTR_VIEWBOX:
+        case SPAttr::VIEWBOX:
             set_viewBox(value);
             this->requestModified(SP_OBJECT_MODIFIED_FLAG | SP_OBJECT_VIEWPORT_MODIFIED_FLAG);
             break;
 
-        case SP_ATTR_PRESERVEASPECTRATIO:
+        case SPAttr::PRESERVEASPECTRATIO:
             set_preserveAspectRatio(value);
             this->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG | SP_OBJECT_VIEWPORT_MODIFIED_FLAG);
             break;
 
-        case SP_ATTR_XLINK_HREF:
+        case SPAttr::XLINK_HREF:
             if (value && this->href == value) {
                 /* Href unchanged, do nothing. */
             }
@@ -331,8 +331,8 @@ SPPattern *SPPattern::_chain() const
     repr->setAttribute("xlink:href", parent_ref);
 
     defsrepr->addChild(repr, nullptr);
-    const gchar *child_id = repr->attribute("id");
-    SPObject *child = document->getObjectById(child_id);
+    SPObject *child = document->getObjectByRepr(repr);
+    assert(child == document->getObjectById(repr->attribute("id")));
     g_assert(SP_IS_PATTERN(child));
 
     return SP_PATTERN(child);
@@ -368,9 +368,7 @@ void SPPattern::transform_multiply(Geom::Affine postmul, bool set)
     }
     _pattern_transform_set = true;
 
-    gchar *c = sp_svg_transform_write(_pattern_transform);
-    setAttribute("patternTransform", c);
-    g_free(c);
+    setAttributeOrRemoveIfEmpty("patternTransform", sp_svg_transform_write(_pattern_transform));
 }
 
 const gchar *SPPattern::produce(const std::vector<Inkscape::XML::Node *> &reprs, Geom::Rect bounds,
@@ -381,14 +379,9 @@ const gchar *SPPattern::produce(const std::vector<Inkscape::XML::Node *> &reprs,
 
     Inkscape::XML::Node *repr = xml_doc->createElement("svg:pattern");
     repr->setAttribute("patternUnits", "userSpaceOnUse");
-    sp_repr_set_svg_double(repr, "width", bounds.dimensions()[Geom::X]);
-    sp_repr_set_svg_double(repr, "height", bounds.dimensions()[Geom::Y]);
-    //TODO: Maybe is better handle it in sp_svg_transform_write
-    if(transform != Geom::Affine()){ 
-        gchar *t = sp_svg_transform_write(transform);
-        repr->setAttribute("patternTransform", t);
-        g_free(t);
-    }
+    repr->setAttributeSvgDouble("width", bounds.dimensions()[Geom::X]);
+    repr->setAttributeSvgDouble("height", bounds.dimensions()[Geom::Y]);
+    repr->setAttributeOrRemoveIfEmpty("patternTransform", sp_svg_transform_write(transform));
     defsrepr->appendChild(repr);
     const gchar *pat_id = repr->attribute("id");
     SPObject *pat_object = document->getObjectById(pat_id);
@@ -535,7 +528,7 @@ cairo_pattern_t *SPPattern::pattern_new(cairo_t *base_ct, Geom::OptRect const &b
 
     for (SPPattern *pat_i = this; pat_i != nullptr; pat_i = pat_i->ref ? pat_i->ref->getObject() : nullptr) {
         // find the first one with item children
-        if (pat_i && SP_IS_OBJECT(pat_i) && pat_i->_hasItemChildren()) {
+        if (pat_i && pat_i->_hasItemChildren()) {
             shown = pat_i;
             break; // do not go further up the chain if children are found
         }

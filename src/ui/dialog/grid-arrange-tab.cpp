@@ -20,6 +20,7 @@
 #include <glibmm/i18n.h>
 
 #include <gtkmm/grid.h>
+#include <gtkmm/sizegroup.h>
 
 #include <2geom/transforms.h>
 
@@ -34,7 +35,7 @@
 #include "ui/dialog/tile.h" // for Inkscape::UI::Dialog::ArrangeDialog
 
     /*
-     *    Sort items by their x co-ordinates, taking account of y (keeps rows intact)
+     *    Sort items by their x coordinates, taking account of y (keeps rows intact)
      *
      *    <0 *elem1 goes before *elem2
      *    0  *elem1 == *elem2
@@ -74,7 +75,7 @@
     }
 
     /*
-     *    Sort items by their y co-ordinates.
+     *    Sort items by their y coordinates.
      */
     static bool sp_compare_y_position(SPItem *first, SPItem *second)
     {
@@ -305,7 +306,6 @@ g_print("\n row = %f     col = %f selection x= %f selection y = %f", total_row_h
              }
 
              for (auto item:current_row) {
-                 Inkscape::XML::Node *repr = item->getRepr();
                  Geom::OptRect b = item->documentVisualBounds();
                  Geom::Point min;
                  if (b) {
@@ -332,7 +332,7 @@ g_print("\n row = %f     col = %f selection x= %f selection y = %f", total_row_h
              }
     }
 
-    DocumentUndo::done(desktop->getDocument(), SP_VERB_SELECTION_ARRANGE,
+    DocumentUndo::done(desktop->getDocument(), SP_VERB_DIALOG_ALIGN_DISTRIBUTE,
                        _("Arrange in a grid"));
 
 }
@@ -347,25 +347,14 @@ g_print("\n row = %f     col = %f selection x= %f selection y = %f", total_row_h
  */
 void GridArrangeTab::on_row_spinbutton_changed()
 {
-    // quit if run by the attr_changed listener
-    if (updating) {
-            return;
-        }
-
-    // in turn, prevent listener from responding
-    updating = true;
     SPDesktop *desktop = Parent->getDesktop();
-
     Inkscape::Selection *selection = desktop ? desktop->selection : nullptr;
-    g_return_if_fail( selection );
+    if (!selection) return;
 
     int selcount = (int) boost::distance(selection->items());
 
-    double PerCol = ceil(selcount / NoOfColsSpinner.get_value());
-    NoOfRowsSpinner.set_value(PerCol);
-    Inkscape::Preferences *prefs = Inkscape::Preferences::get();
-    prefs->setDouble("/dialogs/gridtiler/NoOfCols", NoOfColsSpinner.get_value());
-    updating=false;
+    double NoOfRows = ceil(selcount / NoOfColsSpinner.get_value());
+    NoOfRowsSpinner.set_value(NoOfRows);
 }
 
 /**
@@ -373,25 +362,14 @@ void GridArrangeTab::on_row_spinbutton_changed()
  */
 void GridArrangeTab::on_col_spinbutton_changed()
 {
-    // quit if run by the attr_changed listener
-    if (updating) {
-            return;
-        }
-
-    // in turn, prevent listener from responding
-    updating = true;
     SPDesktop *desktop = Parent->getDesktop();
     Inkscape::Selection *selection = desktop ? desktop->selection : nullptr;
-    g_return_if_fail(selection);
+    if (!selection) return;
 
     int selcount = (int) boost::distance(selection->items());
 
-    double PerRow = ceil(selcount / NoOfRowsSpinner.get_value());
-    NoOfColsSpinner.set_value(PerRow);
-    Inkscape::Preferences *prefs = Inkscape::Preferences::get();
-    prefs->setDouble("/dialogs/gridtiler/NoOfCols", PerRow);
-
-    updating=false;
+    double NoOfCols = ceil(selcount / NoOfRowsSpinner.get_value());
+    NoOfColsSpinner.set_value(NoOfCols);
 }
 
 /**
@@ -516,7 +494,6 @@ void GridArrangeTab::updateSelection()
         return;
     }
 
-    Inkscape::Preferences *prefs = Inkscape::Preferences::get();
     // in turn, prevent listener from responding
     updating = true;
     SPDesktop *desktop = Parent->getDesktop();
@@ -538,18 +515,28 @@ void GridArrangeTab::updateSelection()
             if (selcount < NoOfColsSpinner.get_value()) {
                 double NoOfCols = ceil(selcount / NoOfRowsSpinner.get_value());
                 NoOfColsSpinner.set_value(NoOfCols);
-                prefs->setInt("/dialogs/gridtiler/NoOfCols", NoOfCols);
             }
         } else {
             double PerRow = ceil(sqrt(selcount));
             double PerCol = ceil(sqrt(selcount));
             NoOfRowsSpinner.set_value(PerRow);
             NoOfColsSpinner.set_value(PerCol);
-            prefs->setInt("/dialogs/gridtiler/NoOfCols", static_cast<int>(PerCol));
         }
     }
 
     updating = false;
+}
+
+void GridArrangeTab::setDesktop(SPDesktop *desktop)
+{
+    _selection_changed_connection.disconnect();
+
+    if (desktop) {
+        updateSelection();
+
+        _selection_changed_connection = INKSCAPE.signal_selection_changed.connect(
+            sigc::hide<0>(sigc::mem_fun(*this, &GridArrangeTab::updateSelection)));
+    }
 }
 
 
@@ -569,40 +556,16 @@ GridArrangeTab::GridArrangeTab(ArrangeDialog *parent)
     updating = false;
     Inkscape::Preferences *prefs = Inkscape::Preferences::get();
 
-    // could not do this in gtkmm - there's no Gtk::SizeGroup public constructor (!)
-    GtkSizeGroup *_col1 = gtk_size_group_new(GTK_SIZE_GROUP_HORIZONTAL);
-    GtkSizeGroup *_col2 = gtk_size_group_new(GTK_SIZE_GROUP_HORIZONTAL);
-    GtkSizeGroup *_col3 = gtk_size_group_new(GTK_SIZE_GROUP_HORIZONTAL);
-
-    {
-        // Selection Change signal
-        INKSCAPE.signal_selection_changed.connect(sigc::hide<0>(sigc::mem_fun(*this, &GridArrangeTab::updateSelection)));
-    }
+    auto _col1 = Gtk::SizeGroup::create(Gtk::SIZE_GROUP_HORIZONTAL);
+    auto _col2 = Gtk::SizeGroup::create(Gtk::SIZE_GROUP_HORIZONTAL);
+    auto _col3 = Gtk::SizeGroup::create(Gtk::SIZE_GROUP_HORIZONTAL);
 
     Gtk::Box *contents = this;
+    set_valign(Gtk::ALIGN_START);
 
 #define MARGIN 2
 
     //##Set up the panel
-
-    SPDesktop *desktop = Parent->getDesktop();
-
-    Inkscape::Selection *selection = desktop ? desktop->selection : nullptr;
-    g_return_if_fail( selection );
-    int selcount = 1;
-    if (!selection->isEmpty()) {
-        selcount = (int) boost::distance(selection->items());
-    }
-
-
-    /*#### Number of Rows ####*/
-
-    double PerRow = ceil(sqrt(selcount));
-    double PerCol = ceil(sqrt(selcount));
-
-    #ifdef DEBUG_GRID_ARRANGE
-        g_print("/n PerRox = %f PerCol = %f selcount = %d",PerRow,PerCol,selcount);
-    #endif
 
     NoOfRowsLabel.set_text_with_mnemonic(_("_Rows:"));
     NoOfRowsLabel.set_mnemonic_widget(NoOfRowsSpinner);
@@ -612,11 +575,10 @@ GridArrangeTab::GridArrangeTab(ArrangeDialog *parent)
     NoOfRowsSpinner.set_digits(0);
     NoOfRowsSpinner.set_increments(1, 0);
     NoOfRowsSpinner.set_range(1.0, 10000.0);
-    NoOfRowsSpinner.set_value(PerCol);
     NoOfRowsSpinner.signal_changed().connect(sigc::mem_fun(*this, &GridArrangeTab::on_col_spinbutton_changed));
     NoOfRowsSpinner.set_tooltip_text(_("Number of rows"));
     NoOfRowsBox.pack_start(NoOfRowsSpinner, false, false, MARGIN);
-    gtk_size_group_add_widget(_col1, (GtkWidget *) NoOfRowsBox.gobj());
+    _col1->add_widget(NoOfRowsBox);
 
     RowHeightButton.set_label(_("Equal _height"));
     RowHeightButton.set_use_underline(true);
@@ -642,7 +604,7 @@ GridArrangeTab::GridArrangeTab(ArrangeDialog *parent)
     XByYLabel.set_markup(" &#215; ");
     XByYLabelVBox.pack_start(XByYLabel, false, false, MARGIN);
     SpinsHBox.pack_start(XByYLabelVBox, false, false, MARGIN);
-    gtk_size_group_add_widget(_col2, GTK_WIDGET(XByYLabelVBox.gobj()));
+    _col2->add_widget(XByYLabelVBox);
 
     /*#### Number of columns ####*/
 
@@ -654,11 +616,10 @@ GridArrangeTab::GridArrangeTab(ArrangeDialog *parent)
     NoOfColsSpinner.set_digits(0);
     NoOfColsSpinner.set_increments(1, 0);
     NoOfColsSpinner.set_range(1.0, 10000.0);
-    NoOfColsSpinner.set_value(PerRow);
     NoOfColsSpinner.signal_changed().connect(sigc::mem_fun(*this, &GridArrangeTab::on_row_spinbutton_changed));
     NoOfColsSpinner.set_tooltip_text(_("Number of columns"));
     NoOfColsBox.pack_start(NoOfColsSpinner, false, false, MARGIN);
-    gtk_size_group_add_widget(_col3, GTK_WIDGET(NoOfColsBox.gobj()));
+    _col3->add_widget(NoOfColsBox);
 
     ColumnWidthButton.set_label(_("Equal _width"));
     ColumnWidthButton.set_use_underline(true);
@@ -752,12 +713,12 @@ GridArrangeTab::GridArrangeTab(ArrangeDialog *parent)
     XPadding.set_sensitive (ManualSpacing);
     YPadding.set_sensitive (ManualSpacing);
 
-    //## The OK button FIXME
-    /*TileOkButton = addResponseButton(C_("Rows and columns dialog","_Arrange"), GTK_RESPONSE_APPLY);
-    TileOkButton->set_use_underline(true);
-    TileOkButton->set_tooltip_text(_("Arrange selected objects"));*/
-
     show_all_children();
+}
+
+
+GridArrangeTab::~GridArrangeTab() {
+    setDesktop(nullptr);
 }
 
 } //namespace Dialog

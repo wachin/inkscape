@@ -49,6 +49,8 @@ cr_stylesheet_new (CRStatement * a_stmts)
         if (a_stmts)
                 result->statements = a_stmts;
 
+        result->ref_count = 1;
+
         return result;
 }
 
@@ -62,22 +64,11 @@ cr_stylesheet_to_string (CRStyleSheet const *a_this)
 	gchar *str = NULL;
 	GString *stringue = NULL;
 	CRStatement const *cur_stmt = NULL;
-        CRStyleSheet *cur = NULL;
 
         g_return_val_if_fail (a_this, NULL);
 
         stringue = g_string_new (NULL) ;
         g_return_val_if_fail (stringue, NULL) ;
-
-        if (a_this->import) {
-                str = cr_stylesheet_to_string (a_this->import);
-                if (str) {
-                        g_string_append (stringue, str) ;
-                        g_free (str) ;
-                        g_string_append (stringue, "\n") ;
-                        str = NULL ;
-                }
-        }
 
         for (cur_stmt = a_this->statements;
              cur_stmt; cur_stmt = cur_stmt->next) {
@@ -234,34 +225,6 @@ cr_stylesheet_unlink (CRStyleSheet * a_this)
         return a_this;
 }
 
-/**
- *Appends a new import stylesheet to the current list of imports.
- *
- *@param a_this the "this pointer" of the current instance
- *of #CRStylesheet .
- *@param a_new_stylesheet the import stylesheet to append.
- *@return the list of stylesheets with the a_new_import appended to it.
- */
-CRStyleSheet *
-cr_stylesheet_append_import (CRStyleSheet * a_this, CRStyleSheet * a_new_import)
-{
-        CRStyleSheet *cur = NULL;
-
-        g_return_val_if_fail (a_new_import, NULL);
-
-        if (a_this->import == NULL) {
-                a_this->import = a_new_import;
-                return a_this;
-        }
-
-        for (cur = a_this->import; cur->next; cur = cur->next) ;
-
-        cur->next = a_new_import;
-
-        return a_this;
-}
-
-
 void
 cr_stylesheet_ref (CRStyleSheet * a_this)
 {
@@ -275,10 +238,7 @@ cr_stylesheet_unref (CRStyleSheet * a_this)
 {
         g_return_val_if_fail (a_this, FALSE);
 
-        if (a_this->ref_count)
-                a_this->ref_count--;
-
-        if (!a_this->ref_count) {
+        if (!--a_this->ref_count) {
                 cr_stylesheet_destroy (a_this);
                 return TRUE;
         }
@@ -298,10 +258,6 @@ cr_stylesheet_destroy (CRStyleSheet * a_this)
         if (a_this->statements) {
                 cr_statement_destroy (a_this->statements);
                 a_this->statements = NULL;
-        }
-
-        if (a_this->import) {
-                cr_stylesheet_destroy (a_this->import);
         }
 
         if (a_this->next) {

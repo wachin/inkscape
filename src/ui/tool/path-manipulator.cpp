@@ -16,16 +16,15 @@
 
 #include <utility>
 
-#include "display/sp-canvas.h"
-#include "display/sp-canvas-util.h"
 #include "display/curve.h"
-#include "display/canvas-bpath.h"
+#include "display/control/canvas-item-bpath.h"
 
 #include "helper/geom.h"
 
 #include "live_effects/lpeobject.h"
 #include "live_effects/lpeobject-reference.h"
 #include "live_effects/lpe-powerstroke.h"
+#include "live_effects/lpe-slice.h"
 #include "live_effects/lpe-bspline.h"
 #include "live_effects/parameter/path.h"
 
@@ -114,12 +113,6 @@ PathManipulator::PathManipulator(MultiPathManipulator &mpm, SPObject *path,
     , _dragpoint(new CurveDragPoint(*this))
     , /* XML Tree being used here directly while it shouldn't be*/_observer(new PathManipulatorObserver(this, path->getRepr()))
     , _edit_transform(et)
-    , _show_handles(true)
-    , _show_outline(false)
-    , _show_path_direction(false)
-    , _live_outline(true)
-    , _live_objects(true)
-    , _is_bspline(false)
     , _lpe_key(std::move(lpe_key))
 {
     LivePathEffectObject *lpeobj = dynamic_cast<LivePathEffectObject *>(_path);
@@ -134,11 +127,10 @@ PathManipulator::PathManipulator(MultiPathManipulator &mpm, SPObject *path,
 
     _getGeometry();
 
-    _outline = sp_canvas_bpath_new(_multi_path_manipulator._path_data.outline_group, nullptr);
-    sp_canvas_item_hide(_outline);
-    sp_canvas_bpath_set_stroke(SP_CANVAS_BPATH(_outline), outline_color, 1.0,
-        SP_STROKE_LINEJOIN_MITER, SP_STROKE_LINECAP_BUTT);
-    sp_canvas_bpath_set_fill(SP_CANVAS_BPATH(_outline), 0, SP_WIND_RULE_NONZERO);
+    _outline = new Inkscape::CanvasItemBpath(_multi_path_manipulator._path_data.outline_group);
+    _outline->hide();
+    _outline->set_stroke(outline_color);
+    _outline->set_fill(0x0, SP_WIND_RULE_NONZERO);
 
     _selection.signal_update.connect(
         sigc::bind(sigc::mem_fun(*this, &PathManipulator::update), false));
@@ -156,8 +148,7 @@ PathManipulator::~PathManipulator()
 {
     delete _dragpoint;
     delete _observer;
-    sp_canvas_item_destroy(_outline);
-    _spcurve->unref();
+    delete _outline;
     clear();
 }
 
@@ -395,6 +386,49 @@ void PathManipulator::duplicateNodes()
             }
         }
     }
+}
+
+/**
+  * Copy the selected nodes using the PathBuilder
+  *
+  * @param builder[out] Selected nodes will be appended to this Path builder
+  *                     in pixel coordinates with all transforms applied.
+  */
+void PathManipulator::copySelectedPath(Geom::PathBuilder *builder)
+{
+    // Ignore LivePathEffect paths
+    SPPath *path = dynamic_cast<SPPath *>(_path);
+    if (!path)
+        return;
+    // Rebuild the selected parts of each subpath
+    for (auto &subpath : _subpaths) {
+        Node *prev = nullptr;
+        bool is_last_node = false;
+        for (auto &node : *subpath) {
+            if (node.selected()) {
+                // The node positions are already transformed
+                if (!builder->inPath() || !prev) {
+                    builder->moveTo(node.position());
+                } else {
+                    build_segment(*builder, prev, &node);
+                }
+                prev = &node;
+                is_last_node = true;
+            } else {
+                is_last_node = false;
+            }
+        }
+
+        // Complete the path, especially for closed sub paths where the last node is selected
+        if (subpath->closed() && is_last_node) {
+            if (!prev->front()->isDegenerate() || !subpath->begin()->back()->isDegenerate())   {
+                build_segment(*builder, prev, subpath->begin().ptr());
+            }
+            // if that segment is linear, we just call closePath().
+            builder->closePath();
+        }
+    }
+    builder->flush();
 }
 
 /** Replace contiguous selections of nodes in each subpath with one node. */
@@ -1089,6 +1123,12 @@ NodeList::iterator PathManipulator::extremeNode(NodeList::iterator origin, bool 
     return match;
 }
 
+/* Called when a process updates the path in-situe */
+void PathManipulator::updatePath()
+{
+    _externalChange(PATH_CHANGE_D);
+}
+
 /** Called by the XML observer when something else than us modifies the path. */
 void PathManipulator::_externalChange(unsigned type)
 {
@@ -1436,14 +1476,14 @@ std::string PathManipulator::_createTypeString()
 void PathManipulator::_updateOutline()
 {
     if (!_show_outline) {
-        sp_canvas_item_hide(_outline);
+        _outline->hide();
         return;
     }
 
     Geom::PathVector pv = _spcurve->get_pathvector();
     pv *= (_edit_transform * _i2d_transform);
     // This SPCurve thing has to be killed with extreme prejudice
-    SPCurve *_hc = new SPCurve();
+    auto _hc = std::make_unique<SPCurve>();
     if (_show_path_direction) {
         // To show the direction, we append additional subpaths which consist of a single
         // linear segment that starts at the time value of 0.5 and extends for 10 pixels
@@ -1465,9 +1505,8 @@ void PathManipulator::_updateOutline()
         pv.insert(pv.end(), arrows.begin(), arrows.end());
     }
     _hc->set_pathvector(pv);
-    sp_canvas_bpath_set_bpath(SP_CANVAS_BPATH(_outline), _hc);
-    sp_canvas_item_show(_outline);
-    _hc->unref();
+    _outline->set_bpath(_hc.get());
+    _outline->show();
 }
 
 /** Retrieve the geometry of the edited object from the object tree */
@@ -1480,15 +1519,13 @@ void PathManipulator::_getGeometry()
         Effect *lpe = lpeobj->get_lpe();
         if (lpe) {
             PathParam *pathparam = dynamic_cast<PathParam *>(lpe->getParameter(_lpe_key.data()));
-            _spcurve->unref();
-            _spcurve = new SPCurve(pathparam->get_pathvector());
+            _spcurve.reset(new SPCurve(pathparam->get_pathvector()));
         }
     } else if (path) {
-        _spcurve->unref();
-        _spcurve = path->getCurveForEdit();
+        _spcurve = SPCurve::copy(path->curveForEdit());
         // never allow NULL to sneak in here!
         if (_spcurve == nullptr) {
-            _spcurve = new SPCurve();
+            _spcurve.reset(new SPCurve());
         }
     }
 }
@@ -1516,13 +1553,18 @@ void PathManipulator::_setGeometry()
         // return true to leave the decision on empty to the caller.
         // Maybe the path become empty and we want to update to empty
         if (empty()) return;
-        if (path->getCurveBeforeLPE(true)) {
-            if (!_spcurve->is_equal(path->getCurveBeforeLPE(true))) {
-                path->setCurveBeforeLPE(_spcurve);
-                sp_lpe_item_update_patheffect(path, true, false);
+        if (path->curveBeforeLPE()) {
+            if (!_spcurve->is_equal(path->curveBeforeLPE())) {
+                path->setCurveBeforeLPE(_spcurve.get());
+                // this fix the issue inkscape#1990
+                if (!path->hasPathEffectOfTypeRecursive(Inkscape::LivePathEffect::SLICE)) {
+                    sp_lpe_item_update_patheffect(path, true, false);
+                } else {
+                    path->setCurve(_spcurve.get());
+                }
             }
-        } else if(!_spcurve->is_equal(path->getCurve(true))) {
-            path->setCurve(_spcurve);
+        } else if (!_spcurve->is_equal(path->curve())) {
+            path->setCurve(_spcurve.get());
         }
     }
 }
@@ -1689,7 +1731,7 @@ Geom::Coord PathManipulator::_updateDragPoint(Geom::Point const &evp)
 
     Geom::Affine to_desktop = _edit_transform * _i2d_transform;
     Geom::PathVector pv = _spcurve->get_pathvector();
-    boost::optional<Geom::PathVectorTime> pvp =
+    std::optional<Geom::PathVectorTime> pvp =
         pv.nearestTime(_desktop->w2d(evp) * to_desktop.inverse());
     if (!pvp) return dist;
     Geom::Point nearest_pt = _desktop->d2w(pv.pointAt(*pvp) * to_desktop);
@@ -1709,7 +1751,7 @@ Geom::Coord PathManipulator::_updateDragPoint(Geom::Point const &evp)
     {
         _dragpoint->setVisible(true);
         _dragpoint->setPosition(_desktop->w2d(nearest_pt));
-        _dragpoint->setSize(2 * stroke_tolerance);
+        _dragpoint->setSize(2 * (int)stroke_tolerance - 1); // stroke_tolerance is at least two.
         _dragpoint->setTimeValue(fracpart);
         _dragpoint->setIterator(first);
     } else {

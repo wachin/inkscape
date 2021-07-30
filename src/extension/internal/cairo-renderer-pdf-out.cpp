@@ -27,10 +27,10 @@
 #include "extension/print.h"
 #include "extension/db.h"
 #include "extension/output.h"
-#include "display/drawing.h"
 
+#include "display/drawing.h"
 #include "display/curve.h"
-#include "display/canvas-bpath.h"
+
 #include "object/sp-item.h"
 #include "object/sp-root.h"
 
@@ -57,7 +57,7 @@ bool CairoRendererPdfOutput::check(Inkscape::Extension::Extension * /*module*/)
 static bool
 pdf_render_document_to_file(SPDocument *doc, gchar const *filename, unsigned int level,
                             bool texttopath, bool omittext, bool filtertobitmap, int resolution,
-                            const gchar * const exportId, bool exportDrawing, bool exportCanvas, float bleedmargin_px)
+                            const gchar * const exportId, bool exportDrawing, bool exportCanvas, double bleedmargin_px)
 {
     doc->ensureUpToDate();
 
@@ -196,7 +196,7 @@ CairoRendererPdfOutput::save(Inkscape::Extension::Output *mod, SPDocument *doc, 
     }
     bool new_exportDrawing  = !new_exportCanvas;
 
-    float new_bleedmargin_px = 0.;
+    double new_bleedmargin_px = 0.;
     try {
         new_bleedmargin_px = Inkscape::Util::Quantity::convert(mod->get_param_float("bleed"), "mm", "px");
     }
@@ -238,6 +238,7 @@ CairoRendererPdfOutput::save(Inkscape::Extension::Output *mod, SPDocument *doc, 
 void
 CairoRendererPdfOutput::init ()
 {
+    // clang-format off
     Inkscape::Extension::build_from_mem(
         "<inkscape-extension xmlns=\"" INKSCAPE_EXTENSION_URI "\">\n"
             "<name>Portable Document Format</name>\n"
@@ -266,6 +267,7 @@ CairoRendererPdfOutput::init ()
                 "<filetypetooltip>PDF File</filetypetooltip>\n"
             "</output>\n"
         "</inkscape-extension>", new CairoRendererPdfOutput());
+    // clang-format on
 
     return;
 }

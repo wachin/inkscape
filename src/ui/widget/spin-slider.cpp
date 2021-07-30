@@ -19,8 +19,9 @@ namespace UI {
 namespace Widget {
 
 SpinSlider::SpinSlider(double value, double lower, double upper, double step_inc,
-                       double climb_rate, int digits, const SPAttributeEnum a, const char* tip_text)
+                       double climb_rate, int digits, const SPAttr a, const char* tip_text)
     : AttrWidget(a, value), 
+      Gtk::Box(Gtk::ORIENTATION_HORIZONTAL),
       _adjustment(Gtk::Adjustment::create(value, lower, upper, step_inc)),
       _scale(_adjustment), _spin(_adjustment, climb_rate, digits)
 {
@@ -108,10 +109,11 @@ void SpinSlider::remove_scale()
 }
 
 DualSpinSlider::DualSpinSlider(double value, double lower, double upper, double step_inc,
-                               double climb_rate, int digits, const SPAttributeEnum a, char* tip_text1, char* tip_text2)
+                               double climb_rate, int digits, const SPAttr a, char* tip_text1, char* tip_text2)
     : AttrWidget(a),
-      _s1(value, lower, upper, step_inc, climb_rate, digits, SP_ATTR_INVALID, tip_text1),
-      _s2(value, lower, upper, step_inc, climb_rate, digits, SP_ATTR_INVALID, tip_text2),
+      Gtk::Box(Gtk::ORIENTATION_HORIZONTAL),
+      _s1(value, lower, upper, step_inc, climb_rate, digits, SPAttr::INVALID, tip_text1),
+      _s2(value, lower, upper, step_inc, climb_rate, digits, SPAttr::INVALID, tip_text2),
       //TRANSLATORS: "Link" means to _link_ two sliders together
       _link(C_("Sliders", "Link"))
 {
@@ -122,7 +124,7 @@ DualSpinSlider::DualSpinSlider(double value, double lower, double upper, double 
     _s1.get_adjustment()->signal_value_changed().connect(sigc::mem_fun(*this, &DualSpinSlider::update_linked));
     _link.signal_toggled().connect(sigc::mem_fun(*this, &DualSpinSlider::link_toggled));
 
-    Gtk::VBox* vb = Gtk::manage(new Gtk::VBox);
+    Gtk::Box* vb = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL));
     vb->add(_s1);
     vb->add(_s2);
     pack_start(*vb);

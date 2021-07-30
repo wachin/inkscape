@@ -27,6 +27,8 @@
 #include "helper/geom.h"
 #include "object/sp-path.h"
 
+#include "display/cairo-templates.h"
+
 #include <svg/path-string.h>
 #include <svg/svg.h>
 #include <svg/svg-color.h>
@@ -56,7 +58,7 @@ DepixelizeTracingEngine::DepixelizeTracingEngine()
 
 
 DepixelizeTracingEngine::DepixelizeTracingEngine(TraceType traceType, double curves, int islands, int sparsePixels,
-                                                 double sparseMultiplier)
+                                                 double sparseMultiplier, bool optimize)
     : keepGoing(1)
     , traceType(traceType)
 {
@@ -65,6 +67,7 @@ DepixelizeTracingEngine::DepixelizeTracingEngine(TraceType traceType, double cur
     params->islandsWeight = islands;
     params->sparsePixelsRadius = sparsePixels;
     params->sparsePixelsMultiplier = sparseMultiplier;
+    params->optimize = optimize;
     params->nthreads = Inkscape::Preferences::get()->getIntLimited("/options/threading/numthreads",
 #ifdef HAVE_OPENMP
                                                                    omp_get_num_procs(),
@@ -78,15 +81,17 @@ DepixelizeTracingEngine::~DepixelizeTracingEngine() { delete params; }
 
 std::vector<TracingEngineResult> DepixelizeTracingEngine::trace(Glib::RefPtr<Gdk::Pixbuf> pixbuf)
 {
+    std::vector<TracingEngineResult> res;
+
     if (pixbuf->get_width() > 256 || pixbuf->get_height() > 256) {
         char *msg = _("Image looks too big. Process may take a while and it is"
                       " wise to save your document before continuing."
                       "\n\nContinue the procedure (without saving)?");
         Gtk::MessageDialog dialog(msg, false, Gtk::MESSAGE_WARNING, Gtk::BUTTONS_OK_CANCEL, true);
 
-//        if (dialog.run() != Gtk::RESPONSE_OK)
-//            return;
-//            TODO
+        if (dialog.run() != Gtk::RESPONSE_OK) {
+            return res;
+        }
     }
 
     ::Tracer::Splines splines;
@@ -95,8 +100,6 @@ std::vector<TracingEngineResult> DepixelizeTracingEngine::trace(Glib::RefPtr<Gdk
         splines = ::Tracer::Kopf2011::to_voronoi(pixbuf, *params);
     else
         splines = ::Tracer::Kopf2011::to_splines(pixbuf, *params);
-
-    std::vector<TracingEngineResult> res;
 
     for (::Tracer::Splines::const_iterator it = splines.begin(), end = splines.end(); it != end; ++it) {
                 gchar b[64];

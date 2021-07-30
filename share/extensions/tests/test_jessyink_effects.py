@@ -9,4 +9,3 @@ class JessyInkEffectsTest(ComparisonMixin, TestCase):
         ('--id=p1', '--id=r3'),
         ('--id=p1', '--effectIn=fade', '--effectOut=pop'),
     ]
-    python3_only = True

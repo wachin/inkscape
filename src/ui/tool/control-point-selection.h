@@ -17,7 +17,7 @@
 #include <memory>
 #include <unordered_map>
 #include <unordered_set>
-#include <boost/optional.hpp>
+#include <optional>
 #include <cstddef>
 #include <sigc++/sigc++.h>
 #include <2geom/forward.h>
@@ -28,9 +28,9 @@
 #include "snap-candidate.h"
 
 class SPDesktop;
-struct SPCanvasGroup;
 
 namespace Inkscape {
+class CanvasItemGroup;
 namespace UI {
 class TransformHandleSet;
 class SelectableControlPoint;
@@ -42,7 +42,7 @@ namespace UI {
 
 class ControlPointSelection : public Manipulator, public sigc::trackable {
 public:
-    ControlPointSelection(SPDesktop *d, SPCanvasGroup *th_group);
+    ControlPointSelection(SPDesktop *d, Inkscape::CanvasItemGroup *th_group);
     ~ControlPointSelection() override;
     typedef std::unordered_set<SelectableControlPoint *> set_type;
     typedef set_type Set; // convenience alias
@@ -90,7 +90,7 @@ public:
     set_type &allPoints() { return _all_points; }
     // ...for example in these methods. Another useful case is snapping.
     void selectAll();
-    void selectArea(Geom::Rect const &);
+    void selectArea(Geom::Rect const &, bool invert = false);
     void invertSelection();
     void spatialGrow(SelectableControlPoint *origin, int dir);
 
@@ -149,8 +149,8 @@ private:
     set_type _all_points;
     std::unordered_map<SelectableControlPoint *, Geom::Point> _original_positions;
     std::unordered_map<SelectableControlPoint *, Geom::Affine> _last_trans;
-    boost::optional<double> _rot_radius;
-    boost::optional<double> _mouseover_rot_radius;
+    std::optional<double> _rot_radius;
+    std::optional<double> _mouseover_rot_radius;
     Geom::OptRect _bounds;
     TransformHandleSet *_handles;
     SelectableControlPoint *_grabbed_point, *_farthest_point;

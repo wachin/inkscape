@@ -194,6 +194,7 @@ std::vector<AttributeInfo> getKnownAttrs()
         AttributeInfo("lengthAdjust", true),
         AttributeInfo("letter-spacing", true),
         AttributeInfo("lighting-color", true),
+        AttributeInfo("inkscape:auto-region", true),
         AttributeInfo("limitingConeAngle", true),
         AttributeInfo("local", true),
         AttributeInfo("marker-end", true),
@@ -380,6 +381,7 @@ std::vector<AttributeInfo> getKnownAttrs()
         AttributeInfo("zoomAndPan", false),
 
         // Extra attributes.
+        AttributeInfo("-inkscape-stroke", true),
         AttributeInfo("id", true),
         AttributeInfo("inkscape:bbox-nodes", true),
         AttributeInfo("inkscape:bbox-paths", true),
@@ -400,6 +402,7 @@ std::vector<AttributeInfo> getKnownAttrs()
         AttributeInfo("inkscape:current-layer", true),
         AttributeInfo("inkscape:cx", true),
         AttributeInfo("inkscape:cy", true),
+        AttributeInfo("inkscape:rotation", true),
         AttributeInfo("inkscape:document-units", true),
         AttributeInfo("inkscape:dstBox", true),
         AttributeInfo("inkscape:dstColumn", true),
@@ -429,6 +432,9 @@ std::vector<AttributeInfo> getKnownAttrs()
         AttributeInfo("inkscape:radius", true),
         AttributeInfo("inkscape:randomized", true),
         AttributeInfo("inkscape:rounded", true),
+        AttributeInfo("inkscape:snap-alignment", true),
+        AttributeInfo("inkscape:snap-alignment-self", true),
+        AttributeInfo("inkscape:snap-distribution", true),
         AttributeInfo("inkscape:snap-bbox", true),
         AttributeInfo("inkscape:snap-bbox-edge-midpoints", true),
         AttributeInfo("inkscape:snap-bbox-midpoints", true),
@@ -465,7 +471,7 @@ std::vector<AttributeInfo> getKnownAttrs()
         AttributeInfo("inkscape:window-y", true),
         AttributeInfo("inkscape:zoom", true),
         AttributeInfo("inkscape:svg-dpi", true),
-        AttributeInfo("osb:paint", true),
+        AttributeInfo("inkscape:swatch", true),
         AttributeInfo("sodipodi:arc-type", true),
         AttributeInfo("sodipodi:arg1", true),
         AttributeInfo("sodipodi:arg2", true),
@@ -508,6 +514,8 @@ std::vector<AttributeInfo> getKnownAttrs()
         AttributeInfo("gridtolerance", true),
         AttributeInfo("guidetolerance", true),
         AttributeInfo("objecttolerance", true),
+        AttributeInfo("alignmenttolerance", true),
+        AttributeInfo("distributiontolerance", true),
 /*    AttributeInfo("gridoriginx", true),
       AttributeInfo("gridoriginy", true),
       AttributeInfo("gridspacingx", true),
@@ -552,10 +560,10 @@ std::vector<size_t> getIdIds()
     ids.reserve(all_attrs.size()); // minimize memory thrashing
     for (auto & all_attr : all_attrs) {
         auto id = sp_attribute_lookup(all_attr.attr.c_str());
-        if (id >= ids.size()) {
-            ids.resize(id + 1);
+        if ((int)id >= ids.size()) {
+            ids.resize((int)id + 1);
         }
-        ids[id]++;
+        ids[(int)id]++;
     }
 
     return ids;
@@ -567,7 +575,7 @@ TEST(AttributesTest, SupportedKnown)
     std::vector<AttributeInfo> all_attrs = getKnownAttrs();
     for (AttrItr it(all_attrs.begin()); it != all_attrs.end(); ++it) {
         auto id = sp_attribute_lookup(it->attr.c_str());
-        EXPECT_EQ(it->supported, id != 0u) << "Matching for attribute '" << it->attr << "'";
+        EXPECT_EQ(it->supported, id != SPAttr::INVALID) << "Matching for attribute '" << it->attr << "'";
     }
 }
 
@@ -616,7 +624,7 @@ TEST(AttributesTest, ValuesAreKnown)
     std::vector<size_t> ids = getIdIds();
     for (size_t i = FIRST_VALID_ID; i < ids.size(); ++i) {
         if (!ids[i]) {
-            char const *name = sp_attribute_name((SPAttributeEnum)i);
+            char const *name = sp_attribute_name((SPAttr)i);
             EXPECT_TRUE(ids[i] > 0) << "Attribute string with enum " << i << " {" << name << "} not handled";
         }
     }
@@ -628,7 +636,7 @@ TEST(AttributesTest, ValuesUnique)
     std::vector<size_t> ids = getIdIds();
     for (size_t i = FIRST_VALID_ID; i < ids.size(); ++i) {
         EXPECT_LE(ids[i], size_t(1)) << "Attribute enum " << i << " used for multiple strings"
-                                     << " including {" << sp_attribute_name((SPAttributeEnum)i) << "}";
+                                     << " including {" << sp_attribute_name((SPAttr)i) << "}";
     }
 }
 

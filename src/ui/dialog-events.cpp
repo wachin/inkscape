@@ -17,6 +17,7 @@
 
 #include "desktop.h"
 #include "inkscape.h"
+#include "enums.h"
 #include "include/macros.h"
 #include "ui/dialog-events.h"
 #include "ui/tools/tool-base.h"
@@ -84,13 +85,6 @@ sp_dialog_defocus_on_enter (GtkWidget *w)
 gboolean
 sp_dialog_event_handler (GtkWindow *win, GdkEvent *event, gpointer data)
 {
-
-// if the focus is inside the Text and Font textview, do nothing
-    GObject *dlg = G_OBJECT(data);
-    if (g_object_get_data (dlg, "eatkeys")) {
-        return FALSE;
-    }
-
     gboolean ret = FALSE;
 
     switch (event->type) {
@@ -154,10 +148,11 @@ void sp_transientize(GtkWidget *dialog)
     }
 #endif
 
-    gint transient_policy = prefs->getIntLimited("/options/transientpolicy/value", 1, 0, 2);
+    gint transient_policy = prefs->getIntLimited("/options/transientpolicy/value", PREFS_DIALOGS_WINDOWS_NORMAL,
+                                                 PREFS_DIALOGS_WINDOWS_NONE, PREFS_DIALOGS_WINDOWS_AGGRESSIVE);
 
 #ifdef _WIN32 // Win32 special code to enable transient dialogs
-    transient_policy = 2;
+    transient_policy = PREFS_DIALOGS_WINDOWS_AGGRESSIVE;
 #endif
 
     if (transient_policy) {
@@ -180,10 +175,11 @@ void
 sp_transientize_callback ( SPDesktop *desktop, win_data *wd )
 {
     Inkscape::Preferences *prefs = Inkscape::Preferences::get();
-    gint transient_policy = prefs->getIntLimited( "/options/transientpolicy/value", 1, 0, 2);
+    gint transient_policy = prefs->getIntLimited("/options/transientpolicy/value", PREFS_DIALOGS_WINDOWS_NORMAL,
+                                                 PREFS_DIALOGS_WINDOWS_NONE, PREFS_DIALOGS_WINDOWS_AGGRESSIVE);
 
 #ifdef _WIN32 // Win32 special code to enable transient dialogs
-    transient_policy = 1;
+    transient_policy = PREFS_DIALOGS_WINDOWS_NORMAL;
 #endif
 
     if (!transient_policy)

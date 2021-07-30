@@ -14,6 +14,8 @@
  */
 
 #include "db.h"
+
+#include "implementation/script.h"
 #include "input.h"
 #include "output.h"
 #include "effect.h"
@@ -70,6 +72,8 @@ struct ModuleOutputCmp {
     int n1 = 0;
     int n2 = 0;
     //                             12345678901234567890123456789012
+    if (strncmp(module1->get_id(),"org.inkscape.output.png.inkscape",  32) == 0) n1 = 1;
+    if (strncmp(module2->get_id(),"org.inkscape.output.png.inkscape",  32) == 0) n2 = 1;
     if (strncmp(module1->get_id(),"org.inkscape.output.svg.inkscape",  32) == 0) n1 = 1;
     if (strncmp(module2->get_id(),"org.inkscape.output.svg.inkscape",  32) == 0) n2 = 1;
     if (strncmp(module1->get_id(),"org.inkscape.output.svg.plain",     29) == 0) n1 = 2;
@@ -96,7 +100,14 @@ struct ModuleOutputCmp {
     if (strncmp(module2->get_id(),"org.inkscape.output.sk1",  23) == 0) {
       return ( strcmp(module1->get_filetypename(), "SK1" ) <= 0 );
     }
-
+    // special case: two extensions for the same file type. I only one of them is a script, prefer the other one
+    if (Glib::ustring(module1->get_extension()).lowercase() == Glib::ustring(module2->get_extension()).lowercase()) {
+        bool module1_is_script = dynamic_cast<Inkscape::Extension::Implementation::Script *>(module1->get_imp());
+        bool module2_is_script = dynamic_cast<Inkscape::Extension::Implementation::Script *>(module2->get_imp());
+        if (module1_is_script != module2_is_script) {
+            return module1_is_script ? false : true;
+        }
+    }
     return ( strcmp(module1->get_filetypename(), module2->get_filetypename()) <= 0 );
   }
 };

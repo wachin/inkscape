@@ -15,6 +15,7 @@
 #define SEEN_INKSCAPE_CLIPBOARD_H
 
 #include <glibmm/ustring.h>
+#include <vector>
 
 // forward declarations
 class SPDesktop;
@@ -47,7 +48,7 @@ public:
     virtual Glib::ustring getPathParameter(SPDesktop* desktop) = 0;
     virtual Glib::ustring getShapeOrTextObjectId(SPDesktop *desktop) = 0;
     virtual std::vector<Glib::ustring> getElementsOfType(SPDesktop *desktop, gchar const* type = "*", gint maxdepth = -1) = 0;
-    virtual const gchar *getFirstObjectID() = 0;
+    virtual Glib::ustring getFirstObjectID() = 0;
     static ClipboardManager *get();
 protected:
     ClipboardManager(); // singleton

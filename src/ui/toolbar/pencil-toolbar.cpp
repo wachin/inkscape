@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 /**
  * @file
- * Pencil aux toolbar
+ * Pencil and pen toolbars
  */
 /* Authors:
  *   MenTaLguY <mental@rydia.net>
@@ -25,68 +25,34 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
-#include <gtkmm.h>
-#include <glibmm/i18n.h>
-
 #include "pencil-toolbar.h"
 
-#include "desktop.h"
-#include "selection.h"
+#include <glibmm/i18n.h>
+#include <gtkmm.h>
 
+#include "desktop.h"
+#include "display/curve.h"
+#include "live_effects/lpe-bendpath.h"
 #include "live_effects/lpe-bspline.h"
+#include "live_effects/lpe-patternalongpath.h"
 #include "live_effects/lpe-powerstroke.h"
 #include "live_effects/lpe-simplify.h"
 #include "live_effects/lpe-spiro.h"
 #include "live_effects/lpeobject-reference.h"
 #include "live_effects/lpeobject.h"
-
-#include "display/curve.h"
-
 #include "object/sp-shape.h"
-
+#include "selection.h"
 #include "ui/icon-names.h"
-#include "ui/tools-switch.h"
+#include "ui/tools/freehand-base.h"
 #include "ui/tools/pen-tool.h"
-
-#include "ui/widget/label-tool-item.h"
+#include "ui/tools/pencil-tool.h"
+#include "ui/uxmanager.h"
+#include "ui/widget/canvas.h"
 #include "ui/widget/combo-tool-item.h"
+#include "ui/widget/label-tool-item.h"
 #include "ui/widget/spin-button-tool-item.h"
 
-#include "ui/uxmanager.h"
-
-#include "widgets/spinbutton-events.h"
-
 using Inkscape::UI::UXManager;
-
-/*
-class PencilToleranceObserver : public Inkscape::Preferences::Observer {
-public:
-    PencilToleranceObserver(Glib::ustring const &path, GObject *x) : Observer(path), _obj(x)
-    {
-        g_object_set_data(_obj, "prefobserver", this);
-    }
-    virtual ~PencilToleranceObserver() {
-        if (g_object_get_data(_obj, "prefobserver") == this) {
-            g_object_set_data(_obj, "prefobserver", NULL);
-        }
-    }
-    virtual void notify(Inkscape::Preferences::Entry const &val) {
-        GObject* tbl = _obj;
-        if (g_object_get_data( tbl, "freeze" )) {
-            return;
-        }
-        g_object_set_data( tbl, "freeze", GINT_TO_POINTER(TRUE) );
-
-        GtkAdjustment * adj = GTK_ADJUSTMENT(g_object_get_data(tbl, "tolerance"));
-
-        double v = val.getDouble(adj->value);
-        gtk_adjustment_set_value(adj, v);
-        g_object_set_data( tbl, "freeze", GINT_TO_POINTER(FALSE) );
-    }
-private:
-    GObject *_obj;
-};
-*/
 
 namespace Inkscape {
 namespace UI {
@@ -110,7 +76,7 @@ PencilToolbar::PencilToolbar(SPDesktop *desktop,
         {
             _pressure_item = add_toggle_button(_("Use pressure input"), _("Use pressure input"));
             _pressure_item->set_icon_name(INKSCAPE_ICON("draw-use-pressure"));
-            bool pressure = prefs->getBool(freehand_tool_name() + "/pressure", false);
+            bool pressure = prefs->getBool("/tools/freehand/pencil/pressure", false);
             _pressure_item->set_active(pressure);
             _pressure_item->signal_toggled().connect(sigc::mem_fun(*this, &PencilToolbar::use_pencil_pressure));
         }
@@ -121,7 +87,7 @@ PencilToolbar::PencilToolbar(SPDesktop *desktop,
             _minpressure =
                 Gtk::manage(new UI::Widget::SpinButtonToolItem("pencil-minpressure", _("Min:"), _minpressure_adj, 0, 0));
             _minpressure->set_tooltip_text(_("Min percent of pressure"));
-            _minpressure->set_focus_widget(Glib::wrap(GTK_WIDGET(desktop->canvas)));
+            _minpressure->set_focus_widget(desktop->canvas);
             _minpressure_adj->signal_value_changed().connect(
                 sigc::mem_fun(*this, &PencilToolbar::minpressure_value_changed));
             add(*_minpressure);
@@ -133,7 +99,7 @@ PencilToolbar::PencilToolbar(SPDesktop *desktop,
             _maxpressure =
                 Gtk::manage(new UI::Widget::SpinButtonToolItem("pencil-maxpressure", _("Max:"), _maxpressure_adj, 0, 0));
             _maxpressure->set_tooltip_text(_("Max percent of pressure"));
-            _maxpressure->set_focus_widget(Glib::wrap(GTK_WIDGET(desktop->canvas)));
+            _maxpressure->set_focus_widget(desktop->canvas);
             _maxpressure_adj->signal_value_changed().connect(
                 sigc::mem_fun(*this, &PencilToolbar::maxpressure_value_changed));
             add(*_maxpressure);
@@ -155,7 +121,7 @@ PencilToolbar::PencilToolbar(SPDesktop *desktop,
                 Gtk::manage(new UI::Widget::SpinButtonToolItem("pencil-tolerance", _("Smoothing:"), _tolerance_adj, 1, 2));
             tolerance_item->set_tooltip_text(_("How much smoothing (simplifying) is applied to the line"));
             tolerance_item->set_custom_numeric_menu_data(values, labels);
-            tolerance_item->set_focus_widget(Glib::wrap(GTK_WIDGET(desktop->canvas)));
+            tolerance_item->set_focus_widget(desktop->canvas);
             _tolerance_adj->signal_value_changed().connect(sigc::mem_fun(*this, &PencilToolbar::tolerance_value_changed));
             // ege_adjustment_action_set_appearance( eact, TOOLBAR_SLIDER_HINT );
             add(*tolerance_item);
@@ -234,8 +200,11 @@ PencilToolbar::mode_changed(int mode)
             _flatten_simplify->set_visible(visible && _simplify->get_active());
         }
     }
-    if (tools_isactive(_desktop, TOOLS_FREEHAND_PEN)) {
-        SP_PEN_CONTEXT(_desktop->event_context)->setPolylineMode();
+
+    // Recall, the PencilToolbar is also used as the PenToolbar with minor changes.
+    auto *pt = dynamic_cast<Inkscape::UI::Tools::PenTool *>(_desktop->event_context);
+    if (pt) {
+        pt->setPolylineMode();
     }
 }
 
@@ -243,9 +212,8 @@ PencilToolbar::mode_changed(int mode)
 Glib::ustring const
 PencilToolbar::freehand_tool_name()
 {
-    return ( tools_isactive(_desktop, TOOLS_FREEHAND_PEN)
-             ? "/tools/freehand/pen"
-             : "/tools/freehand/pencil" );
+    auto *pt = dynamic_cast<Inkscape::UI::Tools::PencilTool *>(_desktop->event_context);
+    return ( pt ? "/tools/freehand/pencil" : "/tools/freehand/pen");
 }
 
 void
@@ -295,8 +263,8 @@ PencilToolbar::add_freehand_mode_toggle(bool tool_is_pencil)
     add(* Gtk::manage(new Gtk::SeparatorToolItem()));
 
     /* LPE bspline spiro flatten */
-    _flatten_spiro_bspline = Gtk::manage(new Gtk::ToolButton(_("LPE spiro or bspline flatten")));
-    _flatten_spiro_bspline->set_tooltip_text(_("LPE spiro or bspline flatten"));
+    _flatten_spiro_bspline = Gtk::manage(new Gtk::ToolButton(_("Flatten Spiro or BSpline LPE")));
+    _flatten_spiro_bspline->set_tooltip_text(_("Flatten Spiro or BSpline LPE"));
     _flatten_spiro_bspline->set_icon_name(INKSCAPE_ICON("flatten"));
     _flatten_spiro_bspline->signal_clicked().connect(sigc::mem_fun(*this, &PencilToolbar::flatten_spiro_bspline));
     add(*_flatten_spiro_bspline);
@@ -334,16 +302,79 @@ PencilToolbar::maxpressure_value_changed()
 }
 
 void
+PencilToolbar::shapewidth_value_changed()
+{
+    // quit if run by the attr_changed listener
+    if (_freeze) {
+        return;
+    }
+
+    Inkscape::Preferences *prefs = Inkscape::Preferences::get();
+    Inkscape::Selection *selection = _desktop->getSelection();
+    SPItem *item = selection->singleItem();
+    SPLPEItem *lpeitem = nullptr;
+    if (item) {
+        lpeitem = dynamic_cast<SPLPEItem *>(item);
+    }
+    using namespace Inkscape::LivePathEffect;
+    double width = _shapescale_adj->get_value();
+    switch (_shape_item->get_active()) {
+        case Inkscape::UI::Tools::TRIANGLE_IN:
+        case Inkscape::UI::Tools::TRIANGLE_OUT:
+            prefs->setDouble("/live_effects/powerstroke/width", width);
+            if (lpeitem) {
+                LPEPowerStroke *effect = dynamic_cast<LPEPowerStroke *>(lpeitem->getPathEffectOfType(POWERSTROKE));
+                if (effect) {
+                    std::vector<Geom::Point> points = effect->offset_points.data();
+                    if (points.size() == 1) {
+                        points[0][Geom::Y] = width;
+                        effect->offset_points.param_set_and_write_new_value(points);
+                    }
+                }
+            }
+            break;
+        case Inkscape::UI::Tools::ELLIPSE:
+        case Inkscape::UI::Tools::CLIPBOARD:
+            // The scale of the clipboard isn't known, so getting it to the right size isn't possible.
+            prefs->setDouble("/live_effects/skeletal/width", width);
+            if (lpeitem) {
+                LPEPatternAlongPath *effect =
+                    dynamic_cast<LPEPatternAlongPath *>(lpeitem->getPathEffectOfType(PATTERN_ALONG_PATH));
+                if (effect) {
+                    effect->prop_scale.param_set_value(width);
+                    sp_lpe_item_update_patheffect(lpeitem, false, true);
+                }
+            }
+            break;
+        case Inkscape::UI::Tools::BEND_CLIPBOARD:
+            prefs->setDouble("/live_effects/bend_path/width", width);
+            if (lpeitem) {
+                LPEBendPath *effect = dynamic_cast<LPEBendPath *>(lpeitem->getPathEffectOfType(BEND_PATH));
+                if (effect) {
+                    effect->prop_scale.param_set_value(width);
+                    sp_lpe_item_update_patheffect(lpeitem, false, true);
+                }
+            }
+            break;
+        case Inkscape::UI::Tools::NONE:
+        case Inkscape::UI::Tools::LAST_APPLIED:
+        default:
+            break;
+    }
+}
+
+void
 PencilToolbar::use_pencil_pressure() {
     // assumes called by pencil toolbar (and all these widgets exist)
     bool pressure = _pressure_item->get_active();
     auto prefs = Inkscape::Preferences::get();
-    prefs->setBool(freehand_tool_name() + "/pressure", pressure);
+    prefs->setBool("/tools/freehand/pencil/pressure", pressure);
     if (pressure) {
         _minpressure->set_visible(true);
         _maxpressure->set_visible(true);
         _cap_item->set_visible(true);
         _shape_item->set_visible(false);
+        _shapescale->set_visible(false);
         _simplify->set_visible(false);
         _flatten_spiro_bspline->set_visible(false);
         _flatten_simplify->set_visible(false);
@@ -357,6 +388,7 @@ PencilToolbar::use_pencil_pressure() {
         _maxpressure->set_visible(false);
         _cap_item->set_visible(false);
         _shape_item->set_visible(true);
+        _shapescale->set_visible(true);
         bool simplify_visible = freehandMode != 2;
         _simplify->set_visible(simplify_visible);
         _flatten_simplify->set_visible(simplify_visible && _simplify->get_active());
@@ -393,7 +425,7 @@ PencilToolbar::add_advanced_shape_options(bool tool_is_pencil)
         row[columns.col_sensitive] = true;
     }
 
-    _shape_item = Gtk::manage(UI::Widget::ComboToolItem::create(_("Shape:"), _("Shape of new paths drawn by this tool"), "Not Used", store));
+    _shape_item = Gtk::manage(UI::Widget::ComboToolItem::create(_("Shape"), _("Shape of new paths drawn by this tool"), "Not Used", store));
     _shape_item->use_group_label(true);
 
     auto prefs = Inkscape::Preferences::get();
@@ -404,12 +436,53 @@ PencilToolbar::add_advanced_shape_options(bool tool_is_pencil)
 
     _shape_item->signal_changed().connect(sigc::mem_fun(*this, &PencilToolbar::change_shape));
     add(*_shape_item);
+
+    /* power width setting */
+    {
+        _shapescale_adj = Gtk::Adjustment::create(2.0, 0.0, 1000.0, 0.5, 1.0);
+        _shapescale =
+            Gtk::manage(new UI::Widget::SpinButtonToolItem("pencil-maxpressure", _("Scale:"), _shapescale_adj, 1, 2));
+        _shapescale->set_tooltip_text(_("Scale of the width of the power stroke shape."));
+        _shapescale->set_focus_widget(_desktop->canvas);
+        _shapescale_adj->signal_value_changed().connect(sigc::mem_fun(*this, &PencilToolbar::shapewidth_value_changed));
+        update_width_value(shape);
+        add(*_shapescale);
+    }
 }
 
 void
 PencilToolbar::change_shape(int shape) {
     auto prefs = Inkscape::Preferences::get();
     prefs->setInt(freehand_tool_name() + "/shape", shape);
+    update_width_value(shape);
+}
+
+void
+PencilToolbar::update_width_value(int shape) {
+    /* Update shape width with correct width */
+    auto prefs = Inkscape::Preferences::get();
+    double width = 1.0;
+    _shapescale->set_sensitive(true);
+    double powerstrokedefsize = 10 / (0.265 * _desktop->getDocument()->getDocumentScale()[0] * 2.0);
+    switch (shape) {
+        case Inkscape::UI::Tools::TRIANGLE_IN:
+        case Inkscape::UI::Tools::TRIANGLE_OUT:
+            width = prefs->getDouble("/live_effects/powerstroke/width", powerstrokedefsize);
+            break;
+        case Inkscape::UI::Tools::ELLIPSE:
+        case Inkscape::UI::Tools::CLIPBOARD:
+            width = prefs->getDouble("/live_effects/skeletal/width", 1.0);
+            break;
+        case Inkscape::UI::Tools::BEND_CLIPBOARD:
+            width = prefs->getDouble("/live_effects/bend_path/width", 1.0);
+            break;
+        case Inkscape::UI::Tools::NONE: // Apply width from style?
+        case Inkscape::UI::Tools::LAST_APPLIED:
+        default:
+            _shapescale->set_sensitive(false);
+            break;
+    }
+    _shapescale_adj->set_value(width);
 }
 
 void PencilToolbar::add_powerstroke_cap(bool tool_is_pencil)
@@ -427,7 +500,7 @@ void PencilToolbar::add_powerstroke_cap(bool tool_is_pencil)
         row[columns.col_sensitive] = true;
     }
 
-    _cap_item = Gtk::manage(UI::Widget::ComboToolItem::create(_("Caps:"), _("Cap for powerstroke pressure"), "Not Used", store));
+    _cap_item = Gtk::manage(UI::Widget::ComboToolItem::create(_("Caps"), _("Line endings when drawing with pressure-sensitive PowerPencil"), "Not Used", store));
 
     auto prefs = Inkscape::Preferences::get();
 
@@ -472,15 +545,15 @@ PencilToolbar::simplify_flatten()
                     if (dynamic_cast<Inkscape::LivePathEffect::LPESimplify *>(lpe)) {
                         SPShape * shape = dynamic_cast<SPShape *>(lpeitem);
                         if(shape){
-                            SPCurve * c = shape->getCurveForEdit();
-                            lpe->doEffect(c);
+                            auto c = SPCurve::copy(shape->curveForEdit());
+                            lpe->doEffect(c.get());
                             lpeitem->setCurrentPathEffect(*i);
                             if (lpelist.size() > 1){
                                 lpeitem->removeCurrentPathEffect(true);
-                                shape->setCurveBeforeLPE(c);
+                                shape->setCurveBeforeLPE(std::move(c));
                             } else {
                                 lpeitem->removeCurrentPathEffect(false);
-                                shape->setCurve(c, false);
+                                shape->setCurve(std::move(c));
                             }
                             break;
                         }
@@ -516,15 +589,15 @@ PencilToolbar::flatten_spiro_bspline()
                     {
                         SPShape * shape = dynamic_cast<SPShape *>(lpeitem);
                         if(shape){
-                            SPCurve * c = shape->getCurveForEdit();
-                            lpe->doEffect(c);
+                            auto c = SPCurve::copy(shape->curveForEdit());
+                            lpe->doEffect(c.get());
                             lpeitem->setCurrentPathEffect(*i);
                             if (lpelist.size() > 1){
                                 lpeitem->removeCurrentPathEffect(true);
-                                shape->setCurveBeforeLPE(c);
+                                shape->setCurveBeforeLPE(std::move(c));
                             } else {
                                 lpeitem->removeCurrentPathEffect(false);
-                                shape->setCurve(c, false);
+                                shape->setCurve(std::move(c));
                             }
                             break;
                         }
@@ -582,11 +655,11 @@ PencilToolbar::tolerance_value_changed()
                             sp_lpe_item_update_patheffect(lpeitem, false, false);
                             SPShape *sp_shape = dynamic_cast<SPShape *>(lpeitem);
                             if (sp_shape) {
-                                guint previous_curve_length = sp_shape->getCurve(true)->get_segment_count();
+                                guint previous_curve_length = sp_shape->curve()->get_segment_count();
                                 lpe_simplify->getRepr()->setAttribute("threshold", ss.str());
                                 sp_lpe_item_update_patheffect(lpeitem, false, false);
                                 simplified = true;
-                                guint curve_length = sp_shape->getCurve(true)->get_segment_count();
+                                guint curve_length = sp_shape->curve()->get_segment_count();
                                 std::vector<Geom::Point> ts = lpe_powerstroke->offset_points.data();
                                 double factor = (double)curve_length/ (double)previous_curve_length;
                                 for (auto & t : ts) {

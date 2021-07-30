@@ -70,7 +70,19 @@ cmake .. -G Ninja \
 # build
 message "--- Compiling Inkscape"
 ccache --zero-stats
-ninja || error "compilation failed"
+
+# We have 90min total. It takes about 5min to reach this line.
+# Use a timeout of 75min to make sure the cache is saved if we run out of time.
+# Without "nice -19" there would be a huge delay (~20min) between the timeout
+# and actual termination of "ninja".
+timeout --verbose 4500 nice -19 ninja || {
+    if [ $? = 124 ]; then
+        appveyor SetVariable -Name APPVEYOR_SAVE_CACHE_ON_ERROR -Value true
+        error "timed out"
+    fi
+    error "compilation failed"
+}
+
 ccache --show-stats
 appveyor SetVariable -Name APPVEYOR_SAVE_CACHE_ON_ERROR -Value true # build succeeded so it's safe to save the cache
 
@@ -116,7 +128,7 @@ HTMLNAME=latest_${BRANCH}_x${MSYSTEM#MINGW}.html
 sed -e "s#\${FILENAME}#${FILENAME}#" -e "s#\${URL}#${URL}#" -e "s#\${BRANCH}#${BRANCH}#" ../buildtools/appveyor_redirect_template.html > $HTMLNAME
 # upload redirect to http://alpha.inkscape.org/snapshots/
 if [ "${APPVEYOR_REPO_NAME}" == "inkscape/inkscape" ] && [ -n "${SSH_KEY}" ]; then
-    if [ "$BRANCH" == "1.0.x" ]; then
+    if [ "$BRANCH" == "master" ] || [ "$BRANCH" == "0.92.x" ]; then
         echo -e "-----BEGIN RSA PRIVATE KEY-----\n${SSH_KEY}\n-----END RSA PRIVATE KEY-----" > ssh_key
         scp -oStrictHostKeyChecking=no -i ssh_key $HTMLNAME appveyor-ci@alpha.inkscape.org:/var/www/alpha.inkscape.org/public_html/snapshots/
         rm -f ssh_key

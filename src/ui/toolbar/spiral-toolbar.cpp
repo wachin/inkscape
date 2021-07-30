@@ -41,10 +41,9 @@
 
 #include "ui/icon-names.h"
 #include "ui/uxmanager.h"
+#include "ui/widget/canvas.h"
 #include "ui/widget/label-tool-item.h"
 #include "ui/widget/spin-button-tool-item.h"
-
-#include "widgets/spinbutton-events.h"
 
 #include "xml/node-event-vector.h"
 
@@ -84,7 +83,7 @@ SpiralToolbar::SpiralToolbar(SPDesktop *desktop) :
         _revolution_item = Gtk::manage(new UI::Widget::SpinButtonToolItem("spiral-revolutions", _("Turns:"), _revolution_adj, 1, 2));
         _revolution_item->set_tooltip_text(_("Number of revolutions"));
         _revolution_item->set_custom_numeric_menu_data(values, labels);
-        _revolution_item->set_focus_widget(Glib::wrap(GTK_WIDGET(desktop->canvas)));
+        _revolution_item->set_focus_widget(desktop->getCanvas());
         _revolution_adj->signal_value_changed().connect(sigc::bind(sigc::mem_fun(*this, &SpiralToolbar::value_changed),
                                                                    _revolution_adj, "revolution"));
         add(*_revolution_item);
@@ -100,7 +99,7 @@ SpiralToolbar::SpiralToolbar(SPDesktop *desktop) :
         _expansion_item = Gtk::manage(new UI::Widget::SpinButtonToolItem("spiral-expansion", _("Divergence:"), _expansion_adj));
         _expansion_item->set_tooltip_text(_("How much denser/sparser are outer revolutions; 1 = uniform"));
         _expansion_item->set_custom_numeric_menu_data(values, labels);
-        _expansion_item->set_focus_widget(Glib::wrap(GTK_WIDGET(desktop->canvas)));
+        _expansion_item->set_focus_widget(desktop->getCanvas());
         _expansion_adj->signal_value_changed().connect(sigc::bind(sigc::mem_fun(*this, &SpiralToolbar::value_changed),
                                                                   _expansion_adj, "expansion"));
         add(*_expansion_item);
@@ -115,7 +114,7 @@ SpiralToolbar::SpiralToolbar(SPDesktop *desktop) :
         _t0_item = Gtk::manage(new UI::Widget::SpinButtonToolItem("spiral-t0", _("Inner radius:"), _t0_adj));
         _t0_item->set_tooltip_text(_("Radius of the innermost revolution (relative to the spiral size)"));
         _t0_item->set_custom_numeric_menu_data(values, labels);
-        _t0_item->set_focus_widget(Glib::wrap(GTK_WIDGET(desktop->canvas)));
+        _t0_item->set_focus_widget(desktop->getCanvas());
         _t0_adj->signal_value_changed().connect(sigc::bind(sigc::mem_fun(*this, &SpiralToolbar::value_changed),
                                                            _t0_adj, "t0"));
         add(*_t0_item);
@@ -176,7 +175,7 @@ SpiralToolbar::value_changed(Glib::RefPtr<Gtk::Adjustment> &adj,
     // in turn, prevent listener from responding
     _freeze = true;
 
-    gchar* namespaced_name = g_strconcat("sodipodi:", value_name.data(), NULL);
+    gchar* namespaced_name = g_strconcat("sodipodi:", value_name.data(), nullptr);
 
     bool modmade = false;
     auto itemlist= _desktop->getSelection()->items();
@@ -184,8 +183,7 @@ SpiralToolbar::value_changed(Glib::RefPtr<Gtk::Adjustment> &adj,
         SPItem *item = *i;
         if (SP_IS_SPIRAL(item)) {
             Inkscape::XML::Node *repr = item->getRepr();
-            sp_repr_set_svg_double( repr, namespaced_name,
-                adj->get_value() );
+            repr->setAttributeSvgDouble(namespaced_name, adj->get_value() );
             item->updateRepr();
             modmade = true;
         }
@@ -213,7 +211,7 @@ SpiralToolbar::defaults()
     _expansion_adj->set_value(exp);
     _t0_adj->set_value(t0);
 
-    if(_desktop->canvas) gtk_widget_grab_focus(GTK_WIDGET(_desktop->canvas));
+    if(_desktop->getCanvas()) _desktop->getCanvas()->grab_focus();
 }
 
 void
@@ -273,16 +271,13 @@ SpiralToolbar::event_attr_changed(Inkscape::XML::Node *repr,
     // in turn, prevent callbacks from responding
     toolbar->_freeze = true;
 
-    double revolution = 3.0;
-    sp_repr_get_double(repr, "sodipodi:revolution", &revolution);
+    double revolution = repr->getAttributeDouble("sodipodi:revolution", 3.0);
     toolbar->_revolution_adj->set_value(revolution);
 
-    double expansion = 1.0;
-    sp_repr_get_double(repr, "sodipodi:expansion", &expansion);
+    double expansion = repr->getAttributeDouble("sodipodi:expansion", 1.0);
     toolbar->_expansion_adj->set_value(expansion);
 
-    double t0 = 0.0;
-    sp_repr_get_double(repr, "sodipodi:t0", &t0);
+    double t0 = repr->getAttributeDouble("sodipodi:t0", 0.0);
     toolbar->_t0_adj->set_value(t0);
 
     toolbar->_freeze = false;

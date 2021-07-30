@@ -20,20 +20,19 @@
 #endif
 
 #include <cstddef>
-#include <sigc++/sigc++.h>
+#include <gtkmm/buttonbox.h>
 #include <gtkmm/comboboxtext.h>
 #include <gtkmm/liststore.h>
 #include <gtkmm/notebook.h>
-#include <gtkmm/buttonbox.h>
 #include <gtkmm/textview.h>
+#include <sigc++/sigc++.h>
 
+#include "ui/dialog/dialog-base.h"
+#include "ui/widget/licensor.h"
 #include "ui/widget/page-sizer.h"
 #include "ui/widget/registered-widget.h"
 #include "ui/widget/registry.h"
 #include "ui/widget/tolerance-slider.h"
-#include "ui/widget/panel.h"
-#include "ui/widget/licensor.h"
-
 #include "xml/helper-observer.h"
 
 namespace Inkscape {
@@ -49,13 +48,17 @@ namespace Inkscape {
 
 typedef std::list<UI::Widget::EntityEntry*> RDElist;
 
-class DocumentProperties : public UI::Widget::Panel {
+class DocumentProperties : public DialogBase
+{
 public:
-    void  update();
+    void  update_widgets();
     static DocumentProperties &getInstance();
     static void destroy();
 
-    void  update_gridspage();
+    void documentReplaced() override;
+
+    void update() override;
+    void update_gridspage();
 
 protected:
     void  build_page();
@@ -66,15 +69,12 @@ protected:
 
     void  create_guides_around_page();
     void  delete_all_guides();
-#if defined(HAVE_LIBLCMS2)
     void  build_cms();
-#endif // defined(HAVE_LIBLCMS2)
     void  build_scripting();
     void  build_metadata();
     void  init();
 
     virtual void  on_response (int);
-#if defined(HAVE_LIBLCMS2)
     void  populate_available_profiles();
     void  populate_linked_profiles_box();
     void  linkSelectedProfile();
@@ -82,7 +82,6 @@ protected:
     void  onColorProfileSelectRow();
     void  linked_profiles_list_button_release(GdkEventButton* event);
     void  cms_create_popup_menu(Gtk::Widget& parent, sigc::slot<void> rem);
-#endif // defined(HAVE_LIBLCMS2)
 
     void  external_scripts_list_button_release(GdkEventButton* event);
     void  embedded_scripts_list_button_release(GdkEventButton* event);
@@ -101,10 +100,6 @@ protected:
     void  load_default_metadata();
     void  save_default_metadata();
 
-    void _handleDocumentReplaced(SPDesktop* desktop, SPDocument *document);
-    void _handleActivateDesktop(SPDesktop *desktop);
-    void _handleDeactivateDesktop(SPDesktop *desktop);
-
     Inkscape::XML::SignalObserver _emb_profiles_observer, _scripts_observer;
     Gtk::Notebook  _notebook;
 
@@ -121,7 +116,7 @@ protected:
     UI::Widget::NotebookPage  *_page_metadata1;
     UI::Widget::NotebookPage  *_page_metadata2;
 
-    Gtk::VBox      _grids_vbox;
+    Gtk::Box      _grids_vbox;
 
     UI::Widget::Registry _wr;
     //---------------------------------------------------------------
@@ -147,12 +142,13 @@ protected:
     UI::Widget::ToleranceSlider       _rsu_sno;
     UI::Widget::ToleranceSlider       _rsu_sn;
     UI::Widget::ToleranceSlider       _rsu_gusn;
+    UI::Widget::ToleranceSlider       _rsu_assn;
+    UI::Widget::ToleranceSlider       _rsu_dssn;
     UI::Widget::RegisteredCheckButton _rcb_snclp;
     UI::Widget::RegisteredCheckButton _rcb_snmsk;
     UI::Widget::RegisteredCheckButton _rcb_perp;
     UI::Widget::RegisteredCheckButton _rcb_tang;
     //---------------------------------------------------------------
-    Gtk::Button         _link_btn;
     Gtk::Button         _unlink_btn;
     class AvailableProfilesColumns : public Gtk::TreeModel::ColumnRecord
         {
@@ -218,19 +214,19 @@ protected:
     //---------------------------------------------------------------
 
     Gtk::Notebook   _grids_notebook;
-    Gtk::HBox       _grids_hbox_crea;
+    Gtk::Box        _grids_hbox_crea;
     Gtk::Label      _grids_label_crea;
     Gtk::Button     _grids_button_new;
     Gtk::Button     _grids_button_remove;
     Gtk::ComboBoxText _grids_combo_gridtype;
     Gtk::Label      _grids_label_def;
-    Gtk::HBox       _grids_space;
+    Gtk::Box        _grids_space;
     //---------------------------------------------------------------
 
     RDElist _rdflist;
     UI::Widget::Licensor _licensor;
 
-    Gtk::HBox& _createPageTabLabel(const Glib::ustring& label, const char *label_image);
+    Gtk::Box& _createPageTabLabel(const Glib::ustring& label, const char *label_image);
 
 private:
     DocumentProperties();
@@ -242,6 +238,9 @@ private:
 
     // callback for document unit change
     void onDocUnitChange();
+
+    // nodes connected to listeners
+    Inkscape::XML::Node *_repr_namedview = nullptr;
 };
 
 } // namespace Dialog

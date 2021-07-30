@@ -34,7 +34,7 @@ class NumberNodes(inkex.EffectExtension):
     def effect(self):
         if not self.svg.selected:
             raise inkex.AbortExtension("Please select an object.")
-        for node in self.svg.selection.filter(inkex.PathElement).values():
+        for node in self.svg.selection.filter(inkex.PathElement):
             self.add_dot(node)
 
     def add_dot(self, node):

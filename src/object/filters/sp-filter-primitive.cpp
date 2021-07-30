@@ -55,13 +55,13 @@ SPFilterPrimitive::~SPFilterPrimitive() = default;
 void SPFilterPrimitive::build(SPDocument *document, Inkscape::XML::Node *repr) {
     SPFilterPrimitive* object = this;
 
-    object->readAttr( "style" ); // struct not derived from SPItem, we need to do this ourselves.
-    object->readAttr( "in" );
-    object->readAttr( "result" );
-    object->readAttr( "x" );
-    object->readAttr( "y" );
-    object->readAttr( "width" );
-    object->readAttr( "height" );
+    object->readAttr(SPAttr::STYLE); // struct not derived from SPItem, we need to do this ourselves.
+    object->readAttr(SPAttr::IN_);
+    object->readAttr(SPAttr::RESULT);
+    object->readAttr(SPAttr::X);
+    object->readAttr(SPAttr::Y);
+    object->readAttr(SPAttr::WIDTH);
+    object->readAttr(SPAttr::HEIGHT);
 
     SPObject::build(document, repr);
 }
@@ -76,11 +76,11 @@ void SPFilterPrimitive::release() {
 /**
  * Sets a specific value in the SPFilterPrimitive.
  */
-void SPFilterPrimitive::set(SPAttributeEnum key, gchar const *value) {
+void SPFilterPrimitive::set(SPAttr key, gchar const *value) {
 
     int image_nr;
     switch (key) {
-        case SP_ATTR_IN:
+        case SPAttr::IN_:
             if (value) {
                 image_nr = this->read_in(value);
             } else {
@@ -91,7 +91,7 @@ void SPFilterPrimitive::set(SPAttributeEnum key, gchar const *value) {
                 this->parent->requestModified(SP_OBJECT_MODIFIED_FLAG);
             }
             break;
-        case SP_ATTR_RESULT:
+        case SPAttr::RESULT:
             if (value) {
                 image_nr = this->read_result(value);
             } else {
@@ -104,19 +104,19 @@ void SPFilterPrimitive::set(SPAttributeEnum key, gchar const *value) {
             break;
 
         /* Filter primitive sub-region */
-        case SP_ATTR_X:
+        case SPAttr::X:
             this->x.readOrUnset(value);
             this->requestModified(SP_OBJECT_MODIFIED_FLAG);
             break;
-        case SP_ATTR_Y:
+        case SPAttr::Y:
             this->y.readOrUnset(value);
             this->requestModified(SP_OBJECT_MODIFIED_FLAG);
             break;
-        case SP_ATTR_WIDTH:
+        case SPAttr::WIDTH:
             this->width.readOrUnset(value);
             this->requestModified(SP_OBJECT_MODIFIED_FLAG);
             break;
-        case SP_ATTR_HEIGHT:
+        case SPAttr::HEIGHT:
             this->height.readOrUnset(value);
             this->requestModified(SP_OBJECT_MODIFIED_FLAG);
             break;
@@ -259,6 +259,15 @@ void SPFilterPrimitive::renderer_common(Inkscape::Filters::FilterPrimitive *nr_p
     nr_prim->setStyle( this->style );
 }
 
+/* Calculate the region taken up by this filter, given the previous region.
+ *
+ * @param current_region The original shape's region or previous primitive's
+ *                       calcualte_region output.
+ */
+Geom::Rect SPFilterPrimitive::calculate_region(Geom::Rect region)
+{
+    return region; // No change.
+}
 
 
 /*

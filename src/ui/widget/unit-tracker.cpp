@@ -86,6 +86,12 @@ Inkscape::Util::Unit const * UnitTracker::getActiveUnit() const
     return _activeUnit;
 }
 
+Glib::ustring UnitTracker::getCurrentLabel()
+{
+    ComboToolItemColumns columns;
+    return _store->children()[_active][columns.col_label];
+}
+
 void UnitTracker::changeLabel(Glib::ustring new_label, gint pos, bool onlylabel)
 {
     ComboToolItemColumns columns;
@@ -109,6 +115,20 @@ void UnitTracker::setActiveUnit(Inkscape::Util::Unit const *unit)
             }
             index++;
         }
+    }
+}
+
+void UnitTracker::setActiveUnitByLabel(Glib::ustring label)
+{
+    ComboToolItemColumns columns;
+    int index = 0;
+    for (auto &row : _store->children()) {
+        Glib::ustring storedUnit = row[columns.col_label];
+        if (!label.compare(storedUnit)) {
+            _setActive(index);
+            break;
+        }
+        index++;
     }
 }
 
@@ -170,7 +190,7 @@ UnitTracker::create_tool_item(Glib::ustring const &label,
     auto combo = ComboToolItem::create(label, tooltip, "NotUsed", _store);
     combo->set_active(_active);
     combo->signal_changed().connect(sigc::mem_fun(*this, &UnitTracker::_unitChangedCB));
-    combo->set_data("unit-tracker", this);
+    combo->set_name("unit-tracker");
     _combo_list.push_back(combo);
     return combo;    
 }

@@ -41,7 +41,6 @@
 #include "preferences.h"
 #include "io/sys.h"
 
-#if defined(HAVE_LIBLCMS2)
 #include "cms-system.h"
 #include "color-profile.h"
 #include <lcms2.h>
@@ -56,7 +55,6 @@
 #else
 #define DEBUG_MESSAGE(key, ...)
 #endif // DEBUG_LCMS
-#endif // defined(HAVE_LIBLCMS2)
 /*
  * SPImage
  */
@@ -120,9 +118,7 @@ SPImage::SPImage() : SPItem(), SPViewBox() {
     this->curve = nullptr;
 
     this->href = nullptr;
-#if defined(HAVE_LIBLCMS2)
     this->color_profile = nullptr;
-#endif // defined(HAVE_LIBLCMS2)
     this->pixbuf = nullptr;
 }
 
@@ -131,14 +127,14 @@ SPImage::~SPImage() = default;
 void SPImage::build(SPDocument *document, Inkscape::XML::Node *repr) {
     SPItem::build(document, repr);
 
-    this->readAttr( "xlink:href" );
-    this->readAttr( "x" );
-    this->readAttr( "y" );
-    this->readAttr( "width" );
-    this->readAttr( "height" );
-    this->readAttr("inkscape:svg-dpi");
-    this->readAttr( "preserveAspectRatio" );
-    this->readAttr( "color-profile" );
+    this->readAttr(SPAttr::XLINK_HREF);
+    this->readAttr(SPAttr::X);
+    this->readAttr(SPAttr::Y);
+    this->readAttr(SPAttr::WIDTH);
+    this->readAttr(SPAttr::HEIGHT);
+    this->readAttr(SPAttr::SVG_DPI);
+    this->readAttr(SPAttr::PRESERVEASPECTRATIO);
+    this->readAttr(SPAttr::COLOR_PROFILE);
 
     /* Register */
     document->addResource("image", this);
@@ -158,29 +154,25 @@ void SPImage::release() {
     delete this->pixbuf;
     this->pixbuf = nullptr;
 
-#if defined(HAVE_LIBLCMS2)
     if (this->color_profile) {
         g_free (this->color_profile);
         this->color_profile = nullptr;
     }
-#endif // defined(HAVE_LIBLCMS2)
 
-    if (this->curve) {
-        this->curve = this->curve->unref();
-    }
+    curve.reset();
 
     SPItem::release();
 }
 
-void SPImage::set(SPAttributeEnum key, const gchar* value) {
+void SPImage::set(SPAttr key, const gchar* value) {
     switch (key) {
-        case SP_ATTR_XLINK_HREF:
+        case SPAttr::XLINK_HREF:
             g_free (this->href);
             this->href = (value) ? g_strdup (value) : nullptr;
             this->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG | SP_IMAGE_HREF_MODIFIED_FLAG);
             break;
 
-        case SP_ATTR_X:
+        case SPAttr::X:
             /* ex, em not handled correctly. */
             if (!this->x.read(value)) {
                 this->x.unset();
@@ -189,7 +181,7 @@ void SPImage::set(SPAttributeEnum key, const gchar* value) {
             this->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG);
             break;
 
-        case SP_ATTR_Y:
+        case SPAttr::Y:
             /* ex, em not handled correctly. */
             if (!this->y.read(value)) {
                 this->y.unset();
@@ -198,7 +190,7 @@ void SPImage::set(SPAttributeEnum key, const gchar* value) {
             this->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG);
             break;
 
-        case SP_ATTR_WIDTH:
+        case SPAttr::WIDTH:
             /* ex, em not handled correctly. */
             if (!this->width.read(value)) {
                 this->width.unset();
@@ -207,7 +199,7 @@ void SPImage::set(SPAttributeEnum key, const gchar* value) {
             this->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG);
             break;
 
-        case SP_ATTR_HEIGHT:
+        case SPAttr::HEIGHT:
             /* ex, em not handled correctly. */
             if (!this->height.read(value)) {
                 this->height.unset();
@@ -216,17 +208,16 @@ void SPImage::set(SPAttributeEnum key, const gchar* value) {
             this->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG);
             break;
 
-        case SP_ATTR_SVG_DPI:
+        case SPAttr::SVG_DPI:
             this->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG | SP_IMAGE_HREF_MODIFIED_FLAG);
             break;
 
-        case SP_ATTR_PRESERVEASPECTRATIO:
+        case SPAttr::PRESERVEASPECTRATIO:
             set_preserveAspectRatio( value );
             this->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG | SP_OBJECT_VIEWPORT_MODIFIED_FLAG);
             break;
 
-#if defined(HAVE_LIBLCMS2)
-        case SP_PROP_COLOR_PROFILE:
+        case SPAttr::COLOR_PROFILE:
             if ( this->color_profile ) {
                 g_free (this->color_profile);
             }
@@ -243,7 +234,6 @@ void SPImage::set(SPAttributeEnum key, const gchar* value) {
             this->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG | SP_IMAGE_HREF_MODIFIED_FLAG);
             break;
 
-#endif // defined(HAVE_LIBLCMS2)
 
         default:
             SPItem::set(key, value);
@@ -254,7 +244,6 @@ void SPImage::set(SPAttributeEnum key, const gchar* value) {
 }
 
 // BLIP
-#if defined(HAVE_LIBLCMS2)
 void SPImage::apply_profile(Inkscape::Pixbuf *pixbuf) {
 
     // TODO: this will prevent using MIME data when exporting.
@@ -322,7 +311,6 @@ void SPImage::apply_profile(Inkscape::Pixbuf *pixbuf) {
         }
     }
 }
-#endif // defined(HAVE_LIBLCMS2)
 
 void SPImage::update(SPCtx *ctx, unsigned int flags) {
 
@@ -336,16 +324,14 @@ void SPImage::update(SPCtx *ctx, unsigned int flags) {
             Inkscape::Pixbuf *pixbuf = nullptr;
             double svgdpi = 96;
             if (this->getRepr()->attribute("inkscape:svg-dpi")) {
-                svgdpi = atof(this->getRepr()->attribute("inkscape:svg-dpi"));
+                svgdpi = g_ascii_strtod(this->getRepr()->attribute("inkscape:svg-dpi"), nullptr);
             }
             this->dpi = svgdpi;
             pixbuf = sp_image_repr_read_image(this->getRepr()->attribute("xlink:href"),
                                               this->getRepr()->attribute("sodipodi:absref"), doc->getDocumentBase(), svgdpi);
 
             if (pixbuf) {
-#if defined(HAVE_LIBLCMS2)
                 if ( this->color_profile ) apply_profile( pixbuf );
-#endif
                 this->pixbuf = pixbuf;
             }
         }
@@ -424,13 +410,13 @@ void SPImage::update(SPCtx *ctx, unsigned int flags) {
             proportion_image = this->width.computed / (double)this->height.computed;
             if (proportion_pixbuf != proportion_image) {
                 double new_height = this->height.computed * proportion_pixbuf;
-                sp_repr_set_svg_double(this->getRepr(), "width", new_height);
+                this->getRepr()->setAttributeSvgDouble("width", new_height);
             }
         }
         else {
             if (proportion_pixbuf != proportion_image) {
                 double new_width = this->width.computed * proportion_pixbuf;
-                sp_repr_set_svg_double(this->getRepr(), "height", new_width);
+                this->getRepr()->setAttributeSvgDouble("height", new_width);
             }
         }
     }
@@ -459,28 +445,26 @@ Inkscape::XML::Node *SPImage::write(Inkscape::XML::Document *xml_doc, Inkscape::
 
     /* fixme: Reset attribute if needed (Lauris) */
     if (this->x._set) {
-        sp_repr_set_svg_double(repr, "x", this->x.computed);
+        repr->setAttributeSvgDouble("x", this->x.computed);
     }
 
     if (this->y._set) {
-        sp_repr_set_svg_double(repr, "y", this->y.computed);
+        repr->setAttributeSvgDouble("y", this->y.computed);
     }
 
     if (this->width._set) {
-        sp_repr_set_svg_double(repr, "width", this->width.computed);
+        repr->setAttributeSvgDouble("width", this->width.computed);
     }
 
     if (this->height._set) {
-        sp_repr_set_svg_double(repr, "height", this->height.computed);
+        repr->setAttributeSvgDouble("height", this->height.computed);
     }
     repr->setAttribute("inkscape:svg-dpi", this->getRepr()->attribute("inkscape:svg-dpi"));
     //XML Tree being used directly here while it shouldn't be...
     repr->setAttribute("preserveAspectRatio", this->getRepr()->attribute("preserveAspectRatio"));
-#if defined(HAVE_LIBLCMS2)
     if (this->color_profile) {
         repr->setAttribute("color-profile", this->color_profile);
     }
-#endif // defined(HAVE_LIBLCMS2)
 
     SPItem::write(xml_doc, repr, flags);
 
@@ -520,6 +504,10 @@ void SPImage::print(SPPrintContext *ctx) {
     }
 }
 
+const char* SPImage::typeName() const {
+    return "image";
+}
+
 const char* SPImage::displayName() const {
     return _("Image");
 }
@@ -549,7 +537,7 @@ gchar* SPImage::description() const {
         Inkscape::Pixbuf * pb = nullptr;
         double svgdpi = 96;
         if (this->getRepr()->attribute("inkscape:svg-dpi")) {
-            svgdpi = atof(this->getRepr()->attribute("inkscape:svg-dpi"));
+            svgdpi = g_ascii_strtod(this->getRepr()->attribute("inkscape:svg-dpi"), nullptr);
         }
         pb = sp_image_repr_read_image(this->getRepr()->attribute("xlink:href"),
                                       this->getRepr()->attribute("sodipodi:absref"), this->document->getDocumentBase(), svgdpi);
@@ -652,7 +640,7 @@ Inkscape::Pixbuf *sp_image_repr_read_image(gchar const *href, gchar const *absre
 static void
 sp_image_update_arenaitem (SPImage *image, Inkscape::DrawingImage *ai)
 {
-    ai->setStyle(SP_OBJECT(image)->style);
+    ai->setStyle(image->style);
     ai->setPixbuf(image->pixbuf);
     ai->setOrigin(Geom::Point(image->ox, image->oy));
     ai->setScale(image->sx, image->sy);
@@ -661,8 +649,7 @@ sp_image_update_arenaitem (SPImage *image, Inkscape::DrawingImage *ai)
 
 static void sp_image_update_canvas_image(SPImage *image)
 {
-    SPItem *item = SP_ITEM(image);
-    for (SPItemView *v = item->display; v != nullptr; v = v->next) {
+    for (SPItemView *v = image->display; v != nullptr; v = v->next) {
         sp_image_update_arenaitem(image, dynamic_cast<Inkscape::DrawingImage *>(v->arenaitem));
     }
 }
@@ -741,25 +728,11 @@ static void sp_image_set_curve( SPImage *image )
 {
     //create a curve at the image's boundary for snapping
     if ((image->height.computed < MAGIC_EPSILON_TOO) || (image->width.computed < MAGIC_EPSILON_TOO) || (image->getClipObject())) {
-        if (image->curve) {
-            image->curve = image->curve->unref();
-        }
     } else {
         Geom::OptRect rect = image->bbox(Geom::identity(), SPItem::VISUAL_BBOX);
-        SPCurve *c = nullptr;
         
         if (rect->isFinite()) {
-            c = SPCurve::new_from_rect(*rect, true);
-        }
-
-        if (image->curve) {
-            image->curve = image->curve->unref();
-        }
-
-        if (c) {
-            image->curve = c->ref();
-
-            c->unref();
+            image->curve = SPCurve::new_from_rect(*rect, true);
         }
     }
 }
@@ -767,13 +740,9 @@ static void sp_image_set_curve( SPImage *image )
 /**
  * Return duplicate of curve (if any exists) or NULL if there is no curve
  */
-SPCurve *SPImage::get_curve() const
+std::unique_ptr<SPCurve> SPImage::get_curve() const
 {
-    SPCurve *result = nullptr;
-    if (curve) {
-        result = curve->copy();
-    }
-    return result;
+    return SPCurve::copy(curve.get());
 }
 
 void sp_embed_image(Inkscape::XML::Node *image_node, Inkscape::Pixbuf *pb)
@@ -790,7 +759,7 @@ void sp_embed_image(Inkscape::XML::Node *image_node, Inkscape::Pixbuf *pb)
     if (data == nullptr) {
         // if there is no supported MIME data, embed as PNG
         data_mimetype = "image/png";
-        gdk_pixbuf_save_to_buffer(pb->getPixbufRaw(), reinterpret_cast<gchar**>(&data), &len, "png", nullptr, NULL);
+        gdk_pixbuf_save_to_buffer(pb->getPixbufRaw(), reinterpret_cast<gchar**>(&data), &len, "png", nullptr, nullptr);
         free_data = true;
     }
 

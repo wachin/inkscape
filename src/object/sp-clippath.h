@@ -23,9 +23,6 @@
 #include "uri-references.h"
 #include "xml/node.h"
 
-#define SP_CLIPPATH(obj) (dynamic_cast<SPClipPath*>((SPObject*)obj))
-#define SP_IS_CLIPPATH(obj) (dynamic_cast<const SPClipPath*>((SPObject*)obj) != NULL)
-
 namespace Inkscape {
 
 class Drawing;
@@ -67,7 +64,7 @@ protected:
 
 	void child_added(Inkscape::XML::Node* child, Inkscape::XML::Node* ref) override;
 
-	void set(SPAttributeEnum key, char const* value) override;
+	void set(SPAttr key, char const* value) override;
 
 	void update(SPCtx* ctx, unsigned int flags) override;
 	void modified(unsigned int flags) override;
@@ -75,6 +72,7 @@ protected:
 	Inkscape::XML::Node* write(Inkscape::XML::Document* doc, Inkscape::XML::Node* repr, unsigned int flags) override;
 };
 
+MAKE_SP_OBJECT_TYPECHECK_FUNCTIONS(SP_IS_CLIPPATH, SPClipPath)
 
 class SPClipPathReference : public Inkscape::URIReference {
 public:

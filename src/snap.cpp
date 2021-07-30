@@ -16,19 +16,30 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
+#include <memory>
 #include <utility>
 #include <vector>
 
 #include <2geom/transforms.h>
 
 #include "snap.h"
+#include "snap-enums.h"
+#include "preferences.h"
+#include "object/sp-use.h"
+#include "object/sp-mask.h"
+#include "live_effects/effect-enum.h"
+#include "object/sp-filter.h"
+#include "object/sp-object.h"
+#include "object/sp-clippath.h"
+#include "object/sp-root.h"
+#include "style.h"
 
 #include "desktop.h"
 #include "inkscape.h"
 #include "pure-transform.h"
 
-#include "display/canvas-grid.h"
-#include "display/snap-indicator.h"
+#include "display/control/canvas-grid.h"
+#include "display/control/snap-indicator.h"
 
 #include "helper/mathfns.h"
 
@@ -43,6 +54,8 @@ using Inkscape::Util::round_to_lower_multiple_plus;
 SnapManager::SnapManager(SPNamedView const *v) :
     guide(this, 0),
     object(this, 0),
+    alignment(this, 0),
+    distribution(this, 0),
     snapprefs(),
     _named_view(v),
     _rotation_center_source_items(std::vector<SPItem*>()),
@@ -51,6 +64,14 @@ SnapManager::SnapManager(SPNamedView const *v) :
     _snapindicator(true),
     _unselected_nodes(nullptr)
 {
+    obj_snapper_candidates = std::make_unique<std::vector<Inkscape::SnapCandidateItem>>();
+    align_snapper_candidates = std::make_unique<std::vector<Inkscape::SnapCandidateItem>>();
+}
+
+SnapManager::~SnapManager()
+{
+    obj_snapper_candidates->clear();
+    align_snapper_candidates->clear();
 }
 
 SnapManager::SnapperList SnapManager::getSnappers() const
@@ -58,6 +79,8 @@ SnapManager::SnapperList SnapManager::getSnappers() const
     SnapManager::SnapperList s;
     s.push_back(&guide);
     s.push_back(&object);
+    s.push_back(&alignment);
+    s.push_back(&distribution);
 
     SnapManager::SnapperList gs = getGridSnappers();
     s.splice(s.begin(), gs);
@@ -131,6 +154,11 @@ Inkscape::SnappedPoint SnapManager::freeSnap(Inkscape::SnapCandidatePoint const 
 
     IntermSnapResults isr;
     SnapperList const snappers = getSnappers();
+
+    if (p.getSourceNum() <= 0){
+        Geom::Rect const local_bbox_to_snap = bbox_to_snap ? *bbox_to_snap : Geom::Rect(p.getPoint(), p.getPoint());
+        _findCandidates(getDocument()->getRoot(), &_items_to_ignore, p.getSourceNum() <= 0, local_bbox_to_snap, false, Geom::identity());
+    }
 
     for (auto snapper : snappers) {
         snapper->freeSnap(isr, p, bbox_to_snap, &_items_to_ignore, _unselected_nodes);
@@ -254,6 +282,12 @@ Inkscape::SnappedPoint SnapManager::constrainedSnap(Inkscape::SnapCandidatePoint
         return no_snap;
     }
 
+    // this makes sure that _findCandidates populates the respective vectors for a snapper.
+    if (p.getSourceNum() <= 0){
+        Geom::Rect const local_bbox_to_snap = bbox_to_snap ? *bbox_to_snap : Geom::Rect(p.getPoint(), p.getPoint());
+        _findCandidates(getDocument()->getRoot(), &_items_to_ignore, p.getSourceNum() <= 0, local_bbox_to_snap, false, Geom::identity());
+    }
+
     IntermSnapResults isr;
     SnapperList const snappers = getSnappers();
     for (auto snapper : snappers) {
@@ -350,7 +384,7 @@ Inkscape::SnappedPoint SnapManager::multipleConstrainedSnaps(Inkscape::SnapCandi
 }
 
 Inkscape::SnappedPoint SnapManager::constrainedAngularSnap(Inkscape::SnapCandidatePoint const &p,
-                                                            boost::optional<Geom::Point> const &p_ref,
+                                                            std::optional<Geom::Point> const &p_ref,
                                                             Geom::Point const &o,
                                                             unsigned const snaps) const
 {
@@ -786,6 +820,154 @@ void SnapManager::displaySnapsource(Inkscape::SnapCandidatePoint const &p) const
             _desktop->snapindicator->set_new_snapsource(p);
         } else {
             _desktop->snapindicator->remove_snapsource();
+        }
+    }
+}
+
+void SnapManager::_findCandidates(SPObject* parent,
+                                 std::vector<SPItem const *> const *it,
+                                 bool const &first_point,
+                                 Geom::Rect const &bbox_to_snap,
+                                 bool const clip_or_mask,
+                                 Geom::Affine const additional_affine) const
+{
+    SPDesktop const *dt = getDesktop();
+    if (dt == nullptr) {
+        g_error("desktop == NULL, so we cannot snap; please inform the developers of this bug");
+        return;
+        // Apparently the setup() method from the SnapManager class hasn't been called before trying to snap.
+    }
+
+    if (first_point) {
+        obj_snapper_candidates->clear();
+        align_snapper_candidates->clear();
+    }
+
+    Geom::Rect bbox_to_snap_incl = bbox_to_snap; // _incl means: will include the snapper tolerance
+    bbox_to_snap_incl.expandBy(object.getSnapperTolerance()); // see?
+
+    for (auto& o: parent->children) {
+        SPItem *item = dynamic_cast<SPItem *>(&o);
+        if (item && !(dt->itemIsHidden(item) && !clip_or_mask)) {
+            // Fix LPE boolops selfsnaping
+            bool stop = false;
+            if (item->style) {
+                SPFilter *filt = item->style->getFilter();
+                if (filt && filt->getId() && strcmp(filt->getId(), "selectable_hidder_filter") == 0) {
+                    stop = true;
+                }
+                SPLPEItem *lpeitem = dynamic_cast<SPLPEItem *>(item);
+                if (lpeitem && lpeitem->hasPathEffectOfType(Inkscape::LivePathEffect::EffectType::BOOL_OP)) {
+                    stop = true;
+                }
+            }
+            if (stop) {
+                stop = false;
+                for (auto skipitem : *it) {
+                    if (skipitem && skipitem->style) {
+                        SPItem *toskip = const_cast<SPItem *>(skipitem);
+                        if (toskip) {
+                            SPFilter *filt = toskip->style->getFilter();
+                            if (filt && filt->getId() && strcmp(filt->getId(), "selectable_hidder_filter") == 0) {
+                                stop = true;
+                                break;
+                            }
+
+                            SPLPEItem *lpeitem = dynamic_cast<SPLPEItem *>(toskip);
+                            if (!stop && lpeitem &&
+                                lpeitem->hasPathEffectOfType(Inkscape::LivePathEffect::EffectType::BOOL_OP)) {
+                                stop = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+                if (stop) {
+                    continue;
+                }
+            }
+            // Snapping to items in a locked layer is allowed
+            // Don't snap to hidden objects, unless they're a clipped path or a mask
+            /* See if this item is on the ignore list */
+            std::vector<SPItem const *>::const_iterator i;
+            if (it != nullptr) {
+                i = it->begin();
+                while (i != it->end() && *i != &o) {
+                    ++i;
+                }
+            }
+
+            if (it == nullptr || i == it->end()) {
+                if (item) {
+                    if (!clip_or_mask) { // cannot clip or mask more than once
+                        // The current item is not a clipping path or a mask, but might
+                        // still be the subject of clipping or masking itself ; if so, then
+                        // we should also consider that path or mask for snapping to
+                        SPObject *obj = item->getClipObject();
+                        if (obj && snapprefs.isTargetSnappable(Inkscape::SNAPTARGET_PATH_CLIP)) {
+                            _findCandidates(obj, it, false, bbox_to_snap, true, item->i2doc_affine());
+                        }
+                        obj = item->getMaskObject();
+                        if (obj && snapprefs.isTargetSnappable(Inkscape::SNAPTARGET_PATH_MASK)) {
+                            _findCandidates(obj, it, false, bbox_to_snap, true, item->i2doc_affine());
+                        }
+                    }
+
+                    if (dynamic_cast<SPGroup *>(item)) {
+                        _findCandidates(&o, it, false, bbox_to_snap, clip_or_mask, additional_affine);
+                    } else {
+                        Geom::OptRect bbox_of_item;
+                        Inkscape::Preferences *prefs = Inkscape::Preferences::get();
+                        int prefs_bbox = prefs->getBool("/tools/bounding_box", false);
+                        // We'll only need to obtain the visual bounding box if the user preferences tell
+                        // us to, AND if we are snapping to the bounding box itself. If we're snapping to
+                        // paths only, then we can just as well use the geometric bounding box (which is faster)
+                        SPItem::BBoxType bbox_type = (!prefs_bbox && snapprefs.isTargetSnappable(Inkscape::SNAPTARGET_BBOX_CATEGORY)) ?
+                            SPItem::VISUAL_BBOX : SPItem::GEOMETRIC_BBOX;
+                        if (clip_or_mask) {
+                            // Oh oh, this will get ugly. We cannot use sp_item_i2d_affine directly because we need to
+                            // insert an additional transformation in document coordinates (code copied from sp_item_i2d_affine)
+                            bbox_of_item = item->bounds(bbox_type, item->i2doc_affine() * additional_affine * dt->doc2dt());
+                        } else {
+                            bbox_of_item = item->desktopBounds(bbox_type);
+                        }
+                        if (bbox_of_item) {
+                            bool overflow = false;
+                            // See if the item is within range
+                            auto display_area = getDesktop()->get_display_area();
+                            if (display_area.contains(bbox_of_item->min()) || display_area.contains(bbox_of_item->max())) {
+                                // Finally add the object to _candidates.
+                                align_snapper_candidates->push_back(Inkscape::SnapCandidateItem(item, clip_or_mask, additional_affine));
+                                // For debugging: print the id of the candidate to the console
+                                // SPObject *obj = (SPObject*)item;
+                                // std::cout << "Snap candidate added: " << obj->getId() << std::endl;
+
+                                if (bbox_to_snap_incl.intersects(*bbox_of_item)
+                                        || (snapprefs.isTargetSnappable(Inkscape::SNAPTARGET_ROTATION_CENTER) && bbox_to_snap_incl.contains(item->getCenter()))) { // rotation center might be outside of the bounding box
+                                    // This item is within snapping range, so record it as a candidate
+                                    obj_snapper_candidates->push_back(Inkscape::SnapCandidateItem(item, clip_or_mask, additional_affine));
+                                    // For debugging: print the id of the candidate to the console
+                                    // SPObject *obj = (SPObject*)item;
+                                    // std::cout << "Snap candidate added: " << obj->getId() << std::endl;
+                                }
+
+                                if (align_snapper_candidates->size() > 200) { // This makes Inkscape crawl already
+                                    overflow = true;
+                                }
+                            }
+
+                            if (overflow) {
+                                static Glib::Timer timer;
+                                if (timer.elapsed() > 1.0) {
+                                    timer.reset();
+                                    std::cout << "Warning: limit of 200 snap target paths reached, some will be ignored" << std::endl;
+                                }
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }

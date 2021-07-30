@@ -14,13 +14,13 @@
 #define SEEN_LAYERS_PANEL_H
 
 #include <gtkmm/box.h>
-#include <gtkmm/treeview.h>
-#include <gtkmm/treestore.h>
 #include <gtkmm/scrolledwindow.h>
-#include "ui/widget/spinbutton.h"
-#include "ui/widget/panel.h"
+#include <gtkmm/treestore.h>
+#include <gtkmm/treeview.h>
+
+#include "ui/dialog/dialog-base.h"
 #include "ui/widget/object-composite-settings.h"
-#include "desktop-tracker.h"
+#include "ui/widget/spinbutton.h"
 #include "ui/widget/style-subject.h"
 
 class SPObject;
@@ -36,15 +36,14 @@ namespace Dialog {
 /**
  * A panel that displays layers.
  */
-class LayersPanel : public UI::Widget::Panel
+class LayersPanel : public DialogBase
 {
 public:
     LayersPanel();
     ~LayersPanel() override;
 
     static LayersPanel& getInstance();
-
-    void setDesktop( SPDesktop* desktop ) override;
+    void desktopReplaced() override;
 
 private:
     class ModelColumns;
@@ -98,9 +97,7 @@ private:
     // Internal
     sigc::connection _selectedConnection;
 
-    DesktopTracker deskTrack;
     int _maxNestDepth;
-    SPDesktop* _desktop;
     ModelColumns* _model;
     InternalUIBounce* _pending;
     gboolean _dnd_into;
@@ -123,11 +120,10 @@ private:
     Gtk::ScrolledWindow _scroller;
     Gtk::Menu _popupMenu;
     Inkscape::UI::Widget::SpinButton _spinBtn;
-    Gtk::VBox _layersPage;
+    Gtk::Box _layersPage;
 
     UI::Widget::StyleSubject::CurrentLayer _subject;
     UI::Widget::ObjectCompositeSettings _compositeSettings;
-    sigc::connection desktopChangeConn;
 };
 
 

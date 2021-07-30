@@ -18,6 +18,8 @@
 
 #include "extension.h"
 #include "implementation/implementation.h"
+#include "implementation/script.h"
+#include "implementation/xslt.h"
 
 #include <glibmm/fileutils.h>
 #include <glibmm/miscutils.h>
@@ -135,7 +137,7 @@ Extension::Extension(Inkscape::XML::Node *in_repr, Implementation::Implementatio
             _deps.push_back(new Dependency(child_repr, this));
         } else if (!strcmp(chname, "script")) { // TODO: should these be parsed in their respective Implementation?
             for (Inkscape::XML::Node *child = child_repr->firstChild(); child != nullptr; child = child->next()) {
-                if (child->type() == Inkscape::XML::ELEMENT_NODE) { // skip non-element nodes (see LP #1372200)
+                if (child->type() == Inkscape::XML::NodeType::ELEMENT_NODE) { // skip non-element nodes (see LP #1372200)
                     const char *interpreted = child->attribute("interpreter");
                     Dependency::type_t type = interpreted ? Dependency::TYPE_FILE : Dependency::TYPE_EXECUTABLE;
                     _deps.push_back(new Dependency(child, this, type));
@@ -144,7 +146,7 @@ Extension::Extension(Inkscape::XML::Node *in_repr, Implementation::Implementatio
             }
         } else if (!strcmp(chname, "xslt")) { // TODO: should these be parsed in their respective Implementation?
             for (Inkscape::XML::Node *child = child_repr->firstChild(); child != nullptr; child = child->next()) {
-                if (child->type() == Inkscape::XML::ELEMENT_NODE) { // skip non-element nodes (see LP #1372200)
+                if (child->type() == Inkscape::XML::NodeType::ELEMENT_NODE) { // skip non-element nodes (see LP #1372200)
                     _deps.push_back(new Dependency(child, this, Dependency::TYPE_FILE));
                     break;
                 }
@@ -368,10 +370,10 @@ Extension::get_id () const
     \return  The textual name of this extension
     \brief   Get the name of this extension - not a copy don't delete!
 */
-gchar *
+const gchar *
 Extension::get_name () const
 {
-    return _name;
+    return get_translation(_name, nullptr);
 }
 
 /**
@@ -387,7 +389,7 @@ Extension::get_name () const
     implementation, but we are guaranteed to have a benign one.
 
     \warning It is important to note that there is no 'activate' function.
-    Running this function is irreversable.
+    Running this function is irreversible.
 */
 void
 Extension::deactivate ()
@@ -437,7 +439,7 @@ std::string Extension::get_dependency_location(const char *name)
 }
 
 /** recursively searches directory for a file named filename; returns true if found */
-static bool _find_filename_recursive(std::string directory, std::string filename) {
+static bool _find_filename_recursive(std::string directory, std::string const &filename) {
     Glib::Dir dir(directory);
 
     std::string name = dir.read_name();
@@ -535,7 +537,7 @@ void Extension::lookup_translation_catalog() {
   *
   * @return  Translated string (or original string if extension is not supposed to be translated)
   */
-const char *Extension::get_translation(const char *msgid, const char *msgctxt) {
+const char *Extension::get_translation(const char *msgid, const char *msgctxt) const {
     if (!_translation_enabled) {
         return msgid;
     }
@@ -556,10 +558,24 @@ const char *Extension::get_translation(const char *msgid, const char *msgctxt) {
   *
   * Currently sets the environment variables INKEX_GETTEXT_DOMAIN and INKEX_GETTEXT_DIRECTORY
   * to make the "translationdomain" accessible to child processes spawned by this extension's Implementation.
+  *
+  * @param   doc   Optional document, if provided sets the DOCUMENT_PATH from the document's save location.
   */
-void Extension::set_environment() {
+void Extension::set_environment(const SPDocument *doc) {
     Glib::unsetenv("INKEX_GETTEXT_DOMAIN");
     Glib::unsetenv("INKEX_GETTEXT_DIRECTORY");
+
+    // This is needed so extensions can interact with the user's profile, keep settings etc.
+    Glib::setenv("INKSCAPE_PROFILE_DIR", std::string(Inkscape::IO::Resource::profile_path()));
+
+    // This is needed so files can be saved relative to their document location (see image-extract)
+    if (doc) {
+        auto path = doc->getDocumentFilename();
+        if (!path) {
+            path = ""; // Set to blank string so extensions know the difference between old inkscape and not-saved document.
+        }
+        Glib::setenv("DOCUMENT_PATH", std::string(path));
+    }
 
     if (_translationdomain) {
         Glib::setenv("INKEX_GETTEXT_DOMAIN", std::string(_translationdomain));
@@ -567,6 +583,22 @@ void Extension::set_environment() {
     if (!_gettext_catalog_dir.empty()) {
         Glib::setenv("INKEX_GETTEXT_DIRECTORY", _gettext_catalog_dir);
     }
+}
+
+/** Uses the object's type to figure out what the type is.
+  *
+  * @return  Returns the type of extension that this object is.
+  */
+ModuleImpType Extension::get_implementation_type()
+{
+    if (dynamic_cast<Implementation::Script *>(imp)) {
+        return MODULE_EXTENSION;
+    } else if (dynamic_cast<Implementation::XSLT *>(imp)) {
+        return MODULE_XSLT;
+    }
+    // MODULE_UNKNOWN_IMP is not required because it never results in an
+    // object being created. Thus this function wouldn't be available.
+    return MODULE_PLUGIN;
 }
 
 /**
@@ -665,13 +697,13 @@ Extension::get_param_int(const gchar *name) const
 }
 
 /**
-    \return   The float value for the parameter specified
-    \brief    Gets a parameter identified by name with the float in value.
+    \return   The double value for the float parameter specified
+    \brief    Gets a float parameter identified by name with the double placed in value.
     \param    name   The name of the parameter to get
 
     Look up in the parameters list, const then execute the function on that found parameter.
 */
-float
+double
 Extension::get_param_float(const gchar *name) const
 {
     const InxParameter *param;
@@ -772,14 +804,14 @@ Extension::set_param_int(const gchar *name, const int value)
 
 /**
     \return   The passed in value
-    \brief    Sets a parameter identified by name with the float in the parameter value.
+    \brief    Sets a parameter identified by name with the double in the parameter value.
     \param    name   The name of the parameter to set
     \param    value  The value to set the parameter to
 
     Look up in the parameters list, const then execute the function on that found parameter.
 */
-float
-Extension::set_param_float(const gchar *name, const float value)
+double
+Extension::set_param_float(const gchar *name, const double value)
 {
     InxParameter *param;
     param = get_param(name);
@@ -866,10 +898,10 @@ Extension::error_file_write (Glib::ustring text)
 };
 
 /** \brief  A widget to represent the inside of an AutoGUI widget */
-class AutoGUI : public Gtk::VBox {
+class AutoGUI : public Gtk::Box {
 public:
     /** \brief  Create an AutoGUI object */
-    AutoGUI () : Gtk::VBox() {};
+    AutoGUI () : Gtk::Box(Gtk::ORIENTATION_VERTICAL) {};
 
     /**
      * Adds a widget with a tool tip into the autogui.
@@ -934,10 +966,10 @@ Extension::autogui (SPDocument *doc, Inkscape::XML::Node *node, sigc::signal<voi
 
 /* Extension editor dialog stuff */
 
-Gtk::VBox *
+Gtk::Box *
 Extension::get_info_widget()
 {
-    Gtk::VBox * retval = Gtk::manage(new Gtk::VBox());
+    Gtk::Box * retval = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL));
     retval->set_border_width(4);
 
     Gtk::Frame * info = Gtk::manage(new Gtk::Frame("General Extension Information"));
@@ -976,10 +1008,10 @@ void Extension::add_val(Glib::ustring labelstr, Glib::ustring valuestr, Gtk::Gri
     return;
 }
 
-Gtk::VBox *
+Gtk::Box *
 Extension::get_params_widget()
 {
-    Gtk::VBox * retval = Gtk::manage(new Gtk::VBox());
+    Gtk::Box * retval = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL));
     Gtk::Widget * content = Gtk::manage(new Gtk::Label("Params"));
     retval->pack_start(*content, true, true, 4);
     content->show();

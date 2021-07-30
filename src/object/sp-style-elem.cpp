@@ -24,8 +24,6 @@
 // For font-rule
 #include "libnrtype/FontFactory.h"
 
-using Inkscape::XML::TEXT_NODE;
-
 SPStyleElem::SPStyleElem() : SPObject() {
     media_set_all(this->media);
     this->is_css = false;
@@ -34,9 +32,9 @@ SPStyleElem::SPStyleElem() : SPObject() {
 
 SPStyleElem::~SPStyleElem() = default;
 
-void SPStyleElem::set(SPAttributeEnum key, const gchar* value) {
+void SPStyleElem::set(SPAttr key, const gchar* value) {
     switch (key) {
-        case SP_ATTR_TYPE: {
+        case SPAttr::TYPE: {
             if (!value) {
                 /* TODO: `type' attribute is required.  Give error message as per
                    http://www.w3.org/TR/SVG11/implnote.html#ErrorProcessing. */
@@ -52,7 +50,7 @@ void SPStyleElem::set(SPAttributeEnum key, const gchar* value) {
         }
 
 #if 0 /* unfinished */
-        case SP_ATTR_MEDIA: {
+        case SPAttr::MEDIA: {
             parse_media(style_elem, value);
             break;
         }
@@ -66,26 +64,55 @@ void SPStyleElem::set(SPAttributeEnum key, const gchar* value) {
     }
 }
 
-
-static void
-child_add_rm_cb(Inkscape::XML::Node *, Inkscape::XML::Node *, Inkscape::XML::Node *,
-                void *const data)
+/**
+ * Callback for changing the content of a <style> child text node
+ */
+static void content_changed_cb(Inkscape::XML::Node *, gchar const *, gchar const *, void *const data)
 {
     SPObject *obj = reinterpret_cast<SPObject *>(data);
     g_assert(data != nullptr);
     obj->read_content();
+    obj->document->getRoot()->emitModified(SP_OBJECT_MODIFIED_CASCADE);
 }
 
-static void
-content_changed_cb(Inkscape::XML::Node *, gchar const *, gchar const *,
-                   void *const data)
+static Inkscape::XML::NodeEventVector const textNodeEventVector = {
+    nullptr,            // child_added
+    nullptr,            // child_removed
+    nullptr,            // attr_changed
+    content_changed_cb, // content_changed
+    nullptr,            // order_changed
+};
+
+/**
+ * Callback for adding a text child to a <style> node
+ */
+static void child_add_cb(Inkscape::XML::Node *, Inkscape::XML::Node *child, Inkscape::XML::Node *, void *const data)
 {
     SPObject *obj = reinterpret_cast<SPObject *>(data);
     g_assert(data != nullptr);
+
+    if (child->type() == Inkscape::XML::NodeType::TEXT_NODE) {
+        child->addListener(&textNodeEventVector, obj);
+    }
+
     obj->read_content();
-    obj->document->getRoot()->emitModified( SP_OBJECT_MODIFIED_CASCADE );
 }
 
+/**
+ * Callback for removing a (text) child from a <style> node
+ */
+static void child_rm_cb(Inkscape::XML::Node *, Inkscape::XML::Node *child, Inkscape::XML::Node *, void *const data)
+{
+    SPObject *obj = reinterpret_cast<SPObject *>(data);
+
+    child->removeListenerByData(obj);
+
+    obj->read_content();
+}
+
+/**
+ * Callback for rearranging text nodes inside a <style> node
+ */
 static void
 child_order_changed_cb(Inkscape::XML::Node *, Inkscape::XML::Node *,
                        Inkscape::XML::Node *, Inkscape::XML::Node *,
@@ -124,7 +151,7 @@ concat_children(Inkscape::XML::Node const &repr)
     Glib::ustring ret;
     // effic: Initialising ret to a reasonable starting size could speed things up.
     for (Inkscape::XML::Node const *rch = repr.firstChild(); rch != nullptr; rch = rch->next()) {
-        if ( rch->type() == TEXT_NODE ) {
+        if ( rch->type() == Inkscape::XML::NodeType::TEXT_NODE ) {
             ret += rch->content();
         }
     }
@@ -137,36 +164,40 @@ concat_children(Inkscape::XML::Node const &repr)
 
 enum StmtType { NO_STMT, FONT_FACE_STMT, NORMAL_RULESET_STMT };
 
+/**
+ * Helper class which owns the parser and tracks the current statement
+ */
 struct ParseTmp
 {
+private:
+    static constexpr unsigned ParseTmp_magic = 0x23474397; // from /dev/urandom
+    unsigned const magic = ParseTmp_magic;
+
+public:
+    CRParser *const parser;
     CRStyleSheet *const stylesheet;
-    StmtType stmtType;
-    CRStatement *currStmt;
     SPDocument *const document; // Need file location for '@import'
-    unsigned magic;
-    static unsigned const ParseTmp_magic = 0x23474397;  // from /dev/urandom
 
-    ParseTmp(CRStyleSheet *const stylesheet, SPDocument *const document) :
-        stylesheet(stylesheet),
-        stmtType(NO_STMT),
-        currStmt(nullptr),
-        document(document),
-        magic(ParseTmp_magic)
-    { }
+    // Current statement
+    StmtType stmtType = NO_STMT;
+    CRStatement *currStmt = nullptr;
 
-    bool hasMagic() const {
-        return magic == ParseTmp_magic;
-    }
+    ParseTmp() = delete;
+    ParseTmp(ParseTmp const &) = delete;
+    ParseTmp(CRStyleSheet *const stylesheet, SPDocument *const document);
+    ~ParseTmp() { cr_parser_destroy(parser); }
 
-    ~ParseTmp()
+    /**
+     * @pre a_handler->app_data points to a ParseTmp instance
+     */
+    static ParseTmp *cast(CRDocHandler *a_handler)
     {
-        g_return_if_fail(hasMagic());
-        magic = 0;
+        assert(a_handler && a_handler->app_data);
+        auto self = static_cast<ParseTmp *>(a_handler->app_data);
+        assert(self->magic == ParseTmp_magic);
+        return self;
     }
 };
-
-CRParser*
-parser_init(CRStyleSheet *const stylesheet, SPDocument *const document);
 
 static void
 import_style_cb (CRDocHandler *a_handler,
@@ -179,74 +210,48 @@ import_style_cb (CRDocHandler *a_handler,
 
     // Get document
     g_return_if_fail(a_handler && a_uri);
-    g_return_if_fail(a_handler->app_data != nullptr);
-    ParseTmp &parse_tmp = *static_cast<ParseTmp *>(a_handler->app_data);
-    g_return_if_fail(parse_tmp.hasMagic());
+    auto &parse_tmp = *ParseTmp::cast(a_handler);
 
     SPDocument* document = parse_tmp.document;
     if (!document) {
         std::cerr << "import_style_cb: No document!" << std::endl;
         return;
     }
-    if (!document->getDocumentURI()) {
-        std::cerr << "import_style_cb: Document URI is NULL" << std::endl;
+    if (!document->getDocumentFilename()) {
+        std::cerr << "import_style_cb: Document filename is NULL" << std::endl;
         return;
     }
 
     // Get file
-    Glib::ustring import_file =
-        Inkscape::IO::Resource::get_filename (document->getDocumentURI(), a_uri->stryng->str);
+    auto import_file =
+        Inkscape::IO::Resource::get_filename (document->getDocumentFilename(), a_uri->stryng->str);
 
     // Parse file
     CRStyleSheet *stylesheet = cr_stylesheet_new (nullptr);
-    CRParser *parser = parser_init(stylesheet, document);
+    ParseTmp parse_new(stylesheet, document);
     CRStatus const parse_status =
-        cr_parser_parse_file (parser, reinterpret_cast<const guchar *>(import_file.c_str()), CR_UTF_8);
+        cr_parser_parse_file(parse_new.parser, reinterpret_cast<const guchar *>(import_file.c_str()), CR_UTF_8);
     if (parse_status == CR_OK) {
-        if (!document->getStyleSheet()) {
-            // if the style is the first style sheet that we've seen, set the document's
-            // first style sheet to this style and create a cascade object with it.
-            document->setStyleSheet(stylesheet);
-            cr_cascade_set_sheet(document->getStyleCascade(), document->getStyleSheet(), ORIGIN_AUTHOR);
-        } else {
-            // If not the first, then chain up this style_sheet
-            cr_stylesheet_append_import(document->getStyleSheet(), stylesheet);
-        }
+        g_assert(parse_tmp.stylesheet);
+        g_assert(parse_tmp.stylesheet != stylesheet);
+        stylesheet->origin = ORIGIN_AUTHOR;
+        // Append import statement
+        CRStatement *ruleset =
+            cr_statement_new_at_import_rule(parse_tmp.stylesheet, cr_string_dup(a_uri), nullptr, stylesheet);
+        parse_tmp.stylesheet->statements = cr_statement_append(parse_tmp.stylesheet->statements, ruleset);
     } else {
         std::cerr << "import_style_cb: Could not parse: " << import_file << std::endl;
         cr_stylesheet_destroy (stylesheet);
     }
-
-    // Need to delete ParseTmp created by parser_init()
-    CRDocHandler *sac_handler = nullptr;
-    cr_parser_get_sac_handler (parser, &sac_handler);
-    ParseTmp *parse_new = reinterpret_cast<ParseTmp *>(sac_handler->app_data);
-    cr_parser_destroy(parser);
-    delete parse_new;
 };
-
-#if 0
-/* FIXME: NOT USED, incomplete libcroco implementation */
-static void
-import_style_result_cb (CRDocHandler *a_this,
-                        GList *a_media_list,
-                        CRString *a_uri,
-                        CRString *a_uri_default_ns,
-                        CRStyleSheet *a_sheet)
-{
-    /* a_uri_default_ns and a_sheet are set to NULL and are unused by libcroco */
-    std::cerr << "import_style_result_cb: unimplemented" << std::endl;
-};
-#endif
 
 static void
 start_selector_cb(CRDocHandler *a_handler,
                   CRSelector *a_sel_list)
 {
     g_return_if_fail(a_handler && a_sel_list);
-    g_return_if_fail(a_handler->app_data != nullptr);
-    ParseTmp &parse_tmp = *static_cast<ParseTmp *>(a_handler->app_data);
-    g_return_if_fail(parse_tmp.hasMagic());
+    auto &parse_tmp = *ParseTmp::cast(a_handler);
+
     if ( (parse_tmp.currStmt != nullptr)
          || (parse_tmp.stmtType != NO_STMT) ) {
         g_warning("Expecting currStmt==NULL and stmtType==0 (NO_STMT) at start of ruleset, but found currStmt=%p, stmtType=%u",
@@ -264,9 +269,8 @@ end_selector_cb(CRDocHandler *a_handler,
                 CRSelector *a_sel_list)
 {
     g_return_if_fail(a_handler && a_sel_list);
-    g_return_if_fail(a_handler->app_data != nullptr);
-    ParseTmp &parse_tmp = *static_cast<ParseTmp *>(a_handler->app_data);
-    g_return_if_fail(parse_tmp.hasMagic());
+    auto &parse_tmp = *ParseTmp::cast(a_handler);
+
     CRStatement *const ruleset = parse_tmp.currStmt;
     if (parse_tmp.stmtType == NORMAL_RULESET_STMT
         && ruleset
@@ -291,9 +295,8 @@ static void
 start_font_face_cb(CRDocHandler *a_handler,
                    CRParsingLocation *)
 {
-    g_return_if_fail(a_handler->app_data != nullptr);
-    ParseTmp &parse_tmp = *static_cast<ParseTmp *>(a_handler->app_data);
-    g_return_if_fail(parse_tmp.hasMagic());
+    auto &parse_tmp = *ParseTmp::cast(a_handler);
+
     if (parse_tmp.stmtType != NO_STMT || parse_tmp.currStmt != nullptr) {
         g_warning("Expecting currStmt==NULL and stmtType==0 (NO_STMT) at start of @font-face, but found currStmt=%p, stmtType=%u",
                   static_cast<void *>(parse_tmp.currStmt), unsigned(parse_tmp.stmtType));
@@ -308,9 +311,7 @@ start_font_face_cb(CRDocHandler *a_handler,
 static void
 end_font_face_cb(CRDocHandler *a_handler)
 {
-    g_return_if_fail(a_handler->app_data != nullptr);
-    ParseTmp &parse_tmp = *static_cast<ParseTmp *>(a_handler->app_data);
-    g_return_if_fail(parse_tmp.hasMagic());
+    auto &parse_tmp = *ParseTmp::cast(a_handler);
 
     CRStatement *const font_face_rule = parse_tmp.currStmt;
     if (parse_tmp.stmtType == FONT_FACE_STMT
@@ -336,8 +337,8 @@ end_font_face_cb(CRDocHandler *a_handler)
         std::cerr << "end_font_face_cb: No document!" << std::endl;
         return;
     }
-    if (!document->getDocumentURI()) {
-        std::cerr << "end_font_face_cb: Document URI is NULL" << std::endl;
+    if (!document->getDocumentFilename()) {
+        std::cerr << "end_font_face_cb: Document filename is NULL" << std::endl;
         return;
     }
 
@@ -361,7 +362,7 @@ end_font_face_cb(CRDocHandler *a_handler)
 
                     // Get file
                     Glib::ustring ttf_file =
-                        Inkscape::IO::Resource::get_filename (document->getDocumentURI(), value);
+                        Inkscape::IO::Resource::get_filename (document->getDocumentFilename(), value);
 
                     if (!ttf_file.empty()) {
                         font_factory *factory = font_factory::Default();
@@ -389,9 +390,7 @@ property_cb(CRDocHandler *const a_handler,
 {
     // std::cout << "property_cb: Entrance: " << a_name->stryng->str << ": " << cr_term_to_string(a_value) << std::endl;
     g_return_if_fail(a_handler && a_name);
-    g_return_if_fail(a_handler->app_data != nullptr);
-    ParseTmp &parse_tmp = *static_cast<ParseTmp *>(a_handler->app_data);
-    g_return_if_fail(parse_tmp.hasMagic());
+    auto &parse_tmp = *ParseTmp::cast(a_handler);
 
     CRStatement *const ruleset = parse_tmp.currStmt;
     g_return_if_fail(ruleset);
@@ -421,50 +420,82 @@ property_cb(CRDocHandler *const a_handler,
     }
 }
 
-CRParser*
-parser_init(CRStyleSheet *const stylesheet, SPDocument *const document) {
-
-    ParseTmp *parse_tmp = new ParseTmp(stylesheet, document);
-
+ParseTmp::ParseTmp(CRStyleSheet *const stylesheet, SPDocument *const document)
+    : parser(cr_parser_new(nullptr))
+    , stylesheet(stylesheet)
+    , document(document)
+{
     CRDocHandler *sac_handler = cr_doc_handler_new();
-    sac_handler->app_data = parse_tmp;
+    sac_handler->app_data = this;
     sac_handler->import_style = import_style_cb;
     sac_handler->start_selector = start_selector_cb;
     sac_handler->end_selector = end_selector_cb;
     sac_handler->start_font_face = start_font_face_cb;
     sac_handler->end_font_face = end_font_face_cb;
     sac_handler->property = property_cb;
-
-    CRParser *parser = cr_parser_new (nullptr);
     cr_parser_set_sac_handler(parser, sac_handler);
-
-    return parser;
+    cr_doc_handler_unref(sac_handler);
 }
 
-void update_style_recursively( SPObject *object ) {
-    if (object) {
-        // std::cout << "update_style_recursively: "
-        //           << (object->getId()?object->getId():"null") << std::endl;
-        if (object->style) {
-            object->style->readFromObject( object );
-        }
-        for (auto& child : object->children) {
-            update_style_recursively( &child );
+/**
+ * Get the list of styles.
+ * Currently only used for testing.
+ */
+std::vector<std::unique_ptr<SPStyle>> SPStyleElem::get_styles() const
+{
+    std::vector<std::unique_ptr<SPStyle>> styles;
+
+    if (style_sheet) {
+        auto count = cr_stylesheet_nr_rules(style_sheet);
+        for (int x = 0; x < count; ++x) {
+            CRStatement *statement = cr_stylesheet_statement_get_from_list(style_sheet, x);
+            styles.emplace_back(new SPStyle(document));
+            styles.back()->mergeStatement(statement);
         }
     }
+
+    return styles;
+}
+
+/**
+ * Remove `style_sheet` from the document style cascade and destroy it.
+ * @post style_sheet is NULL
+ */
+static void clear_style_sheet(SPStyleElem &self)
+{
+    if (!self.style_sheet) {
+        return;
+    }
+
+    auto *next = self.style_sheet->next;
+    auto *cascade = self.document->getStyleCascade();
+    auto *topsheet = cr_cascade_get_sheet(cascade, ORIGIN_AUTHOR);
+
+    cr_stylesheet_unlink(self.style_sheet);
+
+    if (topsheet == self.style_sheet) {
+        // will unref style_sheet
+        cr_cascade_set_sheet(cascade, next, ORIGIN_AUTHOR);
+    } else if (!topsheet) {
+        cr_stylesheet_unref(self.style_sheet);
+    }
+
+    self.style_sheet = nullptr;
 }
 
 void SPStyleElem::read_content() {
+    // TODO On modification (observer callbacks), clearing and re-appending to
+    // the cascade can change the position of a stylesheet relative to other
+    // sheets in the document. We need a better way to update a style sheet
+    // which preserves the position.
+    clear_style_sheet(*this);
 
     // First, create the style-sheet object and track it in this
     // element so that it can be edited. It'll be combined with
     // the document's style sheet later.
     style_sheet = cr_stylesheet_new (nullptr);
-    CRParser *parser = parser_init(style_sheet, document);
 
-    CRDocHandler *sac_handler = nullptr;
-    cr_parser_get_sac_handler (parser, &sac_handler);
-    ParseTmp *parse_tmp = reinterpret_cast<ParseTmp *>(sac_handler->app_data);
+    ParseTmp parse_tmp(style_sheet, document);
 
     //XML Tree being used directly here while it shouldn't be.
     Glib::ustring const text = concat_children(*getRepr());
@@ -472,17 +503,18 @@ void SPStyleElem::read_content() {
         return;
     }
     CRStatus const parse_status =
-        cr_parser_parse_buf (parser, reinterpret_cast<const guchar *>(text.c_str()), text.bytes(), CR_UTF_8);
+        cr_parser_parse_buf(parse_tmp.parser, reinterpret_cast<const guchar *>(text.c_str()), text.bytes(), CR_UTF_8);
 
     if (parse_status == CR_OK) {
-        if(!document->getStyleSheet()) {
+        auto *cascade = document->getStyleCascade();
+        auto *topsheet = cr_cascade_get_sheet(cascade, ORIGIN_AUTHOR);
+        if (!topsheet) {
             // if the style is the first style sheet that we've seen, set the document's
             // first style sheet to this style and create a cascade object with it.
-            document->setStyleSheet(style_sheet);
-            cr_cascade_set_sheet (document->getStyleCascade(), document->getStyleSheet(), ORIGIN_AUTHOR);
+            cr_cascade_set_sheet(cascade, style_sheet, ORIGIN_AUTHOR);
         } else {
             // If not the first, then chain up this style_sheet
-            cr_stylesheet_append_stylesheet (document->getStyleSheet(), style_sheet);
+            cr_stylesheet_append_stylesheet(topsheet, style_sheet);
         }
     } else {
         cr_stylesheet_destroy (style_sheet);
@@ -492,65 +524,46 @@ void SPStyleElem::read_content() {
         }
     }
 
-    cr_parser_destroy(parser);
-    delete parse_tmp;
-    gint count = 0;
-    if (style_sheet) {
-        // Record each css statement as an SPStyle
-        count = cr_stylesheet_nr_rules(style_sheet);
-    }
-    // Clean out any previous styles
-    for (auto& style:styles)
-        sp_style_unref(style);
-    styles.clear();
-
-    for (gint x = 0; x < count; x++) {
-        SPStyle *item = new SPStyle(nullptr, nullptr);
-        CRStatement *statement = cr_stylesheet_statement_get_from_list(style_sheet, x);
-        item->mergeStatement(statement);
-        styles.push_back(item);
-    }
     // If style sheet has changed, we need to cascade the entire object tree, top down
     // Get root, read style, loop through children
-    update_style_recursively( (SPObject *)document->getRoot() );
-    // cr_stylesheet_dump (document->getStyleSheet(), stdout);
+    document->getRoot()->requestDisplayUpdate(SP_OBJECT_STYLESHEET_MODIFIED_FLAG | SP_OBJECT_STYLE_MODIFIED_FLAG |
+                                              SP_OBJECT_MODIFIED_FLAG);
 }
 
-/**
- * Does addListener(fns, data) on \a repr and all of its descendents.
- */
-static void
-rec_add_listener(Inkscape::XML::Node &repr,
-                 Inkscape::XML::NodeEventVector const *const fns, void *const data)
-{
-    repr.addListener(fns, data);
-    for (Inkscape::XML::Node *child = repr.firstChild(); child != nullptr; child = child->next()) {
-        rec_add_listener(*child, fns, data);
-    }
-}
+static Inkscape::XML::NodeEventVector const nodeEventVector = {
+    child_add_cb,           // child_added
+    child_rm_cb,            // child_removed
+    nullptr,                // attr_changed
+    nullptr,                // content_changed
+    child_order_changed_cb, // order_changed
+};
 
 void SPStyleElem::build(SPDocument *document, Inkscape::XML::Node *repr) {
     read_content();
 
-    readAttr( "type" );
+    readAttr(SPAttr::TYPE);
+#if 0
     readAttr( "media" );
+#endif
 
-    static Inkscape::XML::NodeEventVector const nodeEventVector = {
-        child_add_rm_cb,   // child_added
-        child_add_rm_cb,   // child_removed
-        nullptr,   // attr_changed
-        content_changed_cb,   // content_changed
-        child_order_changed_cb,   // order_changed
-    };
-    rec_add_listener(*repr, &nodeEventVector, this);
+    repr->addListener(&nodeEventVector, this);
+    for (Inkscape::XML::Node *child = repr->firstChild(); child != nullptr; child = child->next()) {
+        if (child->type() == Inkscape::XML::NodeType::TEXT_NODE) {
+            child->addListener(&textNodeEventVector, this);
+        }
+    }
 
     SPObject::build(document, repr);
 }
 
 void SPStyleElem::release() {
-    for (auto& style:styles)
-        sp_style_unref(style);
-    styles.clear();
+    getRepr()->removeListenerByData(this);
+    for (Inkscape::XML::Node *child = getRepr()->firstChild(); child != nullptr; child = child->next()) {
+        child->removeListenerByData(this);
+    }
+
+    clear_style_sheet(*this);
+
     SPObject::release();
 }
 

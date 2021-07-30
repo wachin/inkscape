@@ -57,7 +57,7 @@ class ImplementationDocumentCache {
          */
     Inkscape::UI::View::View * _view;
 public:
-    ImplementationDocumentCache (Inkscape::UI::View::View * view) { return; };
+    explicit ImplementationDocumentCache (Inkscape::UI::View::View * view) { _view = view;};
 
     virtual ~ImplementationDocumentCache ( ) { return; };
     Inkscape::UI::View::View const * view ( ) { return _view; };
@@ -109,6 +109,11 @@ public:
     /** Find out information about the file. */
     virtual Gtk::Widget *prefs_output(Inkscape::Extension::Output *module);
     virtual void save(Inkscape::Extension::Output * /*module*/, SPDocument * /*doc*/, gchar const * /*filename*/) {}
+    virtual void export_raster(
+            Inkscape::Extension::Output * /*module*/,
+            const SPDocument * /*doc*/,
+            std::string const &/*png_file*/,
+            gchar const * /*filename*/) {}
 
     // ----- Effect functions -----
     /** Find out information about the file. */
@@ -151,7 +156,6 @@ public:
                           Geom::Affine const & /*transform*/,
                           float /*opacity*/) { return 0; }
     virtual unsigned release(Inkscape::Extension::Print * /*module*/) { return 0; }
-    virtual unsigned comment(Inkscape::Extension::Print * /*module*/, char const * /*comment*/) { return 0; }
     virtual unsigned fill(Inkscape::Extension::Print * /*module*/,
                           Geom::PathVector const & /*pathv*/,
                           Geom::Affine const & /*ctm*/,
@@ -180,7 +184,7 @@ public:
     virtual void     processPath(Inkscape::XML::Node * /*node*/) {}
 
     /**
-     * If detach = true, when saving to a file, don't store URIs realtive to the filename
+     * If detach = true, when saving to a file, don't store URIs relative to the filename
      */
     virtual void setDetachBase(bool detach) {}
 };

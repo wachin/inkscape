@@ -16,19 +16,39 @@
 
 #include <2geom/pathvector.h>
 #include <cstddef>
-#include <boost/optional.hpp>
+#include <optional>
 #include <list>
+#include <memory>
+#include <utility>
+
+class SPCurve;
 
 /**
  * Wrapper around a Geom::PathVector object.
  */
 class SPCurve {
+    //! Preferred smart pointer type for SPCurve
+    using smart_pointer = ::std::unique_ptr<SPCurve>;
+
 public:
     /* Constructors */
-    explicit SPCurve();
-    explicit SPCurve(Geom::PathVector  pathv);
-    explicit SPCurve(std::list<SPCurve *> const& pathv);
-    static SPCurve * new_from_rect(Geom::Rect const &rect, bool all_four_sides = false);
+    explicit SPCurve() = default;
+    explicit SPCurve(Geom::PathVector pathv)
+        : _pathv(std::move(pathv))
+    {}
+
+    // move
+    SPCurve(SPCurve &&other)
+        : _pathv(std::move(other._pathv))
+    {}
+    SPCurve &operator=(SPCurve &&other)
+    {
+        _pathv = std::move(other._pathv);
+        return *this;
+    }
+
+    static smart_pointer new_from_rect(Geom::Rect const &rect, bool all_four_sides = false);
+    static smart_pointer copy(SPCurve const *);
 
     virtual ~SPCurve();
 
@@ -39,10 +59,8 @@ public:
     void set_pathvector(Geom::PathVector const & new_pathv);
     Geom::PathVector const & get_pathvector() const;
 
-    SPCurve * ref();
-    SPCurve * unref();
-
-    SPCurve * copy() const;
+    smart_pointer ref();
+    smart_pointer copy() const;
 
     size_t get_segment_count() const;
     size_t nodes_in_path() const;
@@ -50,15 +68,15 @@ public:
     bool is_empty() const;
     bool is_unset() const;
     bool is_closed() const;
-    bool is_equal(SPCurve * other) const;
+    bool is_equal(SPCurve const *other) const;
     Geom::Curve const * last_segment() const;
     Geom::Path const * last_path() const;
     Geom::Curve const * first_segment() const;
     Geom::Path const * first_path() const;
-    boost::optional<Geom::Point> first_point() const;
-    boost::optional<Geom::Point> last_point() const;
-    boost::optional<Geom::Point> second_point() const;
-    boost::optional<Geom::Point> penultimate_point() const;
+    std::optional<Geom::Point> first_point() const;
+    std::optional<Geom::Point> last_point() const;
+    std::optional<Geom::Point> second_point() const;
+    std::optional<Geom::Point> penultimate_point() const;
 
     void reset();
 
@@ -79,18 +97,39 @@ public:
     void move_endpoints(Geom::Point const &, Geom::Point const &);
     void last_point_additive_move(Geom::Point const & p);
 
-    void append(SPCurve const *curve2, bool use_lineto);
-    SPCurve * append_continuous(SPCurve const *c1, double tolerance);
-    SPCurve * create_reverse() const;
+    void append(Geom::PathVector const &, bool use_lineto = false);
+    void append(SPCurve const &curve2, bool use_lineto = false);
 
-    std::list<SPCurve *> split() const;
-    static SPCurve * concat(std::list<SPCurve *> l);
+    bool append_continuous(SPCurve const &c1, double tolerance = 0.0625);
+
+    smart_pointer create_reverse() const;
+
+    std::list<smart_pointer> split() const;
+
+    friend class std::default_delete<SPCurve>;
+    friend class CurveTest; // for ref count test
+
+private:
+    void _unref();
 
 protected:
-    size_t _refcount;
+    size_t _refcount = 1;
 
     Geom::PathVector _pathv;
 };
+
+/**
+ * Specialized deleter allows using std::unique_ptr<SPCurve> with shared references.
+ */
+template <>
+inline void ::std::default_delete<SPCurve>::operator()(SPCurve *ptr) const
+// This is `noexcept` in libc++ but not in libstdc++
+#ifdef _LIBCPP_VERSION
+    noexcept
+#endif
+{
+    ptr->_unref();
+}
 
 #endif // !SEEN_DISPLAY_CURVE_H
 

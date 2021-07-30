@@ -91,7 +91,7 @@ LPEMeasureSegments::LPEMeasureSegments(LivePathEffectObject *lpeobject) :
     hide_back(_("Hide line under label"), _("Hide the dimension line where the label overlaps it"), "hide_back", &wr, this, true),
     hide_arrows(_("Hide arrows"), _("Don't show any arrows"), "hide_arrows", &wr, this, false),
     // active for 1.1
-    smallx100(_("Multiply values < 1"), _("Multiply values smaller than 1 by 100 and leave out the unit"), "smallx100", &wr, this, false),
+    smallx100(_("Multiply values &lt; 1"), _("Multiply values smaller than 1 by 100 and leave out the unit"), "smallx100", &wr, this, false),
     linked_items(_("Linked objects:"), _("Objects whose nodes are projected onto the path and generate new measurements"), "linked_items", &wr, this),
     distance_projection(_("Distance"), _("Distance of the dimension lines from the outermost node"), "distance_projection", &wr, this, 20.0),
     angle_projection(_("Angle of projection"), _("Angle of projection in 90° steps"), "angle_projection", &wr, this, 0.0),
@@ -152,30 +152,30 @@ LPEMeasureSegments::LPEMeasureSegments(LivePathEffectObject *lpeobject) :
     precision.param_set_range(0, 100);
     precision.param_set_increments(1, 1);
     precision.param_set_digits(0);
-    precision.param_make_integer(true);
+    precision.param_make_integer();
     fix_overlaps.param_set_range(0, 180);
     fix_overlaps.param_set_increments(1, 1);
     fix_overlaps.param_set_digits(0);
-    fix_overlaps.param_make_integer(true);
-    position.param_set_range(-999999.0, 999999.0);
+    fix_overlaps.param_make_integer();
+    position.param_set_range(std::numeric_limits<double>::lowest(), std::numeric_limits<double>::max());
     position.param_set_increments(1, 1);
     position.param_set_digits(2);
-    scale.param_set_range(-999999.0, 999999.0);
+    scale.param_set_range(std::numeric_limits<double>::lowest(), std::numeric_limits<double>::max());
     scale.param_set_increments(1, 1);
     scale.param_set_digits(4);
-    text_top_bottom.param_set_range(-999999.0, 999999.0);
+    text_top_bottom.param_set_range(std::numeric_limits<double>::lowest(), std::numeric_limits<double>::max());
     text_top_bottom.param_set_increments(1, 1);
     text_top_bottom.param_set_digits(2);
-    line_width.param_set_range(0, 999999.0);
+    line_width.param_set_range(0, std::numeric_limits<double>::max());
     line_width.param_set_increments(0.1, 0.1);
     line_width.param_set_digits(2);
-    helpline_distance.param_set_range(-999999.0, 999999.0);
+    helpline_distance.param_set_range(std::numeric_limits<double>::lowest(), std::numeric_limits<double>::max());
     helpline_distance.param_set_increments(1, 1);
     helpline_distance.param_set_digits(2);
-    helpline_overlap.param_set_range(-999999.0, 999999.0);
+    helpline_overlap.param_set_range(std::numeric_limits<double>::lowest(), std::numeric_limits<double>::max());
     helpline_overlap.param_set_increments(1, 1);
     helpline_overlap.param_set_digits(2);
-    distance_projection.param_set_range(-999999.0, 999999.0);
+    distance_projection.param_set_range(std::numeric_limits<double>::lowest(), std::numeric_limits<double>::max());
     distance_projection.param_set_increments(1, 1);
     distance_projection.param_set_digits(5);
     angle_projection.param_set_range(0.0, 360.0);
@@ -213,24 +213,24 @@ Gtk::Widget *
 LPEMeasureSegments::newWidget()
 {
     // use manage here, because after deletion of Effect object, others might still be pointing to this widget.
-    Gtk::VBox * vbox = Gtk::manage( new Gtk::VBox() );
+    Gtk::Box * vbox = Gtk::manage( new Gtk::Box(Gtk::ORIENTATION_VERTICAL) );
     vbox->set_border_width(0);
     vbox->set_homogeneous(false);
     vbox->set_spacing(0);
-    Gtk::VBox *vbox0 = Gtk::manage(new Gtk::VBox());
+    Gtk::Box *vbox0 = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL));
     vbox0->set_border_width(5);
     vbox0->set_homogeneous(false);
     vbox0->set_spacing(2);
-    Gtk::VBox *vbox1 = Gtk::manage(new Gtk::VBox());
+    Gtk::Box *vbox1 = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL));
     vbox1->set_border_width(5);
     vbox1->set_homogeneous(false);
     vbox1->set_spacing(2);
-    Gtk::VBox *vbox2 = Gtk::manage(new Gtk::VBox());
+    Gtk::Box *vbox2 = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL));
     vbox2->set_border_width(5);
     vbox2->set_homogeneous(false);
     vbox2->set_spacing(2);
     //Help page
-    Gtk::VBox *vbox3 = Gtk::manage(new Gtk::VBox());
+    Gtk::Box *vbox3 = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL));
     vbox3->set_border_width(5);
     vbox3->set_homogeneous(false);
     vbox3->set_spacing(2);
@@ -263,19 +263,7 @@ LPEMeasureSegments::newWidget()
                            param->param_key == "hide_arrows"     )
                 {
                     vbox2->pack_start(*widg, false, true, 2);
-                } else if (//TOD: unhack for 1.1
-                           param->param_key == "smallx100" )
-                {
-                    Glib::ustring widgl =  param->param_label;
-                    size_t pos = widgl.find("<");
-                    if (pos != std::string::npos ) {
-                        widgl.erase(pos, 1);
-                        widgl.insert(pos, "&lt;");
-                    }
-                    param->param_label = widgl.c_str();
-                    vbox2->pack_start(*widg, false, true, 2);
-                } else if (param->param_key == "helpdata")
-                {
+                } else if (param->param_key == "helpdata") {
                     vbox3->pack_start(*widg, false, true, 2);
                 } else {
                     vbox0->pack_start(*widg, false, true, 2);
@@ -307,7 +295,7 @@ LPEMeasureSegments::newWidget()
     notebook->signal_switch_page().connect(sigc::mem_fun(*this, &LPEMeasureSegments::on_my_switch_page));
     if(Gtk::Widget* widg = defaultParamSet()) {
         //Wrap to make it more omogenious
-        Gtk::VBox *vbox4 = Gtk::manage(new Gtk::VBox());
+        Gtk::Box *vbox4 = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL));
         vbox4->set_border_width(5);
         vbox4->set_homogeneous(false);
         vbox4->set_spacing(2);
@@ -389,7 +377,7 @@ LPEMeasureSegments::createArrowMarker(Glib::ustring mode)
         arrow_path->setAttribute("style", style);
         arrow->addChild(arrow_path, nullptr);
         Inkscape::GC::release(arrow_path);
-        elemref = SP_OBJECT(document->getDefs()->appendChildRepr(arrow));
+        elemref = document->getDefs()->appendChildRepr(arrow);
         Inkscape::GC::release(arrow);
     }
     items.push_back(mode);
@@ -416,8 +404,8 @@ LPEMeasureSegments::createTextLabel(Geom::Point pos, size_t counter, double leng
     elemref = document->getObjectById(id.c_str());
     if (elemref) {
         rtext = elemref->getRepr();
-        sp_repr_set_svg_double(rtext, "x", pos[Geom::X]);
-        sp_repr_set_svg_double(rtext, "y", pos[Geom::Y]);
+        rtext->setAttributeSvgDouble("x", pos[Geom::X]);
+        rtext->setAttributeSvgDouble("y", pos[Geom::Y]);
         rtext->setAttribute("sodipodi:insensitive", "true");
         rtext->removeAttribute("transform");
         rtspan = rtext->firstChild();
@@ -440,8 +428,8 @@ LPEMeasureSegments::createTextLabel(Geom::Point pos, size_t counter, double leng
         rtext->setAttribute("class", classlabel);
         rtext->setAttribute("sodipodi:insensitive", "true");
         rtext->removeAttribute("transform");
-        sp_repr_set_svg_double(rtext, "x", pos[Geom::X]);
-        sp_repr_set_svg_double(rtext, "y", pos[Geom::Y]);
+        rtext->setAttributeSvgDouble("x", pos[Geom::X]);
+        rtext->setAttributeSvgDouble("y", pos[Geom::Y]);
         rtspan = xml_doc->createElement("svg:tspan");
         rtspan->setAttribute("sodipodi:role", "line");
         rtspan->removeAttribute("x");
@@ -522,11 +510,11 @@ LPEMeasureSegments::createTextLabel(Geom::Point pos, size_t counter, double leng
     Geom::OptRect bounds = SP_ITEM(elemref)->geometricBounds();
     if (bounds) {
         anotation_width = bounds->width();
-        sp_repr_set_svg_double(rtext, "x", pos[Geom::X] - (anotation_width / 2.0));
+        rtext->setAttributeSvgDouble("x", pos[Geom::X] - (anotation_width / 2.0));
         rtspan->removeAttribute("style");
     }
 
-    gchar * transform;
+    std::string transform;
     if (rotate_anotation) {
         Geom::Affine affine = Geom::Affine(Geom::Translate(pos).inverse());
         angle = std::fmod(angle, 2*M_PI);
@@ -538,11 +526,8 @@ LPEMeasureSegments::createTextLabel(Geom::Point pos, size_t counter, double leng
         affine *= Geom::Rotate(angle);
         affine *= Geom::Translate(pos);
         transform = sp_svg_transform_write(affine);
-    } else {
-        transform = nullptr;
     }
-    rtext->setAttribute("transform", transform);
-    g_free(transform);
+    rtext->setAttributeOrRemoveIfEmpty("transform", transform);
 }
 
 void
@@ -592,10 +577,8 @@ LPEMeasureSegments::createLine(Geom::Point start,Geom::Point end, Glib::ustring 
     }
     if (elemref) {
         line = elemref->getRepr();
-        gchar * line_str = sp_svg_write_path( line_pathv );
-        line->setAttribute("d" , line_str);
+        line->setAttribute("d", sp_svg_write_path(line_pathv));
         line->removeAttribute("transform");
-        g_free(line_str);
     } else {
         line = xml_doc->createElement("svg:path");
         line->setAttributeOrRemoveIfEmpty("id", id);
@@ -612,9 +595,7 @@ LPEMeasureSegments::createLine(Geom::Point start,Geom::Point end, Glib::ustring 
             classlinehelper += " measure-helper-line measure-line";
             line->setAttribute("class", classlinehelper);
         }
-        gchar * line_str = sp_svg_write_path( line_pathv );
-        line->setAttribute("d" , line_str);
-        g_free(line_str);
+        line->setAttribute("d", sp_svg_write_path(line_pathv));
     }
 
     line->setAttribute("sodipodi:insensitive", "true");
@@ -681,7 +662,7 @@ LPEMeasureSegments::doOnApply(SPLPEItem const* lpeitem)
         if (Glib::ustring(root->nthChild(i)->name()) == "svg:style") {
             styleNode = root->nthChild(i);
             for (unsigned j = 0; j < styleNode->childCount(); ++j) {
-                if (styleNode->nthChild(j)->type() == Inkscape::XML::TEXT_NODE) {
+                if (styleNode->nthChild(j)->type() == Inkscape::XML::NodeType::TEXT_NODE) {
                     textNode = styleNode->nthChild(j);
                 }
             }
@@ -779,9 +760,8 @@ getNodes(SPItem * item, Geom::Affine transform, bool onbbox, bool centers, bool 
             current_nodes.insert(current_nodes.end(), nodes.begin(), nodes.end());
         }
     } else if (shape && !bboxonly) {
-        SPCurve * c = shape->getCurve();
+        SPCurve const *c = shape->curve();
         current_nodes = transformNodes(c->get_pathvector().nodes(), transform);
-        c->unref();
     } else if ((text || flowtext) && !bboxonly) {
         Inkscape::Text::Layout::iterator iter = te_get_layout(item)->begin();
         do {
@@ -791,13 +771,12 @@ getNodes(SPItem * item, Geom::Affine transform, bool onbbox, bool centers, bool 
                 break;
             }
             // get path from iter to iter_next:
-            SPCurve *curve = te_get_layout(item)->convertToCurves(iter, iter_next);
+            auto curve = te_get_layout(item)->convertToCurves(iter, iter_next);
             iter = iter_next; // shift to next glyph
             if (!curve) {
                 continue; // error converting this glyph
             }
             if (curve->is_empty()) { // whitespace glyph?
-                curve->unref();
                 continue;
             }
             std::vector< Point > letter_nodes = transformNodes(curve->get_pathvector().nodes(), transform);
@@ -831,6 +810,20 @@ getNodes(SPItem * item, Geom::Affine transform, bool onbbox, bool centers, bool 
     return current_nodes;
 }
 
+static void extractFirstPoint(Geom::Point & dest, const Glib::ustring & lpobjid, const char *const prefix, const gint idx, SPDocument *const document)
+{
+    Glib::ustring id = Glib::ustring(prefix);
+    id += Glib::ustring::format(idx);
+    id += "-";
+    id += lpobjid;
+    auto path = dynamic_cast<SPPath *>(document->getObjectById(id));
+    if (path) {
+        SPCurve const *curve = path->curve();
+        if (curve) {
+            dest = *curve->first_point();
+        }
+    }
+}
 
 void
 LPEMeasureSegments::doBeforeEffect (SPLPEItem const* lpeitem)
@@ -842,9 +835,8 @@ LPEMeasureSegments::doBeforeEffect (SPLPEItem const* lpeitem)
         return;
     }
     //Avoid crashes on previews
-    Inkscape::XML::Node *root = document->getReprRoot();
-    Geom::Affine parentaffinetransform = i2anc_affine(SP_OBJECT(lpeitem->parent), SP_OBJECT(document->getRoot()));
-    Geom::Affine affinetransform = i2anc_affine(SP_OBJECT(lpeitem), SP_OBJECT(document->getRoot()));
+    Geom::Affine parentaffinetransform = i2anc_affine(lpeitem->parent, document->getRoot());
+    Geom::Affine affinetransform = i2anc_affine(lpeitem, document->getRoot());
     Geom::Affine itemtransform = affinetransform * parentaffinetransform.inverse();
     //Projection prepare
     Geom::PathVector pathvector;
@@ -865,7 +857,7 @@ LPEMeasureSegments::doBeforeEffect (SPLPEItem const* lpeitem)
                 if (iter->ref.isAttached() &&  iter->actived && (obj = iter->ref.getObject()) && SP_IS_ITEM(obj)) {
                     SPItem * item = dynamic_cast<SPItem *>(obj);
                     if (item) {
-                        Geom::Affine affinetransform_sub = i2anc_affine(SP_OBJECT(item), SP_OBJECT(document->getRoot()));
+                        Geom::Affine affinetransform_sub = i2anc_affine(item, document->getRoot());
                         Geom::Affine transform = affinetransform_sub ;
                         transform *= Geom::Translate(-mid);
                         transform *= Geom::Rotate(angle).inverse();
@@ -889,7 +881,6 @@ LPEMeasureSegments::doBeforeEffect (SPLPEItem const* lpeitem)
             std::sort (result.begin(), result.end());
             Geom::Path path;
             Geom::Point prevpoint(Geom::infinity(),Geom::infinity());
-            size_t counter = 0;
             bool started = false;
             Geom::Point point = Geom::Point();
             for (auto & iter : result) {
@@ -936,16 +927,15 @@ LPEMeasureSegments::doBeforeEffect (SPLPEItem const* lpeitem)
             fontsize = Inkscape::Util::Quantity::convert(newfontsize, "pt", display_unit.c_str());
             fontsizechanged = true;
         }
-        SPCurve *c = shape->getCurve();
         Geom::Point prev_stored = Geom::Point(0,0);
         Geom::Point start_stored = Geom::Point(0,0);
         Geom::Point end_stored = Geom::Point(0,0); 
         Geom::Point next_stored = Geom::Point(0,0);
         if (!active_projection) {
+            SPCurve const *c = shape->curve();
             pathvector =  pathv_to_linear_and_cubic_beziers(c->get_pathvector());
             pathvector *= affinetransform;
         }
-        c->unref();
         auto format_str = format.param_getSVGValue();
         if (format_str.empty()) {
             format.param_setValue(Glib::ustring("{measure}{unit}"));
@@ -986,66 +976,10 @@ LPEMeasureSegments::doBeforeEffect (SPLPEItem const* lpeitem)
                 std::string listsegments(blacklist_str.raw() + ",");
                 listsegments.erase(std::remove(listsegments.begin(), listsegments.end(), ' '), listsegments.end());
                 if (isWhitelist(counter, listsegments, (bool)whitelist) && !Geom::are_near(start, end)) {
-                    Glib::ustring idprev = Glib::ustring("infoline-on-start-");
-                    idprev += Glib::ustring::format(counter-1);
-                    idprev += "-";
-                    idprev += lpobjid;
-                    SPObject *elemref = document->getObjectById(idprev.c_str());
-                    if (elemref){
-                        SPPath* path = dynamic_cast<SPPath *>(elemref);
-                        if (path) {
-                            SPCurve* prevcurve = path->getCurve();
-                            if (prevcurve) {
-                                prev_stored = *prevcurve->first_point();
-                            }
-                            prevcurve->unref();
-                        }
-                    }
-                    Glib::ustring idstart = Glib::ustring("infoline-on-start-");
-                    idstart += Glib::ustring::format(counter);
-                    idstart += "-";
-                    idstart += lpobjid;
-                    elemref = document->getObjectById(idstart.c_str());
-                    if (elemref) {
-                        SPPath* path = dynamic_cast<SPPath *>(elemref);
-                        if (path) {
-                            SPCurve* startcurve = path->getCurve();
-                            if (startcurve) {
-                                start_stored = *startcurve->first_point();
-                            }
-                            startcurve->unref();
-                        }
-                    }
-                    Glib::ustring idend = Glib::ustring("infoline-on-end-");
-                    idend += Glib::ustring::format(counter);
-                    idend += "-";
-                    idend += lpobjid;
-                    elemref = document->getObjectById(idend.c_str());
-                    if (elemref) {
-                        SPPath* path = dynamic_cast<SPPath *>(elemref);
-                        if (path) {
-                            SPCurve* endcurve = path->getCurve();
-                            if (endcurve) {
-                                end_stored = *endcurve->first_point();
-                            }
-                            endcurve->unref();
-                        }
-                    }
-                    Glib::ustring idnext = Glib::ustring("infoline-on-start-");
-                    idnext += Glib::ustring::format(counter+1);
-                    idnext += "-";
-                    idnext += lpobjid;
-                    elemref = document->getObjectById(idnext.c_str());
-                    if (elemref) {
-                        SPPath* path = dynamic_cast<SPPath *>(elemref);
-                        if (path) {
-                            SPCurve* nextcurve = path->getCurve();
-                            if (nextcurve) {
-                                next_stored = *nextcurve->first_point();
-                            }
-                            nextcurve->unref();
-                        }
-                    }
+                    extractFirstPoint(prev_stored, lpobjid, "infoline-on-start-", counter-1, document);
+                    extractFirstPoint(start_stored, lpobjid, "infoline-on-start-", counter, document);
+                    extractFirstPoint(end_stored, lpobjid, "infoline-on-end-", counter, document);
+                    extractFirstPoint(next_stored, lpobjid, "infoline-on-start-", counter+1, document);
                     Glib::ustring infoline_on_start = "infoline-on-start-";
                     infoline_on_start += Glib::ustring::format(counter);
                     infoline_on_start += "-";
@@ -1208,14 +1142,6 @@ LPEMeasureSegments::doBeforeEffect (SPLPEItem const* lpeitem)
                         createTextLabel(pos, counter, length, angle, remove, true);
                     }
                     arrow_gap = 8 * Inkscape::Util::Quantity::convert(line_width, unit.get_abbreviation(), display_unit.c_str());
-                    SPCSSAttr *css = sp_repr_css_attr_new();
-
-                    setlocale (LC_NUMERIC, "C");
-                    double width_line =  atof(sp_repr_css_property(css,"stroke-width","-1"));
-                    setlocale (LC_NUMERIC, locale_base);
-                    if (width_line > -0.0001) {
-                         arrow_gap = 8 * Inkscape::Util::Quantity::convert(width_line, unit.get_abbreviation(), display_unit.c_str());
-                    }
                     if(flip_side) {
                        arrow_gap *= -1;
                     }

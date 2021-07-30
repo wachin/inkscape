@@ -1,66 +1,89 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-/** @file
- * @brief Object for managing a set of dialogs, including their signals and
- *        construction/caching/destruction of them.
- */
-/* Author:
- *   Bryce W. Harrington <bryce@bryceharrington.org>
- *   Jon Phillips <jon@rejon.org>
- *
- * Copyright (C) 2004, 2005 Authors
- *
- * Released under GNU GPL v2+, read the file 'COPYING' for more information.
- */
 
 #ifndef INKSCAPE_UI_DIALOG_MANAGER_H
 #define INKSCAPE_UI_DIALOG_MANAGER_H
 
-#include "dialog.h"
+#include <glibmm/keyfile.h>
+#include <gtkmm/window.h>
 #include <map>
+#include <set>
+#include <memory>
+#include <optional>
+#include <vector>
 
 namespace Inkscape {
 namespace UI {
 namespace Dialog {
 
-class DialogManager {
+class DialogWindow;
+class DialogBase;
+class DialogContainer;
+
+struct window_position_t
+{
+    int x, y, width, height;
+};
+
+// try to read window's geometry
+std::optional<window_position_t> dm_get_window_position(Gtk::Window &window);
+
+// restore window's geometry
+void dm_restore_window_position(Gtk::Window &window, const window_position_t &position);
+
+class DialogManager
+{
 public:
-    typedef Dialog *(*DialogFactory)();
+    static DialogManager &singleton();
 
-    DialogManager();
-    virtual ~DialogManager();
+    // store complete dialog window state (including its container state)
+    void store_state(DialogWindow &wnd);
 
-    static DialogManager &getInstance();
+    // return true if dialog 'type' should be opened as floating
+    bool should_open_floating(const Glib::ustring& dialog_type);
 
-    // sigc::signal<void> show_dialogs;
-    // sigc::signal<void> show_f12;
-    // sigc::signal<void> hide_dialogs;
-    // sigc::signal<void> hide_f12;
-    // sigc::signal<void> transientize;
+    // find instance of dialog 'type' in one of currently open floating dialog windows
+    DialogBase *find_floating_dialog(const Glib::ustring& dialog_type);
 
-    /* generic dialog management start */
-    typedef std::map<GQuark, DialogFactory> FactoryMap;
-    typedef std::map<GQuark, Dialog*> DialogMap;
+    // find window hosting floating dialog
+    DialogWindow* find_floating_dialog_window(const Glib::ustring& dialog_type);
 
-    void registerFactory(gchar const *name, DialogFactory factory);
-    void registerFactory(GQuark name, DialogFactory factory);
-    Dialog *getDialog(gchar const* dlgName); 
-    Dialog *getDialog(GQuark dlgName); 
-    void showDialog(gchar const *name, bool grabfocus=true);
-    void showDialog(GQuark name, bool grabfocus=true);
+    // find floating window state hosting dialog 'code', if there was one
+    std::shared_ptr<Glib::KeyFile> find_dialog_state(const Glib::ustring& dialog_type);
 
-protected:
-    DialogManager(DialogManager const &d); // no copy
-    DialogManager& operator=(DialogManager const &d); // no assign
+    // remove dialog floating state
+    void remove_dialog_floating_state(const Glib::ustring& dialog_type);
 
-    FactoryMap _factory_map; //< factories to create dialogs
-    DialogMap _dialog_map; //< map of already created dialogs
+    // save configuration of docked and floating dialogs
+    void save_dialogs_state(DialogContainer *docking_container);
+
+    // restore state of dialogs
+    void restore_dialogs_state(DialogContainer *docking_container, bool include_floating);
+
+    // find all floating dialog windows
+    std::vector<DialogWindow*> get_all_floating_dialog_windows();
+
+    // show/hide dialog window and keep track of it
+    void set_floating_dialog_visibility(DialogWindow* wnd, bool show);
+
+private:
+    DialogManager() = default;
+    ~DialogManager() = default;
+
+    std::vector<Glib::ustring> count_dialogs(const Glib::KeyFile *state) const;
+    void load_transient_state(Glib::KeyFile *keyfile);
+    void dialog_defaults();
+
+    // transient dialog state for floating windows user closes
+    std::map<std::string, std::shared_ptr<Glib::KeyFile>> _floating_dialogs;
+    // temp set used when dialogs are hidden (F12 toggle)
+    std::set<DialogWindow*> _hidden_dlg_windows;
 };
 
 } // namespace Dialog
 } // namespace UI
 } // namespace Inkscape
 
-#endif //INKSCAPE_UI_DIALOG_MANAGER_H
+#endif
 
 /*
   Local Variables:

@@ -65,11 +65,11 @@ void SPFeSpecularLighting::build(SPDocument *document, Inkscape::XML::Node *repr
 	SPFilterPrimitive::build(document, repr);
 
 	/*LOAD ATTRIBUTES FROM REPR HERE*/
-	this->readAttr( "surfaceScale" );
-	this->readAttr( "specularConstant" );
-	this->readAttr( "specularExponent" );
-	this->readAttr( "kernelUnitLength" );
-	this->readAttr( "lighting-color" );
+	this->readAttr(SPAttr::SURFACESCALE);
+	this->readAttr(SPAttr::SPECULARCONSTANT);
+	this->readAttr(SPAttr::SPECULAREXPONENT);
+	this->readAttr(SPAttr::KERNELUNITLENGTH);
+	this->readAttr(SPAttr::LIGHTING_COLOR);
 }
 
 /**
@@ -82,14 +82,14 @@ void SPFeSpecularLighting::release() {
 /**
  * Sets a specific value in the SPFeSpecularLighting.
  */
-void SPFeSpecularLighting::set(SPAttributeEnum key, gchar const *value) {
+void SPFeSpecularLighting::set(SPAttr key, gchar const *value) {
     gchar const *cend_ptr = nullptr;
     gchar *end_ptr = nullptr;
 
     switch(key) {
 	/*DEAL WITH SETTING ATTRIBUTES HERE*/
 //TODO test forbidden values
-        case SP_ATTR_SURFACESCALE:
+        case SPAttr::SURFACESCALE:
             end_ptr = nullptr;
             if (value) {
                 this->surfaceScale = g_ascii_strtod(value, &end_ptr);
@@ -110,7 +110,7 @@ void SPFeSpecularLighting::set(SPAttributeEnum key, gchar const *value) {
             }
             this->parent->requestModified(SP_OBJECT_MODIFIED_FLAG);
             break;
-        case SP_ATTR_SPECULARCONSTANT:
+        case SPAttr::SPECULARCONSTANT:
             end_ptr = nullptr;
             if (value) {
                 this->specularConstant = g_ascii_strtod(value, &end_ptr);
@@ -130,7 +130,7 @@ void SPFeSpecularLighting::set(SPAttributeEnum key, gchar const *value) {
             }
             this->parent->requestModified(SP_OBJECT_MODIFIED_FLAG);
             break;
-        case SP_ATTR_SPECULAREXPONENT:
+        case SPAttr::SPECULAREXPONENT:
             end_ptr = nullptr;
             if (value) {
                 this->specularExponent = g_ascii_strtod(value, &end_ptr);
@@ -150,7 +150,7 @@ void SPFeSpecularLighting::set(SPAttributeEnum key, gchar const *value) {
             }
             this->parent->requestModified(SP_OBJECT_MODIFIED_FLAG);
             break;
-        case SP_ATTR_KERNELUNITLENGTH:
+        case SPAttr::KERNELUNITLENGTH:
             //TODO kernelUnit
             //this->kernelUnitLength.set(value);
             /*TODOif (feSpecularLighting->renderer) {
@@ -159,7 +159,7 @@ void SPFeSpecularLighting::set(SPAttributeEnum key, gchar const *value) {
             */
             this->parent->requestModified(SP_OBJECT_MODIFIED_FLAG);
             break;
-        case SP_PROP_LIGHTING_COLOR:
+        case SPAttr::LIGHTING_COLOR:
             cend_ptr = nullptr;
             this->lighting_color = sp_svg_read_color(value, &cend_ptr, 0xffffffff);
             //if a value was read
@@ -195,11 +195,11 @@ void SPFeSpecularLighting::set(SPAttributeEnum key, gchar const *value) {
  */
 void SPFeSpecularLighting::update(SPCtx *ctx, guint flags) {
     if (flags & (SP_OBJECT_MODIFIED_FLAG)) {
-        this->readAttr( "surfaceScale" );
-        this->readAttr( "specularConstant" );
-        this->readAttr( "specularExponent" );
-        this->readAttr( "kernelUnitLength" );
-        this->readAttr( "lighting-color" );
+        this->readAttr(SPAttr::SURFACESCALE);
+        this->readAttr(SPAttr::SPECULARCONSTANT);
+        this->readAttr(SPAttr::SPECULAREXPONENT);
+        this->readAttr(SPAttr::KERNELUNITLENGTH);
+        this->readAttr(SPAttr::LIGHTING_COLOR);
     }
 
     SPFilterPrimitive::update(ctx, flags);
@@ -217,15 +217,15 @@ Inkscape::XML::Node* SPFeSpecularLighting::write(Inkscape::XML::Document *doc, I
     }
 
     if (this->surfaceScale_set) {
-        sp_repr_set_css_double(repr, "surfaceScale", this->surfaceScale);
+        repr->setAttributeCssDouble("surfaceScale", this->surfaceScale);
     }
 
     if (this->specularConstant_set) {
-        sp_repr_set_css_double(repr, "specularConstant", this->specularConstant);
+        repr->setAttributeCssDouble("specularConstant", this->specularConstant);
     }
 
     if (this->specularExponent_set) {
-        sp_repr_set_css_double(repr, "specularExponent", this->specularExponent);
+        repr->setAttributeCssDouble("specularExponent", this->specularExponent);
     }
 
     /*TODO kernelUnits */ 

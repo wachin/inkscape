@@ -18,6 +18,7 @@
 
 #include "enums.h"
 #include "verbs.h"
+#include "ui/modifiers.h"
 
 typedef unsigned int guint32;
 
@@ -25,9 +26,9 @@ namespace Inkscape {
     class SelTrans;
 }
 
-// Colours are RRGGBBAA:      FILL,       OVER&DRAG,  STROKE,     OVER&DRAG
-guint32 const DEF_COLOR[] = { 0x000000ff, 0x00ff6600, 0x000000ff, 0x000000ff };
-guint32 const CEN_COLOR[] = { 0x00000000, 0x00000000, 0x000000ff, 0xff0000b0 };
+// Colours are RRGGBBAA:      FILL,       OVER&DRAG,  SELECTED,   STROKE,     OVER&DRAG
+guint32 const DEF_COLOR[] = { 0x000000ff, 0xff0066ff, 0x00ff66ff, 0x000000ff, 0x000000ff };
+guint32 const CEN_COLOR[] = { 0x000000ff, 0x000000ff, 0x00ff66ff, 0x000000ff, 0xff0000b0 };
 
 enum SPSelTransType {
     HANDLE_STRETCH,
@@ -35,7 +36,8 @@ enum SPSelTransType {
     HANDLE_SKEW,
     HANDLE_ROTATE,
     HANDLE_CENTER,
-    HANDLE_ALIGN,
+    HANDLE_SIDE_ALIGN,
+    HANDLE_CORNER_ALIGN,
     HANDLE_CENTER_ALIGN
 };
 
@@ -66,13 +68,6 @@ const int AlignVerb[18] = {
 const int AlignHandleToVerb = -13;
 // Offset for moving from Left click to Shift Click
 const int AlignShiftVerb = 9;
-
-struct SPSelTransTypeInfo {
-        guint32 const *color;
-        char const *tip;
-};
-// One per handle type in order
-extern SPSelTransTypeInfo const handtypes[7];
 
 struct SPSelTransHandle;
 

@@ -12,23 +12,22 @@
 #ifndef INKSCAPE_UI_DIALOG_LIVE_PATH_EFFECT_H
 #define INKSCAPE_UI_DIALOG_LIVE_PATH_EFFECT_H
 
-#include "ui/widget/panel.h"
-
-#include <gtkmm/label.h>
-#include <gtkmm/frame.h>
-#include "ui/widget/combo-enums.h"
-#include "ui/widget/frame.h"
-#include "object/sp-item.h"
-#include "live_effects/effect-enum.h"
-#include <gtkmm/liststore.h>
+#include <gtkmm/buttonbox.h>
 #include <gtkmm/eventbox.h>
-#include <gtkmm/treeview.h>
+#include <gtkmm/frame.h>
+#include <gtkmm/label.h>
+#include <gtkmm/liststore.h>
 #include <gtkmm/scrolledwindow.h>
 #include <gtkmm/toolbar.h>
-#include <gtkmm/buttonbox.h>
-#include "ui/dialog/desktop-tracker.h"
+#include <gtkmm/treeview.h>
 
-class SPDesktop;
+#include "live_effects/effect-enum.h"
+#include "object/sp-item.h"
+#include "selection.h"
+#include "ui/dialog/dialog-base.h"
+#include "ui/widget/combo-enums.h"
+#include "ui/widget/frame.h"
+
 class SPLPEItem;
 
 namespace Inkscape {
@@ -41,35 +40,23 @@ namespace LivePathEffect {
 namespace UI {
 namespace Dialog {
 
-class LivePathEffectEditor : public UI::Widget::Panel {
+class LivePathEffectEditor : public DialogBase
+{
 public:
     LivePathEffectEditor();
     ~LivePathEffectEditor() override;
 
     static LivePathEffectEditor &getInstance() { return *new LivePathEffectEditor(); }
 
-    void onSelectionChanged(Inkscape::Selection *sel);
-    void onSelectionModified(Inkscape::Selection *sel);
+    void selectionChanged(Inkscape::Selection *selection) override;
+    void selectionModified(Inkscape::Selection *selection, guint flags) override;
+
+    void onSelectionChanged(Inkscape::Selection *selection);
+
     virtual void on_effect_selection_changed();
-    void setDesktop(SPDesktop *desktop) override;
 
 private:
-
-    /**
-     * Auxiliary widget to keep track of desktop changes for the floating dialog.
-     */
-    DesktopTracker deskTrack;
-
-    /**
-     * Link to callback function for a change in desktop (window).
-     */
-    sigc::connection desktopChangeConn;
-    sigc::connection selection_changed_connection;
-    sigc::connection selection_modified_connection;
-
-    // void add_entry(const char* name );
     void effect_list_reload(SPLPEItem *lpeitem);
-
     void set_sensitize_all(bool sensitive);
     void showParams(LivePathEffect::Effect& effect);
     void showText(Glib::ustring const &str);
@@ -98,15 +85,16 @@ private:
     };
 
     bool lpe_list_locked;
+    bool selection_changed_lock;
     //Inkscape::UI::Widget::ComboBoxEnum<LivePathEffect::EffectType> combo_effecttype;
-    
+
     Gtk::Widget * effectwidget;
     Gtk::Label status_label;
     UI::Widget::Frame effectcontrol_frame;
-    Gtk::HBox effectapplication_hbox;
-    Gtk::VBox effectcontrol_vbox;
+    Gtk::Box effectapplication_hbox;
+    Gtk::Box effectcontrol_vbox;
     Gtk::EventBox effectcontrol_eventbox;
-    Gtk::VBox effectlist_vbox;
+    Gtk::Box effectlist_vbox;
     ModelColumns columns;
     Gtk::ScrolledWindow scrolled_window;
     Gtk::TreeView effectlist_view;
@@ -121,8 +109,6 @@ private:
     Gtk::Button button_up;
     Gtk::Button button_down;
 
-    SPDesktop * current_desktop;
-    
     SPLPEItem * current_lpeitem;
 
     LivePathEffect::LPEObjectReference * current_lperef;
@@ -130,8 +116,8 @@ private:
     friend void lpeeditor_selection_changed (Inkscape::Selection * selection, gpointer data);
     friend void lpeeditor_selection_modified (Inkscape::Selection * selection, guint /*flags*/, gpointer data);
 
-    LivePathEffectEditor(LivePathEffectEditor const &d);
-    LivePathEffectEditor& operator=(LivePathEffectEditor const &d);
+    LivePathEffectEditor(LivePathEffectEditor const &d) = delete;
+    LivePathEffectEditor& operator=(LivePathEffectEditor const &d) = delete;
 };
 
 } // namespace Dialog

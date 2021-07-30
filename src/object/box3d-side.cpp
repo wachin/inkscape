@@ -20,8 +20,9 @@
 #include "svg/svg.h"
 #include "attributes.h"
 #include "inkscape.h"
-#include "persp3d.h"
-#include "persp3d-reference.h"
+#include "object/persp3d.h"
+#include "object/persp3d-reference.h"
+#include "object/box3d.h"
 #include "ui/tools/box3d-tool.h"
 #include "desktop-style.h"
 
@@ -38,7 +39,7 @@ Box3DSide::~Box3DSide() = default;
 void Box3DSide::build(SPDocument * document, Inkscape::XML::Node * repr) {
     SPPolygon::build(document, repr);
 
-    this->readAttr( "inkscape:box3dsidetype" );
+    this->readAttr(SPAttr::INKSCAPE_BOX3D_SIDE_TYPE);
 }
 
 
@@ -50,35 +51,33 @@ Inkscape::XML::Node* Box3DSide::write(Inkscape::XML::Document *xml_doc, Inkscape
     }
 
     if (flags & SP_OBJECT_WRITE_EXT) {
-        sp_repr_set_int(repr, "inkscape:box3dsidetype", this->dir1 ^ this->dir2 ^ this->front_or_rear);
+        repr->setAttributeInt("inkscape:box3dsidetype", this->dir1 ^ this->dir2 ^ this->front_or_rear);
     }
 
     this->set_shape();
 
     /* Duplicate the path */
-    SPCurve const *curve = this->_curve;
+    SPCurve const *curve = this->_curve.get();
 
     //Nulls might be possible if this called iteratively
     if ( !curve ) {
         return nullptr;
     }
 
-    char *d = sp_svg_write_path ( curve->get_pathvector() );
-    repr->setAttribute("d", d);
-    g_free (d);
+    repr->setAttribute("d", sp_svg_write_path(curve->get_pathvector()));
 
     SPPolygon::write(xml_doc, repr, flags);
 
     return repr;
 }
 
-void Box3DSide::set(SPAttributeEnum key, const gchar* value) {
+void Box3DSide::set(SPAttr key, const gchar* value) {
     // TODO: In case the box was recreated (by undo, e.g.) we need to recreate the path
     //       (along with other info?) from the parent box.
 
     /* fixme: we should really collect updates */
     switch (key) {
-        case SP_ATTR_INKSCAPE_BOX3D_SIDE_TYPE:
+        case SPAttr::INKSCAPE_BOX3D_SIDE_TYPE:
             if (value) {
                 guint desc = atoi (value);
 
@@ -139,11 +138,11 @@ int Box3DSide::getFaceId()
 }
 
 void
-box3d_side_position_set (Box3DSide *side) {
-	side->set_shape();
+Box3DSide::position_set () {
+	this->set_shape();
 
     // This call is responsible for live update of the sides during the initial drag
-    side->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG);
+    this->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG);
 }
 
 void Box3DSide::set_shape() {
@@ -161,7 +160,7 @@ void Box3DSide::set_shape() {
         return;
     }
 
-    Persp3D *persp = box3d_side_perspective(this);
+    Persp3D *persp = this->perspective();
 
     if (!persp) {
         return;
@@ -175,63 +174,57 @@ void Box3DSide::set_shape() {
     unsigned int corners[4];
     box3d_side_compute_corner_ids(this, corners);
 
-    SPCurve *c = new SPCurve();
+    auto c = std::make_unique<SPCurve>();
 
-    if (!box3d_get_corner_screen(box, corners[0]).isFinite() ||
-        !box3d_get_corner_screen(box, corners[1]).isFinite() ||
-        !box3d_get_corner_screen(box, corners[2]).isFinite() ||
-        !box3d_get_corner_screen(box, corners[3]).isFinite() )
+    if (!box->get_corner_screen(corners[0]).isFinite() ||
+        !box->get_corner_screen(corners[1]).isFinite() ||
+        !box->get_corner_screen(corners[2]).isFinite() ||
+        !box->get_corner_screen(corners[3]).isFinite() )
     {
         g_warning ("Trying to draw a 3D box side with invalid coordinates.\n");
-        delete c;
         return;
     }
 
-    c->moveto(box3d_get_corner_screen(box, corners[0]));
-    c->lineto(box3d_get_corner_screen(box, corners[1]));
-    c->lineto(box3d_get_corner_screen(box, corners[2]));
-    c->lineto(box3d_get_corner_screen(box, corners[3]));
+    c->moveto(box->get_corner_screen(corners[0]));
+    c->lineto(box->get_corner_screen(corners[1]));
+    c->lineto(box->get_corner_screen(corners[2]));
+    c->lineto(box->get_corner_screen(corners[3]));
     c->closepath();
 
     /* Reset the shape's curve to the "original_curve"
      * This is very important for LPEs to work properly! (the bbox might be recalculated depending on the curve in shape)*/
-    SPCurve * before = this->getCurveBeforeLPE();
-    bool haslpe = this->hasPathEffectOnClipOrMaskRecursive(this);
-    if (before || haslpe) {
-        if (c && before && before->get_pathvector() != c->get_pathvector()){
-            this->setCurveBeforeLPE(c);
-            sp_lpe_item_update_patheffect(this, true, false);
-        } else if(haslpe) {
-            this->setCurveBeforeLPE(c);
-        } else {
-            //This happends on undo, fix bug:#1791784
-            this->setCurveInsync(c);
-        }
-    } else {
-        this->setCurveInsync(c);
+
+    SPCurve const *before = curveBeforeLPE();
+    if (before && before->get_pathvector() != c->get_pathvector()) {
+        setCurveBeforeLPE(std::move(c));
+        sp_lpe_item_update_patheffect(this, true, false);
+        return;
     }
 
-    if (before) {
-        before->unref();
+    if (hasPathEffectOnClipOrMaskRecursive(this)) {
+        setCurveBeforeLPE(std::move(c));
+        return;
     }
-    c->unref();
+
+    // This happends on undo, fix bug:#1791784
+    setCurveInsync(std::move(c));
 }
 
-Glib::ustring box3d_side_axes_string(Box3DSide *side)
+Glib::ustring Box3DSide::axes_string() const
 {
-    Glib::ustring result(Box3D::string_from_axes((Box3D::Axis) (side->dir1 ^ side->dir2)));
+    Glib::ustring result(Box3D::string_from_axes((Box3D::Axis) (this->dir1 ^ this->dir2)));
 
-    switch ((Box3D::Axis) (side->dir1 ^ side->dir2)) {
+    switch ((Box3D::Axis) (this->dir1 ^ this->dir2)) {
         case Box3D::XY:
-            result += ((side->front_or_rear == Box3D::FRONT) ? "front" : "rear");
+            result += ((this->front_or_rear == Box3D::FRONT) ? "front" : "rear");
             break;
 
         case Box3D::XZ:
-            result += ((side->front_or_rear == Box3D::FRONT) ? "top" : "bottom");
+            result += ((this->front_or_rear == Box3D::FRONT) ? "top" : "bottom");
             break;
 
         case Box3D::YZ:
-            result += ((side->front_or_rear == Box3D::FRONT) ? "right" : "left");
+            result += ((this->front_or_rear == Box3D::FRONT) ? "right" : "left");
             break;
 
         default:
@@ -252,19 +245,19 @@ box3d_side_compute_corner_ids(Box3DSide *side, unsigned int corners[4]) {
 }
 
 Persp3D *
-box3d_side_perspective(Box3DSide *side) {
-    SPBox3D *box = side ? dynamic_cast<SPBox3D *>(side->parent) : nullptr;
+Box3DSide::perspective() const {
+    SPBox3D *box = dynamic_cast<SPBox3D *>(this->parent);
     return box ? box->persp_ref->getObject() : nullptr;
 }
 
-Inkscape::XML::Node *box3d_side_convert_to_path(Box3DSide *side) {
+Inkscape::XML::Node *Box3DSide::convert_to_path() const {
     // TODO: Copy over all important attributes (see sp_selected_item_to_curved_repr() for an example)
-    SPDocument *doc = side->document;
+    SPDocument *doc = this->document;
     Inkscape::XML::Document *xml_doc = doc->getReprDoc();
 
     Inkscape::XML::Node *repr = xml_doc->createElement("svg:path");
-    repr->setAttribute("d", side->getAttribute("d"));
-    repr->setAttribute("style", side->getAttribute("style"));
+    repr->setAttribute("d", this->getAttribute("d"));
+    repr->setAttribute("style", this->getAttribute("style"));
 
     return repr;
 }

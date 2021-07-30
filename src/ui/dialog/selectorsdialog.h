@@ -15,10 +15,6 @@
 #ifndef SELECTORSDIALOG_H
 #define SELECTORSDIALOG_H
 
-#include "ui/dialog/desktop-tracker.h"
-#include "ui/dialog/dialog-manager.h"
-#include "ui/dialog/styledialog.h"
-#include "ui/widget/panel.h"
 #include <gtkmm/dialog.h>
 #include <gtkmm/paned.h>
 #include <gtkmm/radiobutton.h>
@@ -28,12 +24,12 @@
 #include <gtkmm/treeselection.h>
 #include <gtkmm/treestore.h>
 #include <gtkmm/treeview.h>
-#include <ui/widget/panel.h>
-
-#include "xml/helper-observer.h"
-
 #include <memory>
 #include <vector>
+
+#include "ui/dialog/dialog-base.h"
+#include "ui/dialog/styledialog.h"
+#include "xml/helper-observer.h"
 
 namespace Inkscape {
 namespace UI {
@@ -50,19 +46,26 @@ namespace Dialog {
  *   1. The text node of the style element.
  *   2. The Gtk::TreeModel.
  */
-class SelectorsDialog : public Widget::Panel {
-
-  public:
-    ~SelectorsDialog() override;
+class SelectorsDialog : public DialogBase
+{
+public:
     // No default constructor, noncopyable, nonassignable
     SelectorsDialog();
+    ~SelectorsDialog() override;
     SelectorsDialog(SelectorsDialog const &d) = delete;
     SelectorsDialog operator=(SelectorsDialog const &d) = delete;
     static SelectorsDialog &getInstance() { return *new SelectorsDialog(); }
 
+    void update() override;
+    void desktopReplaced() override;
+    void documentReplaced() override;
+    void selectionChanged(Selection *selection) override;
+
   private:
     // Monitor <style> element for changes.
     class NodeObserver;
+
+    void removeObservers();
 
     // Monitor all objects for addition/removal/attribute change
     class NodeWatcher;
@@ -86,7 +89,7 @@ class SelectorsDialog : public Widget::Panel {
         Gtk::TreeModelColumn<Glib::ustring> _colSelector;       // Selector or matching object id.
         Gtk::TreeModelColumn<bool> _colExpand;                  // Open/Close store row.
         Gtk::TreeModelColumn<gint> _colType;                    // Selector row or child object row.
-        Gtk::TreeModelColumn<std::vector<SPObject *> > _colObj; // List of matching objects.
+        Gtk::TreeModelColumn<SPObject *> _colObj;               // Matching object (if any).
         Gtk::TreeModelColumn<Glib::ustring> _colProperties;     // List of properties.
         Gtk::TreeModelColumn<bool> _colVisible;                 // Make visible or not.
         Gtk::TreeModelColumn<gint> _colSelected;                // Make selected.
@@ -137,8 +140,7 @@ class SelectorsDialog : public Widget::Panel {
     // Update watchers
     std::unique_ptr<Inkscape::XML::NodeObserver> m_nodewatcher;
     std::unique_ptr<Inkscape::XML::NodeObserver> m_styletextwatcher;
-    void _updateWatchers(SPDesktop *);
-    
+
     // Manipulate Tree
     void _addToSelector(Gtk::TreeModel::Row row);
     void _removeFromSelector(Gtk::TreeModel::Row row);
@@ -162,20 +164,9 @@ class SelectorsDialog : public Widget::Panel {
     Inkscape::XML::Node *m_root = nullptr;
     Inkscape::XML::Node *_textNode; // Track so we know when to add a NodeObserver.
 
-    // Signals and handlers - External
-    sigc::connection _document_replaced_connection;
-    sigc::connection _desktop_changed_connection;
-    sigc::connection _selection_changed_connection;
-
-    void _handleDocumentReplaced(SPDesktop* desktop, SPDocument *document);
-    void _handleDesktopChanged(SPDesktop* desktop);
-    void _handleSelectionChanged();
-    void _panedrealized();
     void _rowExpand(const Gtk::TreeModel::iterator &iter, const Gtk::TreeModel::Path &path);
     void _rowCollapse(const Gtk::TreeModel::iterator &iter, const Gtk::TreeModel::Path &path);
     void _closeDialog(Gtk::Dialog *textDialogPtr);
-
-    DesktopTracker _desktopTracker;
 
     Inkscape::XML::SignalObserver _objObserver; // Track object in selected row (for style change).
 

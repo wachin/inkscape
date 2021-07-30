@@ -172,6 +172,7 @@ class Layout::Calculator
     there's only one instantiation of this struct, on the stack of
     calculate(). */
     struct ParagraphInfo {
+        Glib::ustring text;
         unsigned first_input_index;      ///< Index into Layout::_input_stream.
         Direction direction;
         Alignment alignment;
@@ -190,6 +191,7 @@ class Layout::Calculator
 
         void free()
         {
+            text = "";
             free_sequence(input_items);
             free_sequence(pango_items);
             free_sequence(unbroken_spans);
@@ -426,7 +428,7 @@ bool Layout::Calculator::_measureUnbrokenSpan(ParagraphInfo const &para,
             // with upright orientation (pre 1.44.0).
             font_instance *font = para.pango_items[span->end.iter_span->pango_item_index].font;
             double font_size = span->start.iter_span->font_size;
-            double glyph_h_advance = font_size * font->Advance(info->glyph, false);
+          //double glyph_h_advance = font_size * font->Advance(info->glyph, false);
             double glyph_v_advance = font_size * font->Advance(info->glyph, true );
 
             if (_block_progression == LEFT_TO_RIGHT || _block_progression == RIGHT_TO_LEFT) {
@@ -772,7 +774,11 @@ void Layout::Calculator::_outputLine(ParagraphInfo const &para,
                 PangoItem *pango_item = para.pango_items[unbroken_span.pango_item_index].item;
 
                 // Loop over glyphs in span
-                double old_delta_x = 0.0;
+#if PANGO_VERSION_CHECK(1,44,0)
+                double x_offset_cluster = 0.0; // Handle wrong glyph positioning post-1.44 Pango.
+#endif
+                double x_offset_center  = 0.0; // Handle wrong glyph positioning in pre-1.44 Pango.
+                double x_offset_advance = 0.0; // Handle wrong advance in pre-1.44 Pango.
 
 #ifdef DEBUG_GLYPH
                 std::cout << "\nGlyphs in span: x_start: " << new_span.x_start << " y_offset: " << new_span.y_offset
@@ -900,56 +906,147 @@ void Layout::Calculator::_outputLine(ParagraphInfo const &para,
                         } else {
                             // Upright orientation
 
-                            // This is complicated as Pango (1.44) doesn't do what is expected in
-                            // the 'x' direction (which points downward for vertical text).  If one
-                            // subtracts delta_x, Latin glyphs are aligned so their ink rectangle
-                            // is at the top of the grid, rather than their em box. The initial
-                            // character is positioned so its base is at the alignment
-                            // point. Non-spacing-marks are positioned an em-box too low.
-
-                            // What we do:
-                            // *  Ignore delta_x on first glyph, the baseline will be on grid.
-                            // *  Shift non-spacing-marks up by an embox.
-                            // *  Further shift non-spacing-marks up by the difference in delta_x's of the mark and previous character
-                            //    (the relative difference is correct).
-                            // *  Set the advance for non-spacing-marks to 0 (as many fonts don't include vertical metrics).
+#if PANGO_VERSION_CHECK(1,44,0)
+                            auto hb_font = pango_font_get_hb_font(font->pFont);
+#endif
 
 #ifdef DEBUG_GLYPH
                             std::cout << "        Upright"
                                       << "  " << std::setw(6) << new_glyph.x
                                       << "  " << std::setw(6) << new_glyph.y
                                       << "  " << std::setw(6) << delta_x
-                                      << "  " << std::setw(6) << delta_y
-                                      << std::endl;
+                                      << "  " << std::setw(6) << delta_y;
+#if PANGO_VERSION_CHECK(1,44,0)
+                            char glyph_name[32];
+                            hb_font_get_glyph_name(hb_font, new_glyph.glyph, glyph_name, sizeof (glyph_name));
+                            std::cout << "  " << (glyph_name ? glyph_name : "");
+#endif
+                            std::cout << std::endl;
 #endif
 
                             if (pango_version_check(1,44,0) != nullptr) {
-                                // Pango < 1.44.0
-                                new_glyph.advance = glyph_v_advance;
+                                // Pango < 1.44.0 (pre HarfBuzz)
                                 new_glyph.x += delta_x;
-                                // Glyph reference point is center (shift left edge to center glyph).
-                                new_glyph.y -= glyph_h_advance/2.0;
-                            }
+                                new_glyph.y -= delta_y;
 
-                            new_glyph.y -= delta_y;
+                                double shift = 0;
+                                double scale_factor = PANGO_SCALE * _font_factory_size_multiplier;
+                                if (!FT_HAS_VERTICAL(font->theFace)) {
 
-                            // Adjust for alignment point (top of em box, horizontal center).
-                            new_glyph.x += new_span.line_height.ascent; // Moves baseline so em-box on grid.
-                            new_glyph.y -= new_span.font_size * (font->GetBaselines()[ dominant_baseline ] -
-                                                                 font->GetBaselines()[ SP_CSS_BASELINE_CENTRAL ] );
+                                    // If there are no vertical metrics, glyphs are vertically
+                                    // centered before base anchor to mark anchor distance is
+                                    // calculated by shaper. We must undo this!
+                                    PangoRectangle ink_rect;
+                                    PangoRectangle logical_rect;
+                                    pango_font_get_glyph_extents (font->pFont,
+                                                                  new_glyph.glyph,
+                                                                  &ink_rect,
+                                                                  &logical_rect);
 
-                            if (g_unichar_type (*iter_source_text) == G_UNICODE_NON_SPACING_MARK) {
-
-                                if (pango_version_check(1,44,0) == nullptr) {
-                                    // Pango >= 1.44
-                                    new_glyph.x -= new_span.line_height.emSize();
-                                    new_glyph.x -= delta_x;
-                                    new_glyph.x += old_delta_x;
+                                    // Shift required to move centered glyph back to proper position
+                                    // relative to baseline.
+                                    shift =
+                                        font->GetTypoAscent() +
+                                        ink_rect.y / scale_factor + // negative
+                                        (ink_rect.height / scale_factor / 2.0) -
+                                        0.5;
                                 }
-                                new_glyph.advance = 0; // Many fonts report a non-zero advance for marks, especially if the 'vmtx' table is missing.
+
+                                // Advance is wrong (horizontal width used instead of vertical)...
+                                if (g_unichar_type(*iter_source_text) != G_UNICODE_NON_SPACING_MARK) {
+
+                                    x_offset_advance = new_glyph.advance - glyph_v_advance;
+                                    new_glyph.advance = glyph_v_advance;
+
+                                    x_offset_center = shift;
+                                } else {
+                                    // Is non-spacing mark!
+                                    if (!FT_HAS_VERTICAL(font->theFace)) {
+
+                                        // If font lacks vertical metrics, all glyphs have em-box advance
+                                        // but non-spacing marks should have zero advance.
+                                        new_glyph.advance = 0;
+
+                                        // Correct for base anchor to mark anchor shift.
+                                        new_glyph.x += (x_offset_center - shift) * new_span.font_size;
+                                    }
+
+                                    // Correct for advance error.
+                                    new_glyph.x += x_offset_advance;
+                                }
+
+                                // Need to shift by horizontal to vertical origin (as we don't load glyph
+                                // with vertical metrics).
+                                new_glyph.x += font->GetTypoAscent() * new_span.font_size;
+                                new_glyph.y -= glyph_h_advance/2.0;
+
+                            } else if (pango_version_check(1,48,1) != nullptr) {
+                                // 1.44.0 <= Pango < 1.48.1 (minus sign error, mismatch between Cairo/Harfbuzz glyph
+                                // placement)
+                                new_glyph.x += (glyph_width - delta_x);
+                                new_glyph.y -= delta_y;
+                            } else if (pango_version_check(1,48,4) != nullptr) {
+                                // 1.48.1 <= Pango < 1.48.4 (minus sign fix, partial fix for Cairo/Harfbuzz mismatch,
+                                // but bad mark positioning)
+                                new_glyph.x += delta_x;
+                                new_glyph.y -= delta_y;
+
+#if PANGO_VERSION_CHECK(1,44,0)
+                                // Need to shift by horizontal to vertical origin. Recall Pango lays out vertical text
+                                // as horizontal text then rotates by 90 degress so y_origin -> x, x_origin -> -y.
+                                hb_position_t x_origin = 0.0;
+                                hb_position_t y_origin = 0.0;
+                                hb_font_get_glyph_v_origin(hb_font, new_glyph.glyph, &x_origin, &y_origin);
+                                new_glyph.x += y_origin * font_size_multiplier;
+                                new_glyph.y -= x_origin * font_size_multiplier;
+#endif
                             } else {
-                                old_delta_x = delta_x;
+                                // 1.48.4 <= Pango (good mark positioning)
+                                new_glyph.x += delta_x;
+                                new_glyph.y -= delta_y;
                             }
+
+#if PANGO_VERSION_CHECK(1,44,0)
+                            // If a font has no vertical metrics, HarfBuzz using OpenType functions
+                            // (which Pango uses by default from 1.44.0) to position glyphs so that
+                            // the top of their "ink rectangle" is at the top of the "em-box". This
+                            // section of code moves each cluster (base glyph with marks) down to
+                            // match fonts with vertical metrics.
+                            hb_font_extents_t hb_font_extents_not_used;
+                            if (!hb_font_get_v_extents(hb_font, &hb_font_extents_not_used)) {
+                                // Font does not have vertical metrics!
+
+                                if (g_unichar_type(*iter_source_text) !=
+                                    G_UNICODE_NON_SPACING_MARK) { // Probably should include other marks!
+                                    hb_glyph_extents_t glyph_extents;
+                                    if (hb_font_get_glyph_extents(hb_font, new_glyph.glyph, &glyph_extents)) {
+
+                                        // double baseline_adjust =
+                                        //     font_instance->get_baseline(BASELINE_TEXT_BEFORE_EDGE) -
+                                        //     font_instance->get_baseline(BASELINE_ALPHABETIC);
+                                        // std::cout << "baseline_adjust: " << baseline_adjust << std::endl;
+                                        double baseline_adjust = new_span.line_height.ascent / new_span.font_size;
+                                        int hb_x_scale = 0;
+                                        int hb_y_scale = 0;
+                                        hb_font_get_scale(hb_font, &hb_x_scale, &hb_y_scale);
+                                        x_offset_cluster =
+                                            ((glyph_extents.y_bearing / (double)hb_y_scale) - baseline_adjust) *
+                                            new_span.font_size;
+                                    } else {
+                                        x_offset_cluster = 0.0; // Failed to find extents.
+                                    }
+                                } else {
+                                    // Is non-spacing mark!
+
+                                    // Many fonts report a non-zero vertical advance for marks, especially if the 'vmtx'
+                                    // table is missing.
+                                    new_glyph.advance = 0;
+                                }
+
+                                new_glyph.x -= x_offset_cluster;
+                            }
+#endif
+
                         }
                     } else {
                         // Horizontal text
@@ -1244,17 +1341,10 @@ void  Layout::Calculator::_buildPangoItemizationForPara(ParagraphInfo *para) con
     TRACE((" ... compiled for font features\n"));
 #endif
 
-    Glib::ustring para_text;
-    PangoAttrList *attributes_list;
-    unsigned input_index;
-
-    para->free_sequence(para->pango_items);
-    para->char_attributes.clear();
-
     TRACE(("itemizing para, first input %d\n", para->first_input_index));
 
-    attributes_list = pango_attr_list_new();
-    for(input_index = para->first_input_index ; input_index < _flow._input_stream.size() ; input_index++) {
+    PangoAttrList *attributes_list = pango_attr_list_new();
+    for (unsigned input_index = para->first_input_index ; input_index < _flow._input_stream.size() ; input_index++) {
         if (_flow._input_stream[input_index]->Type() == CONTROL_CODE) {
             Layout::InputStreamControlCode const *control_code = static_cast<Layout::InputStreamControlCode const *>(_flow._input_stream[input_index]);
             if (   control_code->code == SHAPE_BREAK
@@ -1271,19 +1361,20 @@ void  Layout::Calculator::_buildPangoItemizationForPara(ParagraphInfo *para) con
                 continue;  // bad news: we'll have to ignore all this text because we know of no font to render it
 
             PangoAttribute *attribute_font_description = pango_attr_font_desc_new(font->descr);
-            attribute_font_description->start_index = para_text.bytes();
+            attribute_font_description->start_index = para->text.bytes();
 
 #if PANGO_VERSION_CHECK(1,37,1)
             PangoAttribute *attribute_font_features =
                 pango_attr_font_features_new( text_source->style->getFontFeatureString().c_str());
-            attribute_font_features->start_index = para_text.bytes();
+            attribute_font_features->start_index = para->text.bytes();
 #endif
-            para_text.append(&*text_source->text_begin.base(), text_source->text_length);     // build the combined text
-            attribute_font_description->end_index = para_text.bytes();
+            para->text.append(&*text_source->text_begin.base(), text_source->text_length);     // build the combined text
+
+            attribute_font_description->end_index = para->text.bytes();
             pango_attr_list_insert(attributes_list, attribute_font_description);
 
 #if PANGO_VERSION_CHECK(1,37,1)
-            attribute_font_features->end_index = para_text.bytes();
+            attribute_font_features->end_index = para->text.bytes();
             pango_attr_list_insert(attributes_list, attribute_font_features);
 #endif
 
@@ -1300,9 +1391,10 @@ void  Layout::Calculator::_buildPangoItemizationForPara(ParagraphInfo *para) con
         }
     }
 
-    TRACE(("whole para: \"%s\"\n", para_text.data()));
+    TRACE(("whole para: \"%s\"\n", para->text.data()));
     TRACE(("%d input sources used\n", input_index - para->first_input_index));
-    // do the pango_itemize()
+
+    // Pango Itemize
     GList *pango_items_glist = nullptr;
     para->direction = LEFT_TO_RIGHT; // CSS default
     if (_flow._input_stream[para->first_input_index]->Type() == TEXT_SOURCE) {
@@ -1310,12 +1402,12 @@ void  Layout::Calculator::_buildPangoItemizationForPara(ParagraphInfo *para) con
 
         para->direction =                (text_source->style->direction.computed == SP_CSS_DIRECTION_LTR) ? LEFT_TO_RIGHT : RIGHT_TO_LEFT;
         PangoDirection pango_direction = (text_source->style->direction.computed == SP_CSS_DIRECTION_LTR) ? PANGO_DIRECTION_LTR : PANGO_DIRECTION_RTL;
-        pango_items_glist = pango_itemize_with_base_dir(_pango_context, pango_direction, para_text.data(), 0, para_text.bytes(), attributes_list, nullptr);
+        pango_items_glist = pango_itemize_with_base_dir(_pango_context, pango_direction, para->text.data(), 0, para->text.bytes(), attributes_list, nullptr);
     }
 
     if( pango_items_glist == nullptr ) {
         // Type wasn't TEXT_SOURCE or direction was not set.
-        pango_items_glist = pango_itemize(_pango_context, para_text.data(), 0, para_text.bytes(), attributes_list, nullptr);
+        pango_items_glist = pango_itemize(_pango_context, para->text.data(), 0, para->text.bytes(), attributes_list, nullptr);
     }
 
     pango_attr_list_unref(attributes_list);
@@ -1334,8 +1426,8 @@ void  Layout::Calculator::_buildPangoItemizationForPara(ParagraphInfo *para) con
     g_list_free(pango_items_glist);
 
     // and get the character attributes on everything
-    para->char_attributes.resize(para_text.length() + 1);
-    pango_get_log_attrs(para_text.data(), para_text.bytes(), -1, nullptr, &*para->char_attributes.begin(), para->char_attributes.size());
+    para->char_attributes.resize(para->text.length() + 1);
+    pango_get_log_attrs(para->text.data(), para->text.bytes(), -1, nullptr, &*para->char_attributes.begin(), para->char_attributes.size());
 
     TRACE(("end para itemize, direction = %d\n", para->direction));
 }
@@ -1384,6 +1476,7 @@ unsigned Layout::Calculator::_buildSpansForPara(ParagraphInfo *para) const
     unsigned char_index_in_para = 0;
     unsigned byte_index_in_para = 0;
     unsigned input_index;
+    unsigned para_text_index = 0;
 
     TRACE(("build spans\n"));
     para->free_sequence(para->unbroken_spans);
@@ -1519,12 +1612,19 @@ unsigned Layout::Calculator::_buildSpansForPara(ParagraphInfo *para) const
                     characters and glyphs.  A big chunk of the conditional code which immediately follows this call
                     is there to clean up the resulting mess.
                     */
-                    
+
+                    // Assumption: old and new arguments are the same.
+                    auto gold = std::string_view(text_source->text->data() + span_start_byte_in_source, new_span.text_bytes);
+                    auto gnew = std::string_view(para->text.data()         + para_text_index,           new_span.text_bytes);
+                    assert (gold == gnew);
+
                     // Convert characters to glyphs
-                    pango_shape(text_source->text->data() + span_start_byte_in_source,
-                                new_span.text_bytes,
-                                &para->pango_items[pango_item_index].item->analysis,
-                                new_span.glyph_string);
+                    pango_shape_full(para->text.data() + para_text_index,
+                                     new_span.text_bytes,
+                                     para->text.data(),
+                                     -1,
+                                     &para->pango_items[pango_item_index].item->analysis,
+                                     new_span.glyph_string);
 
                     if (para->pango_items[pango_item_index].item->analysis.level & 1) {
                         // Right to left text (Arabic, Hebrew, etc.)
@@ -1658,6 +1758,7 @@ unsigned Layout::Calculator::_buildSpansForPara(ParagraphInfo *para) const
 
                 // calculations for moving to the next UnbrokenSpan
                 byte_index_in_para += new_span.text_bytes;
+                para_text_index += new_span.text_bytes;
                 char_index_in_source += g_utf8_strlen(&*new_span.input_stream_first_character.base(), new_span.text_bytes);
 
                 if (new_span.text_bytes >= pango_item_bytes) {   // end of pango item
@@ -1669,7 +1770,7 @@ unsigned Layout::Calculator::_buildSpansForPara(ParagraphInfo *para) const
                 // else <tspan> attribute changed
                 span_start_byte_in_source += new_span.text_bytes;
             }
-            char_index_in_para += char_index_in_source;
+            char_index_in_para += char_index_in_source; // This seems wrong. Probably should be inside loop.
         }
     }
     TRACE(("end build spans\n"));
@@ -2209,6 +2310,8 @@ bool Layout::Calculator::calculate()
                 _flow._characters.push_back(new_character);
             }
         }
+        // dumpPangoItemsOut(&para);
+        // dumpUnbrokenSpans(&para);
 
         para.free();
         para.first_input_index = para_end_input_index + 1;

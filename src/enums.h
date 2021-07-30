@@ -16,23 +16,24 @@
 /* Anchor types (imported from Gtk) */
 enum SPAnchorType
 {
-  SP_ANCHOR_CENTER,
-  SP_ANCHOR_NORTH,
-  SP_ANCHOR_NORTH_WEST,
-  SP_ANCHOR_NORTH_EAST,
+  // CLOCKWISE Don't change order without changing canvas-item-ctrl.cpp (CanvasItemCtrl::update()).
+  SP_ANCHOR_EAST,
+  SP_ANCHOR_SOUTH_EAST,
   SP_ANCHOR_SOUTH,
   SP_ANCHOR_SOUTH_WEST,
-  SP_ANCHOR_SOUTH_EAST,
   SP_ANCHOR_WEST,
-  SP_ANCHOR_EAST,
-  SP_ANCHOR_N		= SP_ANCHOR_NORTH,
-  SP_ANCHOR_NW		= SP_ANCHOR_NORTH_WEST,
-  SP_ANCHOR_NE		= SP_ANCHOR_NORTH_EAST,
+  SP_ANCHOR_NORTH_WEST,
+  SP_ANCHOR_NORTH,
+  SP_ANCHOR_NORTH_EAST,
+  SP_ANCHOR_CENTER,
+  SP_ANCHOR_E		= SP_ANCHOR_EAST,
+  SP_ANCHOR_SE		= SP_ANCHOR_SOUTH_EAST,
   SP_ANCHOR_S		= SP_ANCHOR_SOUTH,
   SP_ANCHOR_SW		= SP_ANCHOR_SOUTH_WEST,
-  SP_ANCHOR_SE		= SP_ANCHOR_SOUTH_EAST,
   SP_ANCHOR_W		= SP_ANCHOR_WEST,
-  SP_ANCHOR_E		= SP_ANCHOR_EAST
+  SP_ANCHOR_NW		= SP_ANCHOR_NORTH_WEST,
+  SP_ANCHOR_N		= SP_ANCHOR_NORTH,
+  SP_ANCHOR_NE		= SP_ANCHOR_NORTH_EAST,
 };
 
 /* preserveAspectRatio */
@@ -118,6 +119,35 @@ enum PrefsSaveWindowGeometry {
     PREFS_WINDOW_GEOMETRY_NONE = 0,
     PREFS_WINDOW_GEOMETRY_FILE = 1,
     PREFS_WINDOW_GEOMETRY_LAST = 2,
+};
+
+/* save container dialogs state preference values (/options/savedialogposition/value) */
+
+enum PrefsSaveDialogsState {
+    PREFS_DIALOGS_STATE_NONE = 0,
+    PREFS_DIALOGS_STATE_SAVE = 1,
+};
+
+/* save dialogs docking behavior preference values (/options/dialogtype/value) */
+
+enum PrefsDialogsBehavior {
+    PREFS_DIALOGS_BEHAVIOR_FLOATING = 0,
+    PREFS_DIALOGS_BEHAVIOR_DOCKABLE = 1,
+};
+
+/* save dialog windows type preference values (/options/transientpolicy/value) */
+
+enum PrefsDialogsWindowsType {
+    PREFS_DIALOGS_WINDOWS_NONE = 0,
+    PREFS_DIALOGS_WINDOWS_NORMAL = 1,
+    PREFS_DIALOGS_WINDOWS_AGGRESSIVE = 2,
+};
+
+/* save notebook labels behavior preference value (/options/notebooklabels/value) */
+
+enum PrefsDialogNotebookLabelsBehavior {
+    PREFS_NOTEBOOK_LABELS_AUTO = 0,
+    PREFS_NOTBOOK_LABELS_OFF = 1,
 };
 
 /* default window size preference values (/options/defaultwindowsize/value) */

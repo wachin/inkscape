@@ -46,7 +46,7 @@ public:
     void change_document(SPDocument* document);
 
 private:
-    ConcreteInkscapeApplication<Gtk::Application>* _app;
+    InkscapeApplication *_app = nullptr;
 
     SPDocument*          _document;
     SPDesktop*           _desktop;
@@ -58,9 +58,14 @@ private:
     void setup_view();
 
     // Callbacks
+public:
     bool on_key_press_event(GdkEventKey* event) override;
+private:
     bool on_focus_in_event(GdkEventFocus* event) override;
     bool on_delete_event(GdkEventAny* event) override;
+
+    // Helpers
+    void update_dialogs();
 };
 
 #endif // INKSCAPE_WINDOW_H

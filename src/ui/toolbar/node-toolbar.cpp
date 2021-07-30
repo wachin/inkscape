@@ -49,7 +49,9 @@
 #include "ui/tool/control-point-selection.h"
 #include "ui/tool/multi-path-manipulator.h"
 #include "ui/tools/node-tool.h"
+#include "ui/widget/canvas.h"
 #include "ui/widget/combo-tool-item.h"
+#include "ui/widget/spinbutton.h"
 #include "ui/widget/spin-button-tool-item.h"
 #include "ui/widget/unit-tracker.h"
 
@@ -263,7 +265,8 @@ NodeToolbar::NodeToolbar(SPDesktop *desktop)
         _nodes_x_item->set_tooltip_text(_("X coordinate of selected node(s)"));
         _nodes_x_item->set_custom_numeric_menu_data(values);
         _tracker->addAdjustment(_nodes_x_adj->gobj());
-        _nodes_x_item->set_focus_widget(Glib::wrap(GTK_WIDGET(desktop->canvas)));
+        _nodes_x_item->get_spin_button()->addUnitTracker(_tracker.get());
+        _nodes_x_item->set_focus_widget(desktop->canvas);
         _nodes_x_adj->signal_value_changed().connect(sigc::bind(sigc::mem_fun(*this, &NodeToolbar::value_changed), Geom::X));
         _nodes_x_item->set_sensitive(false);
         add(*_nodes_x_item);
@@ -278,7 +281,8 @@ NodeToolbar::NodeToolbar(SPDesktop *desktop)
         _nodes_y_item->set_tooltip_text(_("Y coordinate of selected node(s)"));
         _nodes_y_item->set_custom_numeric_menu_data(values);
         _tracker->addAdjustment(_nodes_y_adj->gobj());
-        _nodes_y_item->set_focus_widget(Glib::wrap(GTK_WIDGET(desktop->canvas)));
+        _nodes_y_item->get_spin_button()->addUnitTracker(_tracker.get());
+        _nodes_y_item->set_focus_widget(desktop->canvas);
         _nodes_y_adj->signal_value_changed().connect(sigc::bind(sigc::mem_fun(*this, &NodeToolbar::value_changed), Geom::Y));
         _nodes_y_item->set_sensitive(false);
         add(*_nodes_y_item);
@@ -422,7 +426,9 @@ NodeToolbar::watch_ec(SPDesktop* desktop, Inkscape::UI::Tools::ToolBase* ec)
         // watch selection
         c_selection_changed = desktop->getSelection()->connectChanged(sigc::mem_fun(*this, &NodeToolbar::sel_changed));
         c_selection_modified = desktop->getSelection()->connectModified(sigc::mem_fun(*this, &NodeToolbar::sel_modified));
-        c_subselection_changed = desktop->connectToolSubselectionChanged(sigc::mem_fun(*this, &NodeToolbar::coord_changed));
+        c_subselection_changed = desktop->connect_control_point_selected([=](void* sender, Inkscape::UI::ControlPointSelection* selection) {
+            coord_changed(selection);
+        });
 
         sel_changed(desktop->getSelection());
     } else {
@@ -443,7 +449,7 @@ NodeToolbar::sel_modified(Inkscape::Selection *selection, guint /*flags*/)
 
 /* is called when the node selection is modified */
 void
-NodeToolbar::coord_changed(gpointer /*shape_editor*/)
+NodeToolbar::coord_changed(Inkscape::UI::ControlPointSelection* selected_nodes) // gpointer /*shape_editor*/)
 {
     // quit if run by the attr_changed listener
     if (_freeze) {
@@ -459,8 +465,7 @@ NodeToolbar::coord_changed(gpointer /*shape_editor*/)
     Unit const *unit = _tracker->getActiveUnit();
     g_return_if_fail(unit != nullptr);
 
-    NodeTool *nt = get_node_tool();
-    if (!nt || !(nt->_selected_nodes) ||nt->_selected_nodes->empty()) {
+    if (!selected_nodes || selected_nodes->empty()) {
         // no path selected
         _nodes_x_item->set_sensitive(false);
         _nodes_y_item->set_sensitive(false);
@@ -469,7 +474,7 @@ NodeToolbar::coord_changed(gpointer /*shape_editor*/)
         _nodes_y_item->set_sensitive(true);
         Geom::Coord oldx = Quantity::convert(_nodes_x_adj->get_value(), unit, "px");
         Geom::Coord oldy = Quantity::convert(_nodes_y_adj->get_value(), unit, "px");
-        Geom::Point mid = nt->_selected_nodes->pointwiseBounds()->midpoint();
+        Geom::Point mid = selected_nodes->pointwiseBounds()->midpoint();
 
         if (oldx != mid[Geom::X]) {
             _nodes_x_adj->set_value(Quantity::convert(mid[Geom::X], "px", unit));

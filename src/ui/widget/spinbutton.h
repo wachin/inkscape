@@ -13,6 +13,8 @@
 
 #include <gtkmm/spinbutton.h>
 
+#include "scrollprotected.h"
+
 namespace Inkscape {
 namespace UI {
 namespace Widget {
@@ -26,42 +28,37 @@ class UnitTracker;
  *
  * Calling "set_numeric()" effectively disables the expression parsing. If no unit menu is linked, all unitlike characters are ignored.
  */
-class SpinButton : public Gtk::SpinButton
+class SpinButton : public ScrollProtected<Gtk::SpinButton>
 {
+    using parent_type = ScrollProtected<Gtk::SpinButton>;
+
 public:
-  SpinButton(double climb_rate = 0.0, guint digits = 0)
-    : Gtk::SpinButton(climb_rate, digits),
-      _unit_menu(nullptr),
-      _unit_tracker(nullptr),
-      _on_focus_in_value(0.)
-  {
-      connect_signals();
-  };
-  explicit SpinButton(Glib::RefPtr<Gtk::Adjustment>& adjustment, double climb_rate = 0.0, guint digits = 0)
-    : Gtk::SpinButton(adjustment, climb_rate, digits),
-      _unit_menu(nullptr),
-      _unit_tracker(nullptr),
-      _on_focus_in_value(0.)
-  {
-      connect_signals();
-  };
-
-  ~SpinButton() override = default;
-
-  // noncopyable
-  SpinButton(const SpinButton&) = delete;
-  SpinButton& operator=(const SpinButton&) = delete;
+    using parent_type::parent_type;
 
   void setUnitMenu(UnitMenu* unit_menu) { _unit_menu = unit_menu; };
   
   void addUnitTracker(UnitTracker* ut) { _unit_tracker = ut; };
 
-protected:
-  UnitMenu *_unit_menu; /// Linked unit menu for unit conversion in entered expressions.
-  UnitTracker *_unit_tracker; // Linked unit tracker for unit conversion in entered expressions.
-  double _on_focus_in_value;
+  // TODO: Might be better to just have a default value and a reset() method?
+  inline void set_zeroable(const bool zeroable = true) { _zeroable = zeroable; }
+  inline void set_oneable(const bool oneable = true) { _oneable = oneable; }
 
-  void connect_signals();
+  inline bool get_zeroable() const { return _zeroable; }
+  inline bool get_oneable() const { return _oneable; }
+
+  void defocus();
+
+protected:
+  UnitMenu    *_unit_menu    = nullptr; ///< Linked unit menu for unit conversion in entered expressions.
+  UnitTracker *_unit_tracker = nullptr; ///< Linked unit tracker for unit conversion in entered expressions.
+  double _on_focus_in_value  = 0.;
+  Gtk::Widget *_defocus_widget = nullptr; ///< Widget that should grab focus when the spinbutton defocuses
+
+  bool _zeroable = false; ///< Reset-value should be zero
+  bool _oneable  = false; ///< Reset-value should be one
+
+  bool _stay = false; ///< Whether to ignore defocusing
+  bool _dont_evaluate = false; ///< Don't attempt to evaluate expressions
 
     /**
      * This callback function should try to convert the entered text to a number and write it to newvalue.
@@ -77,26 +74,24 @@ protected:
      * @retval false continue with default handler.
      * @retval true  don't call default handler. 
      */
-    bool on_my_focus_in_event(GdkEventFocus* event);
+    bool on_focus_in_event(GdkEventFocus *) override;
 
-    /**
-     * When scroll is done.
-     * @retval false continue with default handler.
-     * @retval true  don't call default handler.
-     */
-    bool on_scroll_event(GdkEventScroll *event) override;
     /**
      * Handle specific keypress events, like Ctrl+Z.
      *
      * @retval false continue with default handler.
      * @retval true  don't call default handler. 
      */
-    bool on_my_key_press_event(GdkEventKey* event);
+    bool on_key_press_event(GdkEventKey *) override;
 
     /**
      * Undo the editing, by resetting the value upon when the spinbutton got focus.
      */
     void undo();
+
+  public:
+    inline void set_defocus_widget(const decltype(_defocus_widget) widget) { _defocus_widget = widget; }
+    inline void set_dont_evaluate(bool flag) { _dont_evaluate = flag; }
 };
 
 } // namespace Widget

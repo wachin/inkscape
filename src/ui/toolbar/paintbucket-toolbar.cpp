@@ -37,7 +37,9 @@
 #include "ui/icon-names.h"
 #include "ui/tools/flood-tool.h"
 #include "ui/uxmanager.h"
+#include "ui/widget/canvas.h"
 #include "ui/widget/combo-tool-item.h"
+#include "ui/widget/spinbutton.h"
 #include "ui/widget/spin-button-tool-item.h"
 #include "ui/widget/unit-tracker.h"
 
@@ -66,7 +68,7 @@ PaintbucketToolbar::PaintbucketToolbar(SPDesktop *desktop)
             row[columns.col_sensitive] = true;
         }
 
-        _channels_item = Gtk::manage(UI::Widget::ComboToolItem::create(_("Fill by:"), Glib::ustring(), "Not Used", store));
+        _channels_item = Gtk::manage(UI::Widget::ComboToolItem::create(_("Fill by"), Glib::ustring(), "Not Used", store));
         _channels_item->use_group_label(true);
 
         int channels = prefs->getInt("/tools/paintbucket/channels", 0);
@@ -82,7 +84,7 @@ PaintbucketToolbar::PaintbucketToolbar(SPDesktop *desktop)
         _threshold_adj = Gtk::Adjustment::create(threshold_val, 0, 100.0, 1.0, 10.0);
         auto threshold_item = Gtk::manage(new UI::Widget::SpinButtonToolItem("inkscape:paintbucket-threshold", _("Threshold:"), _threshold_adj, 1, 0));
         threshold_item->set_tooltip_text(_("The maximum allowed difference between the clicked pixel and the neighboring pixels to be counted in the fill"));
-        threshold_item->set_focus_widget(Glib::wrap(GTK_WIDGET(desktop->canvas)));
+        threshold_item->set_focus_widget(desktop->canvas);
         _threshold_adj->signal_value_changed().connect(sigc::mem_fun(*this, &PaintbucketToolbar::threshold_changed));
         // ege_adjustment_action_set_appearance( eact, TOOLBAR_SLIDER_HINT );
         add(*threshold_item);
@@ -104,7 +106,8 @@ PaintbucketToolbar::PaintbucketToolbar(SPDesktop *desktop)
         auto offset_item = Gtk::manage(new UI::Widget::SpinButtonToolItem("inkscape:paintbucket-offset", _("Grow/shrink by:"), _offset_adj, 1, 2));
         offset_item->set_tooltip_text(_("The amount to grow (positive) or shrink (negative) the created fill path"));
         _tracker->addAdjustment(_offset_adj->gobj());
-        offset_item->set_focus_widget(Glib::wrap(GTK_WIDGET(desktop->canvas)));
+        offset_item->get_spin_button()->addUnitTracker(_tracker);
+        offset_item->set_focus_widget(desktop->canvas);
         _offset_adj->signal_value_changed().connect(sigc::mem_fun(*this, &PaintbucketToolbar::offset_changed));
         add(*offset_item);
     }
@@ -128,7 +131,7 @@ PaintbucketToolbar::PaintbucketToolbar(SPDesktop *desktop)
             row[columns.col_sensitive] = true;
         }
 
-        _autogap_item = Gtk::manage(UI::Widget::ComboToolItem::create(_("Close gaps:"), Glib::ustring(), "Not Used", store));
+        _autogap_item = Gtk::manage(UI::Widget::ComboToolItem::create(_("Close gaps"), Glib::ustring(), "Not Used", store));
         _autogap_item->use_group_label(true);
 
         int autogap = prefs->getInt("/tools/paintbucket/autogap", 0);

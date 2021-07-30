@@ -42,14 +42,16 @@ LPEInterpolate::LPEInterpolate(LivePathEffectObject *lpeobject)
     registerParameter(&number_of_steps);
 
     number_of_steps.param_make_integer();
-    number_of_steps.param_set_range(2, Geom::infinity());
+    number_of_steps.param_set_range(2, std::numeric_limits<gint>::max());
 }
 
 LPEInterpolate::~LPEInterpolate() = default;
 
 void LPEInterpolate::transform_multiply(Geom::Affine const &postmul, bool /*set*/)
 {
-    trajectory_path.param_transform_multiply(postmul, false);
+    if (sp_lpe_item && sp_lpe_item->pathEffectsEnabled() && sp_lpe_item->optimizeTransforms()) {
+        trajectory_path.param_transform_multiply(postmul, false);
+    }
 }
 
 /*
@@ -149,7 +151,7 @@ void LPEInterpolate::resetDefaults(SPItem const *item)
     if (!SP_IS_PATH(item))
         return;
 
-    SPCurve const *crv = SP_PATH(item)->getCurveForEdit(true);
+    SPCurve const *crv = SP_PATH(item)->curveForEdit();
     Geom::PathVector const &pathv = crv->get_pathvector();
     if ((pathv.size() < 2))
         return;

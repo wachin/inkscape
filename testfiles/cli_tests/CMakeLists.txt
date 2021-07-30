@@ -119,6 +119,11 @@ add_cli_test(pdf-internal-mesh-import
 # --no-convert-text-baseline-spacing
 
 # --export-filename=FILENAME
+## check for https://gitlab.com/inkscape/inkscape/-/issues/1712
+install(DIRECTORY DESTINATION ${test.dir})
+add_cli_test(export-type-dot-separated PARAMETERS --export-type=svg,png
+                         INPUT_FILENAME empty.svg OUTPUT_FILENAME test.dir/empty
+                         EXPECTED_FILES test.dir/empty.svg test.dir/empty.png)
 
 # --export-overwrite
 
@@ -126,6 +131,10 @@ add_cli_test(pdf-internal-mesh-import
 
 ##  test whether we can export all default types in principle (and in one command)
 add_cli_test(export-type PARAMETERS --export-type=svg,png,ps,eps,pdf,emf,wmf,xaml
+                         INPUT_FILENAME empty.svg OUTPUT_FILENAME empty
+                         EXPECTED_FILES empty.svg empty.png empty.ps empty.eps empty.pdf empty.emf empty.wmf empty.xaml)
+##  test whether this also works if the export types are not lowercase
+add_cli_test(export-type-caseinsensitive PARAMETERS --export-type=sVg,Png,PS,eps,Pdf,emf,wmf,xaml
                          INPUT_FILENAME empty.svg OUTPUT_FILENAME empty
                          EXPECTED_FILES empty.svg empty.png empty.ps empty.eps empty.pdf empty.emf empty.wmf empty.xaml)
 
@@ -290,8 +299,56 @@ add_cli_test(export-margin_viewbox_id_svg PARAMETERS --export-margin=50 --export
 # add_cli_test(export-margin_viewbox_id_wmf PARAMETERS --export-margin=50 --export-id=square-red --export-type=wmf INPUT_FILENAME square_mm_viewbox.svg OUTPUT_FILENAME export-margin_viewbox_id.wmf REFERENCE_FILENAME export-margin_mm_viewbox_id_expected.wmf )
 
 # --export-id=OBJECT-ID[;OBJECT-ID]*
+add_cli_test(export-id_png PARAMETERS --export-id=red --export-type=png INPUT_FILENAME theta.svg OUTPUT_FILENAME export-id.png REFERENCE_FILENAME export-id_expected.png )
+add_cli_test(export-id_svg PARAMETERS --export-id=red --export-type=svg INPUT_FILENAME theta.svg OUTPUT_FILENAME export-id.svg REFERENCE_FILENAME export-id_expected.svg )
+# PDF, PS, EPS doesn't respect --export-id-only, bug report: https://gitlab.com/inkscape/inkscape/-/issues/1173
+# add_cli_test(export-id_pdf PARAMETERS --export-id=red --export-type=pdf INPUT_FILENAME theta.svg OUTPUT_FILENAME export-id.pdf REFERENCE_FILENAME export-id_expected.pdf )
+# add_cli_test(export-id_ps  PARAMETERS --export-id=red --export-type=ps  INPUT_FILENAME theta.svg OUTPUT_FILENAME export-id.ps  REFERENCE_FILENAME export-id_expected.ps  )
+# add_cli_test(export-id_eps PARAMETERS --export-id=red --export-type=eps INPUT_FILENAME theta.svg OUTPUT_FILENAME export-id.eps REFERENCE_FILENAME export-id_expected.eps )
+# EMF, WMF There is no support, feature request: https://gitlab.com/inkscape/inkscape/-/issues/1204
+# add_cli_test(export-id_emf PARAMETERS --export-id=red --export-type=emf INPUT_FILENAME theta.svg OUTPUT_FILENAME export-id.emf REFERENCE_FILENAME export-id_expected.emf )
+# add_cli_test(export-id_wmf PARAMETERS --export-id=red --export-type=wmf INPUT_FILENAME theta.svg OUTPUT_FILENAME export-id.wmf REFERENCE_FILENAME export-id_expected.wmf )
+
+## --export-id + --export-area-page = --export-area-page
+## --export-id + --export-area-drawing = --export-area-drawing
+## --export-id + --export-area-snap → export-area-snap_export-id
+## --export-id + --export-margin → export-margin_export-id_png|svg|pdf|ps|eps|emf|wmf
+## --export-id + --export-use-hints → export-use-hints_export-id
+## --export-id + --export-use-hints + --export-width | --export-height → export-width_export-use-hints
 
 # --export-id-only
+## --export-id + --export-id-only
+add_cli_test(export-id_export-id-only_png PARAMETERS --export-id=blue --export-id-only --export-type=png INPUT_FILENAME theta.svg OUTPUT_FILENAME export-id_export-id-only.png REFERENCE_FILENAME export-id_export-id-only_expected.png )
+add_cli_test(export-id_export-id-only_svg PARAMETERS --export-id=blue --export-id-only --export-type=svg INPUT_FILENAME theta.svg OUTPUT_FILENAME export-id_export-id-only.svg REFERENCE_FILENAME export-id_export-id-only_expected.svg )
+add_cli_test(export-id_export-id-only_pdf PARAMETERS --export-id=blue --export-id-only --export-type=pdf INPUT_FILENAME theta.svg OUTPUT_FILENAME export-id_export-id-only.pdf REFERENCE_FILENAME export-id_export-id-only_expected.pdf )
+add_cli_test(export-id_export-id-only_ps  PARAMETERS --export-id=blue --export-id-only --export-type=ps  INPUT_FILENAME theta.svg OUTPUT_FILENAME export-id_export-id-only.ps  REFERENCE_FILENAME export-id_export-id-only_expected.ps  )
+add_cli_test(export-id_export-id-only_eps PARAMETERS --export-id=blue --export-id-only --export-type=eps INPUT_FILENAME theta.svg OUTPUT_FILENAME export-id_export-id-only.eps REFERENCE_FILENAME export-id_export-id-only_expected.eps )
+# EMF, WMF There is no support, feature request: https://gitlab.com/inkscape/inkscape/-/issues/1204
+# add_cli_test(export-id_export-id-only_emf PARAMETERS --export-id=blue --export-id-only --export-type=emf INPUT_FILENAME theta.svg OUTPUT_FILENAME export-id_export-id-only.emf REFERENCE_FILENAME export-id_export-id-only_expected.emf )
+# add_cli_test(export-id_export-id-only_wmf PARAMETERS --export-id=blue --export-id-only --export-type=wmf INPUT_FILENAME theta.svg OUTPUT_FILENAME export-id_export-id-only.wmf REFERENCE_FILENAME export-id_export-id-only_expected.wmf )
+
+## --export-id + --export-id-only + --export-area-page
+add_cli_test(export-id_export-id-only_export-area-page_png PARAMETERS --export-id=yellow --export-id-only --export-area-page --export-type=png INPUT_FILENAME theta.svg OUTPUT_FILENAME export-id_export-id-only_export-area-page.png REFERENCE_FILENAME export-id_export-id-only_export-area-page_expected.png )
+add_cli_test(export-id_export-id-only_export-area-page_svg PARAMETERS --export-id=yellow --export-id-only --export-area-page --export-type=svg INPUT_FILENAME theta.svg OUTPUT_FILENAME export-id_export-id-only_export-area-page.svg REFERENCE_FILENAME export-id_export-id-only_export-area-page_expected.svg )
+add_cli_test(export-id_export-id-only_export-area-page_pdf PARAMETERS --export-id=yellow --export-id-only --export-area-page --export-type=pdf INPUT_FILENAME theta.svg OUTPUT_FILENAME export-id_export-id-only_export-area-page.pdf REFERENCE_FILENAME export-id_export-id-only_export-area-page_expected.pdf )
+add_cli_test(export-id_export-id-only_export-area-page_ps  PARAMETERS --export-id=yellow --export-id-only --export-area-page --export-type=ps  INPUT_FILENAME theta.svg OUTPUT_FILENAME export-id_export-id-only_export-area-page.ps  REFERENCE_FILENAME export-id_export-id-only_export-area-page_expected.ps  )
+# EPS: Depents on https://gitlab.com/inkscape/inkscape/-/issues/1074
+# add_cli_test(export-id_export-id-only_export-area-page_eps PARAMETERS --export-id=yellow --export-id-only --export-area-page --export-type=eps INPUT_FILENAME theta.svg OUTPUT_FILENAME export-id_export-id-only_export-area-page.eps REFERENCE_FILENAME export-id_export-id-only_export-area-page_expected.eps )
+# EMF, WMF: There is no support, feature request: https://gitlab.com/inkscape/inkscape/-/issues/1204
+# add_cli_test(export-id_export-id-only_export-area-page_emf PARAMETERS --export-id=yellow --export-id-only --export-area-page --export-type=emf INPUT_FILENAME theta.svg OUTPUT_FILENAME export-id_export-id-only_export-area-page.emf REFERENCE_FILENAME export-id_export-id-only_export-area-page_expected.emf )
+# add_cli_test(export-id_export-id-only_export-area-page_wmf PARAMETERS --export-id=yellow --export-id-only --export-area-page --export-type=wmf INPUT_FILENAME theta.svg OUTPUT_FILENAME export-id_export-id-only_export-area-page.wmf REFERENCE_FILENAME export-id_export-id-only_export-area-page_expected.wmf )
+
+## --export-id + --export-id-only + --export-area-drawing
+# PNG, PDF, PS, EPS, EMF, WMF: Feature request: https://gitlab.com/inkscape/inkscape/-/issues/1215
+# add_cli_test(export-id_export-id-only_export-area-drawing_png PARAMETERS --export-id=yellow --export-id-only --export-area-drawing --export-type=png INPUT_FILENAME theta.svg OUTPUT_FILENAME export-id_export-id-only_export-area-drawing.png REFERENCE_FILENAME export-id_export-id-only_export-area-drawing_expected.png )
+add_cli_test(export-id_export-id-only_export-area-drawing_svg PARAMETERS --export-id=yellow --export-id-only --export-area-drawing --export-type=svg INPUT_FILENAME theta.svg OUTPUT_FILENAME export-id_export-id-only_export-area-drawing.svg REFERENCE_FILENAME export-id_export-id-only_export-area-drawing_expected.svg )
+# add_cli_test(export-id_export-id-only_export-area-drawing_pdf PARAMETERS --export-id=yellow --export-id-only --export-area-drawing --export-type=pdf INPUT_FILENAME theta.svg OUTPUT_FILENAME export-id_export-id-only_export-area-drawing.pdf REFERENCE_FILENAME export-id_export-id-only_export-area-drawing_expected.pdf )
+# add_cli_test(export-id_export-id-only_export-area-drawing_ps  PARAMETERS --export-id=yellow --export-id-only --export-area-drawing --export-type=ps  INPUT_FILENAME theta.svg OUTPUT_FILENAME export-id_export-id-only_export-area-drawing.ps  REFERENCE_FILENAME export-id_export-id-only_export-area-drawing_expected.ps  )
+# add_cli_test(export-id_export-id-only_export-area-drawing_eps PARAMETERS --export-id=yellow --export-id-only --export-area-drawing --export-type=eps INPUT_FILENAME theta.svg OUTPUT_FILENAME export-id_export-id-only_export-area-drawing.eps REFERENCE_FILENAME export-id_export-id-only_export-area-drawing_expected.eps )
+# add_cli_test(export-id_export-id-only_export-area-drawing_emf PARAMETERS --export-id=yellow --export-id-only --export-area-drawing --export-type=emf INPUT_FILENAME theta.svg OUTPUT_FILENAME export-id_export-id-only_export-area-drawing.emf REFERENCE_FILENAME export-id_export-id-only_export-area-drawing_expected.emf )
+# add_cli_test(export-id_export-id-only_export-area-drawing_wmf PARAMETERS --export-id=yellow --export-id-only --export-area-drawing --export-type=wmf INPUT_FILENAME theta.svg OUTPUT_FILENAME export-id_export-id-only_export-area-drawing.wmf REFERENCE_FILENAME export-id_export-id-only_export-area-drawing_expected.wmf )
+
+## --export-id + --export-id-only + --export-margin → export-margin_export-id_export-id-only_png|svg|pdf|ps|eps|emw|wmf
 
 # --export-plain-svg
 add_cli_test(export-plain-svg PARAMETERS --export-type=svg --export-plain-svg
@@ -299,21 +356,81 @@ add_cli_test(export-plain-svg PARAMETERS --export-type=svg --export-plain-svg
                               TEST_SCRIPT match_regex_fail.sh "shapes.svg" "inkscape:|sodipodi:")
 
 # --export-ps-level=LEVEL
+add_cli_test(export-ps-level_2          PARAMETERS --export-ps-level=2 --export-type=ps INPUT_FILENAME gradient.svg OUTPUT_FILENAME export-ps-level-2.ps REFERENCE_FILENAME export-ps-level-2_expected.ps )
+add_cli_test(export-ps-level_2_content  PARAMETERS --export-ps-level=2 --export-type=ps
+                                        INPUT_FILENAME gradient.svg OUTPUT_FILENAME export-ps-level-2.ps
+                                        TEST_SCRIPT match_regex.sh "export-ps-level-2.ps" "%%LanguageLevel: 2")
+add_cli_test(export-ps-level_3          PARAMETERS --export-ps-level=3 --export-type=ps INPUT_FILENAME gradient.svg OUTPUT_FILENAME export-ps-level-3.ps REFERENCE_FILENAME export-ps-level-3_expected.ps )
+add_cli_test(export-ps-level_3_content  PARAMETERS --export-ps-level=3 --export-type=ps
+                                        INPUT_FILENAME gradient.svg OUTPUT_FILENAME export-ps-level-3.ps
+                                        TEST_SCRIPT match_regex.sh "export-ps-level-3.ps" "%%LanguageLevel: 3")
+add_cli_test(export-eps-level_2_content PARAMETERS --export-ps-level=2 --export-type=eps
+                                        INPUT_FILENAME gradient.svg OUTPUT_FILENAME export-ps-level-2.ps
+                                        TEST_SCRIPT match_regex.sh "export-ps-level-2.eps" "%%LanguageLevel: 2")
+add_cli_test(export-eps-level_3_content PARAMETERS --export-ps-level=3 --export-type=eps
+                                        INPUT_FILENAME gradient.svg OUTPUT_FILENAME export-ps-level-3.ps
+                                        TEST_SCRIPT match_regex.sh "export-ps-level-3.eps" "%%LanguageLevel: 3")
 
 # --export-pdf-version=VERSION
+add_cli_test(export-pdf-version-14 PARAMETERS --export-pdf-version=1.4 --export-type=pdf
+                                   INPUT_FILENAME rects.svg OUTPUT_FILENAME export-pdf-version-14.pdf
+                                   TEST_SCRIPT match_regex.sh "export-pdf-version-14.pdf" "^%PDF-1.4$")
+add_cli_test(export-pdf-version-15 PARAMETERS --export-pdf-version=1.5 --export-type=pdf
+                                   INPUT_FILENAME rects.svg OUTPUT_FILENAME export-pdf-version-15.pdf
+                                   TEST_SCRIPT match_regex.sh "export-pdf-version-15.pdf" "^%PDF-1.5$")
 
 # --export-text-to-path
-add_cli_test(export-text-to-path PARAMETERS --export-text-to-path
-                                 INPUT_FILENAME text.svg OUTPUT_FILENAME text.svg
-                                 TEST_SCRIPT match_regex_fail.sh "text.svg" "<text")
+# PNG: Doesn't make sense.
+# EMF/WMF: No way to check.
+add_cli_test(preserve-text_pdf       PARAMETERS --export-type=pdf
+                                     INPUT_FILENAME text.svg OUTPUT_FILENAME preserve-text.pdf
+                                     TEST_SCRIPT match_regex.sh "preserve-text.pdf" "/FontDescriptor")
+add_cli_test(preserve-text_ps        PARAMETERS --export-type=ps
+                                     INPUT_FILENAME text.svg OUTPUT_FILENAME preserve-text.ps
+                                     TEST_SCRIPT match_regex.sh "preserve-text.ps" "^%%BeginResource: font")
+add_cli_test(preserve-text_eps       PARAMETERS --export-type=eps
+                                     INPUT_FILENAME text.svg OUTPUT_FILENAME preserve-text.eps
+                                     TEST_SCRIPT match_regex.sh "preserve-text.eps" "^%%BeginResource: font")
+add_cli_test(export-text-to-path_svg PARAMETERS --export-text-to-path --export-type=svg
+                                     INPUT_FILENAME text.svg OUTPUT_FILENAME export-text-to-path.svg
+                                     TEST_SCRIPT match_regex_fail.sh "export-text-to-path.svg" "<text")
+add_cli_test(export-text-to-path_pdf PARAMETERS --export-text-to-path --export-type=pdf
+                                     INPUT_FILENAME text.svg OUTPUT_FILENAME export-text-to-path.pdf
+                                     TEST_SCRIPT match_regex_fail.sh "export-text-to-path.pdf" "/FontDescriptor")
+add_cli_test(export-text-to-path_ps  PARAMETERS --export-text-to-path --export-type=ps
+                                     INPUT_FILENAME text.svg OUTPUT_FILENAME export-text-to-path.ps
+                                     TEST_SCRIPT match_regex_fail.sh "export-text-to-path.ps" "^%%BeginResource: font")
+add_cli_test(export-text-to-path_eps PARAMETERS --export-text-to-path --export-type=eps
+                                     INPUT_FILENAME text.svg OUTPUT_FILENAME export-text-to-path.eps
+                                     TEST_SCRIPT match_regex_fail.sh "export-text-to-path.eps" "^%%BeginResource: font")
 
 # --export-latex
-add_cli_test(export-latex PARAMETERS --export-type=pdf --export-latex
-                          INPUT_FILENAME text.svg OUTPUT_FILENAME text.pdf
-                          EXPECTED_FILES text.pdf text.pdf_tex
-                          TEST_SCRIPT match_regex.sh "text.pdf_tex" "some text")
+# PDF, PS, EPS only function by design.
+add_cli_test(export-latex PARAMETERS --export-type=pdf,ps,eps --export-latex
+                          INPUT_FILENAME text.svg OUTPUT_FILENAME export-latex
+                          EXPECTED_FILES export-latex.pdf export-latex.pdf_tex export-latex.ps export-latex.ps_tex export-latex.eps export-latex.eps_tex
+                          TEST_SCRIPT match_regex.sh "export-latex.pdf_tex" "some text")
 
 # --export-ignore-filters
+## testing exporting with filters
+add_cli_test(export-with-filters_svg  PARAMETERS --export-type=svg INPUT_FILENAME offset.svg OUTPUT_FILENAME export-with-filters.svg REFERENCE_FILENAME export-with-filters_expected.svg)
+add_cli_test(export-with-filters_png  PARAMETERS --export-type=png INPUT_FILENAME offset.svg OUTPUT_FILENAME export-with-filters.png REFERENCE_FILENAME export-with-filters_expected.png)
+add_cli_test(export-with-filters_ps   PARAMETERS --export-type=ps  INPUT_FILENAME offset.svg OUTPUT_FILENAME export-with-filters.ps  REFERENCE_FILENAME export-with-filters_expected.ps )
+add_cli_test(export-with-filters_eps  PARAMETERS --export-type=eps INPUT_FILENAME offset.svg OUTPUT_FILENAME export-with-filters.eps REFERENCE_FILENAME export-with-filters_expected.eps)
+add_cli_test(export-with-filters_pdf  PARAMETERS --export-type=pdf INPUT_FILENAME offset.svg OUTPUT_FILENAME export-with-filters.pdf REFERENCE_FILENAME export-with-filters_expected.pdf)
+# EMF, WMF: No support for exporting filters. Feature request: https://gitlab.com/inkscape/inbox/-/issues/2275
+# add_cli_test(export-with-filters_emf  PARAMETERS --export-type=emf INPUT_FILENAME offset.svg OUTPUT_FILENAME export-with-filters.emf REFERENCE_FILENAME export-with-filters_expected.emf)
+# add_cli_test(export-with-filters_wmf  PARAMETERS --export-type=wmf INPUT_FILENAME offset.svg OUTPUT_FILENAME export-with-filters.wmf REFERENCE_FILENAME export-with-filters_expected.wmf)
+## --export-ignore-filters
+# SVG, PNG: No support for --export-ignore-filters. Feature request: https://gitlab.com/inkscape/inbox/-/issues/2275
+# add_cli_test(export-ignore-filters_svg  PARAMETERS --export-ignore-filters --export-type=svg INPUT_FILENAME offset.svg OUTPUT_FILENAME export-ignore-filters.svg REFERENCE_FILENAME export-ignore-filters_expected.svg)
+# add_cli_test(export-ignore-filters_png  PARAMETERS --export-ignore-filters --export-type=png INPUT_FILENAME offset.svg OUTPUT_FILENAME export-ignore-filters.png REFERENCE_FILENAME export-ignore-filters_expected.png)
+add_cli_test(export-ignore-filters_ps   PARAMETERS --export-ignore-filters --export-type=ps  INPUT_FILENAME offset.svg OUTPUT_FILENAME export-ignore-filters.ps  REFERENCE_FILENAME export-ignore-filters_expected.ps )
+# EPS: Works, but depends on https://gitlab.com/inkscape/inkscape/-/issues/1074
+# add_cli_test(export-ignore-filters_eps  PARAMETERS --export-ignore-filters --export-type=eps INPUT_FILENAME offset.svg OUTPUT_FILENAME export-ignore-filters.eps REFERENCE_FILENAME export-ignore-filters_expected.eps)
+add_cli_test(export-ignore-filters_pdf  PARAMETERS --export-ignore-filters --export-type=pdf INPUT_FILENAME offset.svg OUTPUT_FILENAME export-ignore-filters.pdf REFERENCE_FILENAME export-ignore-filters_expected.pdf)
+add_cli_test(export-ignore-filters_emf  PARAMETERS --export-ignore-filters --export-type=emf INPUT_FILENAME offset.svg OUTPUT_FILENAME export-ignore-filters.emf REFERENCE_FILENAME export-ignore-filters_expected.emf)
+add_cli_test(export-ignore-filters_wmf  PARAMETERS --export-ignore-filters --export-type=wmf INPUT_FILENAME offset.svg OUTPUT_FILENAME export-ignore-filters.wmf REFERENCE_FILENAME export-ignore-filters_expected.wmf)
 
 # --export-use-hints
 add_cli_test(export-use-hints_export-id           PARAMETERS --export-use-hints --export-id=rect1 INPUT_FILENAME export_hints.svg
@@ -324,8 +441,60 @@ add_cli_test(export-use-hints_export-area-drawing PARAMETERS --export-use-hints 
                                                   EXPECTED_FILES "${CMAKE_CURRENT_SOURCE_DIR}/testcases/export_hints_drawing.png")
 
 # --export-background=COLOR
+## check for default background color and opacity
+# SVG, PDF, PS, EPS: Format not supoorted. Feature request: https://gitlab.com/inkscape/inbox/issues/2293
+# EMF, WMF: Format does not support opacity.
+ add_cli_test(export-default-background_png  PARAMETERS --export-type=png INPUT_FILENAME lambda-background.svg OUTPUT_FILENAME export-default-background.png REFERENCE_FILENAME export-default-background_expected.png)
+ add_cli_test(export-default-background_svg  PARAMETERS --export-type=svg INPUT_FILENAME lambda-background.svg OUTPUT_FILENAME export-default-background.svg REFERENCE_FILENAME export-default-background_expected.svg)
+# add_cli_test(export-default-background_pdf  PARAMETERS --export-type=pdf INPUT_FILENAME lambda-background.svg OUTPUT_FILENAME export-default-background.pdf REFERENCE_FILENAME export-default-background_expected.pdf)
+# add_cli_test(export-default-background_ps   PARAMETERS --export-type=ps  INPUT_FILENAME lambda-background.svg OUTPUT_FILENAME export-default-background.ps  REFERENCE_FILENAME export-default-background_expected.ps )
+# add_cli_test(export-default-background_eps  PARAMETERS --export-type=eps INPUT_FILENAME lambda-background.svg OUTPUT_FILENAME export-default-background.eps REFERENCE_FILENAME export-default-background_expected.eps)
+## test --export-background=COLOR
+ add_cli_test(export-background_png  PARAMETERS --export-background=yellow --export-type=png INPUT_FILENAME lambda.svg OUTPUT_FILENAME export-background.png REFERENCE_FILENAME export-background_expected.png)
+ add_cli_test(export-background_svg  PARAMETERS --export-background=yellow --export-type=svg INPUT_FILENAME lambda.svg OUTPUT_FILENAME export-background.svg REFERENCE_FILENAME export-background_expected.svg)
+# add_cli_test(export-background_pdf  PARAMETERS --export-background=yellow --export-type=pdf INPUT_FILENAME lambda.svg OUTPUT_FILENAME export-background.pdf REFERENCE_FILENAME export-background_expected.pdf)
+# add_cli_test(export-background_ps   PARAMETERS --export-background=yellow --export-type=ps  INPUT_FILENAME lambda.svg OUTPUT_FILENAME export-background.ps  REFERENCE_FILENAME export-background_expected.ps )
+# add_cli_test(export-background_eps  PARAMETERS --export-background=yellow --export-type=eps INPUT_FILENAME lambda.svg OUTPUT_FILENAME export-background.eps REFERENCE_FILENAME export-background_expected.eps)
+# add_cli_test(export-background_emf  PARAMETERS --export-background=yellow --export-type=emf INPUT_FILENAME lambda.svg OUTPUT_FILENAME export-background.emf REFERENCE_FILENAME export-background_expected.emf)
+# add_cli_test(export-background_wmf  PARAMETERS --export-background=yellow --export-type=wmf INPUT_FILENAME lambda.svg OUTPUT_FILENAME export-background.wmf REFERENCE_FILENAME export-background_expected.wmf)
 
 # --export-background-opacity=VALUE
+# SVG, PDF, PS, EPS: Format not supoorted. Feature request: https://gitlab.com/inkscape/inbox/issues/2293
+# EMF, WMF: Format does not support opacity.
+add_cli_test(export-background-opacity_png  PARAMETERS --export-background=yellow --export-background-opacity=0.5 --export-type=png INPUT_FILENAME lambda.svg OUTPUT_FILENAME export-background-opacity.png REFERENCE_FILENAME export-background-opacity_expected.png)
+ add_cli_test(export-background-opacity_svg  PARAMETERS --export-background=yellow --export-background-opacity=0.5 --export-type=svg INPUT_FILENAME lambda.svg OUTPUT_FILENAME export-background-opacity.svg REFERENCE_FILENAME export-background-opacity_expected.svg)
+# add_cli_test(export-background-opacity_pdf  PARAMETERS --export-background=yellow --export-background-opacity=0.5 --export-type=pdf INPUT_FILENAME lambda.svg OUTPUT_FILENAME export-background-opacity.pdf REFERENCE_FILENAME export-background-opacity_expected.pdf)
+# add_cli_test(export-background-opacity_ps   PARAMETERS --export-background=yellow --export-background-opacity=0.5 --export-type=ps  INPUT_FILENAME lambda.svg OUTPUT_FILENAME export-background-opacity.ps  REFERENCE_FILENAME export-background-opacity_expected.ps )
+# add_cli_test(export-background-opacity_eps  PARAMETERS --export-background=yellow --export-background-opacity=0.5 --export-type=eps INPUT_FILENAME lambda.svg OUTPUT_FILENAME export-background-opacity.eps REFERENCE_FILENAME export-background-opacity_expected.eps)
+
+# --export-png-color-mode=COLOR-MODE
+# SVG, PDF, PS, EPS, EMF, WMF: Vector formats - bitmap bit-depth and color-type not relevant there.
+ add_cli_test(export-png-color-mode-gray-8_png  PARAMETERS --export-png-color-mode=Gray_8 --export-type=png INPUT_FILENAME areas.svg OUTPUT_FILENAME export-png-color-mode-gray-8.png REFERENCE_FILENAME export-png-color-mode-gray-8_expected.png)
+ add_cli_test(export-png-color-mode-rgb-8_png  PARAMETERS --export-png-color-mode=RGB_8 --export-type=png INPUT_FILENAME areas.svg OUTPUT_FILENAME export-png-color-mode-rgb-8.png REFERENCE_FILENAME export-png-color-mode-rgb-8_expected.png)
+ add_cli_test(export-png-color-mode-rgba-8_png  PARAMETERS --export-png-color-mode=RGBA_8 --export-type=png INPUT_FILENAME areas.svg OUTPUT_FILENAME export-png-color-mode-rgba-8.png REFERENCE_FILENAME export-png-color-mode-rgba-8_expected.png)
+
+## test whether we produce correct output for default export extensions
+add_cli_test(export-extension_svg  PARAMETERS --export-type=svg --export-extension=org.inkscape.output.svg.inkscape INPUT_FILENAME shapes.svg OUTPUT_FILENAME shapes.svg REFERENCE_FILENAME shapes.svg)
+add_cli_test(export-extension_ps   PARAMETERS --export-type=ps --export-extension=org.inkscape.print.ps.cairo INPUT_FILENAME shapes.svg OUTPUT_FILENAME shapes.ps  REFERENCE_FILENAME shapes_expected.ps)
+add_cli_test(export-extension_eps  PARAMETERS --export-type=eps --export-extension=org.inkscape.print.eps.cairo  INPUT_FILENAME shapes.svg OUTPUT_FILENAME shapes.eps REFERENCE_FILENAME shapes_expected.eps)
+add_cli_test(export-extension_pdf  PARAMETERS --export-type=pdf --export-extension=org.inkscape.output.pdf.cairorenderer INPUT_FILENAME shapes.svg OUTPUT_FILENAME shapes.pdf REFERENCE_FILENAME shapes_expected.pdf)
+add_cli_test(export-extension_emf  PARAMETERS --export-type=emf --export-extension=org.inkscape.output.emf  INPUT_FILENAME shapes.svg OUTPUT_FILENAME shapes.emf REFERENCE_FILENAME shapes_expected.emf)
+add_cli_test(export-extension_wmf  PARAMETERS --export-type=wmf --export-extension=org.inkscape.output.wmf INPUT_FILENAME shapes.svg OUTPUT_FILENAME shapes.wmf REFERENCE_FILENAME shapes_expected.wmf)
+add_cli_test(export-plain-extension-svg PARAMETERS --export-type=svg --export-extension=org.inkscape.output.svg.plain
+                              INPUT_FILENAME shapes.svg OUTPUT_FILENAME shapes.svg REFERENCE_FILENAME shapes.svg
+                              TEST_SCRIPT match_regex_fail.sh "shapes.svg" "inkscape:|sodipodi:")
+## guess file type from --export-extension
+add_cli_test(export-type-extension_svg_guess_file_type  PARAMETERS --export-extension=org.inkscape.output.svg.inkscape INPUT_FILENAME shapes.svg OUTPUT_FILENAME shapes)
+
+## check error messages for --export-extension
+add_cli_test(export-type-extension_png_error  PARAMETERS --export-extension=org.inkscape.output.svg.inkscape INPUT_FILENAME shapes.svg OUTPUT_FILENAME shapes.png 
+                            PASS_FOR_OUTPUT "InkFileExportCmd::do_export: The parameter --export-extension is invalid for PNG export")
+add_cli_test(export-type-extension_type_error  PARAMETERS --export-extension=org.inkscape.output.svg.inkscape INPUT_FILENAME shapes.svg OUTPUT_FILENAME shapes.pdf
+                            PASS_FOR_OUTPUT "InkFileExportCmd::do_export: The supplied extension ID \\(org\\.inkscape\\.output\\.svg\\.inkscape\\) does not match any of the extensions available for this file type.*")
+add_cli_test(export-type-extension_id_error  PARAMETERS --export-extension=whatever INPUT_FILENAME shapes.svg OUTPUT_FILENAME shapes
+                            PASS_FOR_OUTPUT "InkFileExportCmd::do_export: The supplied --export-extension was not found. Specify a file extension to get a list of available extensions for this file type.")
+add_cli_test(export-type_filetype_error INPUT_FILENAME shapes.svg OUTPUT_FILENAME shapes.xxx
+                            PASS_FOR_OUTPUT "InkFileExportCmd::do_export: Unknown export type: xxx. Allowed values: \\[.*]")
 
 # --query-id=OBJECT-ID[,OBJECT-ID]*
 

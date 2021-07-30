@@ -64,12 +64,12 @@ SPTRef::~SPTRef() {
 void SPTRef::build(SPDocument *document, Inkscape::XML::Node *repr) {
     SPItem::build(document, repr);
 
-    this->readAttr( "xlink:href" );
-    this->readAttr( "x" );
-    this->readAttr( "y" );
-    this->readAttr( "dx" );
-    this->readAttr( "dy" );
-    this->readAttr( "rotate" );
+    this->readAttr(SPAttr::XLINK_HREF);
+    this->readAttr(SPAttr::X);
+    this->readAttr(SPAttr::Y);
+    this->readAttr(SPAttr::DX);
+    this->readAttr(SPAttr::DY);
+    this->readAttr(SPAttr::ROTATE);
 }
 
 void SPTRef::release() {
@@ -86,13 +86,13 @@ void SPTRef::release() {
     SPItem::release();
 }
 
-void SPTRef::set(SPAttributeEnum key, const gchar* value) {
+void SPTRef::set(SPAttr key, const gchar* value) {
     debug("0x%p %s(%u): '%s'",this,
             sp_attribute_name(key),key,value ? value : "<no value>");
 
     if (this->attributes.readSingleAttribute(key, value, style, &viewport)) { // x, y, dx, dy, rotate
         this->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG);
-    } else if (key == SP_ATTR_XLINK_HREF) { // xlink:href
+    } else if (key == SPAttr::XLINK_HREF) { // xlink:href
         if ( !value ) {
             // No value
             g_free(this->href);
@@ -210,6 +210,10 @@ Geom::OptRect SPTRef::bbox(Geom::Affine const &transform, SPItem::BBoxType type)
     }
 
     return bbox;
+}
+
+const char* SPTRef::typeName() const {
+    return "text-data";
 }
 
 const char* SPTRef::displayName() const {
@@ -422,7 +426,7 @@ build_string_from_root(Inkscape::XML::Node *root, Glib::ustring *retString)
     if (root && retString) {
 
         // Stop and concatenate when a SPString is found
-        if (root->type() == Inkscape::XML::TEXT_NODE) {
+        if (root->type() == Inkscape::XML::NodeType::TEXT_NODE) {
             *retString += (root->content());
 
             debug("%s", retString->c_str());

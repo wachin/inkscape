@@ -48,7 +48,6 @@
 #include "path-prefix.h"
 #include "print.h"
 #include "rdf.h"
-#include "selection-chemistry.h"
 #include "verbs.h"
 
 #include "extension/db.h"
@@ -56,24 +55,23 @@
 #include "extension/input.h"
 #include "extension/output.h"
 
-#include "helper/png-write.h"
-
 #include "io/file.h"
 #include "io/resource.h"
-#include "io/resource-manager.h"
+#include "io/fix-broken-links.h"
 #include "io/sys.h"
 
 #include "object/sp-defs.h"
 #include "object/sp-namedview.h"
 #include "object/sp-root.h"
+#include "object/sp-use.h"
 #include "style.h"
 
-#include "ui/dialog/font-substitution.h"
 #include "ui/dialog/filedialog.h"
 #include "ui/interface.h"
 #include "ui/tools/tool-base.h"
 #include "widgets/desktop-widget.h"
 
+#include "svg/svg.h" // for sp_svg_transform_write, used in sp_import_document
 #include "xml/rebase-hrefs.h"
 #include "xml/sp-css-attr.h"
 
@@ -109,7 +107,7 @@ void dump_ustr(Glib::ustring const &ustr);
  */
 SPDesktop *sp_file_new(const std::string &templ)
 {
-    ConcreteInkscapeApplication<Gtk::Application>* app = &(ConcreteInkscapeApplication<Gtk::Application>::get_instance());
+    auto *app = InkscapeApplication::instance();
 
     SPDocument* doc = app->document_new (templ);
     if (!doc) {
@@ -126,14 +124,13 @@ SPDesktop *sp_file_new(const std::string &templ)
     return desktop;
 }
 
-Glib::ustring sp_file_default_template_uri()
+std::string sp_file_default_template_uri()
 {
-    return Inkscape::IO::Resource::get_filename(TEMPLATES, "default.svg", true);
+    return Inkscape::IO::Resource::get_filename_string(TEMPLATES, "default.svg", true);
 }
 
 SPDesktop* sp_file_new_default()
 {
-    Glib::ustring templateUri = sp_file_default_template_uri();
     SPDesktop* desk = sp_file_new(sp_file_default_template_uri());
     //rdf_add_from_preferences( SP_ACTIVE_DOCUMENT );
 
@@ -176,15 +173,15 @@ void sp_file_revert_dialog()
     Inkscape::XML::Node *repr = doc->getReprRoot();
     g_assert(repr != nullptr);
 
-    gchar const *uri = doc->getDocumentURI();
-    if (!uri) {
+    gchar const *filename = doc->getDocumentFilename();
+    if (!filename) {
         desktop->messageStack()->flash(Inkscape::ERROR_MESSAGE, _("Document not saved yet.  Cannot revert."));
         return;
     }
 
     bool do_revert = true;
     if (doc->isModifiedSinceSave()) {
-        Glib::ustring tmpString = Glib::ustring::compose(_("Changes will be lost! Are you sure you want to reload document %1?"), uri);
+        Glib::ustring tmpString = Glib::ustring::compose(_("Changes will be lost! Are you sure you want to reload document %1?"), filename);
         bool response = desktop->warnDialog (tmpString);
         if (!response) {
             do_revert = false;
@@ -193,7 +190,7 @@ void sp_file_revert_dialog()
 
     bool reverted = false;
     if (do_revert) {
-        ConcreteInkscapeApplication<Gtk::Application>* app = &(ConcreteInkscapeApplication<Gtk::Application>::get_instance());
+        auto *app = InkscapeApplication::instance();
         reverted = app->document_revert (doc);
     }
 
@@ -369,8 +366,8 @@ sp_file_open_dialog(Gtk::Window &parentWindow, gpointer /*object*/, gpointer /*d
     //# User selected something.  Get name and type
     Glib::ustring fileName = openDialogInstance->getFilename();
 
-    Inkscape::Extension::Extension *fileType =
-            openDialogInstance->getSelectionType();
+    // Inkscape::Extension::Extension *fileType =
+    //         openDialogInstance->getSelectionType();
 
     //# Code to check & open if multiple files.
     std::vector<Glib::ustring> flist = openDialogInstance->getFilenames();
@@ -379,7 +376,7 @@ sp_file_open_dialog(Gtk::Window &parentWindow, gpointer /*object*/, gpointer /*d
     delete openDialogInstance;
     openDialogInstance = nullptr;
 
-    ConcreteInkscapeApplication<Gtk::Application>* app = &(ConcreteInkscapeApplication<Gtk::Application>::get_instance());
+    auto *app = InkscapeApplication::instance();
 
     //# Iterate through filenames if more than 1
     if (flist.size() > 1)
@@ -548,9 +545,6 @@ file_save(Gtk::Window &parentWindow, SPDocument *doc, const Glib::ustring &uri,
     }
 
     if (SP_ACTIVE_DESKTOP) {
-        if (! SP_ACTIVE_DESKTOP->event_log) {
-            g_message("file_save: ->event_log == NULL. please report to bug #967416");
-        }
         if (! SP_ACTIVE_DESKTOP->messageStack()) {
             g_message("file_save: ->messageStack() == NULL. please report to bug #967416");
         }
@@ -558,12 +552,12 @@ file_save(Gtk::Window &parentWindow, SPDocument *doc, const Glib::ustring &uri,
         g_message("file_save: SP_ACTIVE_DESKTOP == NULL. please report to bug #967416");
     }
 
-    SP_ACTIVE_DESKTOP->event_log->rememberFileSave();
+    doc->get_event_log()->rememberFileSave();
     Glib::ustring msg;
-    if (doc->getDocumentURI() == nullptr) {
+    if (doc->getDocumentFilename() == nullptr) {
         msg = Glib::ustring::format(_("Document saved."));
     } else {
-        msg = Glib::ustring::format(_("Document saved."), " ", doc->getDocumentURI());
+        msg = Glib::ustring::format(_("Document saved."), " ", doc->getDocumentFilename());
     }
     SP_ACTIVE_DESKTOP->messageStack()->flash(Inkscape::NORMAL_MESSAGE, msg.c_str());
     return true;
@@ -619,7 +613,7 @@ sp_file_save_dialog(Gtk::Window &parentWindow, SPDocument *doc, Inkscape::Extens
     save_loc.append(G_DIR_SEPARATOR_S);
 
     int i = 1;
-    if ( !doc->getDocumentURI() ) {
+    if ( !doc->getDocumentFilename() ) {
         // We are saving for the first time; create a unique default filename
         save_loc = save_loc + _("drawing") + filename_extension;
 
@@ -629,7 +623,7 @@ sp_file_save_dialog(Gtk::Window &parentWindow, SPDocument *doc, Inkscape::Extens
             save_loc = save_loc + Glib::ustring::compose(_("drawing-%1"), i++) + filename_extension;
         }
     } else {
-        save_loc.append(Glib::path_get_basename(doc->getDocumentURI()));
+        save_loc.append(Glib::path_get_basename(doc->getDocumentFilename()));
     }
 
     // convert save_loc from utf-8 to locale
@@ -697,9 +691,9 @@ sp_file_save_dialog(Gtk::Window &parentWindow, SPDocument *doc, Inkscape::Extens
         // FIXME: does the argument !is_copy really convey the correct meaning here?
         success = file_save(parentWindow, doc, fileName, selectionType, TRUE, !is_copy, save_method);
 
-        if (success && doc->getDocumentURI()) {
-            // getDocumentURI does not return an actual URI... it is an UTF-8 encoded filename (!)
-            std::string filename = Glib::filename_from_utf8(doc->getDocumentURI());
+        if (success && doc->getDocumentFilename()) {
+            // getDocumentFilename does not return an actual filename... it is an UTF-8 encoded filename (!)
+            std::string filename = Glib::filename_from_utf8(doc->getDocumentFilename());
             Glib::ustring uri = Glib::filename_to_uri(filename);
 
             Glib::RefPtr<Gtk::RecentManager> recent = Gtk::RecentManager::get_default();
@@ -726,7 +720,7 @@ sp_file_save_document(Gtk::Window &parentWindow, SPDocument *doc)
     bool success = true;
 
     if (doc->isModifiedSinceSave()) {
-        if ( doc->getDocumentURI() == nullptr )
+        if ( doc->getDocumentFilename() == nullptr )
         {
             // Hier sollte in Argument mitgegeben werden, das anzeigt, da� das Dokument das erste
             // Mal gespeichert wird, so da� als default .svg ausgew�hlt wird und nicht die zuletzt
@@ -734,8 +728,8 @@ sp_file_save_document(Gtk::Window &parentWindow, SPDocument *doc)
             return sp_file_save_dialog(parentWindow, doc, Inkscape::Extension::FILE_SAVE_METHOD_INKSCAPE_SVG);
         } else {
             Glib::ustring extension = Inkscape::Extension::get_file_save_extension(Inkscape::Extension::FILE_SAVE_METHOD_SAVE_AS);
-            Glib::ustring fn = g_strdup(doc->getDocumentURI());
-            // Try to determine the extension from the uri; this may not lead to a valid extension,
+            Glib::ustring fn = g_strdup(doc->getDocumentFilename());
+            // Try to determine the extension from the filename; this may not lead to a valid extension,
             // but this case is caught in the file_save method below (or rather in Extension::save()
             // further down the line).
             Glib::ustring ext = "";
@@ -753,11 +747,11 @@ sp_file_save_document(Gtk::Window &parentWindow, SPDocument *doc)
         }
     } else {
         Glib::ustring msg;
-        if ( doc->getDocumentURI() == nullptr )
+        if (doc->getDocumentFilename() == nullptr )
         {
             msg = Glib::ustring::format(_("No changes need to be saved."));
         } else {
-            msg = Glib::ustring::format(_("No changes need to be saved."), " ", doc->getDocumentURI());
+            msg = Glib::ustring::format(_("No changes need to be saved."), " ", doc->getDocumentFilename());
         }
         SP_ACTIVE_DESKTOP->messageStack()->flash(Inkscape::WARNING_MESSAGE, msg.c_str());
         success = TRUE;
@@ -933,6 +927,15 @@ void sp_import_document(SPDesktop *desktop, SPDocument *clipdoc, bool in_place)
     Inkscape::XML::Node *root = clipdoc->getReprRoot();
     Inkscape::XML::Node *target_parent = desktop->currentLayer()->getRepr();
 
+    Inkscape::Preferences *prefs = Inkscape::Preferences::get();
+
+    auto *node_after = desktop->getSelection()->topRepr();
+    if (node_after && prefs->getBool("/options/paste/aboveselected", true)) {
+        target_parent = node_after->parent();
+    } else {
+        node_after = target_parent->lastChild();
+    }
+
     // copy definitions
     desktop->doc()->importDefs(clipdoc);
 
@@ -955,18 +958,22 @@ void sp_import_document(SPDesktop *desktop, SPDocument *clipdoc, bool in_place)
             continue;
         }
         Inkscape::XML::Node *obj_copy = obj->duplicate(target_document->getReprDoc());
-        target_parent->appendChild(obj_copy);
+        target_parent->addChild(obj_copy, node_after);
+        node_after = obj_copy;
         Inkscape::GC::release(obj_copy);
 
         pasted_objects.push_back(obj_copy);
 
         // if we are pasting a clone to an already existing object, its
-        // transform is wrong (see ui/clipboard.cpp)
-        if(obj_copy->attribute("transform-with-parent") && target_document->getObjectById(obj->attribute("xlink:href")+1) ){
-            obj_copy->setAttribute("transform",obj_copy->attribute("transform-with-parent"));
+        // transform is relative to the document, not to its original (see ui/clipboard.cpp)
+        SPUse *use = dynamic_cast<SPUse *>(obj_copy);
+        if (use) {
+            SPItem *original = use->get_original();
+            if (original) {
+                Geom::Affine relative_use_transform = original->transform.inverse() * use->transform;
+                obj_copy->setAttributeOrRemoveIfEmpty("transform", sp_svg_transform_write(relative_use_transform));
+            }
         }
-        if(obj_copy->attribute("transform-with-parent"))
-            obj_copy->removeAttribute("transform-with-parent");
     }
 
     std::vector<Inkscape::XML::Node*> pasted_objects_not;
@@ -1012,8 +1019,8 @@ void sp_import_document(SPDesktop *desktop, SPDocument *clipdoc, bool in_place)
         Inkscape::XML::Node *clipnode = sp_repr_lookup_name(root, "inkscape:clipboard", 1);
         if (clipnode) {
             Geom::Point min, max;
-            sp_repr_get_point(clipnode, "min", &min);
-            sp_repr_get_point(clipnode, "max", &max);
+            min = clipnode->getAttributePoint("min", min);
+            max = clipnode->getAttributePoint("max", max);
             pos_original = Geom::Point(min[Geom::X], max[Geom::Y]);
         }
         Geom::Point offset = pos_original - sel_bbox->corner(3);
@@ -1062,7 +1069,7 @@ file_import(SPDocument *in_doc, const Glib::ustring &uri,
     }
 
     if (doc != nullptr) {
-        Inkscape::XML::rebase_hrefs(doc, in_doc->getDocumentBase(), true);
+        Inkscape::XML::rebase_hrefs(doc, in_doc->getDocumentBase(), false);
         Inkscape::XML::Document *xml_in_doc = in_doc->getReprDoc();
 
         prevent_id_clashes(doc, in_doc);
@@ -1090,7 +1097,8 @@ file_import(SPDocument *in_doc, const Glib::ustring &uri,
 
         // Create a new group if necessary.
         Inkscape::XML::Node *newgroup = nullptr;
-        if ((style && style->attributeList()) || items_count > 1) {
+        const auto & al = style->attributeList();
+        if ((style && !al.empty()) || items_count > 1) {
             newgroup = xml_in_doc->createElement("svg:g");
             sp_repr_css_set(newgroup, style, "style");
         }
@@ -1127,7 +1135,7 @@ file_import(SPDocument *in_doc, const Glib::ustring &uri,
             }
 
             // don't lose top-level defs or style elements
-            else if (child.getRepr()->type() == Inkscape::XML::ELEMENT_NODE) {
+            else if (child.getRepr()->type() == Inkscape::XML::NodeType::ELEMENT_NODE) {
                 const gchar *tag = child.getRepr()->name();
                 if (!strcmp(tag, "svg:style")) {
                     in_doc->getRoot()->appendChildRepr(child.getRepr()->duplicate(xml_in_doc));

@@ -19,9 +19,6 @@
 #include <string>
 #include "sp-item.h"
 
-#define SP_LPE_ITEM(obj) (dynamic_cast<SPLPEItem*>((SPObject*)obj))
-#define SP_IS_LPE_ITEM(obj) (dynamic_cast<const SPLPEItem*>((SPObject*)obj) != NULL)
-
 class LivePathEffectObject;
 class SPCurve;
 class SPShape;
@@ -59,11 +56,13 @@ public:
     void build(SPDocument* doc, Inkscape::XML::Node* repr) override;
     void release() override;
 
-    void set(SPAttributeEnum key, char const* value) override;
+    void set(SPAttr key, char const* value) override;
 
     void update(SPCtx* ctx, unsigned int flags) override;
     void modified(unsigned int flags) override;
-
+    bool autoFlattenFix();
+    void removeAllAutoFlatten();
+    void cleanupAutoFlatten();
     void child_added(Inkscape::XML::Node* child, Inkscape::XML::Node* ref) override;
     void remove_child(Inkscape::XML::Node* child) override;
 
@@ -77,13 +76,16 @@ public:
     bool pathEffectsEnabled() const;
     bool hasPathEffect() const;
     bool hasPathEffectOfType(int const type, bool is_ready = true) const;
+    bool hasPathEffectOfTypeRecursive(int const type, bool is_ready = true) const;
     bool hasPathEffectRecursive() const;
     bool hasPathEffectOnClipOrMask(SPLPEItem * shape) const;
     bool hasPathEffectOnClipOrMaskRecursive(SPLPEItem * shape) const;
+    size_t getLPEIndex(Inkscape::LivePathEffect::Effect* lpe) const;
+    size_t countLPEOfType(int const type, bool inc_hidden = true, bool is_ready = true) const;
+    size_t getLPEReferenceIndex(Inkscape::LivePathEffect::LPEObjectReference* lperef) const;
     Inkscape::LivePathEffect::Effect* getPathEffectOfType(int type);
     Inkscape::LivePathEffect::Effect const* getPathEffectOfType(int type) const;
     bool hasBrokenPathEffect() const;
-
     PathEffectList getEffectList();
     PathEffectList const getEffectList() const;
 
@@ -91,6 +93,10 @@ public:
     void upCurrentPathEffect();
     Inkscape::LivePathEffect::LPEObjectReference* getCurrentLPEReference();
     Inkscape::LivePathEffect::Effect* getCurrentLPE();
+    Inkscape::LivePathEffect::LPEObjectReference* getPrevLPEReference(Inkscape::LivePathEffect::LPEObjectReference* lperef);
+    Inkscape::LivePathEffect::Effect* getPrevLPE(Inkscape::LivePathEffect::Effect* lpe);
+    Inkscape::LivePathEffect::LPEObjectReference* getNextLPEReference(Inkscape::LivePathEffect::LPEObjectReference*);
+    Inkscape::LivePathEffect::Effect* getNextLPE(Inkscape::LivePathEffect::Effect* lpe);
     bool setCurrentPathEffect(Inkscape::LivePathEffect::LPEObjectReference* lperef);
     void removeCurrentPathEffect(bool keep_paths);
     void removeAllPathEffects(bool keep_paths);
@@ -106,6 +112,10 @@ public:
 };
 void sp_lpe_item_update_patheffect (SPLPEItem *lpeitem, bool wholetree, bool write); // careful, class already has method with *very* similar name!
 void sp_lpe_item_enable_path_effects(SPLPEItem *lpeitem, bool enable);
+SPObject * sp_lpe_item_remove_autoflatten(SPItem *item, const gchar *id);
+
+MAKE_SP_OBJECT_DOWNCAST_FUNCTIONS(SP_LPE_ITEM, SPLPEItem)
+MAKE_SP_OBJECT_TYPECHECK_FUNCTIONS(SP_IS_LPE_ITEM, SPLPEItem)
 
 #endif /* !SP_LPE_ITEM_H_SEEN */
 

@@ -30,16 +30,12 @@
 #include "snap.h"
 #include "verbs.h"
 
-#include "display/sp-canvas.h"
-#include "display/sp-canvas-item.h"
-
 #include "include/macros.h"
 
 #include "object/sp-ellipse.h"
 #include "object/sp-namedview.h"
 
-#include "ui/pixmaps/cursor-ellipse.xpm"
-
+#include "ui/modifiers.h"
 #include "ui/tools/arc-tool.h"
 #include "ui/shape-editor.h"
 #include "ui/tools/tool-base.h"
@@ -61,13 +57,13 @@ const std::string ArcTool::prefsPath = "/tools/shapes/arc";
 
 
 ArcTool::ArcTool()
-    : ToolBase(cursor_ellipse_xpm)
+    : ToolBase("arc.svg")
     , arc(nullptr)
 {
 }
 
 void ArcTool::finish() {
-    sp_canvas_item_ungrab(SP_CANVAS_ITEM(desktop->acetate));
+    ungrabCanvasEvents();
     this->finishItem();
     this->sel_changed_connection.disconnect();
 
@@ -127,7 +123,7 @@ void ArcTool::setup() {
 bool ArcTool::item_handler(SPItem* item, GdkEvent* event) {
     switch (event->type) {
         case GDK_BUTTON_PRESS:
-            if (event->button.button == 1 && !this->space_panning) {
+            if (event->button.button == 1) {
                 Inkscape::setup_for_drag_start(desktop, this, event);
             }
             break;
@@ -151,7 +147,7 @@ bool ArcTool::root_handler(GdkEvent* event) {
 
     switch (event->type) {
         case GDK_BUTTON_PRESS:
-            if (event->button.button == 1 && !this->space_panning) {
+            if (event->button.button == 1) {
                 dragging = true;
 
                 this->center = Inkscape::setup_for_drag_start(desktop, this, event);
@@ -161,16 +157,14 @@ bool ArcTool::root_handler(GdkEvent* event) {
                 m.setup(desktop);
                 m.freeSnapReturnByRef(this->center, Inkscape::SNAPSOURCE_NODE_HANDLE);
 
-                sp_canvas_item_grab(SP_CANVAS_ITEM(desktop->acetate),
-                                    GDK_KEY_PRESS_MASK | GDK_BUTTON_RELEASE_MASK |
-                                    GDK_POINTER_MOTION_MASK | GDK_POINTER_MOTION_HINT_MASK | GDK_BUTTON_PRESS_MASK,
-                                    nullptr, event->button.time);
+                grabCanvasEvents();
+
                 handled = true;
                 m.unSetup();
             }
             break;
         case GDK_MOTION_NOTIFY:
-            if (dragging && (event->motion.state & GDK_BUTTON1_MASK) && !this->space_panning) {
+            if (dragging && (event->motion.state & GDK_BUTTON1_MASK)) {
                 if ( this->within_tolerance
                      && ( abs( (gint) event->motion.x - this->xp ) < this->tolerance )
                      && ( abs( (gint) event->motion.y - this->yp ) < this->tolerance ) ) {
@@ -201,7 +195,7 @@ bool ArcTool::root_handler(GdkEvent* event) {
             break;
         case GDK_BUTTON_RELEASE:
             this->xp = this->yp = 0;
-            if (event->button.button == 1 && !this->space_panning) {
+            if (event->button.button == 1) {
                 dragging = false;
                 sp_event_context_discard_delayed_snap_event(this);
 
@@ -225,7 +219,7 @@ bool ArcTool::root_handler(GdkEvent* event) {
                 this->item_to_select = nullptr;
                 handled = true;
             }
-            sp_canvas_item_ungrab(SP_CANVAS_ITEM(desktop->acetate));
+            ungrabCanvasEvents();
             break;
 
         case GDK_KEY_PRESS:
@@ -266,7 +260,7 @@ bool ArcTool::root_handler(GdkEvent* event) {
 
                 case GDK_KEY_space:
                     if (dragging) {
-                        sp_canvas_item_ungrab(SP_CANVAS_ITEM(desktop->acetate));
+                        ungrabCanvasEvents();
                         dragging = false;
                         sp_event_context_discard_delayed_snap_event(this);
 
@@ -337,31 +331,23 @@ void ArcTool::drag(Geom::Point pt, guint state) {
         this->arc->transform = SP_ITEM(desktop->currentLayer())->i2doc_affine().inverse();
         this->arc->updateRepr();
 
-        desktop->canvas->forceFullRedrawAfterInterruptions(5);
+        forced_redraws_start(5);
     }
 
-    bool ctrl_save = false;
-
-    if ((state & GDK_MOD1_MASK) && (state & GDK_CONTROL_MASK) && !(state & GDK_SHIFT_MASK)) {
-        // if Alt is pressed without Shift in addition to Control, temporarily drop the CONTROL mask
-        // so that the ellipse is not constrained to integer ratios
-        ctrl_save = true;
-        state = state ^ GDK_CONTROL_MASK;
-    }
+    auto confine = Modifiers::Modifier::get(Modifiers::Type::TRANS_CONFINE)->active(state);
+    // Third is weirdly wrong, surely incrememnts should do something else.
+    auto circle_edge = Modifiers::Modifier::get(Modifiers::Type::TRANS_INCREMENT)->active(state);
 
     Geom::Rect r = Inkscape::snap_rectangular_box(desktop, this->arc, pt, this->center, state);
 
-    if (ctrl_save) {
-        state = state ^ GDK_CONTROL_MASK;
-    }
-
     Geom::Point dir = r.dimensions() / 2;
 
-    if (state & GDK_MOD1_MASK) {
+
+    if (circle_edge) {
         /* With Alt let the ellipse pass through the mouse pointer */
         Geom::Point c = r.midpoint();
 
-        if (!ctrl_save) {
+        if (!confine) {
             if (fabs(dir[Geom::X]) > 1E-6 && fabs(dir[Geom::Y]) > 1E-6) {
                 Geom::Affine const i2d ( (this->arc)->i2dt_affine() );
                 Geom::Point new_dir = pt * i2d - c;
@@ -442,7 +428,7 @@ void ArcTool::finishItem() {
         this->arc->updateRepr();
         this->arc->doWriteTransform(this->arc->transform, nullptr, true);
 
-        desktop->canvas->endForcedFullRedraws();
+        forced_redraws_stop();
 
         desktop->getSelection()->set(this->arc);
 
@@ -454,7 +440,7 @@ void ArcTool::finishItem() {
 
 void ArcTool::cancel() {
     desktop->getSelection()->clear();
-    sp_canvas_item_ungrab(SP_CANVAS_ITEM(desktop->acetate));
+    ungrabCanvasEvents();
 
     if (this->arc != nullptr) {
         this->arc->deleteObject();
@@ -466,7 +452,7 @@ void ArcTool::cancel() {
     this->yp = 0;
     this->item_to_select = nullptr;
 
-    desktop->canvas->endForcedFullRedraws();
+    forced_redraws_stop();
 
     DocumentUndo::cancel(desktop->getDocument());
 }

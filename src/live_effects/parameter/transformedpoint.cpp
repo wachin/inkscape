@@ -5,16 +5,17 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
-#include "ui/widget/registered-widget.h"
 #include "live_effects/parameter/transformedpoint.h"
 
-#include "knotholder.h"
-#include "svg/svg.h"
-#include "svg/stringstream.h"
-
-#include "live_effects/effect.h"
 #include "desktop.h"
 #include "verbs.h"
+
+#include "live_effects/effect.h"
+#include "svg/svg.h"
+#include "svg/stringstream.h"
+#include "ui/knot/knot-holder.h"
+#include "ui/knot/knot-holder-entity.h"
+#include "ui/widget/registered-widget.h"
 
 #include <glibmm/i18n.h>
 
@@ -28,13 +29,9 @@ TransformedPointParam::TransformedPointParam( const Glib::ustring& label, const 
                         bool dontTransform)
     : Parameter(label, tip, key, wr, effect),
       defvalue(default_vector),
-      origin(0.,0.),
       vector(default_vector),
       noTransform(dontTransform)
 {
-    vec_knot_shape = SP_KNOT_SHAPE_DIAMOND;
-    vec_knot_mode  = SP_KNOT_MODE_XOR;
-    vec_knot_color = 0xffffb500;
 }
 
 TransformedPointParam::~TransformedPointParam()
@@ -122,9 +119,9 @@ TransformedPointParam::param_newWidget()
     pointwdg->clearProgrammatically();
     pointwdg->set_undo_parameters(SP_VERB_DIALOG_LIVE_PATH_EFFECT, _("Change vector parameter"));
     
-    Gtk::HBox * hbox = Gtk::manage( new Gtk::HBox() );
-    static_cast<Gtk::HBox*>(hbox)->pack_start(*pointwdg, true, true);
-    static_cast<Gtk::HBox*>(hbox)->show_all_children();
+    Gtk::Box * hbox = Gtk::manage( new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL) );
+    hbox->pack_start(*pointwdg, true, true);
+    hbox->show_all_children();
 
     return dynamic_cast<Gtk::Widget *> (hbox);
 }
@@ -146,7 +143,9 @@ TransformedPointParam::param_transform_multiply(Geom::Affine const& postmul, boo
 
 
 void
-TransformedPointParam::set_vector_oncanvas_looks(SPKnotShapeType shape, SPKnotModeType mode, guint32 color)
+TransformedPointParam::set_vector_oncanvas_looks(Inkscape::CanvasItemCtrlShape shape,
+                                                 Inkscape::CanvasItemCtrlMode mode,
+                                                 guint32 color)
 {
     vec_knot_shape = shape;
     vec_knot_mode  = mode;
@@ -191,7 +190,7 @@ void
 TransformedPointParam::addKnotHolderEntities(KnotHolder *knotholder, SPDesktop *desktop, SPItem *item)
 {
     TransformedPointParamKnotHolderEntity_Vector *vector_e = new TransformedPointParamKnotHolderEntity_Vector(this);
-    vector_e->create(desktop, item, knotholder, Inkscape::CTRL_TYPE_LPE, handleTip(), vec_knot_shape, vec_knot_mode,
+    vector_e->create(desktop, item, knotholder, Inkscape::CANVAS_ITEM_CTRL_TYPE_LPE, "LPE:Point", handleTip(),
                      vec_knot_color);
     knotholder->add(vector_e);
 }

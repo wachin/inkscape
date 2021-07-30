@@ -17,14 +17,13 @@
 #include <glibmm/i18n.h>  // Internationalization
 
 #include "desktop-style.h"
+#include "document.h"
 #include "document-undo.h"
 #include "gradient-drag.h"
 #include "file.h"
-#include "inkscape.h" // SP_ACTIVE_DESKTOP
-#include "splivarot.h"
+#include "selection.h"
 #include "style.h"
-
-#include "display/sp-canvas.h" // window to world transform
+#include "verbs.h"
 
 #include "extension/db.h"
 #include "extension/find_extension_by_mime.h"
@@ -33,12 +32,16 @@
 #include "object/sp-text.h"
 #include "object/sp-flowtext.h"
 
+#include "path/path-util.h"
+
 #include "svg/svg-color.h" // write color
 
 #include "ui/clipboard.h"
 #include "ui/interface.h"
 #include "ui/tools/tool-base.h"
+#include "ui/widget/canvas.h"  // Target, canvas to world transform.
 
+#include "widgets/desktop-widget.h"
 #include "widgets/ege-paint-def.h"
 
 using Inkscape::DocumentUndo;
@@ -58,17 +61,16 @@ enum ui_drop_target_info {
 };
 
 static GtkTargetEntry ui_drop_target_entries [] = {
+    // clang-format off
     {(gchar *)"text/uri-list",                0, URI_LIST        },
     {(gchar *)"image/svg+xml",                0, SVG_XML_DATA    },
     {(gchar *)"image/svg",                    0, SVG_DATA        },
     {(gchar *)"image/png",                    0, PNG_DATA        },
     {(gchar *)"image/jpeg",                   0, JPEG_DATA       },
-#if ENABLE_MAGIC_COLORS
-    {(gchar *)"application/x-inkscape-color", 0, APP_X_INKY_COLOR},
-#endif // ENABLE_MAGIC_COLORS
     {(gchar *)"application/x-oswb-color",     0, APP_OSWB_COLOR  },
     {(gchar *)"application/x-color",          0, APP_X_COLOR     },
     {(gchar *)"application/x-inkscape-paste", 0, APP_X_INK_PASTE }
+    // clang-format on
 };
 
 static GtkTargetEntry *completeDropTargets = nullptr;
@@ -77,6 +79,7 @@ static int completeDropTargetsCount = 0;
 static guint nui_drop_target_entries = G_N_ELEMENTS(ui_drop_target_entries);
 
 /* Drag and Drop */
+static
 void
 ink_drag_data_received(GtkWidget *widget,
                          GdkDragContext *drag_context,
@@ -84,95 +87,20 @@ ink_drag_data_received(GtkWidget *widget,
                          GtkSelectionData *data,
                          guint info,
                          guint /*event_time*/,
-                         gpointer /*user_data*/)
+                         gpointer user_data)
 {
-    SPDocument *doc = SP_ACTIVE_DOCUMENT;
-    SPDesktop *desktop = SP_ACTIVE_DESKTOP;
+    auto dtw = static_cast<SPDesktopWidget *>(user_data);
+    SPDesktop *desktop = dtw->desktop;
+    SPDocument *doc = desktop->doc();
 
     switch (info) {
-#if ENABLE_MAGIC_COLORS
-        case APP_X_INKY_COLOR:
-        {
-            int destX = 0;
-            int destY = 0;
-            gtk_widget_translate_coordinates( widget, &(desktop->canvas->widget), x, y, &destX, &destY );
-            Geom::Point where( sp_canvas_window_to_world( desktop->canvas, Geom::Point( destX, destY ) ) );
-
-            SPItem *item = desktop->getItemAtPoint( where, true );
-            if ( item )
-            {
-                bool fillnotstroke = (drag_context->action != GDK_ACTION_MOVE);
-
-                if ( data->length >= 8 ) {
-                    cmsHPROFILE srgbProf = cmsCreate_sRGBProfile();
-
-                    gchar c[64] = {0};
-                    // Careful about endian issues.
-                    guint16* dataVals = (guint16*)data->data;
-                    sp_svg_write_color( c, sizeof(c),
-                                        SP_RGBA32_U_COMPOSE(
-                                            0x0ff & (dataVals[0] >> 8),
-                                            0x0ff & (dataVals[1] >> 8),
-                                            0x0ff & (dataVals[2] >> 8),
-                                            0xff // can't have transparency in the color itself
-                                            //0x0ff & (data->data[3] >> 8),
-                                            ));
-                    SPCSSAttr *css = sp_repr_css_attr_new();
-                    bool updatePerformed = false;
-
-                    if ( data->length > 14 ) {
-                        int flags = dataVals[4];
-
-                        // piggie-backed palette entry info
-                        int index = dataVals[5];
-                        Glib::ustring palName;
-                        for ( int i = 0; i < dataVals[6]; i++ ) {
-                            palName += (gunichar)dataVals[7+i];
-                        }
-
-                        // Now hook in a magic tag of some sort.
-                        if ( !palName.empty() && (flags & 1) ) {
-                            gchar* str = g_strdup_printf("%d|", index);
-                            palName.insert( 0, str );
-                            g_free(str);
-                            str = 0;
-
-                            item->setAttribute(
-                                fillnotstroke ? "inkscape:x-fill-tag":"inkscape:x-stroke-tag",
-                                palName.c_str(),
-                                false );
-                            item->updateRepr();
-
-                            sp_repr_css_set_property( css, fillnotstroke ? "fill":"stroke", c );
-                            updatePerformed = true;
-                        }
-                    }
-
-                    if ( !updatePerformed ) {
-                        sp_repr_css_set_property( css, fillnotstroke ? "fill":"stroke", c );
-                    }
-
-                    sp_desktop_apply_css_recursive( item, css, true );
-                    item->updateRepr();
-
-                    SPDocumentUndo::done( doc , SP_VERB_NONE,
-                                      _("Drop color"));
-
-                    if ( srgbProf ) {
-                        cmsCloseProfile( srgbProf );
-                    }
-                }
-            }
-        }
-        break;
-#endif // ENABLE_MAGIC_COLORS
-
         case APP_X_COLOR:
         {
             int destX = 0;
             int destY = 0;
-            gtk_widget_translate_coordinates( widget, GTK_WIDGET(desktop->canvas), x, y, &destX, &destY );
-            Geom::Point where( sp_canvas_window_to_world( desktop->canvas, Geom::Point( destX, destY ) ) );
+            auto canvas = dtw->get_canvas();
+            gtk_widget_translate_coordinates( widget, GTK_WIDGET(canvas->gobj()), x, y, &destX, &destY );
+            Geom::Point where( canvas->canvas_to_world(Geom::Point(destX, destY)));
             Geom::Point const button_dt(desktop->w2d(where));
             Geom::Point const button_doc(desktop->dt2doc(button_dt));
 
@@ -214,7 +142,7 @@ ink_drag_data_received(GtkWidget *widget,
                         Path *livarot_path = Path_for_item(item, true, true);
                         livarot_path->ConvertWithBackData(0.04);
 
-                        boost::optional<Path::cut_position> position = get_nearest_position_on_Path(livarot_path, button_doc);
+                        std::optional<Path::cut_position> position = get_nearest_position_on_Path(livarot_path, button_doc);
                         if (position) {
                             Geom::Point nearest = get_point_on_Path(livarot_path, position->piece, position->t);
                             Geom::Point delta = nearest - button_doc;
@@ -294,8 +222,9 @@ ink_drag_data_received(GtkWidget *widget,
             if ( worked ) {
                 int destX = 0;
                 int destY = 0;
-                gtk_widget_translate_coordinates( widget, GTK_WIDGET(desktop->canvas), x, y, &destX, &destY );
-                Geom::Point where( sp_canvas_window_to_world( desktop->canvas, Geom::Point( destX, destY ) ) );
+                auto canvas = dtw->get_canvas();
+                gtk_widget_translate_coordinates( widget, GTK_WIDGET(canvas->gobj()), x, y, &destX, &destY );
+                Geom::Point where( canvas->canvas_to_world(Geom::Point(destX, destY)));
                 Geom::Point const button_dt(desktop->w2d(where));
                 Geom::Point const button_doc(desktop->dt2doc(button_dt));
 
@@ -317,7 +246,7 @@ ink_drag_data_received(GtkWidget *widget,
                         Path *livarot_path = Path_for_item(item, true, true);
                         livarot_path->ConvertWithBackData(0.04);
 
-                        boost::optional<Path::cut_position> position = get_nearest_position_on_Path(livarot_path, button_doc);
+                        std::optional<Path::cut_position> position = get_nearest_position_on_Path(livarot_path, button_doc);
                         if (position) {
                             Geom::Point nearest = get_point_on_Path(livarot_path, position->piece, position->t);
                             Geom::Point delta = nearest - button_doc;
@@ -428,7 +357,7 @@ ink_drag_data_received(GtkWidget *widget,
             ext->set_param_optiongroup("link", "embed");
             ext->set_gui(false);
 
-            gchar *filename = g_build_filename( g_get_tmp_dir(), "inkscape-dnd-import", NULL );
+            gchar *filename = g_build_filename( g_get_tmp_dir(), "inkscape-dnd-import", nullptr );
             g_file_set_contents(filename,
                 reinterpret_cast<gchar const *>(gtk_selection_data_get_data (data)),
                 gtk_selection_data_get_length (data),
@@ -445,8 +374,8 @@ ink_drag_data_received(GtkWidget *widget,
     }
 }
 
-#include "ui/tools/gradient-tool.h"
-
+#if 0
+static
 void ink_drag_motion( GtkWidget */*widget*/,
                         GdkDragContext */*drag_context*/,
                         gint /*x*/, gint /*y*/,
@@ -469,9 +398,10 @@ static void ink_drag_leave( GtkWidget */*widget*/,
 {
 //     g_message("drag-n-drop leave                at %d", event_time);
 }
+#endif
 
 void
-ink_drag_setup(Gtk::Widget* win)
+ink_drag_setup(SPDesktopWidget* dtw)
 {
     if ( completeDropTargets == nullptr || completeDropTargetsCount == 0 )
     {
@@ -499,17 +429,20 @@ ink_drag_setup(Gtk::Widget* win)
         }
     }
 
-    gtk_drag_dest_set((GtkWidget*)win->gobj(),
+    auto canvas = dtw->get_canvas();
+
+    gtk_drag_dest_set(GTK_WIDGET(canvas->gobj()),
                       GTK_DEST_DEFAULT_ALL,
                       completeDropTargets,
                       completeDropTargetsCount,
                       GdkDragAction(GDK_ACTION_COPY | GDK_ACTION_MOVE));
 
-    g_signal_connect(G_OBJECT(win->gobj()),
+    g_signal_connect(G_OBJECT(canvas->gobj()),
                      "drag_data_received",
                      G_CALLBACK(ink_drag_data_received),
-                     NULL);
+                     dtw);
 
+#if 0
     g_signal_connect(G_OBJECT(win->gobj()),
                      "drag_motion",
                      G_CALLBACK(ink_drag_motion),
@@ -519,6 +452,7 @@ ink_drag_setup(Gtk::Widget* win)
                      "drag_leave",
                      G_CALLBACK(ink_drag_leave),
                      NULL);
+#endif
 }
 
 

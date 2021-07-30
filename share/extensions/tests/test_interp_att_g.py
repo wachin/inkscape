@@ -7,6 +7,10 @@ class InterpAttGBasicTest(ComparisonMixin, TestCase):
     effect_class = InterpAttG
     comparisons = [('--id=layer1',)]
 
+class InterpAttGMultipleSelectedTest(ComparisonMixin, TestCase):
+    effect_class = InterpAttG
+    comparisons = [('--id=c1', '--id=c2', '--id=c3')]
+
 class InterpAttGColorRoundingTest(ComparisonMixin, TestCase):
     effect_class = InterpAttG
     compare_file = 'svg/group_interpolate.svg'

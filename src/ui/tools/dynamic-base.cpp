@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 /** @file
- * TODO: insert short description here
+ * Common drawing mode. Base class of Eraser and Calligraphic tools.
  *//*
  * Authors: see git history
  *
@@ -11,9 +11,16 @@
 #include "ui/tools/dynamic-base.h"
 
 #include "message-context.h"
-#include "display/sp-canvas-item.h"
 #include "desktop.h"
+
 #include "display/curve.h"
+#include "display/control/canvas-item-bpath.h"
+
+#include "util/units.h"
+
+using Inkscape::Util::Unit;
+using Inkscape::Util::Quantity;
+using Inkscape::Util::unit_table;
 
 #define MIN_PRESSURE      0.0
 #define MAX_PRESSURE      1.0
@@ -27,8 +34,8 @@ namespace Inkscape {
 namespace UI {
 namespace Tools {
 
-DynamicBase::DynamicBase(gchar const *const *cursor_shape)
-    : ToolBase(cursor_shape)
+DynamicBase::DynamicBase(const std::string& cursor_filename)
+    : ToolBase(cursor_filename)
     , accumulated(nullptr)
     , currentshape(nullptr)
     , currentcurve(nullptr)
@@ -65,34 +72,13 @@ DynamicBase::DynamicBase(gchar const *const *cursor_shape)
 }
 
 DynamicBase::~DynamicBase() {
-    if (this->accumulated) {
-        this->accumulated = this->accumulated->unref();
-        this->accumulated = nullptr;
-    }
-
-    for (auto i:segments) {
-        sp_canvas_item_destroy(SP_CANVAS_ITEM(i));
+    for (auto segment : segments) {
+        delete segment;
     }
     segments.clear();
 
-    if (this->currentcurve) {
-        this->currentcurve = this->currentcurve->unref();
-        this->currentcurve = nullptr;
-    }
-
-    if (this->cal1) {
-        this->cal1 = this->cal1->unref();
-        this->cal1 = nullptr;
-    }
-
-    if (this->cal2) {
-        this->cal2 = this->cal2->unref();
-        this->cal2 = nullptr;
-    }
-
     if (this->currentshape) {
-        sp_canvas_item_destroy(this->currentshape);
-        this->currentshape = nullptr;
+        delete currentshape;
     }
 }
 
@@ -102,6 +88,9 @@ void DynamicBase::set(const Inkscape::Preferences::Entry& value) {
     // ignore preset modifications
     static Glib::ustring const presets_path = this->pref_observer->observed_path + "/preset";
     Glib::ustring const &full_path = value.getPath();
+
+    Inkscape::Preferences *prefs = Inkscape::Preferences::get();
+    Unit const *unit = unit_table.getUnit(prefs->getString("/tools/calligraphic/unit"));
 
     if (full_path.compare(0, presets_path.size(), presets_path) == 0) {
     	return;
@@ -114,7 +103,7 @@ void DynamicBase::set(const Inkscape::Preferences::Entry& value) {
     } else if (path == "angle") {
         this->angle = CLAMP(value.getDouble(), -90, 90);
     } else if (path == "width") {
-        this->width = 0.01 * CLAMP(value.getInt(10), 1, 100);
+        this->width = 0.01 * CLAMP(value.getDouble(), Quantity::convert(0.001, unit, "px"), Quantity::convert(100, unit, "px"));
     } else if (path == "thinning") {
         this->vel_thin = 0.01 * CLAMP(value.getInt(10), -100, 100);
     } else if (path == "tremor") {
@@ -134,20 +123,20 @@ void DynamicBase::set(const Inkscape::Preferences::Entry& value) {
 
 /* Get normalized point */
 Geom::Point DynamicBase::getNormalizedPoint(Geom::Point v) const {
-    Geom::Rect drect = this->desktop->get_display_area();
+    auto drect = this->desktop->get_display_area();
 
-    double const max = MAX ( drect.dimensions()[Geom::X], drect.dimensions()[Geom::Y] );
+    double const max = drect.maxExtent();
 
-    return Geom::Point(( v[Geom::X] - drect.min()[Geom::X] ) / max,  ( v[Geom::Y] - drect.min()[Geom::Y] ) / max);
+    return (v - drect.bounds().min()) / max;
 }
 
 /* Get view point */
 Geom::Point DynamicBase::getViewPoint(Geom::Point n) const {
-    Geom::Rect drect = this->desktop->get_display_area();
+    auto drect = this->desktop->get_display_area();
 
-    double const max = MAX ( drect.dimensions()[Geom::X], drect.dimensions()[Geom::Y] );
+    double const max = drect.maxExtent();
 
-    return Geom::Point(n[Geom::X] * max + drect.min()[Geom::X], n[Geom::Y] * max + drect.min()[Geom::Y]);
+    return n * max + drect.bounds().min();
 }
 
 }

@@ -22,7 +22,7 @@
 
 static const gint SLIDER_WIDTH = 96;
 static const gint SLIDER_HEIGHT = 8;
-static const gint ARROW_SIZE = 7;
+static const gint ARROW_SIZE = 8;
 
 static const guchar *sp_color_slider_render_gradient(gint x0, gint y0, gint width, gint height, gint c[], gint dc[],
                                                      guint b0, guint b1, guint mask);
@@ -37,7 +37,6 @@ ColorSlider::ColorSlider(Glib::RefPtr<Gtk::Adjustment> adjustment)
     : _dragging(false)
     , _value(0.0)
     , _oldvalue(0.0)
-    , _mapsize(0)
     , _map(nullptr)
 {
     _c0[0] = 0x00;
@@ -155,7 +154,7 @@ bool ColorSlider::on_button_press_event(GdkEventButton *event)
         _oldvalue = _value;
         gfloat value = CLAMP((gfloat)(event->x - cx) / cw, 0.0, 1.0);
         bool constrained = event->state & GDK_CONTROL_MASK;
-        ColorScales::setScaled(_adjustment->gobj(), value, constrained);
+        ColorScales::setScaled(_adjustment, value, constrained);
         signal_dragged.emit();
 
 	auto window = _gdk_window->gobj();
@@ -197,7 +196,7 @@ bool ColorSlider::on_motion_notify_event(GdkEventMotion *event)
         cw = allocation.get_width() - 2 * cx;
         gfloat value = CLAMP((gfloat)(event->x - cx) / cw, 0.0, 1.0);
         bool constrained = event->state & GDK_CONTROL_MASK;
-        ColorScales::setScaled(_adjustment->gobj(), value, constrained);
+        ColorScales::setScaled(_adjustment, value, constrained);
         signal_dragged.emit();
     }
 
@@ -226,7 +225,7 @@ void ColorSlider::setAdjustment(Glib::RefPtr<Gtk::Adjustment> adjustment)
         _adjustment_value_changed_connection =
             _adjustment->signal_value_changed().connect(sigc::mem_fun(this, &ColorSlider::_onAdjustmentValueChanged));
 
-        _value = ColorScales::getScaled(_adjustment->gobj());
+        _value = ColorScales::getScaled(_adjustment);
 
         _onAdjustmentChanged();
     }
@@ -236,7 +235,7 @@ void ColorSlider::_onAdjustmentChanged() { queue_draw(); }
 
 void ColorSlider::_onAdjustmentValueChanged()
 {
-    if (_value != ColorScales::getScaled(_adjustment->gobj())) {
+    if (_value != ColorScales::getScaled(_adjustment)) {
         gint cx, cy, cw, ch;
         auto style_context = get_style_context();
         auto allocation    = get_allocation();
@@ -245,11 +244,11 @@ void ColorSlider::_onAdjustmentValueChanged()
         cy = padding.get_top();
         cw = allocation.get_width() - 2 * cx;
         ch = allocation.get_height() - 2 * cy;
-        if ((gint)(ColorScales::getScaled(_adjustment->gobj()) * cw) != (gint)(_value * cw)) {
+        if ((gint)(ColorScales::getScaled(_adjustment) * cw) != (gint)(_value * cw)) {
             gint ax, ay;
             gfloat value;
             value = _value;
-            _value = ColorScales::getScaled(_adjustment->gobj());
+            _value = ColorScales::getScaled(_adjustment);
             ax = (int)(cx + value * cw - ARROW_SIZE / 2 - 2);
             ay = cy;
             queue_draw_area(ax, ay, ARROW_SIZE + 4, ch);
@@ -258,7 +257,7 @@ void ColorSlider::_onAdjustmentValueChanged()
             queue_draw_area(ax, ay, ARROW_SIZE + 4, ch);
         }
         else {
-            _value = ColorScales::getScaled(_adjustment->gobj());
+            _value = ColorScales::getScaled(_adjustment);
         }
     }
 }
@@ -320,11 +319,16 @@ bool ColorSlider::on_draw(const Cairo::RefPtr<Cairo::Context> &cr)
 
     padding = style_context->get_padding(get_state_flags());
 
-    carea.set_x(padding.get_left());
-    carea.set_y(padding.get_top());
+    int scale = style_context->get_scale();
+    carea.set_x(padding.get_left() * scale);
+    carea.set_y(padding.get_top() * scale);
 
-    carea.set_width(allocation.get_width() - 2 * carea.get_x());
-    carea.set_height(allocation.get_height() - 2 * carea.get_y());
+    carea.set_width(allocation.get_width() * scale - 2 * carea.get_x());
+    carea.set_height(allocation.get_height() * scale - 2 * carea.get_y());
+
+    cr->save();
+    // changing scale to draw pixmap at display resolution
+    cr->scale(1.0 / scale, 1.0 / scale);
 
     if (_map) {
         /* Render map pixelstore */
@@ -332,7 +336,7 @@ bool ColorSlider::on_draw(const Cairo::RefPtr<Cairo::Context> &cr)
         gint s = 0;
 
         const guchar *b =
-            sp_color_slider_render_map(0, 0, carea.get_width(), carea.get_height(), _map, s, d, _b0, _b1, _bmask);
+            sp_color_slider_render_map(0, 0, carea.get_width(), carea.get_height(), _map, s, d, _b0, _b1, _bmask * scale);
 
         if (b != nullptr && carea.get_width() > 0) {
             Glib::RefPtr<Gdk::Pixbuf> pb = Gdk::Pixbuf::create_from_data(
@@ -354,7 +358,7 @@ bool ColorSlider::on_draw(const Cairo::RefPtr<Cairo::Context> &cr)
                 dc[i] = ((_cm[i] << 16) - c[i]) / (carea.get_width() / 2);
             }
             guint wi = carea.get_width() / 2;
-            const guchar *b = sp_color_slider_render_gradient(0, 0, wi, carea.get_height(), c, dc, _b0, _b1, _bmask);
+            const guchar *b = sp_color_slider_render_gradient(0, 0, wi, carea.get_height(), c, dc, _b0, _b1, _bmask * scale);
 
             /* Draw pixelstore 1 */
             if (b != nullptr && wi > 0) {
@@ -374,7 +378,7 @@ bool ColorSlider::on_draw(const Cairo::RefPtr<Cairo::Context> &cr)
             }
             guint wi = carea.get_width() / 2;
             const guchar *b = sp_color_slider_render_gradient(carea.get_width() / 2, 0, wi, carea.get_height(), c, dc,
-                                                              _b0, _b1, _bmask);
+                                                              _b0, _b1, _bmask * scale);
 
             /* Draw pixelstore 2 */
             if (b != nullptr && wi > 0) {
@@ -387,33 +391,35 @@ bool ColorSlider::on_draw(const Cairo::RefPtr<Cairo::Context> &cr)
         }
     }
 
+    cr->restore();
+
     /* Draw shadow */
     if (!colorsOnTop) {
         style_context->render_frame(cr, 0, 0, allocation.get_width(), allocation.get_height());
     }
 
     /* Draw arrow */
-    gint x = (int)(_value * (carea.get_width() - 1) - ARROW_SIZE / 2 + carea.get_x());
-    gint y1 = carea.get_y();
-    gint y2 = carea.get_y() + carea.get_height() - 1;
-    cr->set_line_width(1.0);
+    gint x = (int)(_value * (carea.get_width() / scale) - ARROW_SIZE / 2 + carea.get_x() / scale);
+    gint y1 = carea.get_y() / scale;
+    gint y2 = carea.get_y() / scale + carea.get_height() / scale - 1;
+    cr->set_line_width(2.0);
 
     // Define top arrow
     cr->move_to(x - 0.5, y1 + 0.5);
     cr->line_to(x + ARROW_SIZE - 0.5, y1 + 0.5);
     cr->line_to(x + (ARROW_SIZE - 1) / 2.0, y1 + ARROW_SIZE / 2.0 + 0.5);
-    cr->line_to(x - 0.5, y1 + 0.5);
+    cr->close_path();
 
     // Define bottom arrow
     cr->move_to(x - 0.5, y2 + 0.5);
     cr->line_to(x + ARROW_SIZE - 0.5, y2 + 0.5);
     cr->line_to(x + (ARROW_SIZE - 1) / 2.0, y2 - ARROW_SIZE / 2.0 + 0.5);
-    cr->line_to(x - 0.5, y2 + 0.5);
+    cr->close_path();
 
     // Render both arrows
-    cr->set_source_rgb(1.0, 1.0, 1.0);
-    cr->stroke_preserve();
     cr->set_source_rgb(0.0, 0.0, 0.0);
+    cr->stroke_preserve();
+    cr->set_source_rgb(1.0, 1.0, 1.0);
     cr->fill();
 
     return false;
@@ -424,6 +430,10 @@ bool ColorSlider::on_draw(const Cairo::RefPtr<Cairo::Context> &cr)
 } // namespace Inkscape
 
 /* Colors are << 16 */
+
+inline bool checkerboard(gint x, gint y, guint size) {
+	return ((x / size) & 1) != ((y / size) & 1);
+}
 
 static const guchar *sp_color_slider_render_gradient(gint x0, gint y0, gint width, gint height, gint c[], gint dc[],
                                                      guint b0, guint b1, guint mask)
@@ -459,7 +469,7 @@ static const guchar *sp_color_slider_render_gradient(gint x0, gint y0, gint widt
         for (y = y0; y < y0 + height; y++) {
             guint bg, fc;
             /* Background value */
-            bg = ((x & mask) ^ (y & mask)) ? b0 : b1;
+            bg = checkerboard(x, y, mask) ? b0 : b1;
             fc = (cr - bg) * ca;
             d[0] = bg + ((fc + (fc >> 8) + 0x80) >> 8);
             fc = (cg - bg) * ca;
@@ -509,7 +519,7 @@ static const guchar *sp_color_slider_render_map(gint x0, gint y0, gint width, gi
         for (y = y0; y < y0 + height; y++) {
             guint bg, fc;
             /* Background value */
-            bg = ((x & mask) ^ (y & mask)) ? b0 : b1;
+            bg = checkerboard(x, y, mask) ? b0 : b1;
             fc = (cr - bg) * ca;
             d[0] = bg + ((fc + (fc >> 8) + 0x80) >> 8);
             fc = (cg - bg) * ca;

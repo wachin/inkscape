@@ -96,14 +96,15 @@ file_close(InkscapeApplication *app)
 
 std::vector<std::vector<Glib::ustring>> raw_data_file =
 {
-    {"file-open",                 "FileOpen",                "File",       N_("Open file.")                                         },
-    {"file-new",                  "FileNew",                 "File",       N_("Open new document using template.")                  },
-    {"file-close",                "FileClose",               "File",       N_("Close active document.")                             }
+    // clang-format off
+    {"app.file-open",              N_("File Open"),                "File",       N_("Open file")                                         },
+    {"app.file-new",               N_("File New"),                 "File",       N_("Open new document using template")                  },
+    {"app.file-close",             N_("File Close"),               "File",       N_("Close active document")                             }
+    // clang-format on
 };
 
-template <class T>
 void
-add_actions_file(ConcreteInkscapeApplication<T>* app)
+add_actions_file(InkscapeApplication* app)
 {
     Glib::VariantType Bool(  Glib::VARIANT_TYPE_BOOL);
     Glib::VariantType Int(   Glib::VARIANT_TYPE_INT32);
@@ -113,21 +114,19 @@ add_actions_file(ConcreteInkscapeApplication<T>* app)
 
     // Debian 9 has 2.50.0
 #if GLIB_CHECK_VERSION(2, 52, 0)
+    auto *gapp = app->gio_app();
 
-    app->add_action_with_parameter( "file-open",                 String, sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&file_open),           app));
-    app->add_action_with_parameter( "file-new",                  String, sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&file_new),            app));
-    app->add_action(                "file-close",                        sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&file_close),          app));
+    // clang-format off
+    gapp->add_action_with_parameter( "file-open",                 String, sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&file_open),           app));
+    gapp->add_action_with_parameter( "file-new",                  String, sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&file_new),            app));
+    gapp->add_action(                "file-close",                        sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&file_close),          app));
+    // clang-format on
 #else
     std::cerr << "add_actions: Some actions require Glibmm 2.52, compiled with: " << glib_major_version << "." << glib_minor_version << std::endl;
 #endif
 
     app->get_action_extra_data().add_data(raw_data_file);
 }
-
-
-template void add_actions_file(ConcreteInkscapeApplication<Gio::Application>* app);
-template void add_actions_file(ConcreteInkscapeApplication<Gtk::Application>* app);
-
 
 
 /*

@@ -19,9 +19,7 @@
 #include "sp-item.h"
 #include "desktop.h"
 
-#define SP_FLOWTEXT(obj) (dynamic_cast<SPFlowtext*>((SPObject*)obj))
-#define SP_IS_FLOWTEXT(obj) (dynamic_cast<const SPFlowtext*>((SPObject*)obj) != NULL)
-
+#include <memory>
 
 namespace Inkscape {
 
@@ -60,9 +58,7 @@ public:
     bool _optimizeScaledText;
 
 	/** Converts the text object to its component curves */
-	SPCurve *getNormalizedBpath() const {
-		return layout.convertToCurves();
-	}
+    std::unique_ptr<SPCurve> getNormalizedBpath() const;
 
     /** Optimize scaled flow text on next set_transform. */
     void optimizeScaledText()
@@ -82,7 +78,7 @@ public:
 	void child_added(Inkscape::XML::Node* child, Inkscape::XML::Node* ref) override;
 	void remove_child(Inkscape::XML::Node* child) override;
 
-	void set(SPAttributeEnum key, const char* value) override;
+	void set(SPAttr key, const char* value) override;
 	Geom::Affine set_transform(Geom::Affine const& xform) override;
 
 	void update(SPCtx* ctx, unsigned int flags) override;
@@ -93,6 +89,7 @@ public:
 
 	Geom::OptRect bbox(Geom::Affine const &transform, SPItem::BBoxType type) const override;
 	void print(SPPrintContext *ctx) override;
+        const char* typeName() const override;
         const char* displayName() const override;
 	char* description() const override;
 	Inkscape::DrawingItem* show(Inkscape::Drawing &drawing, unsigned int key, unsigned int flags) override;
@@ -101,6 +98,9 @@ public:
 };
 
 SPItem *create_flowtext_with_internal_frame (SPDesktop *desktop, Geom::Point p1, Geom::Point p2);
+
+MAKE_SP_OBJECT_DOWNCAST_FUNCTIONS(SP_FLOWTEXT, SPFlowtext)
+MAKE_SP_OBJECT_TYPECHECK_FUNCTIONS(SP_IS_FLOWTEXT, SPFlowtext)
 
 #endif // SEEN_SP_ITEM_FLOWTEXT_H
 

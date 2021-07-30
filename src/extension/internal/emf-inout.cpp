@@ -28,6 +28,8 @@
 #include <cstdint>
 #include <3rdparty/libuemf/symbol_convert.h>
 
+#include "emf-inout.h"
+
 #include "clear-n_.h"
 #include "display/drawing-item.h"
 #include "display/drawing.h"
@@ -37,16 +39,15 @@
 #include "extension/output.h"
 #include "extension/print.h"
 #include "extension/system.h"
-#include "inkscape.h" // even though it is included indirectly by emf-inout.h
 #include "object/sp-path.h"
 #include "object/sp-root.h"
+#include "path/path-boolop.h"
 #include "print.h"
 #include "svg/css-ostringstream.h"
 #include "svg/svg.h"
-#include "util/units.h" // even though it is included indirectly by emf-inout.h
+#include "util/units.h"
 
 #include "emf-print.h"
-#include "emf-inout.h"
 
 #define PRINT_EMF "org.inkscape.print.emf"
 
@@ -748,7 +749,7 @@ int Emf::in_clips(PEMF_CALLBACK_DATA d, const char *test){
 void Emf::add_clips(PEMF_CALLBACK_DATA d, const char *clippath, unsigned int logic){
     int op = combine_ops_to_livarot(logic);
     Geom::PathVector combined_vect;
-    char *combined = nullptr;
+    std::string combined;
     if (op >= 0 && d->dc[d->level].clip_id) {
         unsigned int real_idx = d->dc[d->level].clip_id - 1;
         Geom::PathVector old_vect = sp_svg_read_pathv(d->clips.strings[real_idx]);
@@ -757,13 +758,13 @@ void Emf::add_clips(PEMF_CALLBACK_DATA d, const char *clippath, unsigned int log
         combined = sp_svg_write_path(combined_vect);
     }
     else {
-        combined = strdup(clippath);  // COPY operation, erases everything and starts a new one
+        combined = clippath;  // COPY operation, erases everything and starts a new one
     }
 
-    uint32_t  idx = in_clips(d, combined);
+    uint32_t idx = in_clips(d, combined.c_str());
     if(!idx){  // add clip if not already present
         if(d->clips.count == d->clips.size){  enlarge_clips(d); }
-        d->clips.strings[d->clips.count++]=strdup(combined);
+        d->clips.strings[d->clips.count++] = strdup(combined.c_str());
         d->dc[d->level].clip_id = d->clips.count;  // one more than the slot where it is actually stored
         SVGOStringStream tmp_clippath;
         tmp_clippath << "\n<clipPath";
@@ -780,7 +781,6 @@ void Emf::add_clips(PEMF_CALLBACK_DATA d, const char *clippath, unsigned int log
     else {
         d->dc[d->level].clip_id = idx;
     }
-    free(combined);
 }
 
 
@@ -2268,9 +2268,7 @@ std::cout << "BEFORE DRAW"
                 double oy = pix_to_y_point(d, off.x, off.y) - pix_to_y_point(d, 0, 0);
                 Geom::Affine tf = Geom::Translate(ox,oy);
                 tmp_vect *= tf;
-                char *tmp_path = sp_svg_write_path(tmp_vect);
-                add_clips(d, tmp_path, U_RGN_COPY);
-                free(tmp_path);
+                add_clips(d, sp_svg_write_path(tmp_vect).c_str(), U_RGN_COPY);
             }
             break;
         }
@@ -2659,6 +2657,7 @@ std::cout << "BEFORE DRAW"
             double cnx = corner.cx/2;
             double cny = corner.cy/2;
 
+            // clang-format off
             SVGOStringStream tmp_rectangle;
             tmp_rectangle << "\n"
                           << "    M "
@@ -2702,7 +2701,7 @@ std::cout << "BEFORE DRAW"
                           << pix_to_xy(d,    rc.left            ,        rc.bottom - cny    )
                           << "\n";
             tmp_rectangle << "   z\n";
-
+            // clang-format on
 
             d->mask |= emr_mask;
 
@@ -3631,6 +3630,7 @@ void
 Emf::init ()
 {
     /* EMF in */
+    // clang-format off
     Inkscape::Extension::build_from_mem(
         "<inkscape-extension xmlns=\"" INKSCAPE_EXTENSION_URI "\">\n"
             "<name>" N_("EMF Input") "</name>\n"
@@ -3640,11 +3640,12 @@ Emf::init ()
                 "<mimetype>image/x-emf</mimetype>\n"
                 "<filetypename>" N_("Enhanced Metafiles (*.emf)") "</filetypename>\n"
                 "<filetypetooltip>" N_("Enhanced Metafiles") "</filetypetooltip>\n"
-                "<output_extension>org.inkscape.output.emf</output_extension>\n"
             "</input>\n"
         "</inkscape-extension>", new Emf());
+    // clang-format on
 
     /* EMF out */
+    // clang-format off
     Inkscape::Extension::build_from_mem(
         "<inkscape-extension xmlns=\"" INKSCAPE_EXTENSION_URI "\">\n"
             "<name>" N_("EMF Output") "</name>\n"
@@ -3667,6 +3668,7 @@ Emf::init ()
                 "<filetypetooltip>" N_("Enhanced Metafile") "</filetypetooltip>\n"
             "</output>\n"
         "</inkscape-extension>", new Emf());
+    // clang-format on
 
     return;
 }

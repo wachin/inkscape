@@ -30,8 +30,6 @@
 #include "snap-preferences.h"
 #include "snap-candidate.h"
 
-//class SPGuideConstraint;
-#include "sp-guide-constraint.h"
 #include "xml/repr.h"
 
 class SPClipPath;
@@ -121,9 +119,6 @@ public:
     Geom::Affine i2vp;
 };
 
-#define SP_ITEM(obj) (dynamic_cast<SPItem*>((SPObject*)obj))
-#define SP_IS_ITEM(obj) (dynamic_cast<const SPItem*>((SPObject*)obj) != NULL)
-
 /**
  * Base class for visual SVG elements.
  * SPItem is an abstract base class for all graphic (visible) SVG nodes. It
@@ -174,8 +169,6 @@ public:
   public:
     SPItemView *display;
 
-    std::vector<SPGuideConstraint> constraints;
-
     sigc::signal<void, Geom::Affine const *, SPItem *> _transformed_signal;
 
     bool isLocked() const;
@@ -189,12 +182,10 @@ public:
         return sensitive;
     };
 
+    void setHighlight(guint32 color);
     bool isHighlightSet() const;
-    guint32 highlight_color() const;
+    virtual guint32 highlight_color() const;
 
-    void setHighlightColor(guint32 color);
-
-    void unsetHighlightColor();
     //====================
 
     bool isEvaluated() const;
@@ -396,7 +387,7 @@ public:
      */
     Geom::Affine dt2i_affine() const;
 
-    char *_highlightColor;
+    guint32 _highlightColor;
 
 private:
     enum EvaluatedStatus
@@ -420,14 +411,15 @@ public:
         void move_rel( Geom::Translate const &tr);
 	void build(SPDocument *document, Inkscape::XML::Node *repr) override;
 	void release() override;
-	void set(SPAttributeEnum key, char const* value) override;
+	void set(SPAttr key, char const* value) override;
 	void update(SPCtx *ctx, unsigned int flags) override;
         void modified(unsigned int flags) override;
 	Inkscape::XML::Node* write(Inkscape::XML::Document *xml_doc, Inkscape::XML::Node *repr, unsigned int flags) override;
 
 	virtual Geom::OptRect bbox(Geom::Affine const &transform, SPItem::BBoxType type) const;
 	virtual void print(SPPrintContext *ctx);
-    virtual const char* displayName() const;
+        virtual const char* typeName() const;
+        virtual const char* displayName() const;
 	virtual char* description() const;
 	virtual Inkscape::DrawingItem* show(Inkscape::Drawing &drawing, unsigned int key, unsigned int flags);
 	virtual void hide(unsigned int key);
@@ -458,13 +450,16 @@ int sp_item_repr_compare_position(SPItem const *first, SPItem const *second);
 
 inline bool sp_item_repr_compare_position_bool(SPObject const *first, SPObject const *second)
 {
-    return sp_repr_compare_position(((SPItem*)first)->getRepr(),
-            ((SPItem*)second)->getRepr())<0;
+    return sp_repr_compare_position(first->getRepr(),
+            second->getRepr())<0;
 }
 
 
 SPItem *sp_item_first_item_child (SPObject *obj);
 SPItem const *sp_item_first_item_child (SPObject const *obj);
+
+MAKE_SP_OBJECT_DOWNCAST_FUNCTIONS(SP_ITEM, SPItem)
+MAKE_SP_OBJECT_TYPECHECK_FUNCTIONS(SP_IS_ITEM, SPItem)
 
 #endif // SEEN_SP_ITEM_H
 

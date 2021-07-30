@@ -16,19 +16,23 @@
 #include <2geom/path-sink.h>
 #include <2geom/svg-path-parser.h>
 
+#include "drawing-shape.h"
+
+#include "preferences.h"
+#include "style.h"
+
 #include "display/cairo-utils.h"
-#include "display/canvas-arena.h"
-#include "display/canvas-bpath.h"
 #include "display/curve.h"
 #include "display/drawing.h"
 #include "display/drawing-context.h"
 #include "display/drawing-group.h"
-#include "display/drawing-shape.h"
+#include "display/control/canvas-item-drawing.h"
+
 #include "helper/geom-curves.h"
 #include "helper/geom.h"
-#include "preferences.h"
-#include "style.h"
+
 #include "svg/svg.h"
+#include "ui/widget/canvas.h" // Canvas area
 
 namespace Inkscape {
 
@@ -41,8 +45,6 @@ DrawingShape::DrawingShape(Drawing &drawing)
 
 DrawingShape::~DrawingShape()
 {
-    if (_curve)
-        _curve->unref();
 }
 
 void
@@ -50,14 +52,7 @@ DrawingShape::setPath(SPCurve *curve)
 {
     _markForRendering();
 
-    if (_curve) {
-        _curve->unref();
-        _curve = nullptr;
-    }
-    if (curve) {
-        _curve = curve;
-        curve->ref();
-    }
+    _curve = curve ? curve->ref() : nullptr;
 
     _markForUpdate(STATE_ALL, false);
 }
@@ -174,7 +169,9 @@ DrawingShape::_renderStroke(DrawingContext &dc)
     dc.transform(_ctm);
 
     bool has_stroke = _nrstyle.prepareStroke(dc, _item_bbox, _stroke_pattern);
-    has_stroke &= (_nrstyle.stroke_width != 0);
+    if (!_style->stroke_extensions.hairline) {
+        has_stroke &= (_nrstyle.stroke_width != 0);
+    }
 
     if( has_stroke ) {
         // TODO: remove segments outside of bbox when no dashes present
@@ -185,13 +182,13 @@ DrawingShape::_renderStroke(DrawingContext &dc)
         }
         _nrstyle.applyStroke(dc);
 
-        // If the draw mode is set to visible hairlines, don't let them get smaller than half a
-        // pixel.
-        if (_drawing.visibleHairlines()) {
-            double half_pixel_size = 0.5, trash = 0.5;
-            dc.device_to_user_distance(half_pixel_size, trash);
-            if (_nrstyle.stroke_width < half_pixel_size) {
-                dc.setLineWidth(half_pixel_size);
+        // If the stroke is a hairline, set it to exactly 1px on screen.
+        // If visible hairline mode is on, make sure the line is at least 1px.
+        if (_drawing.visibleHairlines() || _style->stroke_extensions.hairline) {
+            double pixel_size_x = 1.0, pixel_size_y = 1.0;
+            dc.device_to_user_distance(pixel_size_x, pixel_size_y);
+            if (_style->stroke_extensions.hairline || _nrstyle.stroke_width < std::min(pixel_size_x, pixel_size_y)) {
+                dc.setHairline();
             }
         }
 
@@ -251,7 +248,7 @@ DrawingShape::_renderItem(DrawingContext &dc, Geom::IntRect const &area, unsigne
             // to render svg:pattern
             bool has_fill   = _nrstyle.prepareFill(dc, _item_bbox, _fill_pattern);
             bool has_stroke = _nrstyle.prepareStroke(dc, _item_bbox, _stroke_pattern);
-            has_stroke &= (_nrstyle.stroke_width != 0);
+            has_stroke &= (_nrstyle.stroke_width != 0 || _nrstyle.hairline == true);
             if (has_fill || has_stroke) {
                 dc.path(_curve->get_pathvector());
                 // TODO: remove segments outside of bbox when no dashes present
@@ -330,19 +327,19 @@ DrawingShape::_pickItem(Geom::Point const &p, double delta, unsigned flags)
     if (_repick_after > 0)
         --_repick_after;
 
-    if (_repick_after > 0) // we are a slow, huge path
-        return _last_pick; // skip this pick, returning what was returned last time
+    if (_repick_after > 0) { // we are a slow, huge path
+        return _last_pick;   // skip this pick, returning what was returned last time
+    }
 
     if (!_curve) return nullptr;
     if (!_style) return nullptr;
-
-    bool outline = _drawing.outline() || _drawing.getOutlineSensitive();
+    bool outline = _drawing.outline() || _drawing.outlineOverlay() || _drawing.getOutlineSensitive();
     bool pick_as_clip = flags & PICK_AS_CLIP;
 
-    if (SP_SCALE24_TO_FLOAT(_style->opacity.value) == 0 && !outline && !pick_as_clip) 
+    if (SP_SCALE24_TO_FLOAT(_style->opacity.value) == 0 && !outline && !pick_as_clip) {
         // fully transparent, no pick unless outline mode
         return nullptr;
-
+    }
 
     gint64 tstart = g_get_monotonic_time();
 
@@ -369,8 +366,8 @@ DrawingShape::_pickItem(Geom::Point const &p, double delta, unsigned flags)
         (_style->fill_rule.computed == SP_WIND_RULE_EVENODD);
 
     // actual shape picking
-    if (_drawing.arena()) {
-        Geom::Rect viewbox = _drawing.arena()->item.canvas->getViewbox();
+    if (_drawing.getCanvasItemDrawing()) {
+        Geom::Rect viewbox = _drawing.getCanvasItemDrawing()->get_canvas()->get_area_world();
         viewbox.expandBy (width);
         pathv_matrix_point_bbox_wind_distance(_curve->get_pathvector(), _ctm, p, nullptr, needfill? &wind : nullptr, &dist, 0.5, &viewbox);
     } else {

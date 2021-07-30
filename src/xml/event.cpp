@@ -19,14 +19,10 @@
 
 #include "event.h"
 #include "event-fns.h"
-#include "util/reverse-list.h"
 #include "xml/document.h"
 #include "xml/node-observer.h"
 #include "debug/event-tracker.h"
 #include "debug/simple-event.h"
-
-using Inkscape::Util::List;
-using Inkscape::Util::reverse_list;
 
 int Inkscape::XML::Event::_next_serial=0;
 
@@ -195,10 +191,13 @@ void Inkscape::XML::replay_log_to_observer(
     Inkscape::XML::Event const *log,
     Inkscape::XML::NodeObserver &observer
 ) {
-    List<Inkscape::XML::Event const &> reversed =
-      reverse_list<Inkscape::XML::Event::ConstIterator>(log, nullptr);
-    for ( ; reversed ; ++reversed ) {
-        reversed->replayOne(observer);
+    std::vector<Inkscape::XML::Event const *> r;
+    while (log) {
+        r.push_back(log);
+        log = log->next;
+    }
+    for ( auto reversed = r.rbegin(); reversed != r.rend(); ++reversed ) {
+        (*reversed)->replayOne(observer);
     }
 }
 
@@ -253,7 +252,7 @@ void Inkscape::XML::EventChgOrder::_replayOne(
 void Inkscape::XML::EventChgElementName::_replayOne(
     Inkscape::XML::NodeObserver &observer
 ) const {
-    observer.notifyElementNameChanged(*this->repr, this->new_name, this->old_name);
+    observer.notifyElementNameChanged(*this->repr, this->old_name, this->new_name);
 }
 
 Inkscape::XML::Event *
@@ -441,16 +440,16 @@ public:
         Glib::ustring result;
         char const *type_name=nullptr;
         switch (node.type()) {
-        case Inkscape::XML::DOCUMENT_NODE:
+        case Inkscape::XML::NodeType::DOCUMENT_NODE:
             type_name = "Document";
             break;
-        case Inkscape::XML::ELEMENT_NODE:
+        case Inkscape::XML::NodeType::ELEMENT_NODE:
             type_name = "Element";
             break;
-        case Inkscape::XML::TEXT_NODE:
+        case Inkscape::XML::NodeType::TEXT_NODE:
             type_name = "Text";
             break;
-        case Inkscape::XML::COMMENT_NODE:
+        case Inkscape::XML::NodeType::COMMENT_NODE:
             type_name = "Comment";
             break;
         default:

@@ -158,6 +158,11 @@ void ScalarUnit::grabFocusAndSelectEntry()
     static_cast<SpinButton*>(_widget)->select_region(0, 20);
 }
 
+void ScalarUnit::setAlignment(double xalign)
+{
+    xalign = std::clamp(xalign,0.0,1.0);
+    static_cast<Gtk::Entry*>(_widget)->set_alignment(xalign);
+}
 
 void ScalarUnit::setHundredPercent(double number)
 {
@@ -228,7 +233,10 @@ void ScalarUnit::on_unit_changed()
     g_assert(_unit_menu != nullptr);
 
     Glib::ustring abbr = _unit_menu->getUnitAbbr();
-    _suffix->set_label(abbr);
+
+    if (_suffix) {
+        _suffix->set_label(abbr);
+    }
 
     Inkscape::Util::Unit const *new_unit = unit_table.getUnit(abbr);
     Inkscape::Util::Unit const *old_unit = unit_table.getUnit(lastUnits);

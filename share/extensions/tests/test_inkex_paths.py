@@ -324,6 +324,11 @@ class PathTest(TestCase):
         ret = Path('M 10,10 l 10,10 Z l 10,10').scale(2, 2)
         self._assertPath(ret, 'M 20 20 l 20 20 Z l 20 20')
 
+    def test_scale_multiple_zones(self):
+        """Zone close returns current position to start of zone (not start of path)"""
+        ret = Path("M 100 100 Z M 200 200 Z h 0").scale(1, 1)
+        self._assertPath(ret.to_absolute(), "M 100 100 Z M 200 200 Z L 200 200")
+
     def test_absolute(self):
         """Paths can be converted to absolute"""
         ret = Path("M 100 100 l 10 10 10 10 10 10")
@@ -341,7 +346,6 @@ class PathTest(TestCase):
 
         ret= Path("m 1 2 h 2 v 1 z m 4 0 h 2 v 1 z m 0 2 h 2 v 1 z")
         self._assertPath(ret.to_absolute(), "M 1 2 H 3 V 3 Z M 5 2 H 7 V 3 Z M 5 4 H 7 V 5 Z")
-
 
     def test_relative(self):
         """Paths can be converted to relative"""
@@ -378,7 +382,7 @@ class PathTest(TestCase):
         self.assertEqual(len(ret), 5)
         self.assertEqual(ret[0][0], 'M')
         self.assertEqual(ret[1][0], 'L')
-        self.assertEqual(ret[2][0], 'H')
+        self.assertEqual(ret[2][0], 'L')
         self.assertEqual(ret[3][0], 'C')
 
     def test_transform(self):
@@ -471,6 +475,25 @@ class PathTest(TestCase):
 
         self.assertAlmostTuple(list(Path("M 1 0 0 1").transform(Transform(rotate=30))
                                     .control_points), ((sqrt(3)/2, 0.5), (-0.5, sqrt(3)/2) ))
+
+    def test_reverse(self):
+        """Paths can be reversed"""
+        """Testing reverse() with relative coordinates, closed path"""
+        ret = Path("m 10 50 h 40 v -40 l 50 39.9998 c -22 2 -35 12 -50 25 l -40 -15 l 0 -10 z")
+        ret = ret.reverse()
+        self._assertPath(ret, "m 10 50 l -0 -0.0002 l -0 10 l 40 15 c 15 -13 28 -23 50 -25 l -50 -39.9998 v 40 h -40 z")
+        """Testing reverse() with relative coordinates, open path"""
+        ret = Path("m 10 50 h 40 v -40 l 50 39.9998 c -22 2 -35 12 -50 25 l -40 -15 l 0 -10")
+        ret = ret.reverse()
+        self._assertPath(ret, "m 10 49.9998 l -0 10 l 40 15 c 15 -13 28 -23 50 -25 l -50 -39.9998 v 40 h -40")
+        """Testing reverse() with absolute coordinates, closed path"""
+        ret = Path("M 100 35 L 100 25 L 60 10 C 45 23 32 33 10 35 L 60 75 L 60 35 Z")
+        ret = ret.reverse()
+        self._assertPath(ret, "M 100 35 L 60 35 L 60 75 L 10 35 C 32 33 45 23 60 10 L 100 25 L 100 35 Z")
+        """Testing reverse() with absolute coordinates, open path"""
+        ret = Path("M 100 35 L 100 25 L 60 10 C 45 23 32 33 10 35 L 60 75 L 60 35 L 100 35")
+        ret = ret.reverse()
+        self._assertPath(ret, "M 100 35 L 60 35 L 60 75 L 10 35 C 32 33 45 23 60 10 L 100 25 L 100 35")
 
 class SuperPathTest(TestCase):
     """Super path tests for testing the super path class"""

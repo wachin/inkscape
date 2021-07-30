@@ -42,15 +42,15 @@
 #include "object/sp-namedview.h"
 
 #include "ui/icon-names.h"
-#include "ui/pref-pusher.h"
 #include "ui/tools/arc-tool.h"
 #include "ui/uxmanager.h"
+#include "ui/widget/canvas.h"
 #include "ui/widget/combo-tool-item.h"
 #include "ui/widget/label-tool-item.h"
+#include "ui/widget/spinbutton.h"
 #include "ui/widget/spin-button-tool-item.h"
 #include "ui/widget/unit-tracker.h"
 
-#include "widgets/spinbutton-events.h"
 #include "widgets/widget-sizes.h"
 
 #include "xml/node-event-vector.h"
@@ -97,7 +97,8 @@ ArcToolbar::ArcToolbar(SPDesktop *desktop) :
         _rx_item->set_tooltip_text(_("Horizontal radius of the circle, ellipse, or arc"));
         _rx_item->set_custom_numeric_menu_data(values);
         _tracker->addAdjustment(_rx_adj->gobj());
-        _rx_item->set_focus_widget(Glib::wrap(GTK_WIDGET(desktop->canvas)));
+        _rx_item->get_spin_button()->addUnitTracker(_tracker);
+        _rx_item->set_focus_widget(desktop->canvas);
         _rx_adj->signal_value_changed().connect(sigc::bind(sigc::mem_fun(*this, &ArcToolbar::value_changed),
                                                            _rx_adj, "rx"));
         _rx_item->set_sensitive(false);
@@ -113,7 +114,8 @@ ArcToolbar::ArcToolbar(SPDesktop *desktop) :
         _ry_item->set_tooltip_text(_("Vertical radius of the circle, ellipse, or arc"));
         _ry_item->set_custom_numeric_menu_data(values);
         _tracker->addAdjustment(_ry_adj->gobj());
-        _ry_item->set_focus_widget(Glib::wrap(GTK_WIDGET(desktop->canvas)));
+        _ry_item->get_spin_button()->addUnitTracker(_tracker);
+        _ry_item->set_focus_widget(desktop->canvas);
         _ry_adj->signal_value_changed().connect(sigc::bind(sigc::mem_fun(*this, &ArcToolbar::value_changed),
                                                            _ry_adj, "ry"));
         _ry_item->set_sensitive(false);
@@ -134,7 +136,7 @@ ArcToolbar::ArcToolbar(SPDesktop *desktop) :
         _start_adj = Gtk::Adjustment::create(start_val, -360.0, 360.0, 1.0, 10.0);
         auto eact = Gtk::manage(new UI::Widget::SpinButtonToolItem("arc-start", _("Start:"), _start_adj));
         eact->set_tooltip_text(_("The angle (in degrees) from the horizontal to the arc's start point"));
-        eact->set_focus_widget(Glib::wrap(GTK_WIDGET(desktop->canvas)));
+        eact->set_focus_widget(desktop->canvas);
         add(*eact);
     }
 
@@ -144,7 +146,7 @@ ArcToolbar::ArcToolbar(SPDesktop *desktop) :
         _end_adj = Gtk::Adjustment::create(end_val, -360.0, 360.0, 1.0, 10.0);
         auto eact = Gtk::manage(new UI::Widget::SpinButtonToolItem("arc-end", _("End:"), _end_adj));
         eact->set_tooltip_text(_("The angle (in degrees) from the horizontal to the arc's end point"));
-        eact->set_focus_widget(Glib::wrap(GTK_WIDGET(desktop->canvas)));
+        eact->set_focus_widget(desktop->canvas);
         add(*eact);
     }
     _start_adj->signal_value_changed().connect(sigc::bind(sigc::mem_fun(*this, &ArcToolbar::startend_value_changed),
@@ -243,7 +245,6 @@ ArcToolbar::value_changed(Glib::RefPtr<Gtk::Adjustment>&  adj,
     g_return_if_fail(unit != nullptr);
 
     SPDocument* document = _desktop->getDocument();
-    Geom::Scale scale = document->getDocumentScale();
 
     if (DocumentUndo::getUndoSensitive(document)) {
         Inkscape::Preferences *prefs = Inkscape::Preferences::get();
@@ -275,8 +276,8 @@ ArcToolbar::value_changed(Glib::RefPtr<Gtk::Adjustment>&  adj,
             }
 
             ge->normalize();
-            (SP_OBJECT(ge))->updateRepr();
-            (SP_OBJECT(ge))->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG);
+            ge->updateRepr();
+            ge->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG);
 
             modmade = true;
         }
@@ -308,7 +309,7 @@ ArcToolbar::startend_value_changed(Glib::RefPtr<Gtk::Adjustment>&  adj,
     // in turn, prevent listener from responding
     _freeze = true;
 
-    gchar* namespaced_name = g_strconcat("sodipodi:", value_name, NULL);
+    gchar* namespaced_name = g_strconcat("sodipodi:", value_name, nullptr);
 
     bool modmade = false;
     auto itemlist= _desktop->getSelection()->items();
@@ -325,8 +326,8 @@ ArcToolbar::startend_value_changed(Glib::RefPtr<Gtk::Adjustment>&  adj,
             }
 
             ge->normalize();
-            (SP_OBJECT(ge))->updateRepr();
-            (SP_OBJECT(ge))->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG);
+            ge->updateRepr();
+            ge->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG);
 
             modmade = true;
         }
@@ -406,7 +407,7 @@ ArcToolbar::defaults()
     _start_adj->set_value(0.0);
     _end_adj->set_value(0.0);
 
-    if(_desktop->canvas) gtk_widget_grab_focus(GTK_WIDGET(_desktop->canvas));
+    if(_desktop->canvas) _desktop->canvas->grab_focus();
 }
 
 void
@@ -515,10 +516,8 @@ ArcToolbar::event_attr_changed(Inkscape::XML::Node *repr, gchar const * /*name*/
         toolbar->_ry_adj->set_value(Quantity::convert(ry, "px", unit));
     }
 
-    gdouble start = 0.;
-    gdouble end = 0.;
-    sp_repr_get_double(repr, "sodipodi:start", &start);
-    sp_repr_get_double(repr, "sodipodi:end", &end);
+    gdouble start = repr->getAttributeDouble("sodipodi:start", 0.0);;
+    gdouble end = repr->getAttributeDouble("sodipodi:end", 0.0);
 
     toolbar->_start_adj->set_value(mod360((start * 180)/M_PI));
     toolbar->_end_adj->set_value(mod360((end * 180)/M_PI));

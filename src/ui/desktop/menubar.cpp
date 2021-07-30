@@ -27,15 +27,18 @@
 #include "inkscape-application.h" // Open recent
 
 #include "message-context.h"
-#include "shortcuts.h"
+
+#include "menu-icon-shift.h"
 
 #include "helper/action.h"
 #include "helper/action-context.h"
 
+#include "io/resource.h"    // UI File location
+
 #include "object/sp-namedview.h"
 
-#include "ui/contextmenu.h" // Shift to make room for icons
 #include "ui/icon-loader.h"
+#include "ui/shortcuts.h"
 #include "ui/view/view.h"
 #include "ui/uxmanager.h"   // To Do: Convert to actions
 
@@ -161,21 +164,6 @@ set_name(Glib::ustring const &name, Gtk::MenuItem* menuitem)
     }
 }
 
-/* Install CSS to shift icons into the space reserved for toggles (i.e. check and radio items).
- *
- * TODO: This code already exists as a C++ version in the class ContextMenu so we can simply wrap
- *       it here. In future ContextMenu and the (to be created) class for the menu bar should then
- *       be derived from one common base class.
- *
- * TODO: This code is called everytime a menu is opened. We can certainly find a way to call it once.
- */
-static void
-shift_icons(Gtk::Menu* menu)
-{
-    ContextMenu *contextmenu = static_cast<ContextMenu*>(menu);
-    contextmenu->ShiftIcons();
-}
-
 // ================= MenuItem ====================
 
 Gtk::MenuItem*
@@ -195,7 +183,7 @@ build_menu_item_from_verb(SPAction* action,
     Gtk::AccelLabel* label = Gtk::manage(new Gtk::AccelLabel(action->name, true));
     label->set_xalign(0.0);
     label->set_accel_widget(*menuitem);
-    sp_shortcut_add_accelerator((GtkWidget*)menuitem->gobj(), sp_shortcut_get_primary(action->verb));
+    Inkscape::Shortcuts::getInstance().add_accelerator(menuitem, action->verb);
 
     // If there is an image associated with the action, we can add it as an icon for the menu item.
     if (show_icon && action->image) {
@@ -269,15 +257,8 @@ checkitem_update(Gtk::CheckMenuItem* menuitem, SPAction* action)
         } else if (id == "ToggleRotationLock") {
             active = dt->get_rotation_lock();
 
-        }
-        else if (id == "ViewCmsToggle") {
+        } else if (id == "ViewCmsToggle") {
             active = dt->colorProfAdjustEnabled();
-        }
-        else if (id == "ViewSplitModeToggle") {
-            active = dt->splitMode();
-
-        } else if (id == "ViewXRayToggle") {
-            active = dt->xrayMode();
 
         } else if (id == "ToggleCommandsToolbar") {
             active = getStateFromPref(dt, "commands");
@@ -322,13 +303,8 @@ checkitem_update(Gtk::CheckMenuItem* menuitem, SPAction* action)
 static Gtk::CheckMenuItem*
 build_menu_check_item_from_verb(SPAction* action)
 {
-    // This does not work for some reason!
-    // Gtk::CheckMenuItem* menuitem = Gtk::manage(new Gtk::CheckMenuItem(action->name, true));
-    // sp_shortcut_add_accelerator(GTK_WIDGET(menuitem->gobj()), sp_shortcut_get_primary(action->verb));
-
-    GtkWidget *item = gtk_check_menu_item_new_with_mnemonic(action->name);
-    sp_shortcut_add_accelerator(item, sp_shortcut_get_primary(action->verb));
-    Gtk::CheckMenuItem* menuitem = Gtk::manage(Glib::wrap(GTK_CHECK_MENU_ITEM(item)));
+    Gtk::CheckMenuItem* menuitem = Gtk::manage(new Gtk::CheckMenuItem(action->name, true));
+    Inkscape::Shortcuts::getInstance().add_accelerator(menuitem, action->verb);
 
     // Set initial state before connecting signals.
     checkitem_update(menuitem, action);
@@ -407,9 +383,9 @@ sp_recent_open(Gtk::RecentChooser* recentchooser)
 {
     Glib::ustring uri = recentchooser->get_current_uri();
 
-    Glib::RefPtr<Gio::File> file = Gio::File::create_for_uri(uri);
+    Glib::RefPtr<Gio::File> file = Gio::File::create_for_uri(uri.raw());
 
-    ConcreteInkscapeApplication<Gtk::Application>* app = &(ConcreteInkscapeApplication<Gtk::Application>::get_instance());
+    auto *app = InkscapeApplication::instance();
 
     app->create_window(file);
 }
@@ -468,6 +444,7 @@ build_menu(Gtk::MenuShell* menu, Inkscape::XML::Node* xml, Inkscape::UI::View::V
             }
 
             if (name == "submenu") {
+
                 const char *name = menu_ptr->attribute("name");
                 if (!name) {
                     g_warning("menus.xml: skipping submenu without name.");
@@ -475,15 +452,50 @@ build_menu(Gtk::MenuShell* menu, Inkscape::XML::Node* xml, Inkscape::UI::View::V
                 }
 
                 Gtk::MenuItem* menuitem = Gtk::manage(new Gtk::MenuItem(_(name), true));
-                Gtk::Menu* submenu = Gtk::manage(new Gtk::Menu());
-                build_menu(submenu, menu_ptr->firstChild(), view, show_icons_curr);
-                menuitem->set_submenu(*submenu);
-                menu->append(*menuitem);
+                menuitem->set_name(name);
 
-                submenu->signal_map().connect(
-                    sigc::bind<Gtk::Menu*>(sigc::ptr_fun(&shift_icons), submenu));
+                // TEMP
+                if (strcmp(name, "_View") == 0) {
+                    // Add from menu-view.ui first.
 
-                continue;
+                    auto refBuilder = Gtk::Builder::create();
+                    try
+                    {
+                        std::string filename =
+                            Inkscape::IO::Resource::get_filename(Inkscape::IO::Resource::UIS, "menu-view.ui");
+                        refBuilder->add_from_file(filename);
+                    }
+                    catch (const Glib::Error& err)
+                    {
+                        std::cerr << "build_menu: failed to load View menu from: "
+                                  << "menu-view.ui: "
+                                  << err.what() << std::endl;
+                    }
+
+                    auto object = refBuilder->get_object("view-menu");
+                    auto gmenu = Glib::RefPtr<Gio::Menu>::cast_dynamic(object);
+                    if (!gmenu) {
+                        std::cerr << "build_menu: failed to build View menu!" << std::endl;
+                    } else {
+                        auto submenu = Gtk::manage(new Gtk::Menu(gmenu));
+                        menuitem->set_submenu(*submenu);
+                        menu->append(*menuitem);
+
+                        // Rest of View menu from menus.xml
+                        build_menu(submenu, menu_ptr->firstChild(), view, show_icons_curr);
+                    }
+
+                    continue;
+
+                } else {
+
+                    Gtk::Menu* submenu = Gtk::manage(new Gtk::Menu());
+                    build_menu(submenu, menu_ptr->firstChild(), view, show_icons_curr);
+                    menuitem->set_submenu(*submenu);
+                    menu->append(*menuitem);
+
+                    continue;
+                }
             }
 
             if (name == "contextmenu") {
@@ -507,6 +519,12 @@ build_menu(Gtk::MenuShell* menu, Inkscape::XML::Node* xml, Inkscape::UI::View::V
 
                     Inkscape::Verb *verb = Inkscape::Verb::getbyid(verb_name.c_str());
                     if (verb != nullptr && verb->get_code() != SP_VERB_NONE) {
+
+#ifdef GDK_WINDOWING_QUARTZ
+                        if (verb->get_code() == SP_VERB_FILE_QUIT) {
+                            continue;
+                        }
+#endif
 
                         SPAction* action = verb->get_action(Inkscape::ActionContext(view));
                         if (menu_ptr->attribute("check") != nullptr) {
@@ -540,7 +558,7 @@ build_menu(Gtk::MenuShell* menu, Inkscape::XML::Node* xml, Inkscape::UI::View::V
 #ifdef GDK_WINDOWING_QUARTZ
                             // for moving menu items to "Inkscape" menu
                             switch (verb->get_code()) {
-                                case SP_VERB_DIALOG_DISPLAY:
+                                case SP_VERB_DIALOG_PREFERENCES:
                                 case SP_VERB_DIALOG_INPUT:
                                 case SP_VERB_HELP_ABOUT:
                                     menuitems.emplace_back(std::make_pair(verb->get_code(), menuitem), view);
@@ -548,7 +566,7 @@ build_menu(Gtk::MenuShell* menu, Inkscape::XML::Node* xml, Inkscape::UI::View::V
 #endif
                         }
                     } else if (true
-#ifndef HAVE_ASPELL
+#ifndef WITH_GSPELL
                         && strcmp(verb_name.c_str(), "DialogSpellcheck") != 0
 #endif
                         ) {
@@ -613,12 +631,34 @@ build_menu(Gtk::MenuShell* menu, Inkscape::XML::Node* xml, Inkscape::UI::View::V
     }
 }
 
+void
+reload_menu(Inkscape::UI::View::View* view, Gtk::MenuBar* menubar)
+{   
+    menubar->hide();
+    for (auto *widg : menubar->get_children()) {
+        menubar->remove(*widg);
+    }
+    menuitems.clear();
+    build_menu(menubar, INKSCAPE.get_menus()->parent(), view);
+
+    shift_icons_recursive(menubar); // Find all submenus and add callback to each one.
+
+    menubar->show_all();
+#ifdef GDK_WINDOWING_QUARTZ
+    sync_menubar();
+    menubar->hide();
+#endif
+}
+
 Gtk::MenuBar*
 build_menubar(Inkscape::UI::View::View* view)
 {
     Gtk::MenuBar* menubar = Gtk::manage(new Gtk::MenuBar());
     build_menu(menubar, INKSCAPE.get_menus()->parent(), view);
     SP_ACTIVE_DESKTOP->_menu_update.connect(sigc::ptr_fun(&set_menuitems));
+
+    shift_icons_recursive(menubar); // Find all submenus and add callback to each one.
+
     return menubar;
 }
 

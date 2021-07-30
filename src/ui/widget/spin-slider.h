@@ -25,11 +25,11 @@ namespace Widget {
 /**
  * Groups an HScale and a SpinButton together using the same Adjustment.
  */
-class SpinSlider : public Gtk::HBox, public AttrWidget
+class SpinSlider : public Gtk::Box, public AttrWidget
 {
 public:
     SpinSlider(double value, double lower, double upper, double step_inc,
-	       double climb_rate, int digits, const SPAttributeEnum a = SP_ATTR_INVALID, const char* tip_text = nullptr);
+	       double climb_rate, int digits, const SPAttr a = SPAttr::INVALID, const char* tip_text = nullptr);
 
     Glib::ustring get_as_attribute() const override;
     void set_from_attribute(SPObject*) override;
@@ -62,11 +62,11 @@ public:
  *
  * @see SpinSlider
  */
-class DualSpinSlider : public Gtk::HBox, public AttrWidget
+class DualSpinSlider : public Gtk::Box, public AttrWidget
 {
 public:
     DualSpinSlider(double value, double lower, double upper, double step_inc,
-                   double climb_rate, int digits, const SPAttributeEnum, char* tip_text1, char* tip_text2);
+                   double climb_rate, int digits, const SPAttr, char* tip_text1, char* tip_text2);
 
     Glib::ustring get_as_attribute() const override;
     void set_from_attribute(SPObject*) override;

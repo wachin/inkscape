@@ -143,7 +143,7 @@ void Scalar::addSlider()
 {
     auto scale = new Gtk::Scale(static_cast<SpinButton*>(_widget)->get_adjustment());
     scale->set_draw_value(false);
-    add (*manage (scale));
+    pack_start(*manage (scale));
 }
 
 Glib::SignalProxy0<void> Scalar::signal_value_changed()
@@ -154,6 +154,19 @@ Glib::SignalProxy0<void> Scalar::signal_value_changed()
 Glib::SignalProxy1<bool, GdkEventButton*> Scalar::signal_button_release_event()
 {
     return static_cast<SpinButton*>(_widget)->signal_button_release_event();
+}
+
+void Scalar::hide_label() {
+    if (auto label = const_cast<Gtk::Label*>(getLabel())) {
+        label->hide();
+        label->set_no_show_all();
+        label->set_hexpand(true);
+    }
+    if (_widget) {
+        remove(*_widget);
+        _widget->set_hexpand();
+        this->pack_end(*_widget);
+    }
 }
 
 

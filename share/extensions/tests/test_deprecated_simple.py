@@ -57,6 +57,21 @@ class DeprecatedTest(TestCase):
         self.assertEqual(approxed, [['M', [-588., 92.]], ['L', [-1468., 532.]], ['Z', []]])
 
 
+    def test_simplepath_shorthand(self):
+        """simplepath with shorthand notation"""
+        import simplepath
+        data = 'M10 20v30V30h40H40c 1 2 3 4 5 6S7 8 9 10s7 8 9 10q11 12 13 14t15 16T15 16'
+        path = simplepath.parsePath(data)
+        self.assertEqual(
+            path, [['M', [10., 20.]], ['L', [10., 50.]], ['L', [10., 30.]],
+                   ['L', [50., 30.]], ['L', [40., 30.]],
+                   ['C', [41., 32., 43., 34., 45., 36.]],
+                   ['C', [47., 38., 7., 8., 9., 10.]],
+                   ['C', [11., 12., 16., 18., 18., 20.]],
+                   ['Q', [29., 32., 31., 34.]], ['Q', [33., 36., 46., 50.]],
+                   ['Q', [59., 64., 15., 16.]]])
+
+
     def test_simplestyle(self):
         """Test simplestyle API"""
         import simplestyle

@@ -4,4 +4,5 @@ from inkex.tester import ComparisonMixin, TestCase
 
 class LorumIpsumBasicTest(ComparisonMixin, TestCase):
     effect_class = LoremIpsum
-    comparisons = [()]
+    compare_file = "svg/shapes.svg"
+    comparisons = [(), ["--svg2=false"], ["--id=r1"], ["--id=r1", "--svg2=false"], ["--id=t4"]]

@@ -20,6 +20,8 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
+#include <glibmm/i18n.h>
+
 #include "desktop.h"
 #include "document.h"
 #include "enums.h"
@@ -29,11 +31,6 @@
 #include "preferences.h"
 #include "shortcuts.h"
 
-#include "extension/db.h"
-#include "extension/effect.h"
-#include "extension/find_extension_by_mime.h"
-#include "extension/input.h"
-
 #include "helper/action.h"
 
 #include "io/sys.h"
@@ -42,7 +39,6 @@
 #include "object/sp-root.h"
 
 #include "ui/dialog-events.h"
-#include "ui/dialog/dialog-manager.h"
 #include "ui/dialog/inkscape-preferences.h"
 #include "ui/dialog/layer-properties.h"
 #include "ui/interface.h"
@@ -62,9 +58,9 @@ sp_ui_new_view()
     document = SP_ACTIVE_DOCUMENT;
     if (!document) return;
 
-    ConcreteInkscapeApplication<Gtk::Application>* app = &(ConcreteInkscapeApplication<Gtk::Application>::get_instance());
+    auto *app = InkscapeApplication::instance();
 
-    InkscapeWindow* win = app->window_open (document);
+    app->window_open(document);
 }
 
 void
@@ -76,11 +72,7 @@ sp_ui_close_view(GtkWidget */*widget*/)
         return;
     }
 
-    if (dt->shutdown()) {
-        return; // Shutdown operation has been canceled, so do nothing
-    }
-
-    ConcreteInkscapeApplication<Gtk::Application>* app = &(ConcreteInkscapeApplication<Gtk::Application>::get_instance());
+    auto *app = InkscapeApplication::instance();
 
     InkscapeWindow* window = SP_ACTIVE_DESKTOP->getInkscapeWindow();
 
@@ -88,10 +80,13 @@ sp_ui_close_view(GtkWidget */*widget*/)
     std::list<SPDesktop *> desktops;
     INKSCAPE.get_all_desktops(desktops);
     if (desktops.size() == 1) {
+        if (dt->shutdown()) {
+            return; // Shutdown operation has been canceled, so do nothing
+        }
 
         SPDocument* old_document = window->get_document();
 
-        Glib::ustring template_path = sp_file_default_template_uri();
+        auto template_path = sp_file_default_template_uri();
         SPDocument *doc = app->document_new (template_path);
 
         app->document_swap (window, doc);
@@ -114,41 +109,11 @@ sp_ui_close_view(GtkWidget */*widget*/)
 unsigned int
 sp_ui_close_all()
 {
-
-    ConcreteInkscapeApplication<Gtk::Application>* app = &(ConcreteInkscapeApplication<Gtk::Application>::get_instance());
+    auto *app = InkscapeApplication::instance();
 
     app->destroy_all();
 
     return true;
-}
-
-
-void
-sp_ui_dialog_title_string(Inkscape::Verb *verb, gchar *c)
-{
-    SPAction     *action;
-    unsigned int shortcut;
-    gchar        *s;
-    gchar        *atitle;
-
-    action = verb->get_action(Inkscape::ActionContext());
-    if (!action)
-        return;
-
-    atitle = sp_action_get_title(action);
-
-    s = g_stpcpy(c, atitle);
-
-    g_free(atitle);
-
-    shortcut = sp_shortcut_get_primary(verb);
-    if (shortcut!=GDK_KEY_VoidSymbol) {
-        gchar* key = sp_shortcut_get_label(shortcut);
-        s = g_stpcpy(s, " (");
-        s = g_stpcpy(s, key);
-        g_stpcpy(s, ")");
-        g_free(key);
-    }
 }
 
 
@@ -238,7 +203,7 @@ sp_ui_overwrite_file(gchar const *filename)
         gtk_dialog_add_buttons( GTK_DIALOG(dialog),
                                 _("_Cancel"), GTK_RESPONSE_NO,
                                 _("Replace"), GTK_RESPONSE_YES,
-                                NULL );
+                                nullptr );
         gtk_dialog_set_default_response( GTK_DIALOG(dialog), GTK_RESPONSE_YES );
 
         if ( gtk_dialog_run( GTK_DIALOG(dialog) ) == GTK_RESPONSE_YES ) {

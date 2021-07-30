@@ -224,6 +224,8 @@ static GrayMap *filter(PotraceTracingEngine &engine, GdkPixbuf * pixbuf)
     if (engine.traceType == TRACE_QUANT)
         {
         RgbMap *rgbmap = gdkPixbufToRgbMap(pixbuf);
+        if (!rgbmap)
+            return nullptr;
         //rgbMap->writePPM(rgbMap, "rgb.ppm");
         newGm = quantizeBand(rgbmap,
                             engine.quantizationNrColors);
@@ -236,8 +238,15 @@ static GrayMap *filter(PotraceTracingEngine &engine, GdkPixbuf * pixbuf)
               engine.traceType == TRACE_BRIGHTNESS_MULTI )
         {
         GrayMap *gm = gdkPixbufToGrayMap(pixbuf);
+        if (!gm)
+            return nullptr;
 
         newGm = GrayMapCreate(gm->width, gm->height);
+        if (!newGm)
+            {
+            gm->destroy(gm);
+            return nullptr;
+            }
         double floor =  3.0 *
                ( engine.brightnessFloor * 256.0 );
         double cutoff =  3.0 *
@@ -263,6 +272,8 @@ static GrayMap *filter(PotraceTracingEngine &engine, GdkPixbuf * pixbuf)
     else if (engine.traceType == TRACE_CANNY)
         {
         GrayMap *gm = gdkPixbufToGrayMap(pixbuf);
+        if (!gm)
+            return nullptr;
         newGm = grayMapCanny(gm, 0.1, engine.cannyHighThreshold);
         gm->destroy(gm);
         //newGm->writePPM(newGm, "canny.ppm");
@@ -295,6 +306,8 @@ static IndexedMap *filterIndexed(PotraceTracingEngine &engine, GdkPixbuf * pixbu
     IndexedMap *newGm = nullptr;
 
     RgbMap *gm = gdkPixbufToRgbMap(pixbuf);
+    if (!gm)
+        return nullptr;
     if (engine.multiScanSmooth)
         {
         RgbMap *gaussMap = rgbMapGaussian(gm);
@@ -307,7 +320,7 @@ static IndexedMap *filterIndexed(PotraceTracingEngine &engine, GdkPixbuf * pixbu
         }
     gm->destroy(gm);
 
-    if (engine.traceType == TRACE_QUANT_MONO)
+    if (newGm && (engine.traceType == TRACE_QUANT_MONO || engine.traceType == TRACE_BRIGHTNESS_MULTI))
         {
         //Turn to grays
         for (int i=0 ; i<newGm->nrColors ; i++)
@@ -331,8 +344,9 @@ PotraceTracingEngine::preview(Glib::RefPtr<Gdk::Pixbuf> thePixbuf)
     GdkPixbuf *pixbuf = thePixbuf->gobj();
 
     if ( traceType == TRACE_QUANT_COLOR ||
-         traceType == TRACE_QUANT_MONO   )
-        {
+         traceType == TRACE_QUANT_MONO  ||
+         traceType == TRACE_BRIGHTNESS_MULTI) /* this is a lie: multipass doesn't use filterIndexed, but it's a better preview approx than filter() */
+    {
         IndexedMap *gm = filterIndexed(*this, pixbuf);
         if (!gm)
             return Glib::RefPtr<Gdk::Pixbuf>(nullptr);
@@ -370,6 +384,10 @@ std::string PotraceTracingEngine::grayMapToPath(GrayMap *grayMap, long *nodeCoun
     }
 
     potrace_bitmap_t *potraceBitmap = bm_new(grayMap->width, grayMap->height);
+    if (!potraceBitmap)
+    {
+        return "";
+    }
     bm_clear(potraceBitmap, 0);
 
     //##Read the data out of the GrayMap
@@ -510,7 +528,7 @@ std::vector<TracingEngineResult> PotraceTracingEngine::traceBrightnessMulti(GdkP
                     ustring style = ustring::compose("fill-opacity:1.0;fill:#%1%2%3", twohex(grayVal), twohex(grayVal), twohex(grayVal) );
 
                     //g_message("### GOT '%s' \n", style.c_str());
-                    TracingEngineResult result(style, d, nodeCount);
+                    TracingEngineResult result(style.raw(), d, nodeCount);
                     results.push_back(result);
 
                     if (!multiScanStack) {
@@ -577,7 +595,7 @@ std::vector<TracingEngineResult> PotraceTracingEngine::traceQuant(GdkPixbuf * th
                     ustring style = ustring::compose("fill:#%1%2%3", twohex(rgb.r), twohex(rgb.g), twohex(rgb.b) );
 
                     //g_message("### GOT '%s' \n", style.c_str());
-                    TracingEngineResult result(style, d, nodeCount);
+                    TracingEngineResult result(style.raw(), d, nodeCount);
                     results.push_back(result);
 
                     SPDesktop *desktop = SP_ACTIVE_DESKTOP;

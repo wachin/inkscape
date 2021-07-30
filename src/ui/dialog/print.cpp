@@ -137,8 +137,7 @@ void Print::draw_page(const Glib::RefPtr<Gtk::PrintContext>& context, int /*page
                 bgcolor = sp_svg_read_color(nv->attribute("pagecolor"), 0xffffff00);
             }
             if (nv && nv->attribute("inkscape:pageopacity")){
-                double opacity = 1.0;
-                sp_repr_get_double (nv, "inkscape:pageopacity", &opacity);
+                double opacity = nv->getAttributeDouble("inkscape:pageopacity", 1.0);
                 bgcolor |= SP_COLOR_F_TO_U(opacity);
             }
 
@@ -158,15 +157,16 @@ void Print::draw_page(const Glib::RefPtr<Gtk::PrintContext>& context, int /*page
             //
             // so do it in C:
             {
-                Cairo::RefPtr<Cairo::ImageSurface> png = Cairo::ImageSurface::create_from_png (tmp_png);
-                cairo_t *cr = gtk_print_context_get_cairo_context (context->gobj());
-                cairo_matrix_t m;
-                cairo_get_matrix(cr, &m);
-                cairo_scale(cr, Inkscape::Util::Quantity::convert(1, "in", "pt") / dpi, Inkscape::Util::Quantity::convert(1, "in", "pt") / dpi);
+                auto png = Cairo::ImageSurface::create_from_png(tmp_png);
+                auto pattern = Cairo::SurfacePattern::create(png);
+                auto cr = context->get_cairo_context();
+                auto m = cr->get_matrix();
+                cr->scale(Inkscape::Util::Quantity::convert(1, "in", "pt") / dpi,
+                          Inkscape::Util::Quantity::convert(1, "in", "pt") / dpi);
                 // FIXME: why is the origin offset??
-                cairo_set_source_surface(cr, png->cobj(), 0, 0);
-                cairo_paint(cr);
-                cairo_set_matrix(cr, &m);
+                cr->set_source(pattern);
+                cr->paint();
+                cr->set_matrix(m);
             }
 
             // Clean up
@@ -187,12 +187,11 @@ void Print::draw_page(const Glib::RefPtr<Gtk::PrintContext>& context, int /*page
         ctx->setFilterToBitmap(true);
         ctx->setBitmapResolution(72);
 
-        cairo_t *cr = gtk_print_context_get_cairo_context (context->gobj());
-        cairo_surface_t *surface = cairo_get_target(cr);
-        cairo_matrix_t ctm;
-        cairo_get_matrix(cr, &ctm);
+        auto cr = context->get_cairo_context();
+        auto surface = cr->get_target();
+        auto ctm = cr->get_matrix();
 
-        bool ret = ctx->setSurfaceTarget (surface, true, &ctm);
+        bool ret = ctx->setSurfaceTarget(surface->cobj(), true, &ctm);
         if (ret) {
             ret = renderer.setupDocument (ctx, _workaround._doc, TRUE, 0., nullptr);
             if (ret) {

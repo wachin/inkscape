@@ -110,7 +110,7 @@ void PathVectorSatellites::updateAmount(double radius, bool apply_no_radius, boo
     }
     for (size_t i = 0; i < _satellites.size(); ++i) {
         for (size_t j = 0; j < _satellites[i].size(); ++j) {
-            boost::optional<size_t> previous_index = boost::none;
+            std::optional<size_t> previous_index = std::nullopt;
             if (j == 0 && _pathvector[i].closed()) {
                 previous_index = count_path_nodes(_pathvector[i]) - 1;
             } else if (!_pathvector[i].closed() || j != 0) {
@@ -185,7 +185,6 @@ void PathVectorSatellites::updateSatelliteType(SatelliteType satellitetype, bool
                 continue;
             }
             if (only_selected) {
-                Geom::Point satellite_point = _pathvector[i].pointAt(j);
                 if (_satellites[i][j].selected) {
                     _satellites[i][j].satellite_type = satellitetype;
                 }
@@ -199,14 +198,14 @@ void PathVectorSatellites::updateSatelliteType(SatelliteType satellitetype, bool
 void PathVectorSatellites::recalculateForNewPathVector(Geom::PathVector const pathv, Satellite const S)
 {
     // pathv && _pathvector came here:
-    // * with diferent number of nodes
+    // * with different number of nodes
     // * without empty subpats
     // * _pathvector and satellites (old data) are paired
     Satellites satellites;
     bool found = false;
     //TODO evaluate fix on nodes at same position
-    size_t number_nodes = count_pathvector_nodes(pathv);
-    size_t previous_number_nodes = getTotalSatellites();
+    // size_t number_nodes = count_pathvector_nodes(pathv);
+    // size_t previous_number_nodes = getTotalSatellites();
     for (const auto & i : pathv) {
         std::vector<Satellite> path_satellites;
         size_t count = count_path_nodes(i);

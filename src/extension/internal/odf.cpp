@@ -962,7 +962,7 @@ static void analyzeTransform(Geom::Affine &tf,
 
 static void gatherText(Inkscape::XML::Node *node, Glib::ustring &buf)
 {
-    if (node->type() == Inkscape::XML::TEXT_NODE)
+    if (node->type() == Inkscape::XML::NodeType::TEXT_NODE)
         {
         char *s = (char *)node->content();
         if (s)
@@ -1036,7 +1036,7 @@ void OdfOutput::preprocess(ZipFile &zf, Inkscape::XML::Node *node)
 
                 imageTable[href] = newName;
 
-                auto ze = zf.newEntry(newName, "");
+                auto ze = zf.newEntry(newName.raw(), "");
                 ze->setUncompressedData(uri.getContents());
                 ze->finish();
             } catch (...) {
@@ -1591,7 +1591,6 @@ bool OdfOutput::writeTree(Writer &couts, Writer &souts,
     analyzeTransform(tf, rotate, xskew, yskew, xscale, yscale);
 
     //# Do our stuff
-    SPCurve *curve = nullptr;
 
     if (nodeName == "svg" || nodeName == "svg:svg")
     {
@@ -1714,12 +1713,12 @@ bool OdfOutput::writeTree(Writer &couts, Writer &souts,
         couts.writeString("</draw:frame>\n");
         return true;
     }
-    else if (SP_IS_SHAPE(item))
-    {
-        curve = SP_SHAPE(item)->getCurve();
-    }
-    else if (SP_IS_TEXT(item) || SP_IS_FLOWTEXT(item))
-    {
+
+    std::unique_ptr<SPCurve> curve;
+
+    if (auto shape = dynamic_cast<SPShape const *>(item)) {
+        curve = SPCurve::copy(shape->curve());
+    } else if (SP_IS_TEXT(item) || SP_IS_FLOWTEXT(item)) {
         curve = te_get_layout(item)->convertToCurves();
     }
 
@@ -1755,8 +1754,6 @@ bool OdfOutput::writeTree(Writer &couts, Writer &souts,
         couts.writeString(">\n");
         couts.printf("    <!-- %d nodes -->\n", nrPoints);
         couts.writeString("</draw:path>\n\n");
-
-        curve->unref();
     }
 
     return true;
@@ -2083,6 +2080,7 @@ void OdfOutput::save(Inkscape::Extension::Output */*mod*/, SPDocument *doc, gcha
 */
 void OdfOutput::init()
 {
+    // clang-format off
     Inkscape::Extension::build_from_mem(
         "<inkscape-extension xmlns=\"" INKSCAPE_EXTENSION_URI "\">\n"
             "<name>" N_("OpenDocument Drawing Output") "</name>\n"
@@ -2095,6 +2093,7 @@ void OdfOutput::init()
             "</output>\n"
         "</inkscape-extension>",
         new OdfOutput());
+    // clang-format on
 }
 
 /**

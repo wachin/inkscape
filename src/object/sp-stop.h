@@ -26,9 +26,6 @@ namespace Glib {
 class ustring;
 }
 
-#define SP_STOP(obj) (dynamic_cast<SPStop*>((SPObject*)obj))
-#define SP_IS_STOP(obj) (dynamic_cast<const SPStop*>((SPObject*)obj) != NULL)
-
 /** Gradient stop. */
 class SPStop : public SPObject {
 public:
@@ -37,8 +34,6 @@ public:
 
     /// \todo fixme: Should be SPSVGPercentage
     float offset;
-
-    bool currentColor;
 
     Glib::ustring * path_string;
     //SPCurve path;
@@ -52,11 +47,13 @@ public:
 
 protected:
 	void build(SPDocument* doc, Inkscape::XML::Node* repr) override;
-	void set(SPAttributeEnum key, const char* value) override;
+	void set(SPAttr key, const char* value) override;
         void modified(guint flags) override;
 	Inkscape::XML::Node* write(Inkscape::XML::Document* doc, Inkscape::XML::Node* repr, unsigned int flags) override;
 };
 
+MAKE_SP_OBJECT_DOWNCAST_FUNCTIONS(SP_STOP, SPStop)
+MAKE_SP_OBJECT_TYPECHECK_FUNCTIONS(SP_IS_STOP, SPStop)
 
 #endif /* !SEEN_SP_STOP_H */
 

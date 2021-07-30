@@ -14,7 +14,7 @@
 #define SEEN_LINE_GEOMETRY_H
 
 #include <2geom/point.h>
-#include <boost/optional.hpp>
+#include <optional>
 
 #include "axis-manip.h" // FIXME: This is only for Box3D::epsilon; move that to a better location
 #include "object/persp3d.h"
@@ -30,13 +30,13 @@ public:
     Line(Line const &line);
     virtual ~Line() = default;
     Line &operator=(Line const &line);
-    virtual boost::optional<Geom::Point> intersect(Line const &line);
+    virtual std::optional<Geom::Point> intersect(Line const &line);
     inline Geom::Point direction () { return v_dir; }
     
     Geom::Point closest_to(Geom::Point const &pt); // returns the point on the line closest to pt 
 
     friend inline std::ostream &operator<< (std::ostream &out_file, const Line &in_line);
-    boost::optional<Geom::Point> intersection_with_viewbox (SPDesktop *desktop);
+    std::optional<Geom::Point> intersection_with_viewbox (SPDesktop *desktop);
     inline bool lie_on_same_side (Geom::Point const &A, Geom::Point const &B) {
         /* If A is a point in the plane and n is the normal vector of the line then
            the sign of dot(A, n) specifies the half-plane in which A lies.
@@ -71,13 +71,6 @@ bool lies_in_quadrangle (Geom::Point const &A, Geom::Point const &B, Geom::Point
 std::pair<Geom::Point, Geom::Point> side_of_intersection (Geom::Point const &A, Geom::Point const &B,
                                                           Geom::Point const &C, Geom::Point const &D,
                                                           Geom::Point const &pt, Geom::Point const &dir);
-
-/*** For debugging purposes: Draw a knot/node of specified size and color at the given position ***/
-void create_canvas_point(Geom::Point const &pos, unsigned int size = 4, guint32 rgba = 0xff00007f);
-
-/*** For debugging purposes: Draw a line between the specified points ***/
-void create_canvas_line(Geom::Point const &p1, Geom::Point const &p2, guint32 rgba = 0xff00007f);
-
 
 /** A function to print out the Line.  It just prints out the coordinates of start point and
     direction on the given output stream */

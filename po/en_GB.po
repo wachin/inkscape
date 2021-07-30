@@ -9038,7 +9038,7 @@ msgstr "Errors"
 msgid "No (valid) files to open."
 msgstr "Select file to open"
 
-#: ../src/io/resource-manager.cpp:383
+#: ../src/io/fix-broken-links.cpp:383
 msgid "Fixup broken links"
 msgstr "Fixup broken links"
 
@@ -36064,7 +36064,7 @@ msgstr "Depth function:"
 #: ../share/extensions/gcodetools_path_to_gcode.inx:19
 #, fuzzy
 msgid "Sort paths to reduce rapid distance"
-msgstr "Sort paths to reduse rapid distance"
+msgstr "Sort paths to reduce rapid distance"
 
 #: ../share/extensions/gcodetools_area.inx:61
 #: ../share/extensions/gcodetools_lathe.inx:41

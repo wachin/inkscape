@@ -51,9 +51,10 @@
 #include "object/sp-root.h"
 #include "object/sp-item.h"
 
-#include "splivarot.h"             // pieces for union on shapes
+#include "path/path-boolop.h"
+
 #include <2geom/svg-path-parser.h> // to get from SVG text to Geom::Path
-#include "display/canvas-bpath.h"  // for SPWindRule
+
 #include "display/cairo-utils.h"   // for Inkscape::Pixbuf::PF_CAIRO
 
 #include "wmf-print.h"
@@ -325,19 +326,6 @@ unsigned int PrintWmf::finish(Inkscape::Extension::Print * /*mod*/)
     return 0;
 }
 
-
-unsigned int PrintWmf::comment(Inkscape::Extension::Print * /*module*/, const char * /*comment*/)
-{
-    if (!wt) {
-        return 0;
-    }
-
-    // earlier versions had flush of fill here, but it never executed and was removed
-
-    return 0;
-}
-
-
 // fcolor is defined when gradients are being expanded, it is the color of one stripe or ring.
 int PrintWmf::create_brush(SPStyle const *style, U_COLORREF *fcolor)
 {
@@ -416,11 +404,11 @@ int PrintWmf::create_brush(SPStyle const *style, U_COLORREF *fcolor)
 
             if (SP_IS_LINEARGRADIENT(paintserver)) {
                 lg = SP_LINEARGRADIENT(paintserver);
-                SP_GRADIENT(lg)->ensureVector(); // when exporting from commandline, vector is not built
+                lg->ensureVector(); // when exporting from commandline, vector is not built
                 fill_mode = DRAW_LINEAR_GRADIENT;
             } else if (SP_IS_RADIALGRADIENT(paintserver)) {
                 rg = SP_RADIALGRADIENT(paintserver);
-                SP_GRADIENT(rg)->ensureVector(); // when exporting from commandline, vector is not built
+                rg->ensureVector(); // when exporting from commandline, vector is not built
                 fill_mode = DRAW_RADIAL_GRADIENT;
             } else {
                 // default fill
@@ -1578,19 +1566,21 @@ unsigned int PrintWmf::text(Inkscape::Extension::Print * /*mod*/, char const *te
 void PrintWmf::init()
 {
     /* WMF print */
+    // clang-format off
     Inkscape::Extension::build_from_mem(
         "<inkscape-extension xmlns=\"" INKSCAPE_EXTENSION_URI "\">\n"
-        "<name>Windows Metafile Print</name>\n"
-        "<id>org.inkscape.print.wmf</id>\n"
-        "<param gui-hidden=\"true\" name=\"destination\" type=\"string\"></param>\n"
-        "<param gui-hidden=\"true\" name=\"textToPath\" type=\"bool\">true</param>\n"
-        "<param gui-hidden=\"true\" name=\"pageBoundingBox\" type=\"bool\">true</param>\n"
-        "<param gui-hidden=\"true\" name=\"FixPPTCharPos\" type=\"bool\">false</param>\n"
-        "<param gui-hidden=\"true\" name=\"FixPPTDashLine\" type=\"bool\">false</param>\n"
-        "<param gui-hidden=\"true\" name=\"FixPPTGrad2Polys\" type=\"bool\">false</param>\n"
-        "<param gui-hidden=\"true\" name=\"FixPPTPatternAsHatch\" type=\"bool\">false</param>\n"
-        "<print/>\n"
+            "<name>Windows Metafile Print</name>\n"
+            "<id>org.inkscape.print.wmf</id>\n"
+            "<param gui-hidden=\"true\" name=\"destination\" type=\"string\"></param>\n"
+            "<param gui-hidden=\"true\" name=\"textToPath\" type=\"bool\">true</param>\n"
+            "<param gui-hidden=\"true\" name=\"pageBoundingBox\" type=\"bool\">true</param>\n"
+            "<param gui-hidden=\"true\" name=\"FixPPTCharPos\" type=\"bool\">false</param>\n"
+            "<param gui-hidden=\"true\" name=\"FixPPTDashLine\" type=\"bool\">false</param>\n"
+            "<param gui-hidden=\"true\" name=\"FixPPTGrad2Polys\" type=\"bool\">false</param>\n"
+            "<param gui-hidden=\"true\" name=\"FixPPTPatternAsHatch\" type=\"bool\">false</param>\n"
+            "<print/>\n"
         "</inkscape-extension>", new PrintWmf());
+    // clang-format on
 
     return;
 }

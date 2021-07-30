@@ -37,21 +37,21 @@ SPRadialGradient::~SPRadialGradient() = default;
 void SPRadialGradient::build(SPDocument *document, Inkscape::XML::Node *repr) {
     SPGradient::build(document, repr);
 
-    this->readAttr( "cx" );
-    this->readAttr( "cy" );
-    this->readAttr( "r" );
-    this->readAttr( "fx" );
-    this->readAttr( "fy" );
-    this->readAttr( "fr" );
+    this->readAttr(SPAttr::CX);
+    this->readAttr(SPAttr::CY);
+    this->readAttr(SPAttr::R);
+    this->readAttr(SPAttr::FX);
+    this->readAttr(SPAttr::FY);
+    this->readAttr(SPAttr::FR);
 }
 
 /**
  * Set radial gradient attribute.
  */
-void SPRadialGradient::set(SPAttributeEnum key, gchar const *value) {
+void SPRadialGradient::set(SPAttr key, gchar const *value) {
 
     switch (key) {
-        case SP_ATTR_CX:
+        case SPAttr::CX:
             if (!this->cx.read(value)) {
                 this->cx.unset(SVGLength::PERCENT, 0.5, 0.5);
             }
@@ -64,7 +64,7 @@ void SPRadialGradient::set(SPAttributeEnum key, gchar const *value) {
             this->requestModified(SP_OBJECT_MODIFIED_FLAG);
             break;
 
-        case SP_ATTR_CY:
+        case SPAttr::CY:
             if (!this->cy.read(value)) {
                 this->cy.unset(SVGLength::PERCENT, 0.5, 0.5);
             }
@@ -77,7 +77,7 @@ void SPRadialGradient::set(SPAttributeEnum key, gchar const *value) {
             this->requestModified(SP_OBJECT_MODIFIED_FLAG);
             break;
 
-        case SP_ATTR_R:
+        case SPAttr::R:
             if (!this->r.read(value)) {
                 this->r.unset(SVGLength::PERCENT, 0.5, 0.5);
             }
@@ -85,7 +85,7 @@ void SPRadialGradient::set(SPAttributeEnum key, gchar const *value) {
             this->requestModified(SP_OBJECT_MODIFIED_FLAG);
             break;
 
-        case SP_ATTR_FX:
+        case SPAttr::FX:
             if (!this->fx.read(value)) {
                 this->fx.unset(this->cx.unit, this->cx.value, this->cx.computed);
             }
@@ -93,7 +93,7 @@ void SPRadialGradient::set(SPAttributeEnum key, gchar const *value) {
             this->requestModified(SP_OBJECT_MODIFIED_FLAG);
             break;
 
-        case SP_ATTR_FY:
+        case SPAttr::FY:
             if (!this->fy.read(value)) {
                 this->fy.unset(this->cy.unit, this->cy.value, this->cy.computed);
             }
@@ -101,7 +101,7 @@ void SPRadialGradient::set(SPAttributeEnum key, gchar const *value) {
             this->requestModified(SP_OBJECT_MODIFIED_FLAG);
             break;
 
-        case SP_ATTR_FR:
+        case SPAttr::FR:
             if (!this->fr.read(value)) {
                 this->fr.unset(SVGLength::PERCENT, 0.0, 0.0);
             }
@@ -148,27 +148,27 @@ Inkscape::XML::Node* SPRadialGradient::write(Inkscape::XML::Document *xml_doc, I
     }
 
     if ((flags & SP_OBJECT_WRITE_ALL) || this->cx._set) {
-    	sp_repr_set_svg_double(repr, "cx", this->cx.computed);
+    	repr->setAttributeSvgDouble("cx", this->cx.computed);
     }
 
     if ((flags & SP_OBJECT_WRITE_ALL) || this->cy._set) {
-    	sp_repr_set_svg_double(repr, "cy", this->cy.computed);
+    	repr->setAttributeSvgDouble("cy", this->cy.computed);
     }
 
     if ((flags & SP_OBJECT_WRITE_ALL) || this->r._set) {
-    	sp_repr_set_svg_double(repr, "r", this->r.computed);
+    	repr->setAttributeSvgDouble("r", this->r.computed);
     }
 
     if ((flags & SP_OBJECT_WRITE_ALL) || this->fx._set) {
-    	sp_repr_set_svg_double(repr, "fx", this->fx.computed);
+    	repr->setAttributeSvgDouble("fx", this->fx.computed);
     }
 
     if ((flags & SP_OBJECT_WRITE_ALL) || this->fy._set) {
-    	sp_repr_set_svg_double(repr, "fy", this->fy.computed);
+    	repr->setAttributeSvgDouble("fy", this->fy.computed);
     }
 
     if ((flags & SP_OBJECT_WRITE_ALL) || this->fr._set) {
-    	sp_repr_set_svg_double(repr, "fr", this->fr.computed);
+    	repr->setAttributeSvgDouble("fr", this->fr.computed);
     }
 
     SPGradient::write(xml_doc, repr, flags);

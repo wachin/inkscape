@@ -11,6 +11,12 @@ list(APPEND INKSCAPE_INCS ${PROJECT_SOURCE_DIR}
     ${CMAKE_BINARY_DIR}/include
 )
 
+# NDEBUG implies G_DISABLE_ASSERT
+string(TOUPPER ${CMAKE_BUILD_TYPE} CMAKE_BUILD_TYPE_UPPER)
+if(CMAKE_CXX_FLAGS_${CMAKE_BUILD_TYPE_UPPER} MATCHES "-DNDEBUG")
+    list(APPEND INKSCAPE_CXX_FLAGS "-DG_DISABLE_ASSERT")
+endif()
+
 # AddressSanitizer
 # Clang's AddressSanitizer can detect more memory errors and is more powerful
 # than compiling with _FORTIFY_SOURCE but has a performance impact (approx. 2x
@@ -28,9 +34,16 @@ endif()
 list(APPEND INKSCAPE_CXX_FLAGS "-fstack-protector-strong")
 list(APPEND INKSCAPE_CXX_FLAGS "-Werror=format")                # e.g.: printf("%s", std::string("foo"))
 list(APPEND INKSCAPE_CXX_FLAGS "-Werror=format-security")       # e.g.: printf(variable);
+list(APPEND INKSCAPE_CXX_FLAGS "-Werror=ignored-qualifiers")    # e.g.: const int foo();
+list(APPEND INKSCAPE_CXX_FLAGS "-Werror=return-type")           # non-void functions that don't return a value
+list(APPEND INKSCAPE_CXX_FLAGS "-Wno-switch")                   # See !849 for discussion
 list(APPEND INKSCAPE_CXX_FLAGS_DEBUG "-Og")                     # -Og for _FORTIFY_SOURCE. One could add -Weffc++ here to see approx. 6000 warnings
+list(APPEND INKSCAPE_CXX_FLAGS_DEBUG "-Wcomment")
+list(APPEND INKSCAPE_CXX_FLAGS_DEBUG "-Wunused-function")
+list(APPEND INKSCAPE_CXX_FLAGS_DEBUG "-Wunused-variable")
 list(APPEND INKSCAPE_CXX_FLAGS_DEBUG "-D_GLIBCXX_ASSERTIONS")
 if (CMAKE_COMPILER_IS_GNUCC)
+    list(APPEND INKSCAPE_CXX_FLAGS "-Wstrict-null-sentinel")    # For NULL instead of nullptr
     list(APPEND INKSCAPE_CXX_FLAGS_DEBUG "-fexceptions -grecord-gcc-switches -fasynchronous-unwind-tables")
     if(CXX_COMPILER_VERSION VERSION_GREATER 8.0)
         list(APPEND INKSCAPE_CXX_FLAGS_DEBUG "-fstack-clash-protection -fcf-protection")
@@ -104,15 +117,19 @@ pkg_check_modules(INKSCAPE_DEP REQUIRED
                   fontconfig
                   gsl
                   gmodule-2.0
-                  libsoup-2.4>=2.42)
+                  libsoup-2.4>=2.42
+                  #double-conversion
+                  bdw-gc #boehm-demers-weiser gc
+                  lcms2)
+
+# remove this line and uncomment the doiuble-conversion above when double-conversion.pc file gets shipped on all platforms we support
+find_package(DoubleConversion REQUIRED)  # lib2geom dependency
 
 sanitize_ldflags_for_libs(INKSCAPE_DEP_LDFLAGS)
 list(APPEND INKSCAPE_LIBS ${INKSCAPE_DEP_LDFLAGS})
 list(APPEND INKSCAPE_INCS_SYS ${INKSCAPE_DEP_INCLUDE_DIRS})
 
 add_definitions(${INKSCAPE_DEP_CFLAGS_OTHER})
-
-find_package(DoubleConversion REQUIRED)  # lib2geom dependency
 
 if(WITH_JEMALLOC)
     find_package(JeMalloc)
@@ -123,33 +140,29 @@ if(WITH_JEMALLOC)
     endif()
 endif()
 
-if(ENABLE_LCMS)
-    unset(HAVE_LIBLCMS2)
-    find_package(LCMS2)
-    if(LCMS2_FOUND)
-        list(APPEND INKSCAPE_INCS_SYS ${LCMS2_INCLUDE_DIRS})
-        list(APPEND INKSCAPE_LIBS ${LCMS2_LIBRARIES})
-        add_definitions(${LCMS2_DEFINITIONS})
-        set (HAVE_LIBLCMS2 ON)
-    else()
-      set(ENABLE_LCMS OFF)
-    endif()
-endif()
-
 find_package(Iconv REQUIRED)
-list(APPEND INKSCAPE_INCS_SYS ${ICONV_INCLUDE_DIRS})
-list(APPEND INKSCAPE_LIBS ${ICONV_LIBRARIES})
-add_definitions(${ICONV_DEFINITIONS})
+list(APPEND INKSCAPE_INCS_SYS ${Iconv_INCLUDE_DIRS})
+list(APPEND INKSCAPE_LIBS ${Iconv_LIBRARIES})
 
 find_package(Intl REQUIRED)
 list(APPEND INKSCAPE_INCS_SYS ${Intl_INCLUDE_DIRS})
 list(APPEND INKSCAPE_LIBS ${Intl_LIBRARIES})
 add_definitions(${Intl_DEFINITIONS})
 
-find_package(BoehmGC REQUIRED)
-list(APPEND INKSCAPE_INCS_SYS ${BOEHMGC_INCLUDE_DIRS})
-list(APPEND INKSCAPE_LIBS ${BOEHMGC_LIBRARIES})
-add_definitions(${BOEHMGC_DEFINITIONS})
+# Check for system-wide version of 2geom and fallback to internal copy if not found
+if(NOT WITH_INTERNAL_2GEOM)
+    pkg_check_modules(2Geom QUIET IMPORTED_TARGET GLOBAL 2geom>=1.1.0)
+    if(2Geom_FOUND)
+        add_library(2Geom::2geom ALIAS PkgConfig::2Geom)
+    else()
+        set(WITH_INTERNAL_2GEOM ON CACHE BOOL "Prefer internal copy of lib2geom" FORCE)
+        message(STATUS "lib2geom not found, using internal copy in src/3rdparty/2geom")
+    endif()
+endif()
+if(WITH_INTERNAL_2GEOM)
+  set(2Geom_INCLUDE_DIRS ${CMAKE_SOURCE_DIR}/src/3rdparty/2geom/include)
+endif()
+
 
 if(ENABLE_POPPLER)
     find_package(PopplerCairo)
@@ -173,12 +186,11 @@ list(APPEND INKSCAPE_LIBS     ${POPPLER_LIBRARIES})
 add_definitions(${POPPLER_DEFINITIONS})
 
 if(WITH_LIBWPG)
-    find_package(LibWPG)
+    pkg_check_modules(LIBWPG libwpg-0.3 librevenge-0.0 librevenge-stream-0.0)
     if(LIBWPG_FOUND)
-        set(WITH_LIBWPG02 ${LIBWPG-0.2_FOUND})
-        set(WITH_LIBWPG03 ${LIBWPG-0.3_FOUND})
+        sanitize_ldflags_for_libs(LIBWPG_LDFLAGS)
         list(APPEND INKSCAPE_INCS_SYS ${LIBWPG_INCLUDE_DIRS})
-        list(APPEND INKSCAPE_LIBS     ${LIBWPG_LIBRARIES})
+        list(APPEND INKSCAPE_LIBS     ${LIBWPG_LDFLAGS})
         add_definitions(${LIBWPG_DEFINITIONS})
     else()
         set(WITH_LIBWPG OFF)
@@ -186,11 +198,11 @@ if(WITH_LIBWPG)
 endif()
 
 if(WITH_LIBVISIO)
-    find_package(LibVisio)
+    pkg_check_modules(LIBVISIO libvisio-0.1 librevenge-0.0 librevenge-stream-0.0)
     if(LIBVISIO_FOUND)
-        set(WITH_LIBVISIO01 ${LIBVISIO-0.1_FOUND})
+        sanitize_ldflags_for_libs(LIBVISIO_LDFLAGS)
         list(APPEND INKSCAPE_INCS_SYS ${LIBVISIO_INCLUDE_DIRS})
-        list(APPEND INKSCAPE_LIBS     ${LIBVISIO_LIBRARIES})
+        list(APPEND INKSCAPE_LIBS     ${LIBVISIO_LDFLAGS})
         add_definitions(${LIBVISIO_DEFINITIONS})
     else()
         set(WITH_LIBVISIO OFF)
@@ -198,11 +210,11 @@ if(WITH_LIBVISIO)
 endif()
 
 if(WITH_LIBCDR)
-    find_package(LibCDR)
+    pkg_check_modules(LIBCDR libcdr-0.1 librevenge-0.0 librevenge-stream-0.0)
     if(LIBCDR_FOUND)
-        set(WITH_LIBCDR01 ${LIBCDR-0.1_FOUND})
+        sanitize_ldflags_for_libs(LIBCDR_LDFLAGS)
         list(APPEND INKSCAPE_INCS_SYS ${LIBCDR_INCLUDE_DIRS})
-        list(APPEND INKSCAPE_LIBS     ${LIBCDR_LIBRARIES})
+        list(APPEND INKSCAPE_LIBS     ${LIBCDR_LDFLAGS})
         add_definitions(${LIBCDR_DEFINITIONS})
     else()
         set(WITH_LIBCDR OFF)
@@ -244,10 +256,16 @@ else()
 endif()
 
 if(APPLE)
+  # gtk+-3.0.pc should have targets=quartz (or not targets=x11)
+  if(${CMAKE_VERSION} VERSION_GREATER_EQUAL "3.4")
+    pkg_get_variable(GTK3_TARGETS gtk+-3.0 targets)
+  endif()
+  if(NOT("${GTK3_TARGETS}" MATCHES "x11"))
     pkg_check_modules(MacIntegration REQUIRED gtk-mac-integration-gtk3)
     list(APPEND INKSCAPE_INCS_SYS ${MacIntegration_INCLUDE_DIRS})
     sanitize_ldflags_for_libs(MacIntegration_LDFLAGS)
     list(APPEND INKSCAPE_LIBS ${MacIntegration_LDFLAGS})
+  endif()
 endif()
 
 # ----------------------------------------------------------------------------
@@ -259,45 +277,36 @@ endif()
 pkg_check_modules(
     GTK3
     REQUIRED
-    gtkmm-3.0>=3.22
-    gdkmm-3.0>=3.22
-    gtk+-3.0>=3.22
-    gdk-3.0>=3.22
-    gdl-3.0>=3.4
+    gtkmm-3.0>=3.24
+    gdkmm-3.0>=3.24
+    gtk+-3.0>=3.24
+    gdk-3.0>=3.24
     )
 list(APPEND INKSCAPE_CXX_FLAGS ${GTK3_CFLAGS_OTHER})
 list(APPEND INKSCAPE_INCS_SYS ${GTK3_INCLUDE_DIRS})
 list(APPEND INKSCAPE_LIBS ${GTK3_LIBRARIES})
 link_directories(${GTK3_LIBRARY_DIRS})
 
-pkg_check_modules(GDL_3_6 gdl-3.0>=3.6)
-if("${GDL_3_6_FOUND}")
-    message(STATUS "Using GDL 3.6 or higher")
-    set (WITH_GDL_3_6 ON)
+if(WITH_GSPELL)
+    pkg_check_modules(GSPELL gspell-1)
+    if("${GSPELL_FOUND}")
+        message(STATUS "Using gspell")
+        list(APPEND INKSCAPE_INCS_SYS ${GSPELL_INCLUDE_DIRS})
+        sanitize_ldflags_for_libs(GSPELL_LDFLAGS)
+        list(APPEND INKSCAPE_LIBS ${GSPELL_LDFLAGS})
+    else()
+        set(WITH_GSPELL OFF)
+    endif()
 endif()
 
-pkg_check_modules(GTKSPELL3 gtkspell3-3.0)
-if("${GTKSPELL3_FOUND}")
-    message(STATUS "Using GtkSpell 3")
-    list(APPEND INKSCAPE_INCS_SYS ${GTKSPELL3_INCLUDE_DIRS})
-    sanitize_ldflags_for_libs(GTKSPELL3_LDFLAGS)
-    list(APPEND INKSCAPE_LIBS ${GTKSPELL3_LDFLAGS})
-    set(WITH_GTKSPELL ON)
-else()
-    set(WITH_GTKSPELL OFF)
+find_package(Boost 1.19.0 REQUIRED COMPONENTS filesystem)
+
+if (CMAKE_COMPILER_IS_GNUCC AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 7 AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 9)
+    list(APPEND INKSCAPE_LIBS "-lstdc++fs")
 endif()
 
-find_package(Boost 1.19.0 REQUIRED)
 list(APPEND INKSCAPE_INCS_SYS ${Boost_INCLUDE_DIRS})
 # list(APPEND INKSCAPE_LIBS ${Boost_LIBRARIES})
-
-find_package(ASPELL)
-if(ASPELL_FOUND)
-    list(APPEND INKSCAPE_INCS_SYS ${ASPELL_INCLUDE_DIR})
-    list(APPEND INKSCAPE_LIBS     ${ASPELL_LIBRARIES})
-    add_definitions(${ASPELL_DEFINITIONS})
-    set(HAVE_ASPELL TRUE)
-endif()
 
 #find_package(OpenSSL)
 #list(APPEND INKSCAPE_INCS_SYS ${OPENSSL_INCLUDE_DIR})
@@ -337,6 +346,18 @@ find_package(ZLIB REQUIRED)
 list(APPEND INKSCAPE_INCS_SYS ${ZLIB_INCLUDE_DIRS})
 list(APPEND INKSCAPE_LIBS ${ZLIB_LIBRARIES})
 
+if(WITH_GNU_READLINE)
+  pkg_check_modules(Readline readline)
+  if(Readline_FOUND)
+    message(STATUS "Found GNU Readline: ${Readline_LIBRARY}")
+    list(APPEND INKSCAPE_INCS_SYS ${Readline_INCLUDE_DIRS})
+    list(APPEND INKSCAPE_LIBS ${Readline_LDFLAGS})
+  else()
+    message(STATUS "Did not find GNU Readline")
+    set(WITH_GNU_READLINE OFF)
+  endif()
+endif()
+
 if(WITH_IMAGE_MAGICK)
     # we want "<" but pkg_check_modules only offers "<=" for some reason; let's hope nobody actually has 7.0.0
     pkg_check_modules(MAGICK ImageMagick++<=7)
@@ -375,7 +396,7 @@ if(WITH_NLS)
     if(GETTEXT_XGETTEXT_EXECUTABLE)
         message(STATUS "Found xgettext. inkscape.pot will be re-created if missing.")
     else()
-        message(STATUS "Did not find xgetttext. inkscape.pot can't be re-created.")
+        message(STATUS "Did not find xgettext. inkscape.pot can't be re-created.")
     endif()
 endif(WITH_NLS)
 
@@ -404,6 +425,11 @@ endforeach()
 foreach(flag ${INKSCAPE_CXX_FLAGS_DEBUG})
     set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} ${flag}")
 endforeach()
+
+# Add color output to ninja
+if ("${CMAKE_GENERATOR}" MATCHES "Ninja")
+    add_compile_options (-fdiagnostics-color)
+endif ()
 
 list(REMOVE_DUPLICATES INKSCAPE_LIBS)
 list(REMOVE_DUPLICATES INKSCAPE_INCS_SYS)

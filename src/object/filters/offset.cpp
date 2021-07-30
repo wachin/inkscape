@@ -14,6 +14,8 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
+#include <2geom/transforms.h>
+
 #include "offset.h"
 
 #include "attributes.h"
@@ -41,8 +43,8 @@ SPFeOffset::~SPFeOffset() = default;
 void SPFeOffset::build(SPDocument *document, Inkscape::XML::Node *repr) {
 	SPFilterPrimitive::build(document, repr);
 
-	this->readAttr( "dx" );
-	this->readAttr( "dy" );
+	this->readAttr(SPAttr::DX);
+	this->readAttr(SPAttr::DY);
 }
 
 /**
@@ -55,11 +57,11 @@ void SPFeOffset::release() {
 /**
  * Sets a specific value in the SPFeOffset.
  */
-void SPFeOffset::set(SPAttributeEnum key, gchar const *value) {
+void SPFeOffset::set(SPAttr key, gchar const *value) {
     double read_num;
 
     switch(key) {
-        case SP_ATTR_DX:
+        case SPAttr::DX:
             read_num = value ? helperfns_read_number(value) : 0;
 
             if (read_num != this->dx) {
@@ -67,7 +69,7 @@ void SPFeOffset::set(SPAttributeEnum key, gchar const *value) {
                 this->parent->requestModified(SP_OBJECT_MODIFIED_FLAG);
             }
             break;
-        case SP_ATTR_DY:
+        case SPAttr::DY:
             read_num = value ? helperfns_read_number(value) : 0;
 
             if (read_num != this->dy) {
@@ -88,8 +90,8 @@ void SPFeOffset::set(SPAttributeEnum key, gchar const *value) {
  */
 void SPFeOffset::update(SPCtx *ctx, guint flags) {
     if (flags & SP_OBJECT_MODIFIED_FLAG) {
-        this->readAttr( "dx" );
-        this->readAttr( "dy" );
+        this->readAttr(SPAttr::DX);
+        this->readAttr(SPAttr::DY);
     }
 
     SPFilterPrimitive::update(ctx, flags);
@@ -122,6 +124,22 @@ void SPFeOffset::build_renderer(Inkscape::Filters::Filter* filter) {
 
     nr_offset->set_dx(this->dx);
     nr_offset->set_dy(this->dy);
+}
+
+/**
+ * Calculate the region taken up by an offset
+ *
+ * @param region The original shape's region or previous primitive's region output.
+ */
+Geom::Rect SPFeOffset::calculate_region(Geom::Rect region)
+{
+    // Because blur calculates its drawing space based on the resulting region
+    // An offset will actually harm blur's ability to draw, even though it shouldn't
+    // A future fix would require the blur to figure out its region minus any downstream
+    // offset (this effects drop-shadows)
+    // TODO: region *= Geom::Translate(this->dx, this->dy);
+    region.unionWith(region * Geom::Translate(this->dx, this->dy));
+    return region;
 }
 
 

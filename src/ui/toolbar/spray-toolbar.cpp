@@ -34,34 +34,31 @@
 #include <gtkmm/separatortoolitem.h>
 
 #include "desktop.h"
-#include "inkscape.h"
 
 #include "ui/icon-names.h"
 #include "ui/simple-pref-pusher.h"
 
 #include "ui/dialog/clonetiler.h"
-#include "ui/dialog/dialog-manager.h"
-#include "ui/dialog/panel-dialog.h"
+#include "ui/dialog/dialog-container.h"
+#include "ui/dialog/dialog-base.h"
 
+#include "ui/widget/canvas.h"
 #include "ui/widget/spin-button-tool-item.h"
 
-// Disabled in 0.91 because of Bug #1274831 (crash, spraying an object 
+// Disabled in 0.91 because of Bug #1274831 (crash, spraying an object
 // with the mode: spray object in single path)
 // Please enable again when working on 1.0
 #define ENABLE_SPRAY_MODE_SINGLE_PATH
 
 Inkscape::UI::Dialog::CloneTiler *get_clone_tiler_panel(SPDesktop *desktop)
 {
-    if (Inkscape::UI::Dialog::PanelDialogBase *panel_dialog =
-        dynamic_cast<Inkscape::UI::Dialog::PanelDialogBase *>(desktop->_dlg_mgr->getDialog("CloneTiler"))) {
-        try {
-            Inkscape::UI::Dialog::CloneTiler &clone_tiler =
-                dynamic_cast<Inkscape::UI::Dialog::CloneTiler &>(panel_dialog->getPanel());
-            return &clone_tiler;
-        } catch (std::exception &e) { }
+    Inkscape::UI::Dialog::DialogBase *dialog = desktop->getContainer()->get_dialog("Clonetiler");
+    if (!dialog) {
+        desktop->getContainer()->new_dialog("Clonetiler");
+        return dynamic_cast<Inkscape::UI::Dialog::CloneTiler *>(
+            desktop->getContainer()->get_dialog("Clonetiler"));
     }
-
-    return nullptr;
+    return dynamic_cast<Inkscape::UI::Dialog::CloneTiler *>(dialog);
 }
 
 namespace Inkscape {
@@ -119,13 +116,13 @@ SprayToolbar::SprayToolbar(SPDesktop *desktop) :
         auto width_item = Gtk::manage(new UI::Widget::SpinButtonToolItem("spray-width", _("Width:"), _width_adj, 1, 0));
         width_item->set_tooltip_text(_("The width of the spray area (relative to the visible canvas area)"));
         width_item->set_custom_numeric_menu_data(values, labels);
-        width_item->set_focus_widget(Glib::wrap(GTK_WIDGET(desktop->canvas)));
+        width_item->set_focus_widget(desktop->canvas);
         _width_adj->signal_value_changed().connect(sigc::mem_fun(*this, &SprayToolbar::width_value_changed));
         // ege_adjustment_action_set_appearance( eact, TOOLBAR_SLIDER_HINT );
         add(*width_item);
         width_item->set_sensitive(true);
     }
-    
+
     /* Use Pressure Width button */
     {
         auto pressure_item = add_toggle_button(_("Pressure"),
@@ -145,7 +142,7 @@ SprayToolbar::SprayToolbar(SPDesktop *desktop) :
         _spray_population = Gtk::manage(new UI::Widget::SpinButtonToolItem("spray-population", _("Amount:"), _population_adj, 1, 0));
         _spray_population->set_tooltip_text(_("Adjusts the number of items sprayed per click"));
         _spray_population->set_custom_numeric_menu_data(values, labels);
-        _spray_population->set_focus_widget(Glib::wrap(GTK_WIDGET(desktop->canvas)));
+        _spray_population->set_focus_widget(desktop->canvas);
         _population_adj->signal_value_changed().connect(sigc::mem_fun(*this, &SprayToolbar::population_value_changed));
         //ege_adjustment_action_set_appearance( holder->_spray_population, TOOLBAR_SLIDER_HINT );
         add(*_spray_population);
@@ -174,7 +171,7 @@ SprayToolbar::SprayToolbar(SPDesktop *desktop) :
         // xgettext:no-c-format
         _spray_rotation->set_tooltip_text(_("Variation of the rotation of the sprayed objects; 0% for the same rotation than the original object"));
         _spray_rotation->set_custom_numeric_menu_data(values, labels);
-        _spray_rotation->set_focus_widget(Glib::wrap(GTK_WIDGET(desktop->canvas)));
+        _spray_rotation->set_focus_widget(desktop->canvas);
         _rotation_adj->signal_value_changed().connect(sigc::mem_fun(*this, &SprayToolbar::rotation_value_changed));
         // ege_adjustment_action_set_appearance(holder->_spray_rotation, TOOLBAR_SLIDER_HINT );
         add(*_spray_rotation);
@@ -190,7 +187,7 @@ SprayToolbar::SprayToolbar(SPDesktop *desktop) :
         // xgettext:no-c-format
         _spray_scale->set_tooltip_text(_("Variation in the scale of the sprayed objects; 0% for the same scale than the original object"));
         _spray_scale->set_custom_numeric_menu_data(values, labels);
-        _spray_scale->set_focus_widget(Glib::wrap(GTK_WIDGET(desktop->canvas)));
+        _spray_scale->set_focus_widget(desktop->canvas);
         _scale_adj->signal_value_changed().connect(sigc::mem_fun(*this, &SprayToolbar::scale_value_changed));
         // ege_adjustment_action_set_appearance( holder->_spray_scale, TOOLBAR_SLIDER_HINT );
         add(*_spray_scale);
@@ -217,7 +214,7 @@ SprayToolbar::SprayToolbar(SPDesktop *desktop) :
         auto sd_item = Gtk::manage(new UI::Widget::SpinButtonToolItem("spray-standard-deviation", C_("Spray tool", "Scatter:"), _sd_adj, 1, 0));
         sd_item->set_tooltip_text(_("Increase to scatter sprayed objects"));
         sd_item->set_custom_numeric_menu_data(values, labels);
-        sd_item->set_focus_widget(Glib::wrap(GTK_WIDGET(desktop->canvas)));
+        sd_item->set_focus_widget(desktop->canvas);
         _sd_adj->signal_value_changed().connect(sigc::mem_fun(*this, &SprayToolbar::standard_deviation_value_changed));
         // ege_adjustment_action_set_appearance( eact, TOOLBAR_SLIDER_HINT );
         add(*sd_item);
@@ -233,7 +230,7 @@ SprayToolbar::SprayToolbar(SPDesktop *desktop) :
         auto mean_item = Gtk::manage(new UI::Widget::SpinButtonToolItem("spray-mean", _("Focus:"), _mean_adj, 1, 0));
         mean_item->set_tooltip_text(_("0 to spray a spot; increase to enlarge the ring radius"));
         mean_item->set_custom_numeric_menu_data(values, labels);
-        mean_item->set_focus_widget(Glib::wrap(GTK_WIDGET(desktop->canvas)));
+        mean_item->set_focus_widget(desktop->canvas);
         _mean_adj->signal_value_changed().connect(sigc::mem_fun(*this, &SprayToolbar::mean_value_changed));
         // ege_adjustment_action_set_appearance( eact, TOOLBAR_SLIDER_HINT );
         add(*mean_item);
@@ -293,7 +290,7 @@ SprayToolbar::SprayToolbar(SPDesktop *desktop) :
         _offset = Gtk::manage(new UI::Widget::SpinButtonToolItem("spray-offset", _("Offset %:"), _offset_adj, 0, 0));
         _offset->set_tooltip_text(_("Increase to segregate objects more (value in percent)"));
         _offset->set_custom_numeric_menu_data(values, labels);
-        _offset->set_focus_widget(Glib::wrap(GTK_WIDGET(desktop->canvas)));
+        _offset->set_focus_widget(desktop->canvas);
         _offset_adj->signal_value_changed().connect(sigc::mem_fun(*this, &SprayToolbar::offset_value_changed));
         add(*_offset);
     }
@@ -308,7 +305,7 @@ SprayToolbar::SprayToolbar(SPDesktop *desktop) :
         _picker->set_active(prefs->getBool("/tools/spray/picker", false));
         _picker->signal_toggled().connect(sigc::mem_fun(*this, &SprayToolbar::toggle_picker));
     }
-    
+
     /* Pick Fill */
     {
         _pick_fill = add_toggle_button(_("Apply picked color to fill"),
@@ -352,7 +349,7 @@ SprayToolbar::SprayToolbar(SPDesktop *desktop) :
                                                           _pick_center,
                                                           "/tools/spray/pick_center"));
     }
-    
+
     gint mode = prefs->getInt("/tools/spray/mode", 1);
     _mode_buttons[mode]->set_active();
     show_all();
@@ -510,9 +507,9 @@ SprayToolbar::toggle_picker()
     prefs->setBool("/tools/spray/picker", active);
     if(active){
         prefs->setBool("/dialogs/clonetiler/dotrace", false);
-        SPDesktop *dt = SP_ACTIVE_DESKTOP;
+        SPDesktop *dt = _desktop;
         if (Inkscape::UI::Dialog::CloneTiler *ct = get_clone_tiler_panel(dt)){
-            dt->_dlg_mgr->showDialog("CloneTiler");
+            dt->getContainer()->new_dialog(SP_VERB_DIALOG_CLONETILER);
             ct->show_page_trace();
         }
     }

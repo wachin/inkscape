@@ -2,6 +2,8 @@
 <!DOCTYPE plist PUBLIC "-//Apple Computer//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 	<dict>
+		<key>ATSApplicationFontsPath</key>
+		<string>share/inkscape/fonts</string>
 		<key>CFBundleDevelopmentRegion</key>
 		<string>English</string>
 		<key>CFBundleDocumentTypes</key>
@@ -51,65 +53,6 @@
 				<string>Editor</string>
 				<key>LSHandlerRank</key>
 				<string>Owner</string>
-			</dict>
-			<dict>
-				<key>CFBundleTypeExtensions</key>
-				<array>
-					<string>eps</string>
-					<string>epsi</string>
-					<string>EPS</string>
-					<string>EPSI</string>
-				</array>
-				<key>CFBundleTypeIconFile</key>
-				<string>image-x-eps.icns</string>
-				<key>CFBundleTypeMIMETypes</key>
-				<array>
-					<string>application/postscript</string>
-					<string>image/x-eps</string>
-				</array>
-				<key>CFBundleTypeName</key>
-				<string>PostScript Document</string>
-				<key>CFBundleTypeOSTypes</key>
-				<array>
-					<string>EPS </string>
-					<string>EPSI</string>
-				</array>
-				<key>CFBundleTypeRole</key>
-				<string>Editor</string>
-				<key>LSHandlerRank</key>
-				<string>Alternate</string>
-				<key>LSItemContentTypes</key>
-				<array>
-					<string>com.adobe.encapsulated-postscript</string>
-				</array>
-			</dict>
-			<dict>
-				<key>CFBundleTypeExtensions</key>
-				<array>
-					<string>ps</string>
-					<string>PS</string>
-				</array>
-				<key>CFBundleTypeIconFile</key>
-				<string>image-x-ps.icns</string>
-				<key>CFBundleTypeMIMETypes</key>
-				<array>
-					<string>application/postscript</string>
-					<string>image/x-ps</string>
-				</array>
-				<key>CFBundleTypeName</key>
-				<string>PostScript Document</string>
-				<key>CFBundleTypeOSTypes</key>
-				<array>
-					<string>PS  </string>
-				</array>
-				<key>CFBundleTypeRole</key>
-				<string>Editor</string>
-				<key>LSHandlerRank</key>
-				<string>Alternate</string>
-				<key>LSItemContentTypes</key>
-				<array>
-					<string>com.adobe.postscript</string>
-				</array>
 			</dict>
 			<dict>
 				<key>CFBundleTypeExtensions</key>
@@ -351,29 +294,6 @@
 			<dict>
 				<key>CFBundleTypeExtensions</key>
 				<array>
-					<string>sk1</string>
-					<string>SK1</string>
-				</array>
-				<key>CFBundleTypeIconFile</key>
-				<string>image-vnd.sk1.icns</string>
-				<key>CFBundleTypeMIMETypes</key>
-				<array>
-					<string>image/vnd.sk1</string>
-				</array>
-				<key>CFBundleTypeName</key>
-				<string>Sketch Document</string>
-				<key>CFBundleTypeOSTypes</key>
-				<array>
-					<string>SK1 </string>
-				</array>
-				<key>CFBundleTypeRole</key>
-				<string>Viewer</string>
-				<key>LSHandlerRank</key>
-				<string>Alternate</string>
-			</dict>
-			<dict>
-				<key>CFBundleTypeExtensions</key>
-				<array>
 					<string>wpg</string>
 					<string>WPG</string>
 				</array>
@@ -543,8 +463,6 @@
 		<string>Inks</string>
 		<key>CFBundleVersion</key>
 		<string>CFBundleVersion</string>
-		<key>NSHumanReadableCopyright</key>
-		<string>Copyright © 2020 Inkscape Developers, GNU General Public License.</string>
 		<key>LSApplicationCategoryType</key>
 		<string>public.app-category.graphics-design</string>
 		<key>LSMinimumSystemVersion</key>
@@ -559,6 +477,8 @@
 		<string>Inkscape needs your permission to access removable volumes.</string>
 		<key>NSHighResolutionCapable</key>
 		<true/>
+		<key>NSHumanReadableCopyright</key>
+		<string>Copyright © 2021 Inkscape Developers, GNU General Public License.</string>
 		<key>NSRequiresAquaSystemAppearance</key>
 		<false/>
 	</dict>

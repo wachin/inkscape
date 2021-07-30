@@ -27,6 +27,7 @@ using namespace Geom;
 using namespace LPEEmbroderyStitchOrdering;
 
 static const Util::EnumData<LPEEmbroderyStitch::order_method> OrderMethodData[LPEEmbroderyStitch::order_method_count] = {
+    // clang-format off
     { LPEEmbroderyStitch::order_method_no_reorder, N_("no reordering"),                                "no-reorder" },
     { LPEEmbroderyStitch::order_method_zigzag,            N_("zig-zag"),                               "zig-zag" },
     { LPEEmbroderyStitch::order_method_zigzag_rev_first,  N_("zig-zag, reverse first"),                "zig-zag-rev-first" },
@@ -36,6 +37,7 @@ static const Util::EnumData<LPEEmbroderyStitch::order_method> OrderMethodData[LP
     { LPEEmbroderyStitch::order_method_tsp_kopt_3,        N_("traveling salesman 3-opt (fast, ok)"),   "tsp-3opt" },
     { LPEEmbroderyStitch::order_method_tsp_kopt_4,        N_("traveling salesman 4-opt (seconds)"),    "tsp-4opt" },
     { LPEEmbroderyStitch::order_method_tsp_kopt_5,        N_("traveling salesman 5-opt (minutes)"),    "tsp-5opt" }
+    // clang-format on
 };
 
 static const Util::EnumDataConverter<LPEEmbroderyStitch::order_method>
@@ -55,11 +57,11 @@ LPEEmbroderyStitch::LPEEmbroderyStitch(LivePathEffectObject *lpeobject) :
     Effect(lpeobject),
     ordering(_("Ordering method"), _("Method used to order sub paths"), "ordering", OrderMethodConverter, &wr, this, order_method_no_reorder),
     connection(_("Connection method"), _("Method to connect end points of sub paths"), "connection", ConnectMethodConverter, &wr, this, connect_method_line),
-    stitch_length(_("Stitch length"), _("If not 0, linearize path with given step length"), "stitch-length", &wr, this, 10.0),
-    stitch_min_length(_("Minimum stitch length [%]"), _("Combine steps shorter than this [%]"), "stitch-min-length", &wr, this, 25.0),
+    stitch_length(_("Stitch length"), _("Divide path into straight segments of given length (in user units)"), "stitch-length", &wr, this, 10.0),
+    stitch_min_length(_("Minimum stitch length [%]"), _("Merge stitches that are shorter than this percentage of the stitch length"), "stitch-min-length", &wr, this, 25.0),
     stitch_pattern(_("Stitch pattern"), _("Select between different stitch patterns"), "stitch_pattern", &wr, this, 0),
-    show_stitches(_("Show stitches"), _("Show stitches as small gaps (just for inspection - don't use for output)"), "show-stitches", &wr, this, false),
-    show_stitch_gap(_("Show stitch gap"), _("Gap between stitches when showing stitches"), "show-stitch-gap", &wr, this, 0.5),
+    show_stitches(_("Show stitches"), _("Creates gaps between stitches (use only for preview, deactivate for use with embroidery machines)"), "show-stitches", &wr, this, false),
+    show_stitch_gap(_("Show stitch gap"), _("Length of the gap between stitches when showing stitches"), "show-stitch-gap", &wr, this, 0.5),
     jump_if_longer(_("Jump if longer"), _("Jump connection if longer than"), "jump-if-longer", &wr, this, 100)
 {
     registerParameter(dynamic_cast<Parameter *>(&ordering));

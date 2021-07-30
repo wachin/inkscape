@@ -36,16 +36,16 @@
 #include "unclump.h"
 #include "verbs.h"
 
+#include "actions/actions-tools.h"
+#include "live_effects/effect-enum.h"
 #include "object/sp-flowtext.h"
 #include "object/sp-item-transform.h"
 #include "object/sp-root.h"
 #include "object/sp-text.h"
-
 #include "ui/icon-loader.h"
 #include "ui/icon-names.h"
 #include "ui/tool/control-point-selection.h"
 #include "ui/tool/multi-path-manipulator.h"
-#include "ui/tools-switch.h"
 #include "ui/tools/node-tool.h"
 #include "ui/widget/spinbutton.h"
 
@@ -59,10 +59,9 @@ Action::Action(Glib::ustring id,
        const Glib::ustring &tiptext,
        guint row, guint column,
        Gtk::Grid &parent,
-       AlignAndDistribute &dialog):
-    _dialog(dialog),
-    _id(std::move(id)),
-    _parent(parent)
+               AlignAndDistribute &dialog)
+    : _dialog(dialog)
+    , _id(std::move(id))
 {
     Gtk::Image*  pIcon = Gtk::manage(new Gtk::Image());
     pIcon = sp_get_icon_image(_id, Gtk::ICON_SIZE_LARGE_TOOLBAR);
@@ -122,7 +121,14 @@ void ActionAlign::do_action(SPDesktop *desktop, int index)
 
     Inkscape::Preferences *prefs = Inkscape::Preferences::get();
     bool sel_as_group = prefs->getBool("/dialogs/align/sel-as-groups");
-
+    // We force unselect operand in bool LPE
+    auto list = selection->items();
+    for (auto itemlist = list.begin(); itemlist != list.end(); ++itemlist) {
+        SPLPEItem *lpeitem = dynamic_cast<SPLPEItem *>(*itemlist);
+        if (lpeitem && lpeitem->hasPathEffectOfType(Inkscape::LivePathEffect::EffectType::BOOL_OP)) {
+            sp_lpe_item_update_patheffect(lpeitem, false, false);
+        }
+    }
     std::vector<SPItem*> selected(selection->items().begin(), selection->items().end());
     if (selected.empty()) return;
 
@@ -135,10 +141,10 @@ void ActionAlign::do_action(SPDesktop *desktop, int index)
     switch (AlignTarget(prefs->getInt("/dialogs/align/align-to", 6)))
     {
     case LAST:
-        focus = SP_ITEM(selected.back());
+        focus = selected.back();
         break;
     case FIRST:
-        focus = SP_ITEM(selected.front());
+        focus = selected.front();
         break;
     case BIGGEST:
         focus = selection->largestItem(horiz);
@@ -177,7 +183,7 @@ void ActionAlign::do_action(SPDesktop *desktop, int index)
     if (sel_as_group) {
         if (focus) {
             // use bounding box of all selected elements except the "focused" element
-            Inkscape::ObjectSet copy;
+            Inkscape::ObjectSet copy(desktop);
             copy.add(selection->objects().begin(), selection->objects().end());
             copy.remove(focus);
             b = copy.preferredBounds();
@@ -211,6 +217,10 @@ void ActionAlign::do_action(SPDesktop *desktop, int index)
     }
 }
 
+void AlignAndDistribute::selectionChanged(Selection *selection)
+{
+    randomize_bbox = Geom::OptRect();
+}
 
 ActionAlign::Coeffs const ActionAlign::_allCoeffs[19] = {
     {1., 0., 0., 0., 0., 1., 0., 0., SP_VERB_ALIGN_HORIZONTAL_RIGHT_TO_ANCHOR},
@@ -297,10 +307,9 @@ public :
 private :
     void on_button_click() override {
         //Retrieve selected objects
-        SPDesktop *desktop = _dialog.getDesktop();
-        if (!desktop) return;
+        if (!_desktop) return;
 
-        Inkscape::Selection *selection = desktop->getSelection();
+        Inkscape::Selection *selection = _desktop->getSelection();
         if (!selection) return;
 
         std::vector<SPItem*> selected(selection->items().begin(), selection->items().end());
@@ -313,7 +322,7 @@ private :
 
         double kBegin = _kBegin;
         double kEnd = _kEnd;
-        if (_orientation == Geom::Y && desktop->is_yaxisdown()) {
+        if (_orientation == Geom::Y && _desktop->is_yaxisdown()) {
             kBegin = 1. - kBegin;
             kEnd = 1. - kEnd;
         }
@@ -392,11 +401,10 @@ private :
         prefs->setInt("/options/clonecompensation/value", saved_compensation);
 
         if (changed) {
-            DocumentUndo::done( desktop->getDocument(), SP_VERB_DIALOG_ALIGN_DISTRIBUTE,
+            DocumentUndo::done(_desktop->getDocument(), SP_VERB_DIALOG_ALIGN_DISTRIBUTE,
                                 _("Distribute"));
         }
     }
-    guint _index;
     AlignAndDistribute &_dialog;
     bool _onInterSpace;
     Geom::Dim2 _orientation;
@@ -425,11 +433,10 @@ private :
     bool _distribute;
 
     void on_button_click() override {
-        if (!_dialog.getDesktop()) {
-        	return;
-        }
+        if (!_desktop)
+            return;
 
-        Inkscape::UI::Tools::ToolBase *event_context = _dialog.getDesktop()->getEventContext();
+        Inkscape::UI::Tools::ToolBase *event_context = _desktop->getEventContext();
 
         if (!INK_IS_NODE_TOOL(event_context)) {
         	return;
@@ -492,7 +499,8 @@ public:
 private :
     void on_button_click() override
     {
-        if (!_dialog.getDesktop()) return;
+        if (!_desktop)
+            return;
 
         // see comment in ActionAlign above
         Inkscape::Preferences *prefs = Inkscape::Preferences::get();
@@ -502,14 +510,14 @@ private :
         // xGap and yGap are the minimum space required between bounding rectangles.
         double const xGap = removeOverlapXGap.get_value();
         double const yGap = removeOverlapYGap.get_value();
-        auto tmp = _dialog.getDesktop()->getSelection()->items();
+        auto tmp = _desktop->getSelection()->items();
         std::vector<SPItem *> vec(tmp.begin(), tmp.end());
         removeoverlap(vec, xGap, yGap);
 
         // restore compensation setting
         prefs->setInt("/options/clonecompensation/value", saved_compensation);
 
-        DocumentUndo::done(_dialog.getDesktop()->getDocument(), SP_VERB_DIALOG_ALIGN_DISTRIBUTE,
+        DocumentUndo::done(_desktop->getDocument(), SP_VERB_DIALOG_ALIGN_DISTRIBUTE,
                            _("Remove overlaps"));
     }
 };
@@ -528,20 +536,21 @@ public:
 private :
     void on_button_click() override
     {
-        if (!_dialog.getDesktop()) return;
+        if (!_desktop)
+            return;
 
         // see comment in ActionAlign above
         Inkscape::Preferences *prefs = Inkscape::Preferences::get();
         int saved_compensation = prefs->getInt("/options/clonecompensation/value", SP_CLONE_COMPENSATION_UNMOVED);
         prefs->setInt("/options/clonecompensation/value", SP_CLONE_COMPENSATION_UNMOVED);
 
-        auto tmp = _dialog.getDesktop()->getSelection()->items();
+        auto tmp = _desktop->getSelection()->items();
         std::vector<SPItem *> vec(tmp.begin(), tmp.end());
         graphlayout(vec);
         // restore compensation setting
         prefs->setInt("/options/clonecompensation/value", saved_compensation);
 
-        DocumentUndo::done(_dialog.getDesktop()->getDocument(), SP_VERB_DIALOG_ALIGN_DISTRIBUTE,
+        DocumentUndo::done(_desktop->getDocument(), SP_VERB_DIALOG_ALIGN_DISTRIBUTE,
                            _("Arrange connector network"));
     }
 };
@@ -567,7 +576,7 @@ public:
 
 private :
     const SortOrder sortOrder;
-    static boost::optional<Geom::Point> center;
+    static std::optional<Geom::Point> center;
 
     static bool sort_compare(const SPItem * a,const SPItem * b) {
         if (a == nullptr) return false;
@@ -593,10 +602,8 @@ private :
 
     void on_button_click() override
     {
-        SPDesktop *desktop = _dialog.getDesktop();
-        if (!desktop) return;
-
-        Inkscape::Selection *selection = desktop->getSelection();
+        if (!_desktop) return;
+        Inkscape::Selection *selection = _desktop->getSelection();
         if (!selection) return;
 
         std::vector<SPItem*> selected(selection->items().begin(), selection->items().end());
@@ -631,13 +638,13 @@ private :
         // restore compensation setting
         prefs->setInt("/options/clonecompensation/value", saved_compensation);
 
-        DocumentUndo::done(_dialog.getDesktop()->getDocument(), SP_VERB_DIALOG_ALIGN_DISTRIBUTE,
+        DocumentUndo::done(_desktop->getDocument(), SP_VERB_DIALOG_ALIGN_DISTRIBUTE,
                            _("Exchange Positions"));
     }
 };
 
 // instantiate the private static member
-boost::optional<Geom::Point> ActionExchangePositions::center;
+std::optional<Geom::Point> ActionExchangePositions::center;
 
 class ActionUnclump : public Action {
 public :
@@ -653,20 +660,21 @@ public :
 private :
     void on_button_click() override
     {
-        if (!_dialog.getDesktop()) return;
+        if (!_desktop)
+            return;
 
         // see comment in ActionAlign above
         Inkscape::Preferences *prefs = Inkscape::Preferences::get();
         int saved_compensation = prefs->getInt("/options/clonecompensation/value", SP_CLONE_COMPENSATION_UNMOVED);
         prefs->setInt("/options/clonecompensation/value", SP_CLONE_COMPENSATION_UNMOVED);
-        auto tmp = _dialog.getDesktop()->getSelection()->items();
+        auto tmp = _desktop->getSelection()->items();
         std::vector<SPItem*> x(tmp.begin(), tmp.end());
         unclump (x);
 
         // restore compensation setting
         prefs->setInt("/options/clonecompensation/value", saved_compensation);
 
-        DocumentUndo::done(_dialog.getDesktop()->getDocument(), SP_VERB_DIALOG_ALIGN_DISTRIBUTE,
+        DocumentUndo::done(_desktop->getDocument(), SP_VERB_DIALOG_ALIGN_DISTRIBUTE,
                            _("Unclump"));
     }
 };
@@ -685,10 +693,9 @@ public :
 private :
     void on_button_click() override
     {
-        SPDesktop *desktop = _dialog.getDesktop();
-        if (!desktop) return;
+        if (!_desktop) return;
 
-        Inkscape::Selection *selection = desktop->getSelection();
+        Inkscape::Selection *selection = _desktop->getSelection();
         if (!selection) return;
 
         std::vector<SPItem*> selected(selection->items().begin(), selection->items().end());
@@ -717,7 +724,7 @@ private :
 
         for (auto item : selected)
         {
-        	desktop->getDocument()->ensureUpToDate();
+            _desktop->getDocument()->ensureUpToDate();
             Geom::OptRect item_box = !prefs_bbox ? (item)->desktopVisualBounds() : (item)->desktopGeometricBounds();
             if (item_box) {
                 // find new center, staying within bbox
@@ -734,7 +741,7 @@ private :
         // restore compensation setting
         prefs->setInt("/options/clonecompensation/value", saved_compensation);
 
-        DocumentUndo::done(desktop->getDocument(), SP_VERB_DIALOG_ALIGN_DISTRIBUTE,
+        DocumentUndo::done(_desktop->getDocument(), SP_VERB_DIALOG_ALIGN_DISTRIBUTE,
                            _("Randomize positions"));
     }
 };
@@ -776,10 +783,8 @@ private :
     bool _distribute;
     void on_button_click() override
     {
-        SPDesktop *desktop = _dialog.getDesktop();
-        if (!desktop) return;
-
-        Inkscape::Selection *selection = desktop->getSelection();
+        if (!_desktop) return;
+        Inkscape::Selection *selection = _desktop->getSelection();
         if (!selection) return;
 
         std::vector<SPItem*> selected(selection->items().begin(), selection->items().end());
@@ -796,7 +801,7 @@ private :
         {
         	if (SP_IS_TEXT (item) || SP_IS_FLOWTEXT (item)) {
                 Inkscape::Text::Layout const *layout = te_get_layout(item);
-                boost::optional<Geom::Point> pt = layout->baselineAnchorPoint();
+                std::optional<Geom::Point> pt = layout->baselineAnchorPoint();
                 if (pt) {
                     Geom::Point base = *pt * (item)->i2dt_affine();
                     if (base[Geom::X] < b_min[Geom::X]) b_min[Geom::X] = base[Geom::X];
@@ -828,7 +833,7 @@ private :
             }
 
             if (changed) {
-                DocumentUndo::done(desktop->getDocument(), SP_VERB_DIALOG_ALIGN_DISTRIBUTE,
+                DocumentUndo::done(_desktop->getDocument(), SP_VERB_DIALOG_ALIGN_DISTRIBUTE,
                                     _("Distribute text baselines"));
             }
 
@@ -842,10 +847,10 @@ private :
             switch (AlignTarget(prefs->getInt("/dialogs/align/align-to", 6)))
             {
                 case LAST:
-                    focus = SP_ITEM(selected.back());
+                    focus = selected.back();
                     break;
                 case FIRST:
-                    focus = SP_ITEM(selected.front());
+                    focus = selected.front();
                     break;
                 case BIGGEST:
                     focus = selection->largestItem(Selection::AREA);
@@ -854,10 +859,10 @@ private :
                     focus = selection->smallestItem(Selection::AREA);
                     break;
                 case PAGE:
-                    b = desktop->getDocument()->preferredBounds();
+                    b = _desktop->getDocument()->preferredBounds();
                     break;
                 case DRAWING:
-                    b = desktop->getDocument()->getRoot()->desktopPreferredBounds();
+                    b = _desktop->getDocument()->getRoot()->desktopPreferredBounds();
                     break;
                 case SELECTION:
                     b = selection->preferredBounds();
@@ -881,7 +886,7 @@ private :
             {
             	if (SP_IS_TEXT (item) || SP_IS_FLOWTEXT (item)) {
                     Inkscape::Text::Layout const *layout = te_get_layout(item);
-                    boost::optional<Geom::Point> pt = layout->baselineAnchorPoint();
+                    std::optional<Geom::Point> pt = layout->baselineAnchorPoint();
                     if (pt) {
                         Geom::Point base = *pt * (item)->i2dt_affine();
                         Geom::Point t(0.0, 0.0);
@@ -893,7 +898,7 @@ private :
             }
 
             if (changed) {
-                DocumentUndo::done(desktop->getDocument(), SP_VERB_DIALOG_ALIGN_DISTRIBUTE,
+                DocumentUndo::done(_desktop->getDocument(), SP_VERB_DIALOG_ALIGN_DISTRIBUTE,
                                    _("Align text baselines"));
             }
         }
@@ -902,43 +907,38 @@ private :
 
 
 
-static void on_tool_changed(AlignAndDistribute *daad)
-{
-    SPDesktop *desktop = SP_ACTIVE_DESKTOP;
-    if (desktop && desktop->getEventContext())
-        daad->setMode(tools_active(desktop) == TOOLS_NODES);
-    else
-        daad->setMode(false);
-
-}
-
-static void on_selection_changed(AlignAndDistribute *daad)
-{
-    daad->randomize_bbox = Geom::OptRect();
-}
-
 /////////////////////////////////////////////////////////
 
-
-
-
-AlignAndDistribute::AlignAndDistribute()
-    : UI::Widget::Panel("/dialogs/align", SP_VERB_DIALOG_ALIGN_DISTRIBUTE),
-      randomize_bbox(),
-      _alignFrame(_("Align")),
-      _distributeFrame(_("Distribute")),
-      _rearrangeFrame(_("Rearrange")),
-      _removeOverlapFrame(_("Remove overlaps")),
-      _nodesFrame(_("Nodes")),
-      _alignTable(),
-      _distributeTable(),
-      _rearrangeTable(),
-      _removeOverlapTable(),
-      _nodesTable(),
-      _anchorLabel(_("Relative to: ")),
-      _anchorLabelNode(_("Relative to: "))
+AlignAndDistribute::AlignAndDistribute(DialogBase* dlg) : Gtk::Box(Gtk::ORIENTATION_VERTICAL)
+    , _parent(dlg)
+    , randomize_bbox()
+    , _alignFrame()
+    , _distributeFrame(_("Distribute"))
+    , _rearrangeFrame(_("Rearrange"))
+    , _removeOverlapFrame(_("Remove overlaps"))
+    , _nodesFrame(_("Nodes"))
+    , _alignTable()
+    , _distributeTable()
+    , _rearrangeTable()
+    , _removeOverlapTable()
+    , _nodesTable()
+    , _anchorLabel(_("Relative to: "))
+    , _anchorLabelNode(_("Relative to: "))
+    , _anchorBox(Gtk::ORIENTATION_HORIZONTAL)
+    , _selgrpBox(Gtk::ORIENTATION_HORIZONTAL)
+    , _alignBox(Gtk::ORIENTATION_VERTICAL)
+    , _alignBoxNode(Gtk::ORIENTATION_VERTICAL)
+    , _alignTableBox(Gtk::ORIENTATION_HORIZONTAL)
+    , _distributeTableBox(Gtk::ORIENTATION_HORIZONTAL)
+    , _rearrangeTableBox(Gtk::ORIENTATION_HORIZONTAL)
+    , _removeOverlapTableBox(Gtk::ORIENTATION_HORIZONTAL)
+    , _nodesTableBox(Gtk::ORIENTATION_HORIZONTAL)
+    , _anchorBoxNode(Gtk::ORIENTATION_HORIZONTAL)
 {
     Inkscape::Preferences *prefs = Inkscape::Preferences::get();
+
+    set_margin_start(4);
+    set_margin_end(4);
 
     //Instantiate the align buttons
     addAlignButton(INKSCAPE_ICON("align-horizontal-right-to-anchor"),
@@ -1108,16 +1108,18 @@ AlignAndDistribute::AlignAndDistribute()
     _oncanvas.signal_toggled().connect(sigc::mem_fun(*this, &AlignAndDistribute::on_oncanvas_toggled));
 
     // Right align the buttons
-    _alignTableBox.pack_end(_alignTable, false, false);
-    _distributeTableBox.pack_end(_distributeTable, false, false);
-    _rearrangeTableBox.pack_end(_rearrangeTable, false, false);
-    _removeOverlapTableBox.pack_end(_removeOverlapTable, false, false);
-    _nodesTableBox.pack_end(_nodesTable, false, false);
+    _alignTableBox.pack_start(_alignTable, false, false);
+    _distributeTableBox.pack_start(_distributeTable, false, false);
+    _rearrangeTableBox.pack_start(_rearrangeTable, false, false);
+    _removeOverlapTableBox.pack_start(_removeOverlapTable, false, false);
+    _nodesTableBox.pack_start(_nodesTable, false, false);
 
+    _anchorBox.set_halign(Gtk::ALIGN_START);
     _alignBox.pack_start(_anchorBox);
     _alignBox.pack_start(_selgrpBox);
     _alignBox.pack_start(_alignTableBox);
 
+    _anchorBoxNode.set_halign(Gtk::ALIGN_START);
     _alignBoxNode.pack_start(_anchorBoxNode, false, false);
     _alignBoxNode.pack_start(_nodesTableBox);
 
@@ -1128,52 +1130,54 @@ AlignAndDistribute::AlignAndDistribute()
     _removeOverlapFrame.add(_removeOverlapTableBox);
     _nodesFrame.add(_alignBoxNode);
 
-    Gtk::Box *contents = _getContents();
-    contents->set_spacing(4);
+    set_spacing(4);
 
     // Notebook for individual transformations
 
-    contents->pack_start(_alignFrame, true, true);
-    contents->pack_start(_distributeFrame, true, true);
-    contents->pack_start(_rearrangeFrame, true, true);
-    contents->pack_start(_removeOverlapFrame, true, true);
-    contents->pack_start(_nodesFrame, true, false);
-
-    //Connect to the global tool change signal
-    _toolChangeConn = INKSCAPE.signal_eventcontext_set.connect(sigc::hide<0>(sigc::bind(sigc::ptr_fun(&on_tool_changed), this)));
+    pack_start(_alignFrame, Gtk::PACK_SHRINK);
+    pack_start(_distributeFrame, Gtk::PACK_SHRINK);
+    pack_start(_rearrangeFrame, Gtk::PACK_SHRINK);
+    pack_start(_removeOverlapFrame, Gtk::PACK_SHRINK);
+    pack_start(_nodesFrame, Gtk::PACK_SHRINK);
 
     // Connect to the global selection change, to invalidate cached randomize_bbox
-    _selChangeConn = INKSCAPE.signal_selection_changed.connect(sigc::hide<0>(sigc::bind(sigc::ptr_fun(&on_selection_changed), this)));
     randomize_bbox = Geom::OptRect();
-
-    _desktopChangeConn = _deskTrack.connectDesktopChanged( sigc::mem_fun(*this, &AlignAndDistribute::setDesktop) );
-    _deskTrack.connect(GTK_WIDGET(gobj()));
 
     show_all_children();
 
-    on_tool_changed (this); // set current mode
 }
+
+void AlignAndDistribute::desktopReplaced()
+{
+    _tool_changed.disconnect();
+    if (auto desktop = getDesktop()) {
+        _tool_changed = desktop->connectEventContextChanged(sigc::mem_fun(*this, &AlignAndDistribute::toolChanged));
+        for (auto & it : _actionList) {
+            it->setDesktop(desktop);
+        }
+    }
+}
+
+void AlignAndDistribute::toolChanged(SPDesktop* desktop, Inkscape::UI::Tools::ToolBase* ec)
+{
+    if (desktop && ec) {
+        setMode(get_active_tool(desktop) == "Node");
+    } else {
+        setMode(false);
+    }
+}
+
 
 AlignAndDistribute::~AlignAndDistribute()
 {
     for (auto & it : _actionList) {
         delete it;
     }
-
-    _toolChangeConn.disconnect();
-    _selChangeConn.disconnect();
-    _desktopChangeConn.disconnect();
-    _deskTrack.disconnect();
 }
 
-void AlignAndDistribute::setTargetDesktop(SPDesktop *desktop)
-{
-    if (_desktop != desktop) {
-        _desktop = desktop;
-        on_tool_changed (this);
-    }
+SPDesktop* AlignAndDistribute::getDesktop() {
+    return _parent->getDesktop();
 }
-
 
 void AlignAndDistribute::on_ref_change(){
     Inkscape::Preferences *prefs = Inkscape::Preferences::get();
@@ -1218,7 +1222,7 @@ void AlignAndDistribute::setMode(bool nodeEdit)
     ((_rearrangeFrame).*(mSel))();
     ((_removeOverlapFrame).*(mSel))();
     ((_nodesFrame).*(mNode))();
-    _getContents()->queue_resize();
+    queue_resize();
 
 }
 void AlignAndDistribute::addAlignButton(const Glib::ustring &id, const Glib::ustring tiptext,

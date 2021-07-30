@@ -5,23 +5,24 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
-#include "live_effects/lpe-clone-original.h"
-#include "live_effects/lpe-spiro.h"
-#include "live_effects/lpe-bspline.h"
-#include "live_effects/lpeobject.h"
-#include "live_effects/lpeobject-reference.h"
-#include "display/curve.h"
-#include "svg/path-string.h"
-#include "svg/svg.h"
+#include "lpe-clone-original.h"
 
-#include "ui/tools-switch.h"
+#include "lpe-bspline.h"
+#include "lpe-spiro.h"
+#include "lpeobject-reference.h"
+#include "lpeobject.h"
+
+#include "actions/actions-tools.h"
+#include "display/curve.h"
+#include "display/curve.h"
 #include "object/sp-clippath.h"
 #include "object/sp-mask.h"
 #include "object/sp-path.h"
 #include "object/sp-shape.h"
 #include "object/sp-text.h"
-#include "display/curve.h"
-
+#include "svg/path-string.h"
+#include "svg/svg.h"
+#include "ui/tools/node-tool.h"
 #include "xml/sp-css-attr.h"
 
 // TODO due to internal breakage in glibmm headers, this must be last:
@@ -41,11 +42,11 @@ static const Util::EnumDataConverter<Clonelpemethod> CLMConverter(Clonelpemethod
 LPECloneOriginal::LPECloneOriginal(LivePathEffectObject *lpeobject)
     : Effect(lpeobject)
     , linkeditem(_("Linked Item:"), _("Item from which to take the original data"), "linkeditem", &wr, this)
-    , method(_("Shape"), _("Shape linked"), "method", CLMConverter, &wr, this, CLM_D)
-    , attributes("Attributes", "Attributes linked, comma separated attributes like trasform, X, Y...",
+    , method(_("Shape"), _("Linked shape"), "method", CLMConverter, &wr, this, CLM_D)
+    , attributes(_("Attributes"), _("Attributes of the original that the clone should copy, written as a comma-separated list; e.g. 'transform, X, Y'."),
                  "attributes", &wr, this, "")
-    , css_properties("CSS Properties",
-                       "CSS properties linked, comma separated attributes like fill, filter, opacity...",
+    , css_properties(_("CSS Properties"),
+                       _("CSS properties of the original that the clone should copy, written as a comma-separated list; e.g. 'fill, filter, opacity'."),
                        "css_properties", &wr, this, "")
     , allow_transforms(_("Allow Transforms"), _("Allow transforms"), "allow_transforms", &wr, this, true)
 {
@@ -77,15 +78,15 @@ LPECloneOriginal::syncOriginal()
 {
     if (method != CLM_NONE) {
         sync = true;
-        // TODO remove the tools_switch atrocity.
         sp_lpe_item_update_patheffect (sp_lpe_item, false, true);
         method.param_set_value(CLM_NONE);
         refresh_widgets = true;
         SPDesktop *desktop = SP_ACTIVE_DESKTOP;
         sp_lpe_item_update_patheffect (sp_lpe_item, false, true);
-        if (desktop && tools_isactive(desktop, TOOLS_NODES)) {
-            tools_switch(desktop, TOOLS_SELECT);
-            tools_switch(desktop, TOOLS_NODES);
+        if (desktop && dynamic_cast<Inkscape::UI::Tools::NodeTool *>(desktop->event_context)) {
+            // Why is this switching tools twice? Probably to reinitialize Node Tool.
+            set_active_tool(desktop, "Select");
+            set_active_tool(desktop, "Node");
         }
     }
 }
@@ -94,7 +95,7 @@ Gtk::Widget *
 LPECloneOriginal::newWidget()
 {
     // use manage here, because after deletion of Effect object, others might still be pointing to this widget.
-    Gtk::VBox * vbox = Gtk::manage( new Gtk::VBox(Effect::newWidget()) );
+    Gtk::Box *vbox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL));
     vbox->set_border_width(5);
     vbox->set_homogeneous(false);
     vbox->set_spacing(6);
@@ -207,9 +208,9 @@ LPECloneOriginal::cloneAttrbutes(SPObject *origin, SPObject *dest, const gchar *
         const char* attribute = (*iter);
         if (strlen(attribute) && shape_dest && shape_origin) {
             if (std::strcmp(attribute, "d") == 0) {
-                SPCurve *c = nullptr;
+                std::unique_ptr<SPCurve> c;
                 if (method == CLM_BSPLINESPIRO) {
-                    c = shape_origin->getCurveForEdit();
+                    c = SPCurve::copy(shape_origin->curveForEdit());
                     SPLPEItem * lpe_item = SP_LPE_ITEM(origin);
                     if (lpe_item) {
                         PathEffectList lpelist = lpe_item->getEffectList();
@@ -220,29 +221,27 @@ LPECloneOriginal::cloneAttrbutes(SPObject *origin, SPObject *dest, const gchar *
                                 Inkscape::LivePathEffect::Effect *lpe = lpeobj->get_lpe();
                                 if (dynamic_cast<Inkscape::LivePathEffect::LPEBSpline *>(lpe)) {
                                     Geom::PathVector hp;
-                                    LivePathEffect::sp_bspline_do_effect(c, 0, hp);
+                                    LivePathEffect::sp_bspline_do_effect(c.get(), 0, hp);
                                 } else if (dynamic_cast<Inkscape::LivePathEffect::LPESpiro *>(lpe)) {
-                                    LivePathEffect::sp_spiro_do_effect(c);
+                                    LivePathEffect::sp_spiro_do_effect(c.get());
                                 }
                             }
                         }
                     }
                 } else if (method == CLM_ORIGINALD) {
-                    c = shape_origin->getCurveForEdit();
+                    c = SPCurve::copy(shape_origin->curveForEdit());
                 } else if(method == CLM_D){
-                    c = shape_origin->getCurve();
+                    c = SPCurve::copy(shape_origin->curve());
                 }
                 if (c && method != CLM_NONE) {
                     Geom::PathVector c_pv = c->get_pathvector();
                     c->set_pathvector(c_pv);
-                    gchar *str = sp_svg_write_path(c_pv);
+                    auto str = sp_svg_write_path(c_pv);
                     if (sync){
                         dest->getRepr()->setAttribute("inkscape:original-d", str);
                     }
-                    shape_dest->setCurveInsync(c);
+                    shape_dest->setCurveInsync(std::move(c));
                     dest->getRepr()->setAttribute("d", str);
-                    g_free(str);
-                    c->unref();
                 } else if (method != CLM_NONE) {
                     dest->getRepr()->removeAttribute(attribute);
                 }
@@ -309,7 +308,6 @@ LPECloneOriginal::doBeforeEffect (SPLPEItem const* lpeitem){
             return;
         }
         SPText  *text_origin = dynamic_cast<SPText *>(orig);
-        SPGroup  *group_origin = dynamic_cast<SPGroup *>(orig);
         SPItem *dest = dynamic_cast<SPItem *>(sp_lpe_item);
         const gchar * id = orig->getId();
         bool init = !is_load && g_strcmp0(id, linked.c_str()) != 0;
@@ -318,15 +316,12 @@ LPECloneOriginal::doBeforeEffect (SPLPEItem const* lpeitem){
         } */
         Glib::ustring attr = "d,";
         if (text_origin) {
-            SPCurve * curve = text_origin->getNormalizedBpath();
-            gchar *str = sp_svg_write_path(curve->get_pathvector());
-            dest->getRepr()->setAttribute("inkscape:original-d", str);
-            g_free(str);
-            curve->unref();
+            std::unique_ptr<SPCurve> curve = text_origin->getNormalizedBpath();
+            dest->getRepr()->setAttribute("inkscape:original-d", sp_svg_write_path(curve->get_pathvector()));
             attr = "";
         }
-        if (!allow_transforms) {
-           attr += Glib::ustring("transform") + Glib::ustring(",");
+        if (!allow_transforms || (g_strcmp0(linked.c_str(), id) && !is_load)) {
+            attr += Glib::ustring("transform") + Glib::ustring(",");
         }
         original_bbox(lpeitem, false, true);
         auto attributes_str = attributes.param_getSVGValue();
@@ -341,11 +336,6 @@ LPECloneOriginal::doBeforeEffect (SPLPEItem const* lpeitem){
         }
         style_attr += css_properties_str + ",";
         cloneAttrbutes(orig, dest, attr.c_str(), style_attr.c_str(), init);
-        if (!group_origin && linkeditem.last_transform.isTranslation()) {
-            Geom::Affine orig = sp_lpe_item->transform;
-            sp_lpe_item->transform *= orig.inverse() * linkeditem.last_transform.inverse() * orig;  
-            linkeditem.last_transform = Geom::identity();      
-        }
         old_css_properties = css_properties.param_getSVGValue();
         old_attributes = attributes.param_getSVGValue();
         sync = false;
@@ -387,10 +377,9 @@ void
 LPECloneOriginal::doEffect (SPCurve * curve)
 {
     if (method != CLM_NONE) {
-        SPCurve *current_curve = current_shape->getCurve();
+        SPCurve const *current_curve = current_shape->curve();
         if (current_curve != nullptr) {
             curve->set_pathvector(current_curve->get_pathvector());
-            current_curve->unref();
         }
     }
 }

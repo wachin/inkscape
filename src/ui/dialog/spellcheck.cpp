@@ -18,22 +18,17 @@
 #endif
 
 #include "spellcheck.h"
-#include "message-stack.h"
 
-#include "inkscape.h"
-#include "document.h"
 #include "desktop.h"
-
-#include "ui/dialog/dialog-manager.h"
-#include "ui/dialog/inkscape-preferences.h" // for PREFS_PAGE_SPELLCHECK
-#include "ui/tools-switch.h"
-#include "ui/tools/text-tool.h"
-
-#include "text-editing.h"
-#include "selection-chemistry.h"
-#include "display/curve.h"
 #include "document-undo.h"
+#include "document.h"
+#include "inkscape.h"
+#include "message-stack.h"
+#include "selection-chemistry.h"
+#include "text-editing.h"
 #include "verbs.h"
+
+#include "display/control/canvas-item-rect.h"
 
 #include "object/sp-defs.h"
 #include "object/sp-flowtext.h"
@@ -42,6 +37,10 @@
 #include "object/sp-string.h"
 #include "object/sp-text.h"
 #include "object/sp-tref.h"
+
+#include "ui/dialog/dialog-container.h"
+#include "ui/dialog/inkscape-preferences.h" // for PREFS_PAGE_SPELLCHECK
+#include "ui/tools/text-tool.h"
 
 #include <glibmm/i18n.h>
 
@@ -54,28 +53,23 @@ namespace UI {
 namespace Dialog {
 
 /**
- * Get the list of installed aspell dictionaries/languages
+ * Get the list of installed dictionaries/languages
  */
-std::vector<std::string> SpellCheck::get_available_langs()
+std::vector<LanguagePair> SpellCheck::get_available_langs()
 {
-    std::vector<std::string> langs;
+    std::vector<LanguagePair> langs;
 
-#if HAVE_ASPELL
-    auto *config = new_aspell_config();
-    auto const *dlist = get_aspell_dict_info_list(config);
-    auto *elements = aspell_dict_info_list_elements(dlist);
-
-    for (AspellDictInfo const *entry; (entry = aspell_dict_info_enumeration_next(elements)) != nullptr;) {
-        // skip duplicates (I get "de_DE" twice)
-        if (!langs.empty() && langs.back() == entry->name) {
-            continue;
-        }
-
-        langs.emplace_back(entry->name);
-    }
-
-    delete_aspell_dict_info_enumeration(elements);
-    delete_aspell_config(config);
+#if WITH_GSPELL
+    // TODO: write a gspellmm library.
+    // TODO: why is this not const?
+    GList *list = const_cast<GList *>(gspell_language_get_available());
+    g_list_foreach(list, [](gpointer data, gpointer user_data) {
+        GspellLanguage *language = reinterpret_cast<GspellLanguage*>(data);
+        std::vector<LanguagePair> *langs = reinterpret_cast<std::vector<LanguagePair>*>(user_data);
+        const gchar *name = gspell_language_get_name(language);
+        const gchar *code = gspell_language_get_code(language);
+        langs->emplace_back(name, code);
+    }, &langs);
 #endif
 
     return langs;
@@ -84,38 +78,30 @@ std::vector<std::string> SpellCheck::get_available_langs()
 static void show_spellcheck_preferences_dialog()
 {
     Inkscape::Preferences::get()->setInt("/dialogs/preferences/page", PREFS_PAGE_SPELLCHECK);
-    SP_ACTIVE_DESKTOP->_dlg_mgr->showDialog("InkscapePreferences");
+    SP_ACTIVE_DESKTOP->getContainer()->new_dialog(SP_VERB_DIALOG_PREFERENCES);
 }
 
-SpellCheck::SpellCheck () :
-    UI::Widget::Panel("/dialogs/spellcheck/", SP_VERB_DIALOG_SPELLCHECK),
-    _text(nullptr),
-    _layout(nullptr),
-    _stops(0),
-    _adds(0),
-    _working(false),
-    _local_change(false),
-    _prefs(nullptr),
-    accept_button(_("_Accept"), true),
-    ignoreonce_button(_("_Ignore once"), true),
-    ignore_button(_("_Ignore"), true),
-    add_button(_("A_dd"), true),
-    dictionary_label(_("Language")),
-    dictionary_hbox(false, 0),
-    stop_button(_("_Stop"), true),
-    start_button(_("_Start"), true),
-    desktop(nullptr),
-    deskTrack()
+SpellCheck::SpellCheck()
+    : DialogBase("/dialogs/spellcheck/", "Spellcheck")
+    , _text(nullptr)
+    , _layout(nullptr)
+    , _stops(0)
+    , _adds(0)
+    , _working(false)
+    , _local_change(false)
+    , _prefs(nullptr)
+    , accept_button(_("_Accept"), true)
+    , ignoreonce_button(_("_Ignore once"), true)
+    , ignore_button(_("_Ignore"), true)
+    , add_button(_("A_dd"), true)
+    , dictionary_label(_("Language"))
+    , dictionary_hbox(Gtk::ORIENTATION_HORIZONTAL, 0)
+    , stop_button(_("_Stop"), true)
+    , start_button(_("_Start"), true)
+    , suggestion_hbox(Gtk::ORIENTATION_HORIZONTAL)
+    , changebutton_vbox(Gtk::ORIENTATION_VERTICAL)
 {
     _prefs = Inkscape::Preferences::get();
-
-    // take languages from prefs
-    for (const char *langkey : { "lang", "lang2", "lang3" }) {
-        auto lang = _prefs->getString(_prefs_path + langkey);
-        if (!lang.empty()) {
-            _langs.push_back(lang);
-        }
-    }
 
     banner_hbox.set_layout(Gtk::BUTTONBOX_START);
     banner_hbox.add(banner_label);
@@ -124,7 +110,7 @@ SpellCheck::SpellCheck () :
         _langs = get_available_langs();
 
         if (_langs.empty()) {
-            banner_label.set_markup("<i>No aspell dictionaries installed</i>");
+            banner_label.set_markup(Glib::ustring::compose("<i>%1</i>", _("No dictionaries installed")));
         }
     }
 
@@ -138,10 +124,13 @@ SpellCheck::SpellCheck () :
     tree_view.append_column(_("Suggestions:"), tree_columns.suggestions);
 
     if (!_langs.empty()) {
-        for (auto const &lang : _langs) {
-            dictionary_combo.append(lang);
+        for (const LanguagePair &pair : _langs) {
+            dictionary_combo.append(pair.second, pair.first);
         }
-        dictionary_combo.set_active(0);
+        // Set previously set language (or the first item)
+        if(!dictionary_combo.set_active_id(_prefs->getString("/dialogs/spellcheck/lang"))) {
+            dictionary_combo.set_active(0);
+        }
     }
 
     accept_button.set_tooltip_text(_("Accept the chosen suggestion"));
@@ -175,13 +164,12 @@ SpellCheck::SpellCheck () :
     /*
      * Main dialog
      */
-    Gtk::Box *contents = _getContents();
-    contents->set_spacing(6);
-    contents->pack_start (banner_hbox, false, false, 0);
-    contents->pack_start (suggestion_hbox, true, true, 0);
-    contents->pack_start (dictionary_hbox, false, false, 0);
-    contents->pack_start (action_sep, false, false, 6);
-    contents->pack_start (actionbutton_hbox, false, false, 0);
+    set_spacing(6);
+    pack_start (banner_hbox, false, false, 0);
+    pack_start (suggestion_hbox, true, true, 0);
+    pack_start (dictionary_hbox, false, false, 0);
+    pack_start (action_sep, false, false, 6);
+    pack_start (actionbutton_hbox, false, false, 0);
 
     /*
      * Signal handlers
@@ -195,8 +183,6 @@ SpellCheck::SpellCheck () :
     tree_view.get_selection()->signal_changed().connect(sigc::mem_fun(*this, &SpellCheck::onTreeSelectionChange));
     dictionary_combo.signal_changed().connect(sigc::mem_fun(*this, &SpellCheck::onLanguageChanged));
     pref_button.signal_clicked().connect(sigc::ptr_fun(show_spellcheck_preferences_dialog));
-    desktopChangeConn = deskTrack.connectDesktopChanged( sigc::mem_fun(*this, &SpellCheck::setTargetDesktop) );
-    deskTrack.connect(GTK_WIDGET(gobj()));
 
     show_all_children ();
 
@@ -212,34 +198,22 @@ SpellCheck::~SpellCheck()
 {
     clearRects();
     disconnect();
-
-    desktopChangeConn.disconnect();
-    deskTrack.disconnect();
 }
 
-void SpellCheck::setDesktop(SPDesktop *desktop)
+void SpellCheck::documentReplaced()
 {
-    Panel::setDesktop(desktop);
-    deskTrack.setBase(desktop);
-}
-
-void SpellCheck::setTargetDesktop(SPDesktop *desktop)
-{
-    if (this->desktop != desktop) {
-        this->desktop = desktop;
-        if (_working) {
-            // Stop and start on the new desktop
-            finished();
-            onStart();
-        }
+    if (_working) {
+        // Stop and start on the new desktop
+        finished();
+        onStart();
     }
 }
 
 void SpellCheck::clearRects()
 {
-    for(auto t : _rects) {
-        sp_canvas_item_hide(t);
-        sp_canvas_item_destroy(t);
+    for(auto rect : _rects) {
+        rect->hide();
+        delete rect;
     }
     _rects.clear();
 }
@@ -256,9 +230,6 @@ void SpellCheck::disconnect()
 
 void SpellCheck::allTextItems (SPObject *r, std::vector<SPItem *> &l, bool hidden, bool locked)
 {
-    if (!desktop)
-        return; // no desktop to check
-
     if (SP_IS_DEFS(r))
         return; // we're not interested in items in defs
 
@@ -266,14 +237,16 @@ void SpellCheck::allTextItems (SPObject *r, std::vector<SPItem *> &l, bool hidde
         return; // we're not interested in metadata
     }
 
-    for (auto& child: r->children) {
-        if (SP_IS_ITEM (&child) && !child.cloned && !desktop->isLayer(SP_ITEM(&child))) {
-                if ((hidden || !desktop->itemIsHidden(SP_ITEM(&child))) && (locked || !SP_ITEM(&child)->isLocked())) {
-                    if (SP_IS_TEXT(&child) || SP_IS_FLOWTEXT(&child))
-                        l.push_back(static_cast<SPItem*>(&child));
-                }
+    if (auto desktop = getDesktop()) {
+        for (auto& child: r->children) {
+            if (SP_IS_ITEM (&child) && !child.cloned && !desktop->isLayer(SP_ITEM(&child))) {
+                    if ((hidden || !desktop->itemIsHidden(SP_ITEM(&child))) && (locked || !SP_ITEM(&child)->isLocked())) {
+                        if (SP_IS_TEXT(&child) || SP_IS_FLOWTEXT(&child))
+                            l.push_back(static_cast<SPItem*>(&child));
+                    }
+            }
+            allTextItems (&child, l, hidden, locked);
         }
-        allTextItems (&child, l, hidden, locked);
     }
     return;
 }
@@ -286,11 +259,8 @@ SpellCheck::textIsValid (SPObject *root, SPItem *text)
     return (std::find(l.begin(), l.end(), text) != l.end());
 }
 
-bool SpellCheck::compareTextBboxes (gconstpointer a, gconstpointer b)//returns a<b
+bool SpellCheck::compareTextBboxes(SPItem const *i1, SPItem const *i2)//returns a<b
 {
-    SPItem *i1 = SP_ITEM(a);
-    SPItem *i2 = SP_ITEM(b);
-
     Geom::OptRect bbox1 = i1->documentVisualBounds();
     Geom::OptRect bbox2 = i2->documentVisualBounds();
     if (!bbox1 || !bbox2) {
@@ -326,8 +296,8 @@ SpellCheck::nextText()
     _text = getText(_root);
     if (_text) {
 
-        _modified_connection = (SP_OBJECT(_text))->connectModified(sigc::mem_fun(*this, &SpellCheck::onObjModified));
-        _release_connection = (SP_OBJECT(_text))->connectRelease(sigc::mem_fun(*this, &SpellCheck::onObjReleased));
+        _modified_connection = _text->connectModified(sigc::mem_fun(*this, &SpellCheck::onObjModified));
+        _release_connection = _text->connectRelease(sigc::mem_fun(*this, &SpellCheck::onObjReleased));
 
         _layout = te_get_layout (_text);
         _begin_w = _layout->begin();
@@ -337,44 +307,26 @@ SpellCheck::nextText()
 }
 
 void SpellCheck::deleteSpeller() {
-#if HAVE_ASPELL
-    if (_speller) {
-        aspell_speller_save_all_word_lists(_speller);
-        delete_aspell_speller(_speller);
-        _speller = nullptr;
-    }
-#endif
 }
 
 bool SpellCheck::updateSpeller() {
-#if HAVE_ASPELL
-    deleteSpeller();
-
-    auto lang = dictionary_combo.get_active_text();
+#if WITH_GSPELL
+    auto lang = dictionary_combo.get_active_id();
     if (!lang.empty()) {
-        AspellConfig *config = new_aspell_config();
-        aspell_config_replace(config, "lang", lang.c_str());
-        aspell_config_replace(config, "encoding", "UTF-8");
-        AspellCanHaveError *ret = new_aspell_speller(config);
-        delete_aspell_config(config);
-        if (aspell_error(ret) != nullptr) {
-            banner_label.set_text(aspell_error_message(ret));
-            delete_aspell_can_have_error(ret);
-        } else {
-            _speller = to_aspell_speller(ret);
-        }
+        const GspellLanguage *language = gspell_language_lookup(lang.c_str());
+        _checker = gspell_checker_new(language);
     }
 
-    return _speller != nullptr;
+    return _checker != nullptr;
 #else
     return false;
 #endif
 }
 
-bool
-SpellCheck::init(SPDesktop *d)
+void SpellCheck::onStart()
 {
-    desktop = d;
+    if (!getDocument())
+        return;
 
     start_button.set_sensitive(false);
 
@@ -383,9 +335,9 @@ SpellCheck::init(SPDesktop *d)
     clearRects();
 
     if (!updateSpeller())
-        return false;
+        return;
 
-    _root = desktop->getDocument()->getRoot();
+    _root = getDocument()->getRoot();
 
     // empty the list of objects we've checked
     _seen_objects.clear();
@@ -395,7 +347,7 @@ SpellCheck::init(SPDesktop *d)
 
     _working = true;
 
-    return true;
+    doSpellcheck();
 }
 
 void
@@ -405,8 +357,6 @@ SpellCheck::finished ()
 
     clearRects();
     disconnect();
-
-    //desktop->clearWaitingCursor();
 
     tree_view.unset_model();
     tree_view.set_sensitive(false);
@@ -429,7 +379,6 @@ SpellCheck::finished ()
 
     _seen_objects.clear();
 
-    desktop = nullptr;
     _root = nullptr;
 
     _working = false;
@@ -438,7 +387,8 @@ SpellCheck::finished ()
 bool
 SpellCheck::nextWord()
 {
-    if (!_working)
+    auto desktop = getDesktop();
+    if (!_working || !desktop)
         return false;
 
     if (!_text) {
@@ -498,7 +448,7 @@ SpellCheck::nextWord()
         }
     }
 
-    // skip ALL-CAPS words 
+    // skip ALL-CAPS words
     if (_prefs->getInt(_prefs_path + "ignoreallcaps") != 0) {
         bool allcaps = true;
         for (unsigned int i : _word) {
@@ -514,17 +464,15 @@ SpellCheck::nextWord()
 
     int have = 0;
 
-#if HAVE_ASPELL
-    // run it by all active spellers
-    if (_speller) {
-        have += aspell_speller_check(_speller, _word.c_str(), -1);
+#if WITH_GSPELL
+    if (_checker) {
+        GError *error = nullptr;
+        have += gspell_checker_check_word(_checker, _word.c_str(), -1, &error);
     }
-#endif  /* HAVE_ASPELL */
+#endif  /* WITH_GSPELL */
 
     if (have == 0) { // not found in any!
         _stops ++;
-
-        //desktop->clearWaitingCursor();
 
         // display it in window
         {
@@ -542,7 +490,8 @@ SpellCheck::nextWord()
         // draw rect
         std::vector<Geom::Point> points =
             _layout->createSelectionShape(_begin_w, _end_w, _text->i2dt_affine());
-        if (points.size() >= 4) { // we may not have a single quad if this is a clipped part of text on path; in that case skip drawing the rect
+        if (points.size() >= 4) { // We may not have a single quad if this is a clipped part of text on path;
+                                  // in that case skip drawing the rect
             Geom::Point tl, br;
             tl = br = points.front();
             for (auto & point : points) {
@@ -563,22 +512,14 @@ SpellCheck::nextWord()
                 mindim = fabs(tl[Geom::X] - br[Geom::X]);
             area.expandBy(MAX(0.05 * mindim, 1));
 
-            // create canvas path rectangle, red stroke
-            SPCanvasItem *rect = sp_canvas_bpath_new(desktop->getSketch(), nullptr);
-            sp_canvas_bpath_set_stroke(SP_CANVAS_BPATH(rect), 0xff0000ff, 3.0, SP_STROKE_LINEJOIN_MITER, SP_STROKE_LINECAP_BUTT);
-            sp_canvas_bpath_set_fill(SP_CANVAS_BPATH(rect), 0, SP_WIND_RULE_NONZERO);
-            SPCurve *curve = new SPCurve();
-            curve->moveto(area.corner(0));
-            curve->lineto(area.corner(1));
-            curve->lineto(area.corner(2));
-            curve->lineto(area.corner(3));
-            curve->lineto(area.corner(0));
-            sp_canvas_bpath_set_bpath(SP_CANVAS_BPATH(rect), curve);
-            sp_canvas_item_show(rect);
+            // Create canvas item rect with red stroke. (TODO: a quad could allow non-axis aligned rects.)
+            auto rect = new Inkscape::CanvasItemRect(desktop->getCanvasSketch(), area);
+            rect->set_stroke(0xff0000ff);
+            rect->show();
             _rects.push_back(rect);
 
             // scroll to make it all visible
-            Geom::Point const center = desktop->get_display_area().midpoint();
+            Geom::Point const center = desktop->current_center();
             area.expandBy(0.5 * mindim);
             Geom::Point scrollto;
             double dist = 0;
@@ -593,31 +534,40 @@ SpellCheck::nextWord()
 
         // select text; if in Text tool, position cursor to the beginning of word
         // unless it is already in the word
-        if (desktop->selection->singleItem() != _text)
+        if (desktop->selection->singleItem() != _text) {
             desktop->selection->set (_text);
-        if (tools_isactive(desktop, TOOLS_TEXT)) {
+        }
+
+        if (dynamic_cast<Inkscape::UI::Tools::TextTool *>(desktop->event_context)) {
             Inkscape::Text::Layout::iterator *cursor =
                 sp_text_context_get_cursor_position(SP_TEXT_CONTEXT(desktop->event_context), _text);
             if (!cursor) // some other text is selected there
                 desktop->selection->set (_text);
             else if (*cursor <= _begin_w || *cursor >= _end_w)
                 sp_text_context_place_cursor (SP_TEXT_CONTEXT(desktop->event_context), _text, _begin_w);
-        } 
+        }
 
-#if HAVE_ASPELL
+#if WITH_GSPELL
 
         // get suggestions
         model = Gtk::ListStore::create(tree_columns);
         tree_view.set_model(model);
         unsigned n_sugg = 0;
 
-        if (_speller) {
-            const AspellWordList *wl = aspell_speller_suggest(_speller, _word.c_str(), -1);
-            AspellStringEnumeration * els = aspell_word_list_elements(wl);
-            const char *sugg;
-            Gtk::TreeModel::iterator iter;
+        if (_checker) {
+            GSList *list = gspell_checker_get_suggestions(_checker, _word.c_str(), -1);
+            std::vector<std::string> suggs;
 
-            while ((sugg = aspell_string_enumeration_next(els)) != nullptr) {
+            // TODO: use a better API for that, or figure out how to make gspellmm.
+            g_slist_foreach(list, [](gpointer data, gpointer user_data) {
+                const gchar *suggestion = reinterpret_cast<const gchar*>(data);
+                std::vector<std::string> *suggs = reinterpret_cast<std::vector<std::string>*>(user_data);
+                suggs->push_back(suggestion);
+            }, &suggs);
+            g_slist_free_full(list, g_free);
+
+            Gtk::TreeModel::iterator iter;
+            for (std::string sugg : suggs) {
                 iter = model->append();
                 Gtk::TreeModel::Row row = *iter;
                 row[tree_columns.suggestions] = sugg;
@@ -627,12 +577,11 @@ SpellCheck::nextWord()
                     tree_view.get_selection()->select(iter);
                 }
             }
-            delete_aspell_string_enumeration(els);
         }
 
         accept_button.set_sensitive(n_sugg > 0);
 
-#endif  /* HAVE_ASPELL */
+#endif  /* WITH_GSPELL */
 
         return true;
 
@@ -646,9 +595,9 @@ void
 SpellCheck::deleteLastRect ()
 {
     if (!_rects.empty()) {
-        sp_canvas_item_hide(_rects.back());
-        sp_canvas_item_destroy(_rects.back());
-        _rects.pop_back(); // pop latest-prepended rect
+        _rects.back()->hide();
+        delete _rects.back();
+        _rects.pop_back();
     }
 }
 
@@ -659,8 +608,6 @@ void SpellCheck::doSpellcheck ()
     }
 
     banner_label.set_markup(_("<i>Checking...</i>"));
-
-    //desktop->setWaitingCursor();
 
     while (_working)
         if (nextWord())
@@ -726,7 +673,7 @@ void SpellCheck::onAccept ()
             // find the end of the word anew
             _end_w = _begin_w;
             _end_w.nextEndOfWord();
-            DocumentUndo::done(desktop->getDocument(), SP_VERB_CONTEXT_TEXT,
+            DocumentUndo::done(getDocument(), SP_VERB_CONTEXT_TEXT,
                                _("Fix spelling"));
         }
     }
@@ -738,11 +685,11 @@ void SpellCheck::onAccept ()
 void
 SpellCheck::onIgnore ()
 {
-#if HAVE_ASPELL
-    if (_speller) {
-        aspell_speller_add_to_session(_speller, _word.c_str(), -1);
+#if WITH_GSPELL
+    if (_checker) {
+        gspell_checker_add_word_to_session(_checker, _word.c_str(), -1);
     }
-#endif  /* HAVE_ASPELL */
+#endif  /* WITH_GSPELL */
 
     deleteLastRect();
     doSpellcheck();
@@ -760,11 +707,11 @@ SpellCheck::onAdd ()
 {
     _adds++;
 
-#if HAVE_ASPELL
-    if (_speller) {
-        aspell_speller_add_to_personal(_speller, _word.c_str(), -1);
+#if WITH_GSPELL
+    if (_checker) {
+        gspell_checker_add_word_to_personal(_checker, _word.c_str(), -1);
     }
-#endif  /* HAVE_ASPELL */
+#endif  /* WITH_GSPELL */
 
     deleteLastRect();
     doSpellcheck();
@@ -776,15 +723,12 @@ SpellCheck::onStop ()
     finished();
 }
 
-void
-SpellCheck::onStart ()
-{
-    if (init (SP_ACTIVE_DESKTOP))
-        doSpellcheck();
-}
-
 void SpellCheck::onLanguageChanged()
 {
+    // First, save language for next load
+    auto lang = dictionary_combo.get_active_id();
+    _prefs->setString("/dialogs/spellcheck/lang", lang);
+
     if (!_working) {
         onStart();
         return;

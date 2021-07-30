@@ -36,21 +36,23 @@
 #include "selection-describer.h"
 #include "selection.h"
 #include "seltrans.h"
-#include "sp-cursor.h"
+
+#include "actions/actions-tools.h" // set_active_tool()
 
 #include "display/drawing-item.h"
-#include "display/sp-canvas.h"
-#include "display/sp-canvas-item.h"
+#include "display/control/canvas-item-catchall.h"
+#include "display/control/canvas-item-drawing.h"
+#include "display/control/snap-indicator.h"
 
 #include "object/box3d.h"
 #include "style.h"
 
-#include "ui/pixmaps/cursor-select-d.xpm"
-#include "ui/pixmaps/cursor-select-m.xpm"
-#include "ui/pixmaps/handles.xpm"
+#include "ui/cursor-utils.h"
+#include "ui/modifiers.h"
 
-#include "ui/tools-switch.h"
 #include "ui/tools/select-tool.h"
+
+#include "ui/widget/canvas.h"
 
 #ifdef WITH_DBUS
 #include "extension/dbus/document-interface.h"
@@ -58,15 +60,11 @@
 
 
 using Inkscape::DocumentUndo;
-
-GdkPixbuf *handles[23];
+using Inkscape::Modifiers::Modifier;
 
 namespace Inkscape {
 namespace UI {
 namespace Tools {
-
-static GdkCursor *CursorSelectMouseover = nullptr;
-static GdkCursor *CursorSelectDragging = nullptr;
 
 static gint rb_escaped = 0; // if non-zero, rubberband was canceled by esc, so the next button release should not deselect
 static gint drag_escaped = 0; // if non-zero, drag was canceled by esc
@@ -77,44 +75,16 @@ const std::string& SelectTool::getPrefsPath() {
 
 const std::string SelectTool::prefsPath = "/tools/select";
 
-
-//Creates rotated variations for handles
-static void
-sp_load_handles(int start, int count, char const **xpm) {
-    handles[start] = gdk_pixbuf_new_from_xpm_data((gchar const **)xpm);
-    for(int i = start + 1; i < start + count; i++) {
-        // We use either the original at *start or previous loop item to rotate
-        handles[i] = gdk_pixbuf_rotate_simple(handles[i-1], GDK_PIXBUF_ROTATE_CLOCKWISE);
-    }
-}
-
 SelectTool::SelectTool()
-    // Don't load a default cursor
-    : ToolBase(nullptr)
+    : ToolBase("select.svg")
     , dragging(false)
     , moved(false)
-    , button_press_shift(false)
-    , button_press_ctrl(false)
-    , button_press_alt(false)
+    , button_press_state(0)
     , cycling_wrap(true)
     , item(nullptr)
-    , grabbed(nullptr)
     , _seltrans(nullptr)
     , _describer(nullptr)
 {
-    // cursors in select context
-    CursorSelectMouseover = sp_cursor_from_xpm(cursor_select_m_xpm);
-    CursorSelectDragging = sp_cursor_from_xpm(cursor_select_d_xpm);
-    
-    // selection handles
-    sp_load_handles(0, 2, handle_scale_xpm);
-    sp_load_handles(2, 2, handle_stretch_xpm);
-    sp_load_handles(4, 4, handle_rotate_xpm);
-    sp_load_handles(8, 4, handle_skew_xpm);
-    sp_load_handles(12, 1, handle_center_xpm);
-    sp_load_handles(13, 4, handle_align_xpm);
-    sp_load_handles(17, 1, handle_align_center_xpm);
-    sp_load_handles(18, 4, handle_align_corner_xpm);
 }
 
 //static gint xp = 0, yp = 0; // where drag started
@@ -126,9 +96,9 @@ static bool is_cycling = false;
 SelectTool::~SelectTool() {
     this->enableGrDrag(false);
 
-    if (this->grabbed) {
-        sp_canvas_item_ungrab(this->grabbed);
-        this->grabbed = nullptr;
+    if (grabbed) {
+        grabbed->ungrab();
+        grabbed = nullptr;
     }
 
     delete this->_seltrans;
@@ -136,28 +106,41 @@ SelectTool::~SelectTool() {
 
     delete this->_describer;
     this->_describer = nullptr;
+    g_free(no_selection_msg);
 
-    if (CursorSelectDragging) {
-        g_object_unref(CursorSelectDragging);
-        CursorSelectDragging = nullptr;
+    if (item) {
+        sp_object_unref(item);
+        item = nullptr;
     }
-    
-    if (CursorSelectMouseover) {
-        g_object_unref(CursorSelectMouseover);
-        CursorSelectMouseover = nullptr;
-    }
-    this->desktop->canvas->endForcedFullRedraws();
+
+    forced_redraws_stop();
 }
 
 void SelectTool::setup() {
     ToolBase::setup();
 
+    auto select_click = Modifier::get(Modifiers::Type::SELECT_ADD_TO)->get_label();
+    auto select_scroll = Modifier::get(Modifiers::Type::SELECT_CYCLE)->get_label();
+
+    // cursors in select context
+    Gtk::Widget *w = desktop->getCanvas();
+    if (w->get_window()) {
+        // Window may not be open when tool is setup for the first time!
+        _cursor_mouseover = load_svg_cursor(w->get_display(), w->get_window(), "select-mouseover.svg");
+        _cursor_dragging  = load_svg_cursor(w->get_display(), w->get_window(), "select-dragging.svg");
+        // Need to reload select.svg.
+        load_svg_cursor(w->get_display(), w->get_window(), "select.svg");
+    }
+    
+    no_selection_msg = g_strdup_printf(
+        _("No objects selected. Click, %s+click, %s+scroll mouse on top of objects, or drag around objects to select."),
+        select_click.c_str(), select_scroll.c_str());
+
     this->_describer = new Inkscape::SelectionDescriber(
                 desktop->selection, 
                 desktop->messageStack(),
-                _("Click selection to toggle scale/rotation handles (or Shift+s)"),
-                _("No objects selected. Click, Shift+click, Alt+scroll mouse on top of objects, or drag around objects to select.")
-    );
+                _("Click selection again to toggle scale/rotation handles"),
+                no_selection_msg);
 
     this->_seltrans = new Inkscape::SelTrans(desktop);
 
@@ -201,23 +184,18 @@ bool SelectTool::sp_select_context_abort() {
                 }
 
                 sp_object_unref( this->item, nullptr);
-            } else if (this->button_press_ctrl) {
-                // NOTE:  This is a workaround to a bug.
-                // When the ctrl key is held, sc->item is not defined
-                // so in this case (only), we skip the object doc check
-                DocumentUndo::undo(desktop->getDocument());
             }
             this->item = nullptr;
 
-            SP_EVENT_CONTEXT(this)->desktop->messageStack()->flash(Inkscape::NORMAL_MESSAGE, _("Move canceled."));
+            desktop->messageStack()->flash(Inkscape::NORMAL_MESSAGE, _("Move canceled."));
             return true;
         }
     } else {
         if (Inkscape::Rubberband::get(desktop)->is_started()) {
             Inkscape::Rubberband::get(desktop)->stop();
             rb_escaped = 1;
-            SP_EVENT_CONTEXT(this)->defaultMessageContext()->clear();
-            SP_EVENT_CONTEXT(this)->desktop->messageStack()->flash(Inkscape::NORMAL_MESSAGE, _("Selection canceled."));
+            defaultMessageContext()->clear();
+            desktop->messageStack()->flash(Inkscape::NORMAL_MESSAGE, _("Selection canceled."));
             return true;
         }
     }
@@ -280,7 +258,7 @@ bool SelectTool::item_handler(SPItem* item, GdkEvent* event) {
 
     switch (event->type) {
         case GDK_BUTTON_PRESS:
-            if (event->button.button == 1 && !this->space_panning) {
+            if (event->button.button == 1) {
                 /* Left mousebutton */
 
                 // save drag origin
@@ -289,21 +267,21 @@ bool SelectTool::item_handler(SPItem* item, GdkEvent* event) {
                 within_tolerance = true;
 
                 // remember what modifiers were on before button press
-                this->button_press_shift = (event->button.state & GDK_SHIFT_MASK) ? true : false;
-                this->button_press_ctrl = (event->button.state & GDK_CONTROL_MASK) ? true : false;
-                this->button_press_alt = (event->button.state & GDK_MOD1_MASK) ? true : false;
+                this->button_press_state = event->button.state;
+                bool first_hit = Modifier::get(Modifiers::Type::SELECT_FIRST_HIT)->active(this->button_press_state);
+                bool force_drag = Modifier::get(Modifiers::Type::SELECT_FORCE_DRAG)->active(this->button_press_state);
+                bool always_box = Modifier::get(Modifiers::Type::SELECT_ALWAYS_BOX)->active(this->button_press_state);
+                bool touch_path = Modifier::get(Modifiers::Type::SELECT_TOUCH_PATH)->active(this->button_press_state);
 
-                if (event->button.state & (GDK_SHIFT_MASK | GDK_CONTROL_MASK | GDK_MOD1_MASK)) {
-                    // if shift or ctrl was pressed, do not move objects;
-                    // pass the event to root handler which will perform rubberband, shift-click, ctrl-click, ctrl-drag
-                } else {
-                    GdkWindow* window = gtk_widget_get_window (GTK_WIDGET (desktop->getCanvas()));
-                   
+                // if shift or ctrl was pressed, do not move objects;
+                // pass the event to root handler which will perform rubberband, shift-click, ctrl-click, ctrl-drag
+                if (!(always_box || first_hit || touch_path)) {
+
                     this->dragging = TRUE;
                     this->moved = FALSE;
 
-                    gdk_window_set_cursor(window, CursorSelectDragging);
-
+                    auto window = desktop->getCanvas()->get_window();
+                    window->set_cursor(_cursor_dragging);
 
                     // remember the clicked item in this->item:
                     if (this->item) {
@@ -311,23 +289,22 @@ bool SelectTool::item_handler(SPItem* item, GdkEvent* event) {
                         this->item = nullptr;
                     }
 
-                    this->item = sp_event_context_find_item (desktop,
-                                              Geom::Point(event->button.x, event->button.y), event->button.state & GDK_MOD1_MASK, FALSE);
+                    this->item = sp_event_context_find_item (desktop, Geom::Point(event->button.x, event->button.y), force_drag, FALSE);
                     sp_object_ref(this->item, nullptr);
 
                     rb_escaped = drag_escaped = 0;
 
-                    if (this->grabbed) {
-                        sp_canvas_item_ungrab(this->grabbed);
-                        this->grabbed = nullptr;
+                    if (grabbed) {
+                        grabbed->ungrab();
+                        grabbed = nullptr;
                     }
 
-                    sp_canvas_item_grab(SP_CANVAS_ITEM(desktop->drawing),
-                                        GDK_KEY_PRESS_MASK | GDK_KEY_RELEASE_MASK | GDK_BUTTON_RELEASE_MASK | GDK_BUTTON_PRESS_MASK |
-                                        GDK_POINTER_MOTION_MASK | GDK_POINTER_MOTION_HINT_MASK,
-                                        nullptr, event->button.time);
-
-                    this->grabbed = SP_CANVAS_ITEM(desktop->drawing);
+                    grabbed = desktop->getCanvasDrawing();
+                    grabbed->grab(Gdk::KEY_PRESS_MASK      |
+                                  Gdk::KEY_RELEASE_MASK    |
+                                  Gdk::BUTTON_PRESS_MASK   |
+                                  Gdk::BUTTON_RELEASE_MASK |
+                                  Gdk::POINTER_MOTION_MASK );
 
                     ret = TRUE;
                 }
@@ -340,16 +317,14 @@ bool SelectTool::item_handler(SPItem* item, GdkEvent* event) {
 
         case GDK_ENTER_NOTIFY: {
             if (!desktop->isWaitingCursor() && !this->dragging) {
-                GdkWindow* window = gtk_widget_get_window (GTK_WIDGET (desktop->getCanvas()));
-
-                gdk_window_set_cursor(window, CursorSelectMouseover);
+                auto window = desktop->getCanvas()->get_window();
+                window->set_cursor(_cursor_mouseover);
             }
             break;
         }
         case GDK_LEAVE_NOTIFY:
             if (!desktop->isWaitingCursor() && !this->dragging) {
-                Glib::RefPtr<Gdk::Window> window = Glib::wrap(GTK_WIDGET(desktop->getCanvas()))->get_window();
-
+                auto window = desktop->getCanvas()->get_window();
                 window->set_cursor(this->cursor);
             }
             break;
@@ -385,7 +360,7 @@ bool SelectTool::item_handler(SPItem* item, GdkEvent* event) {
     return ret;
 }
 
-void SelectTool::sp_select_context_cycle_through_items(Inkscape::Selection *selection, GdkEventScroll *scroll_event, bool shift_pressed) {
+void SelectTool::sp_select_context_cycle_through_items(Inkscape::Selection *selection, GdkEventScroll *scroll_event) {
     if ( this->cycling_items.empty() )
         return;
 
@@ -408,29 +383,29 @@ void SelectTool::sp_select_context_cycle_through_items(Inkscape::Selection *sele
         } else {
             next = std::find( cycling_items.begin(), cycling_items.end(), cycling_cur_item );
             g_assert (next != cycling_items.end());
-            next++;
+            ++next;
             if (next == cycling_items.end()) {
                 if ( cycling_wrap ) {
                     next = cycling_items.begin();
                 } else {
-                    next--;
+                    --next;
                 }
             }
         }
     } else { 
         if (! cycling_cur_item) {
             next = cycling_items.end();
-            next--;
+            --next;
         } else {
             next = std::find( cycling_items.begin(), cycling_items.end(), cycling_cur_item );
             g_assert (next != cycling_items.end());
             if (next == cycling_items.begin()){
                 if ( cycling_wrap ) { 
                     next = cycling_items.end();
-                    next--;
+                    --next;
                 }
             } else {
-                next--;
+                --next;
             }
         }
     }
@@ -442,7 +417,7 @@ void SelectTool::sp_select_context_cycle_through_items(Inkscape::Selection *sele
     arenaitem = cycling_cur_item->get_arenaitem(desktop->dkey);
     arenaitem->setOpacity(1.0);
 
-    if (shift_pressed) {
+    if (Modifier::get(Modifiers::Type::SELECT_ADD_TO)->active(scroll_event->state)) {
         selection->add(cycling_cur_item);
     } else {
         selection->set(cycling_cur_item);
@@ -475,7 +450,7 @@ bool SelectTool::root_handler(GdkEvent* event) {
     if (this->item && this->item->document == nullptr) {
         this->sp_select_context_abort();
     }
-    desktop->canvas->forceFullRedrawAfterInterruptions(5, false);
+    forced_redraws_start(5);
 
     switch (event->type) {
         case GDK_2BUTTON_PRESS:
@@ -493,7 +468,7 @@ bool SelectTool::root_handler(GdkEvent* event) {
                     } else { // switch tool
                         Geom::Point const button_pt(event->button.x, event->button.y);
                         Geom::Point const p(desktop->w2d(button_pt));
-                        tools_switch_by_item (desktop, clicked_item, p);
+                        set_active_tool(desktop, clicked_item, p);
                     }
                 } else {
                     sp_select_context_up_one_layer(desktop);
@@ -504,7 +479,7 @@ bool SelectTool::root_handler(GdkEvent* event) {
             break;
 
         case GDK_BUTTON_PRESS:
-            if (event->button.button == 1 && !this->space_panning) {
+            if (event->button.button == 1) {
                 // save drag origin
                 xp = (gint) event->button.x;
                 yp = (gint) event->button.y;
@@ -513,27 +488,28 @@ bool SelectTool::root_handler(GdkEvent* event) {
                 Geom::Point const button_pt(event->button.x, event->button.y);
                 Geom::Point const p(desktop->w2d(button_pt));
 
-                if (event->button.state & GDK_MOD1_MASK) {
+                if(Modifier::get(Modifiers::Type::SELECT_TOUCH_PATH)->active(event->button.state)) {
                     Inkscape::Rubberband::get(desktop)->setMode(RUBBERBAND_MODE_TOUCHPATH);
+                } else {
+                    Inkscape::Rubberband::get(desktop)->defaultMode();
                 }
 
                 Inkscape::Rubberband::get(desktop)->start(desktop, p);
 
                 if (this->grabbed) {
-                    sp_canvas_item_ungrab(this->grabbed);
+                    grabbed->ungrab();
                     this->grabbed = nullptr;
                 }
 
-                sp_canvas_item_grab(SP_CANVAS_ITEM(desktop->acetate),
-                                    GDK_KEY_PRESS_MASK | GDK_KEY_RELEASE_MASK | GDK_BUTTON_RELEASE_MASK | GDK_POINTER_MOTION_MASK | GDK_POINTER_MOTION_HINT_MASK | GDK_BUTTON_PRESS_MASK,
-                                    nullptr, event->button.time);
-
-                this->grabbed = SP_CANVAS_ITEM(desktop->acetate);
+                grabbed = desktop->getCanvasCatchall();
+                grabbed->grab(Gdk::KEY_PRESS_MASK      |
+                              Gdk::KEY_RELEASE_MASK    |
+                              Gdk::BUTTON_PRESS_MASK   |
+                              Gdk::BUTTON_RELEASE_MASK |
+                              Gdk::POINTER_MOTION_MASK );
 
                 // remember what modifiers were on before button press
-                this->button_press_shift = (event->button.state & GDK_SHIFT_MASK) ? true : false;
-                this->button_press_ctrl = (event->button.state & GDK_CONTROL_MASK) ? true : false;
-                this->button_press_alt = (event->button.state & GDK_MOD1_MASK) ? true : false;
+                this->button_press_state = event->button.state;
 
                 this->moved = FALSE;
 
@@ -548,9 +524,17 @@ bool SelectTool::root_handler(GdkEvent* event) {
 
         case GDK_MOTION_NOTIFY:
         {
+            if (this->grabbed && event->button.state & (GDK_SHIFT_MASK | GDK_MOD1_MASK)) {
+                desktop->snapindicator->remove_snaptarget();
+            }
+
             tolerance = prefs->getIntLimited("/options/dragtolerance/value", 0, 0, 100);
 
-            if ((event->motion.state & GDK_BUTTON1_MASK) && !this->space_panning) {
+            bool first_hit = Modifier::get(Modifiers::Type::SELECT_FIRST_HIT)->active(this->button_press_state);
+            bool force_drag = Modifier::get(Modifiers::Type::SELECT_FORCE_DRAG)->active(this->button_press_state);
+            bool always_box = Modifier::get(Modifiers::Type::SELECT_ALWAYS_BOX)->active(this->button_press_state);
+
+            if ((event->motion.state & GDK_BUTTON1_MASK)) {
                 Geom::Point const motion_pt(event->motion.x, event->motion.y);
                 Geom::Point const p(desktop->w2d(motion_pt));
                 if ( within_tolerance
@@ -563,14 +547,13 @@ bool SelectTool::root_handler(GdkEvent* event) {
                 // motion notify coordinates as given (no snapping back to origin)
                 within_tolerance = false;
 
-                if (this->button_press_ctrl || (this->button_press_alt && !this->button_press_shift && !selection->isEmpty())) {
+                if (first_hit || (force_drag && !always_box && !selection->isEmpty())) {
                     // if it's not click and ctrl or alt was pressed (the latter with some selection
                     // but not with shift) we want to drag rather than rubberband
                     this->dragging = TRUE;
 
-                    GdkWindow* window = gtk_widget_get_window (GTK_WIDGET (desktop->getCanvas()));
-
-                    gdk_window_set_cursor(window, CursorSelectDragging);
+                    auto window = desktop->getCanvas()->get_window();
+                    window->set_cursor(_cursor_dragging);
                 }
 
                 if (this->dragging) {
@@ -588,7 +571,7 @@ bool SelectTool::root_handler(GdkEvent* event) {
                         item_at_point = desktop->getItemAtPoint(Geom::Point(xp, yp), FALSE);
                     }
 
-                    if (item_at_point || this->moved || this->button_press_alt) {
+                    if (item_at_point || this->moved || force_drag) {
                         // drag only if starting from an item, or if something is already grabbed, or if alt-dragging
                         if (!this->moved) {
                             item_in_group = desktop->getItemAtPoint(Geom::Point(event->button.x, event->button.y), TRUE);
@@ -611,8 +594,7 @@ bool SelectTool::root_handler(GdkEvent* event) {
 
                             // if neither a group nor an item (possibly in a group) at point are selected, set selection to the item at point
                             if ((!item_in_group || !selection->includes(item_in_group)) &&
-                                (!group_at_point || !selection->includes(group_at_point))
-                                && !this->button_press_alt) {
+                                (!group_at_point || !selection->includes(group_at_point)) && !force_drag) {
                                 // select what is under cursor
                                 if (!_seltrans->isEmpty()) {
                                     _seltrans->resetState();
@@ -646,10 +628,17 @@ bool SelectTool::root_handler(GdkEvent* event) {
                     if (Inkscape::Rubberband::get(desktop)->is_started()) {
                         Inkscape::Rubberband::get(desktop)->move(p);
 
-                        if (Inkscape::Rubberband::get(desktop)->getMode() == RUBBERBAND_MODE_TOUCHPATH) {
-                            this->defaultMessageContext()->set(Inkscape::NORMAL_MESSAGE, _("<b>Draw over</b> objects to select them; release <b>Alt</b> to switch to rubberband selection"));
+                        auto touch_path = Modifier::get(Modifiers::Type::SELECT_TOUCH_PATH)->get_label();
+                        auto mode = Inkscape::Rubberband::get(desktop)->getMode();
+                        if (mode == RUBBERBAND_MODE_TOUCHPATH) {
+                            this->defaultMessageContext()->setF(Inkscape::NORMAL_MESSAGE,
+                                _("<b>Draw over</b> objects to select them; release <b>%s</b> to switch to rubberband selection"), touch_path.c_str());
+                        } else if (mode == RUBBERBAND_MODE_TOUCHRECT) {
+                            this->defaultMessageContext()->setF(Inkscape::NORMAL_MESSAGE,
+                                _("<b>Drag near</b> objects to select them; press <b>%s</b> to switch to touch selection"), touch_path.c_str());
                         } else {
-                            this->defaultMessageContext()->set(Inkscape::NORMAL_MESSAGE, _("<b>Drag around</b> objects to select them; press <b>Alt</b> to switch to touch selection"));
+                            this->defaultMessageContext()->setF(Inkscape::NORMAL_MESSAGE,
+                                _("<b>Drag around</b> objects to select them; press <b>%s</b> to switch to touch selection"), touch_path.c_str());
                         }
 
                         gobble_motion_events(GDK_BUTTON1_MASK);
@@ -661,9 +650,8 @@ bool SelectTool::root_handler(GdkEvent* event) {
         case GDK_BUTTON_RELEASE:
             xp = yp = 0;
 
-            if ((event->button.button == 1) && (this->grabbed) && !this->space_panning) {
+            if ((event->button.button == 1) && (this->grabbed)) {
                 if (this->dragging) {
-                    GdkWindow* window;
 
                     if (this->moved) {
                         // item has been moved
@@ -675,7 +663,7 @@ bool SelectTool::root_handler(GdkEvent* event) {
                     } else if (this->item && !drag_escaped) {
                         // item has not been moved -> simply a click, do selecting
                         if (!selection->isEmpty()) {
-                            if (event->button.state & GDK_SHIFT_MASK) {
+                            if(Modifier::get(Modifiers::Type::SELECT_ADD_TO)->active(event->button.state)) {
                                 // with shift, toggle selection
                                 _seltrans->resetState();
                                 selection->toggle(this->item);
@@ -699,9 +687,10 @@ bool SelectTool::root_handler(GdkEvent* event) {
                     }
 
                     this->dragging = FALSE;
-                    window = gtk_widget_get_window (GTK_WIDGET (desktop->getCanvas()));
 
-                    gdk_window_set_cursor(window, CursorSelectMouseover);
+                    auto window = desktop->getCanvas()->get_window();
+                    window->set_cursor(_cursor_mouseover);
+
                     sp_event_context_discard_delayed_snap_event(this);
 
                     if (this->item) {
@@ -719,6 +708,9 @@ bool SelectTool::root_handler(GdkEvent* event) {
                         if (r->getMode() == RUBBERBAND_MODE_RECT) {
                             Geom::OptRect const b = r->getRectangle();
                             items = desktop->getDocument()->getItemsInBox(desktop->dkey, (*b) * desktop->dt2doc());
+                        } else if (r->getMode() == RUBBERBAND_MODE_TOUCHRECT) {
+                            Geom::OptRect const b = r->getRectangle();
+                            items = desktop->getDocument()->getItemsPartiallyInBox(desktop->dkey, (*b) * desktop->dt2doc());
                         } else if (r->getMode() == RUBBERBAND_MODE_TOUCHPATH) {
                             items = desktop->getDocument()->getItemsAtPoints(desktop->dkey, r->getPoints());
                         }
@@ -727,7 +719,7 @@ bool SelectTool::root_handler(GdkEvent* event) {
                         r->stop();
                         this->defaultMessageContext()->clear();
 
-                        if (event->button.state & GDK_SHIFT_MASK) {
+                        if(Modifier::get(Modifiers::Type::SELECT_ADD_TO)->active(event->button.state)) {
                             // with shift, add to selection
                             selection->addList (items);
                         } else {
@@ -738,19 +730,21 @@ bool SelectTool::root_handler(GdkEvent* event) {
                     } else { // it was just a click, or a too small rubberband
                         r->stop();
 
-                        if (this->button_press_shift && !rb_escaped && !drag_escaped) {
-                            // this was a shift+click or alt+shift+click, select what was clicked upon
-                            this->button_press_shift = false;
+                        bool add_to = Modifier::get(Modifiers::Type::SELECT_ADD_TO)->active(event->button.state);
+                        bool in_groups = Modifier::get(Modifiers::Type::SELECT_IN_GROUPS)->active(event->button.state);
+                        bool force_drag = Modifier::get(Modifiers::Type::SELECT_FORCE_DRAG)->active(event->button.state);
 
-                            if (this->button_press_ctrl) {
-                                // go into groups, honoring Alt
+                        if (add_to && !rb_escaped && !drag_escaped) {
+                            // this was a shift+click or alt+shift+click, select what was clicked upon
+
+                            if (in_groups) {
+                                // go into groups, honoring force_drag (Alt)
                                 item = sp_event_context_find_item (desktop,
-                                                   Geom::Point(event->button.x, event->button.y), event->button.state & GDK_MOD1_MASK, TRUE);
-                                this->button_press_ctrl = FALSE;
+                                                   Geom::Point(event->button.x, event->button.y), force_drag, TRUE);
                             } else {
                                 // don't go into groups, honoring Alt
                                 item = sp_event_context_find_item (desktop,
-                                                   Geom::Point(event->button.x, event->button.y), event->button.state & GDK_MOD1_MASK, FALSE);
+                                                   Geom::Point(event->button.x, event->button.y), force_drag, FALSE);
                             }
 
                             if (item) {
@@ -758,12 +752,9 @@ bool SelectTool::root_handler(GdkEvent* event) {
                                 item = nullptr;
                             }
 
-                        } else if ((this->button_press_ctrl || this->button_press_alt) && !rb_escaped && !drag_escaped) { // ctrl+click, alt+click
+                        } else if ((in_groups || force_drag) && !rb_escaped && !drag_escaped) { // ctrl+click, alt+click
                             item = sp_event_context_find_item (desktop,
-                                         Geom::Point(event->button.x, event->button.y), this->button_press_alt, this->button_press_ctrl);
-
-                            this->button_press_ctrl = FALSE;
-                            this->button_press_alt = FALSE;
+                                         Geom::Point(event->button.x, event->button.y), force_drag, in_groups);
 
                             if (item) {
                                 if (selection->includes(item)) {
@@ -777,7 +768,7 @@ bool SelectTool::root_handler(GdkEvent* event) {
                             }
                         } else { // click without shift, simply deselect, unless with Alt or something was cancelled
                             if (!selection->isEmpty()) {
-                                if (!(rb_escaped) && !(drag_escaped) && !(event->button.state & GDK_MOD1_MASK)) {
+                                if (!(rb_escaped) && !(drag_escaped) && !force_drag) {
                                     selection->clear();
                                 }
 
@@ -788,11 +779,11 @@ bool SelectTool::root_handler(GdkEvent* event) {
 
                     ret = TRUE;
                 }
-                if (this->grabbed) {
-                    sp_canvas_item_ungrab(this->grabbed);
-                    this->grabbed = nullptr;
+                if (grabbed) {
+                    grabbed->ungrab();
+                    grabbed = nullptr;
                 }
-                // Think is not necesary now
+                // Think is not necessary now
                 // desktop->updateNow();
             }
 
@@ -800,19 +791,17 @@ bool SelectTool::root_handler(GdkEvent* event) {
                 Inkscape::Rubberband::get(desktop)->stop(); // might have been started in another tool!
             }
 
-            this->button_press_shift = false;
-            this->button_press_ctrl = false;
-            this->button_press_alt = false;
+            this->button_press_state = 0;
             break;
 
         case GDK_SCROLL: {
 
             GdkEventScroll *scroll_event = (GdkEventScroll*) event;
 
-            if ( ! (scroll_event->state & GDK_MOD1_MASK)) // do nothing specific if alt was not pressed
+            // do nothing specific if alt was not pressed
+            if ( ! Modifier::get(Modifiers::Type::SELECT_CYCLE)->active(scroll_event->state))
                 break;
 
-            bool shift_pressed = scroll_event->state & GDK_SHIFT_MASK;
             is_cycling = true;
 
             /* Rebuild list of items underneath the mouse pointer */
@@ -849,14 +838,14 @@ bool SelectTool::root_handler(GdkEvent* event) {
             this->cycling_wrap = prefs->getBool("/options/selection/cycleWrap", true);
 
             // Cycle through the items underneath the mouse pointer, one-by-one
-            this->sp_select_context_cycle_through_items(selection, scroll_event, shift_pressed);
+            this->sp_select_context_cycle_through_items(selection, scroll_event);
 
             ret = TRUE;
 
-            GtkWindow *w =GTK_WINDOW(gtk_widget_get_toplevel( GTK_WIDGET(desktop->canvas) ));
+            GtkWindow *w =GTK_WINDOW(gtk_widget_get_toplevel( GTK_WIDGET(desktop->getCanvas()->gobj()) ));
             if (w) {
                 gtk_window_present(w);
-                gtk_widget_grab_focus (GTK_WIDGET(desktop->canvas)); 
+                desktop->getCanvas()->grab_focus();
             }
             break;
         }
@@ -873,11 +862,12 @@ bool SelectTool::root_handler(GdkEvent* event) {
                                     || (keyval == GDK_KEY_Meta_R));
 
             if (!key_is_a_modifier (keyval)) {
-                    this->defaultMessageContext()->clear();
+                this->defaultMessageContext()->clear();
             } else if (this->grabbed || _seltrans->isGrabbed()) {
+
                 if (Inkscape::Rubberband::get(desktop)->is_started()) {
                     // if Alt then change cursor to moving cursor:
-                    if (alt) {
+                    if (Modifier::get(Modifiers::Type::SELECT_TOUCH_PATH)->active(event->key.state | keyval)) {
                         Inkscape::Rubberband::get(desktop)->setMode(RUBBERBAND_MODE_TOUCHPATH);
                     }
                 } else {
@@ -886,16 +876,15 @@ bool SelectTool::root_handler(GdkEvent* event) {
                    break;
                 }
             } else {
-                    sp_event_show_modifier_tip (this->defaultMessageContext(), event,
-                                                _("<b>Ctrl</b>: click to select in groups; drag to move hor/vert"),
-                                                _("<b>Shift</b>: click to toggle select; drag for rubberband selection"),
-                                                _("<b>Alt</b>: click to select under; scroll mouse-wheel to cycle-select; drag to move selected or select by touch"));
-                    
+                    Modifiers::responsive_tooltip(this->defaultMessageContext(), event, 6,
+                        Modifiers::Type::SELECT_IN_GROUPS, Modifiers::Type::MOVE_CONFINE,
+                        Modifiers::Type::SELECT_ADD_TO, Modifiers::Type::SELECT_TOUCH_PATH,
+                        Modifiers::Type::SELECT_CYCLE, Modifiers::Type::SELECT_FORCE_DRAG);
+
                     // if Alt and nonempty selection, show moving cursor ("move selected"):
                     if (alt && !selection->isEmpty() && !desktop->isWaitingCursor()) {
-                        GdkWindow* window = gtk_widget_get_window (GTK_WIDGET (desktop->getCanvas()));
-
-                        gdk_window_set_cursor(window, CursorSelectDragging);
+                        auto window = desktop->getCanvas()->get_window();
+                        window->set_cursor(_cursor_dragging);
                     }
                     //*/
                     break;
@@ -903,7 +892,6 @@ bool SelectTool::root_handler(GdkEvent* event) {
             }
 
             gdouble const nudge = prefs->getDoubleLimited("/options/nudgedistance/value", 2, 0, 1000, "px"); // in px
-            gdouble const offset = prefs->getDoubleLimited("/options/defaultscale/value", 2, 0, 1000, "px");
             int const snaps = prefs->getInt("/options/rotationsnapsperpi/value", 12);
             auto const y_dir = desktop->yaxisdir();
 
@@ -1124,7 +1112,7 @@ bool SelectTool::root_handler(GdkEvent* event) {
             if (Inkscape::Rubberband::get(desktop)->is_started()) {
                 // if Alt then change cursor to moving cursor:
                 if (alt) {
-                    Inkscape::Rubberband::get(desktop)->setMode(RUBBERBAND_MODE_RECT);
+                    Inkscape::Rubberband::get(desktop)->defaultMode();
                 }
             } else {
                 if (alt) {

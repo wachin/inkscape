@@ -22,6 +22,8 @@
 #include "stringstream.h"
 #include "util/units.h"
 
+using std::pow;
+
 static unsigned sp_svg_length_read_lff(gchar const *str, SVGLength::Unit *unit, float *val, float *computed, char **next);
 
 #ifndef MAX
@@ -205,11 +207,6 @@ bool SVGLength::read(gchar const *str)
     return true;
 }
 
-static bool svg_length_absolute_unit(SVGLength::Unit u)
-{
-    return (u != SVGLength::EM && u != SVGLength::EX && u != SVGLength::PERCENT);
-}
-
 bool SVGLength::readAbsolute(gchar const *str)
 {
     if (!str) {
@@ -235,6 +232,25 @@ bool SVGLength::readAbsolute(gchar const *str)
     return true;
 }
 
+/**
+ * Returns the unit used as a string.
+ *
+ * @returns unit string
+ */
+std::string SVGLength::getUnit() const
+{
+    return sp_svg_length_get_css_units(unit);
+}
+
+/**
+ * Is this length an absolute value (uses an absolute unit).
+ *
+ * @returns true if unit is not NONE and not a relative unit (percent etc)
+ */
+bool SVGLength::isAbsolute()
+{
+    return unit && svg_length_absolute_unit(unit);
+}
 
 unsigned int sp_svg_length_read_computed_absolute(gchar const *str, float *length)
 {
@@ -569,6 +585,11 @@ gchar const *sp_svg_length_get_css_units(SVGLength::Unit unit)
         case SVGLength::PERCENT: return "%";
     }
     return "";
+}
+
+bool svg_length_absolute_unit(SVGLength::Unit u)
+{
+    return (u != SVGLength::EM && u != SVGLength::EX && u != SVGLength::PERCENT);
 }
 
 /**

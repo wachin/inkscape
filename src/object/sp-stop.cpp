@@ -32,11 +32,10 @@ SPStop::SPStop() : SPObject() {
 SPStop::~SPStop() = default;
 
 void SPStop::build(SPDocument* doc, Inkscape::XML::Node* repr) {
-    SPObject::build(doc, repr);
+    this->readAttr(SPAttr::STYLE);
+    this->readAttr(SPAttr::OFFSET);
+    this->readAttr(SPAttr::STOP_PATH); // For mesh
 
-    this->readAttr( "style" );
-    this->readAttr( "offset" );
-    this->readAttr( "path" ); // For mesh
     SPObject::build(doc, repr);
 }
 
@@ -44,14 +43,14 @@ void SPStop::build(SPDocument* doc, Inkscape::XML::Node* repr) {
  * Virtual build: set stop attributes from its associated XML node.
  */
 
-void SPStop::set(SPAttributeEnum key, const gchar* value) {
+void SPStop::set(SPAttr key, const gchar* value) {
     switch (key) {
-        case SP_ATTR_OFFSET: {
+        case SPAttr::OFFSET: {
             this->offset = sp_svg_read_percentage(value, 0.0);
             this->requestModified(SP_OBJECT_MODIFIED_FLAG | SP_OBJECT_STYLE_MODIFIED_FLAG);
             break;
         }
-        case SP_PROP_STOP_PATH: {
+        case SPAttr::STOP_PATH: {
             if (value) {
                 this->path_string = new Glib::ustring( value );
                 //Geom::PathVector pv = sp_svg_read_pathv(value);
@@ -95,7 +94,7 @@ Inkscape::XML::Node* SPStop::write(Inkscape::XML::Document* xml_doc, Inkscape::X
     }
 
     SPObject::write(xml_doc, repr, flags);
-    sp_repr_set_css_double(repr, "offset", this->offset);
+    repr->setAttributeCssDouble("offset", this->offset);
     /* strictly speaking, offset an SVG <number> rather than a CSS one, but exponents make no sense
      * for offset proportions. */
 
@@ -144,7 +143,6 @@ SPColor SPStop::getColor() const
     if (style->stop_color.currentcolor) {
         return style->color.value.color;
     }
-    Glib::ustring color = style->stop_color.value.color.toString();
     return style->stop_color.value.color;
 }
 

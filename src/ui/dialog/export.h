@@ -13,21 +13,23 @@
 #ifndef SP_EXPORT_H
 #define SP_EXPORT_H
 
-#include <gtkmm/progressbar.h>
+#include <gtkmm/checkbutton.h>
+#include <gtkmm/comboboxtext.h>
 #include <gtkmm/expander.h>
 #include <gtkmm/grid.h>
-#include <gtkmm/comboboxtext.h>
+#include <gtkmm/progressbar.h>
+#include <gtkmm/radiobutton.h>
+#include <gtkmm/spinbutton.h>
 
-#include "ui/dialog/desktop-tracker.h"
-#include "ui/widget/panel.h"
-
-namespace Gtk {
-class Dialog;
-}
+#include "extension/output.h"
+#include "ui/dialog/dialog-base.h"
+#include "ui/widget/scrollprotected.h"
 
 namespace Inkscape {
 namespace UI {
 namespace Dialog {
+
+class ExportProgressDialog;
 
 /** What type of button is being pressed */
 enum selection_type {
@@ -45,7 +47,8 @@ enum selection_type {
  * shows it to the user. If the dialog has already been created, it simply shows the window.
  *
  */
-class Export : public Widget::Panel {
+class Export : public DialogBase
+{
 public:
     Export ();
     ~Export () override;
@@ -108,8 +111,8 @@ private:
      *
      * No unit_selector is stored in the created spinbutton, relies on external unit management
      */
-    Glib::RefPtr<Gtk::Adjustment> createSpinbutton( gchar const *key, float val, float min, float max,
-                                                    float step, float page,
+    Glib::RefPtr<Gtk::Adjustment> createSpinbutton( gchar const *key,
+            double val, double min, double max, double step, double page,
                                                     Gtk::Grid *t, int x, int y,
                                                     const Glib::ustring& ll, const Glib::ustring& lr,
                                                     int digits, unsigned int sensitive,
@@ -118,12 +121,14 @@ private:
     /**
      * One of the area select radio buttons was pressed
      */
-    void onAreaToggled();
+    void onAreaTypeToggled();
+    void refreshArea();
 
     /**
      * Export button callback
      */
     void onExport ();
+    void _export_raster(Inkscape::Extension::Output *extension);
 
     /**
      * File Browse button callback
@@ -206,19 +211,19 @@ private:
     /**
      * Can be invoked for setting the desktop. Currently not used.
      */
-    void setDesktop(SPDesktop *desktop) override;
+    void setDesktop(SPDesktop *desktop);
 
     /**
-     * Is invoked by the desktop tracker when the desktop changes.
+     * Update active window.
      */
-    void setTargetDesktop(SPDesktop *desktop);
+    void update() override;
 
     /**
      * Creates progress dialog for batch exporting.
      *
      * @param progress_text Text to be shown in the progress bar
      */
-    Gtk::Dialog * create_progress_dialog (Glib::ustring progress_text);
+    ExportProgressDialog * create_progress_dialog(Glib::ustring progress_text);
 
     /**
      * Callback to be used in for loop to update the progress bar.
@@ -247,14 +252,16 @@ private:
      * Utility filename and path functions
      */
     void set_default_filename ();
-    Glib::ustring create_filepath_from_id (Glib::ustring id, const Glib::ustring &file_entry_text);
-    Glib::ustring filename_add_extension (Glib::ustring filename, Glib::ustring extension);
-    Glib::ustring absolutize_path_from_document_location (SPDocument *doc, const Glib::ustring &filename);
 
     /*
      * Currently selected export area type
+     * can be changed by code
      */
     selection_type current_key;
+    /*
+     * Manually selected export area type(only changed by buttons)
+     */
+    selection_type manual_key;
     /*
      * Original name for the export object
      */
@@ -264,18 +271,18 @@ private:
      * Was the Original name modified
      */
     bool filename_modified;
-    bool was_empty;
+
     /*
      * Flag to stop simultaneous updates
      */
-    bool update;
+    bool update_flag;
 
     /* Area selection radio buttons */
-    Gtk::HBox togglebox;
+    Gtk::Box togglebox;
     Gtk::RadioButton *selectiontype_buttons[SELECTION_NUMBER_OF];
 
-    Gtk::VBox area_box;
-    Gtk::VBox singleexport_box;
+    Gtk::Box area_box;
+    Gtk::Box singleexport_box;
 
     /* Custom size widgets */
     Glib::RefPtr<Gtk::Adjustment> x0_adj;
@@ -291,28 +298,28 @@ private:
     Glib::RefPtr<Gtk::Adjustment> xdpi_adj;
     Glib::RefPtr<Gtk::Adjustment> ydpi_adj;
 
-    Gtk::VBox size_box;
+    Gtk::Box size_box;
     Gtk::Label* bm_label;
 
-    Gtk::VBox file_box;
+    Gtk::Box file_box;
     Gtk::Label *flabel;
     Gtk::Entry filename_entry;
 
     /* Unit selector widgets */
-    Gtk::HBox unitbox;
+    Gtk::Box unitbox;
     Inkscape::UI::Widget::UnitMenu unit_selector;
     Gtk::Label units_label;
 
     /* Filename widgets  */
-    Gtk::HBox filename_box;
+    Gtk::Box filename_box;
     Gtk::Button browse_button;
     Gtk::Label browse_label;
     Gtk::Image browse_image;
 
-    Gtk::HBox batch_box;
+    Gtk::Box batch_box;
     Gtk::CheckButton    batch_export;
 
-    Gtk::HBox hide_box;
+    Gtk::Box hide_box;
     Gtk::CheckButton    hide_export;
 
     Gtk::CheckButton closeWhenDone;
@@ -321,28 +328,25 @@ private:
     Gtk::Expander expander;
     Gtk::CheckButton interlacing;
     Gtk::Label                        bitdepth_label;
-    Gtk::ComboBoxText                 bitdepth_cb;
+    Inkscape::UI::Widget::ScrollProtected<Gtk::ComboBoxText> bitdepth_cb;
     Gtk::Label                        zlib_label;
-    Gtk::ComboBoxText                 zlib_compression;
+    Inkscape::UI::Widget::ScrollProtected<Gtk::ComboBoxText> zlib_compression;
     Gtk::Label                        pHYs_label;
     Glib::RefPtr<Gtk::Adjustment>     pHYs_adj;
-    Gtk::SpinButton                   pHYs_sb;
+    Inkscape::UI::Widget::ScrollProtected<Gtk::SpinButton> pHYs_sb;
     Gtk::Label                        antialiasing_label;
-    Gtk::ComboBoxText                 antialiasing_cb;
+    Inkscape::UI::Widget::ScrollProtected<Gtk::ComboBoxText> antialiasing_cb;
 
     /* Export Button widgets */
-    Gtk::HBox button_box;
+    Gtk::Box button_box;
     Gtk::Button export_button;
 
     Gtk::ProgressBar _prog;
 
-    Gtk::Dialog *prog_dlg;
+    ExportProgressDialog *prog_dlg;
     bool interrupted; // indicates whether export needs to be interrupted (read: user pressed cancel in the progress dialog)
 
     Inkscape::Preferences *prefs;
-    SPDesktop *desktop;
-    DesktopTracker deskTrack;
-    sigc::connection desktopChangeConn;
     sigc::connection selectChangedConn;
     sigc::connection subselChangedConn;
     sigc::connection selectModifiedConn;

@@ -11,8 +11,10 @@ from argparse import ArgumentTypeError
 
 import pytest
 
-from inkex.utils import addNS, debug, errormsg, filename_arg, Boolean, to, strargs
+from inkex.utils import debug, errormsg, filename_arg, Boolean, to, strargs, math_eval
+from inkex.tester import TestCase
 
+from inkex import addNS
 
 class TestInkexBasic(object):
     """Test basic utiltiies of inkex"""
@@ -79,6 +81,10 @@ class TestInkexBasic(object):
         assert strargs('1-2 3-4') == [1.0, -2.0, 3.0, -4.0]
         assert strargs('1-2,3-4') == [1.0, -2.0, 3.0, -4.0]
         assert strargs('1-2-3-4') == [1.0, -2.0, -3.0, -4.0]
+        assert strargs('1.0e-1 -2.0e-1 3.0e10 -4.0e10') == [0.1, -0.2, 30000000000, -40000000000]
+        assert strargs('1.0e-1,-2.0e-1,3.0e10,-4.0e10') == [0.1, -0.2, 30000000000, -40000000000]
+        assert strargs('1.0E-1 -2.0E-1 3.0E10 -4.0E10') == [0.1, -0.2, 30000000000, -40000000000]
+        assert strargs('1.0E-1,-2.0E-1,3.0E10,-4.0E10') == [0.1, -0.2, 30000000000, -40000000000]
 
     def test_ascii(self, capsys):
         """Parse ABCabc"""
@@ -96,3 +102,17 @@ class TestInkexBasic(object):
         # """Parse Àûïàèé (unicode)"""
         errormsg(u'Àûïàèé')
         assert capsys.readouterr().err, u'Àûïàèé\n'
+
+import math
+
+class TestMathFunctions(TestCase):
+    def testExp(self):
+        """Test if the math_eval function works"""
+        function = "exp(x)"
+        f = math_eval(function)
+        self.assertAlmostEqual(f(1), math.exp(1))
+    def testErf(self):
+        """Only available in python3"""
+        function = "erf(x)"
+        f = math_eval(function)
+        self.assertAlmostEqual(f(1), math.erf(1))

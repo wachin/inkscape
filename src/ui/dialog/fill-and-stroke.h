@@ -16,33 +16,32 @@
 #ifndef INKSCAPE_UI_DIALOG_FILL_AND_STROKE_H
 #define INKSCAPE_UI_DIALOG_FILL_AND_STROKE_H
 
-#include "ui/widget/panel.h"
-#include "ui/widget/object-composite-settings.h"
-#include "ui/dialog/desktop-tracker.h"
-
 #include <gtkmm/notebook.h>
+
+#include "ui/dialog/dialog-base.h"
+#include "ui/widget/object-composite-settings.h"
 #include "ui/widget/style-subject.h"
 
 namespace Inkscape {
 namespace UI {
 
 namespace Widget {
+class FillNStroke;
 class NotebookPage;
+class StrokeStyle;
 }
 
 namespace Dialog {
 
-class FillAndStroke : public UI::Widget::Panel {
+class FillAndStroke : public DialogBase
+{
 public:
     FillAndStroke();
     ~FillAndStroke() override;
 
     static FillAndStroke &getInstance() { return *new FillAndStroke(); }
 
-
-    void setDesktop(SPDesktop *desktop) override;
-
-    //void selectionChanged(Inkscape::Selection *selection);
+    void desktopReplaced() override;
 
     void showPageFill();
     void showPageStrokePaint();
@@ -58,8 +57,8 @@ protected:
     UI::Widget::StyleSubject::Selection _subject;
     UI::Widget::ObjectCompositeSettings _composite_settings;
 
-    Gtk::HBox &_createPageTabLabel(const Glib::ustring &label,
-                                   const char *label_image);
+    Gtk::Box &_createPageTabLabel(const Glib::ustring &label,
+                                  const char *label_image);
 
     void _layoutPageFill();
     void _layoutPageStrokePaint();
@@ -71,14 +70,9 @@ private:
     FillAndStroke(FillAndStroke const &d) = delete;
     FillAndStroke& operator=(FillAndStroke const &d) = delete;
 
-    void setTargetDesktop(SPDesktop *desktop);
-
-    DesktopTracker deskTrack;
-    SPDesktop *targetDesktop;
-    Gtk::Widget *fillWdgt;
-    Gtk::Widget *strokeWdgt;
-    Gtk::Widget *strokeStyleWdgt;
-    sigc::connection desktopChangeConn;
+    UI::Widget::FillNStroke *fillWdgt;
+    UI::Widget::FillNStroke *strokeWdgt;
+    UI::Widget::StrokeStyle *strokeStyleWdgt;
 };
 
 } // namespace Dialog

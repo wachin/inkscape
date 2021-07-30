@@ -7,12 +7,16 @@
 
 #include "live_effects/parameter/point.h"
 #include "live_effects/effect.h"
-#include "svg/svg.h"
-#include "svg/stringstream.h"
-#include "ui/widget/point.h"
+
 #include "inkscape.h"
 #include "verbs.h"
-#include "knotholder.h"
+
+#include "svg/stringstream.h"
+#include "svg/svg.h"
+#include "ui/knot/knot-holder.h"
+#include "ui/knot/knot-holder-entity.h"
+#include "ui/widget/point.h"
+
 #include <glibmm/i18n.h>
 
 namespace Inkscape {
@@ -23,14 +27,10 @@ PointParam::PointParam( const Glib::ustring& label, const Glib::ustring& tip,
                         const Glib::ustring& key, Inkscape::UI::Widget::Registry* wr,
                         Effect* effect, const gchar *htip, Geom::Point default_value,
                         bool live_update )
-    :   Parameter(label, tip, key, wr, effect), 
-        defvalue(default_value),
-        liveupdate(live_update),
-        _knot_entity(nullptr)
+    : Parameter(label, tip, key, wr, effect)
+    , defvalue(default_value)
+    , liveupdate(live_update)
 {
-    knot_shape = SP_KNOT_SHAPE_DIAMOND;
-    knot_mode  = SP_KNOT_MODE_XOR;
-    knot_color = 0xffffff00;
     handle_tip = g_strdup(htip);
 }
 
@@ -163,9 +163,9 @@ PointParam::param_newWidget()
     pointwdg->set_undo_parameters(SP_VERB_DIALOG_LIVE_PATH_EFFECT, _("Change point parameter"));
     pointwdg->signal_button_release_event().connect(sigc::mem_fun (*this, &PointParam::on_button_release));
 
-    Gtk::HBox * hbox = Gtk::manage( new Gtk::HBox() );
-    static_cast<Gtk::HBox*>(hbox)->pack_start(*pointwdg, true, true);
-    static_cast<Gtk::HBox*>(hbox)->show_all_children();
+    Gtk::Box * hbox = Gtk::manage( new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL) );
+    hbox->pack_start(*pointwdg, true, true);
+    hbox->show_all_children();
     return dynamic_cast<Gtk::Widget *> (hbox);
 }
 
@@ -175,7 +175,9 @@ bool PointParam::on_button_release(GdkEventButton* button_event) {
 }
 
 void
-PointParam::set_oncanvas_looks(SPKnotShapeType shape, SPKnotModeType mode, guint32 color)
+PointParam::set_oncanvas_looks(Inkscape::CanvasItemCtrlShape shape,
+                               Inkscape::CanvasItemCtrlMode mode,
+                               guint32 color)
 {
     knot_shape = shape;
     knot_mode  = mode;
@@ -247,8 +249,8 @@ PointParam::addKnotHolderEntities(KnotHolder *knotholder, SPItem *item)
 {
     _knot_entity = new PointParamKnotHolderEntity(this);
     // TODO: can we ditch handleTip() etc. because we have access to handle_tip etc. itself???
-    _knot_entity->create(nullptr, item, knotholder, Inkscape::CTRL_TYPE_LPE, handleTip(), knot_shape, knot_mode,
-                         knot_color);
+    _knot_entity->create(nullptr, item, knotholder, Inkscape::CANVAS_ITEM_CTRL_TYPE_LPE, "LPE:Point",
+                         handleTip(), knot_color);
     knotholder->add(_knot_entity);
 }
 

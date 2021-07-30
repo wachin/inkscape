@@ -21,9 +21,6 @@
 
 #include "sp-object.h"
 
-#define SP_FONTFACE(obj) (dynamic_cast<SPFontFace*>((SPObject*)obj))
-#define SP_IS_FONTFACE(obj) (dynamic_cast<const SPFontFace*>((SPObject*)obj) != NULL)
-
 enum FontFaceStyleType{
 	SP_FONTFACE_STYLE_ALL,
 	SP_FONTFACE_STYLE_NORMAL,
@@ -114,11 +111,14 @@ protected:
 	void child_added(Inkscape::XML::Node* child, Inkscape::XML::Node* ref) override;
 	void remove_child(Inkscape::XML::Node* child) override;
 
-	void set(SPAttributeEnum key, const char* value) override;
+	void set(SPAttr key, const char* value) override;
 
 	void update(SPCtx* ctx, unsigned int flags) override;
 
 	Inkscape::XML::Node* write(Inkscape::XML::Document* doc, Inkscape::XML::Node* repr, unsigned int flags) override;
 };
+
+MAKE_SP_OBJECT_DOWNCAST_FUNCTIONS(SP_FONTFACE, SPFontFace)
+MAKE_SP_OBJECT_TYPECHECK_FUNCTIONS(SP_IS_FONTFACE, SPFontFace)
 
 #endif //#ifndef __SP_FONTFACE_H__

@@ -28,7 +28,6 @@
 #include "paint-servers.h"
 #include "path-prefix.h"
 #include "style.h"
-#include "verbs.h"
 
 #include "io/resource.h"
 #include "object/sp-defs.h"
@@ -37,6 +36,7 @@
 #include "object/sp-root.h"
 #include "object/sp-shape.h"
 #include "ui/cache/svg_preview_cache.h"
+#include "ui/widget/scrollprotected.h"
 
 namespace Inkscape {
 namespace UI {
@@ -68,9 +68,8 @@ class PaintServersColumns : public Gtk::TreeModel::ColumnRecord {
 PaintServersColumns *PaintServersDialog::getColumns() { return new PaintServersColumns(); }
 
 // Constructor
-PaintServersDialog::PaintServersDialog(gchar const *prefsPath)
-    : Inkscape::UI::Widget::Panel(prefsPath, SP_VERB_DIALOG_PAINT)
-    , desktop(SP_ACTIVE_DESKTOP)
+PaintServersDialog::PaintServersDialog()
+    : DialogBase("/dialogs/paint", "PaintServers")
     , target_selected(true)
     , ALLDOCS(_("All paint servers"))
     , CURRENTDOC(_("Current document"))
@@ -86,16 +85,15 @@ PaintServersDialog::PaintServersDialog(gchar const *prefsPath)
     grid->set_margin_end(3);
     grid->set_margin_top(3);
     grid->set_row_spacing(3);
-    _getContents()->pack_start(*grid, Gtk::PACK_EXPAND_WIDGET);
+    pack_start(*grid, Gtk::PACK_EXPAND_WIDGET);
 
     // Grid row 0
     Gtk::Label *file_label = Gtk::manage(new Gtk::Label(Glib::ustring(_("Server")) + ": "));
     grid->attach(*file_label, 0, 0, 1, 1);
 
-    dropdown = Gtk::manage(new Gtk::ComboBoxText());
+    dropdown = Gtk::manage(new Inkscape::UI::Widget::ScrollProtected<Gtk::ComboBoxText>());
     dropdown->append(ALLDOCS);
     dropdown->append(CURRENTDOC);
-    document_map[CURRENTDOC] = desktop->getDocument();
     dropdown->set_active_text(ALLDOCS);
     dropdown->set_hexpand();
     grid->attach(*dropdown, 1, 0, 1, 1);
@@ -104,7 +102,7 @@ PaintServersDialog::PaintServersDialog(gchar const *prefsPath)
     Gtk::Label *fill_label = Gtk::manage(new Gtk::Label(Glib::ustring(_("Change")) + ": "));
     grid->attach(*fill_label, 0, 1, 1, 1);
 
-    target_dropdown = Gtk::manage(new Gtk::ComboBoxText());
+    target_dropdown = Gtk::manage(new Inkscape::UI::Widget::ScrollProtected<Gtk::ComboBoxText>());
     target_dropdown->append(_("Fill"));
     target_dropdown->append(_("Stroke"));
     target_dropdown->set_active_text(_("Fill"));
@@ -142,10 +140,6 @@ PaintServersDialog::PaintServersDialog(gchar const *prefsPath)
         sigc::mem_fun(*this, &PaintServersDialog::on_item_activated)
     );
 
-    desktop->getDocument()->getDefs()->connectModified(
-        sigc::mem_fun(*this, &PaintServersDialog::load_current_document)
-    );
-
     // Get wrapper document (rectangle to fill with paint server).
     preview_document = SPDocument::createNewDocFromMem(wrapper.c_str(), wrapper.length(), true);
 
@@ -160,9 +154,15 @@ PaintServersDialog::PaintServersDialog(gchar const *prefsPath)
     preview_document->getRoot()->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG);
     preview_document->ensureUpToDate();
     renderDrawing.setRoot(preview_document->getRoot()->invoke_show(renderDrawing, key, SP_ITEM_SHOW_DISPLAY));
+}
 
-    // Load paint servers from resource files
-    load_sources();
+void PaintServersDialog::documentReplaced()
+{
+    if (auto document = getDocument()) {
+        document_map[CURRENTDOC] = document;
+        load_sources();
+        load_current_document();
+    }
 }
 
 PaintServersDialog::~PaintServersDialog() = default;
@@ -222,15 +222,15 @@ void recurse_find_paint(SPObject* in, std::vector<Glib::ustring>& list)
 // Load paint servers from all the files associated
 void PaintServersDialog::load_sources()
 {
-
     // Extract paints from the current file
-    load_document(desktop->getDocument());
+    if (auto document = getDocument()) {
+        load_document(document);
+    }
 
     // Extract out paints from files in share/paint.
     for (auto &path : get_filenames(Inkscape::IO::Resource::PAINT, { ".svg" })) {
-        SPDocument *document = SPDocument::createNewDoc(path.c_str(), FALSE);
-
-        load_document(document);
+        SPDocument *doc = SPDocument::createNewDoc(path.c_str(), FALSE);
+        load_document(doc);
     }
 }
 
@@ -283,7 +283,7 @@ Glib::RefPtr<Gdk::Pixbuf> PaintServersDialog::get_pixbuf(SPDocument *document, G
     preview_document->getRoot()->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG);
     preview_document->ensureUpToDate();
 
-    Geom::OptRect dbox = dynamic_cast<SPItem *>(rect)->visualBounds();
+    Geom::OptRect dbox = static_cast<SPItem *>(rect)->visualBounds();
 
     if (!dbox) {
         return pixbuf;
@@ -350,16 +350,15 @@ void PaintServersDialog::load_document(SPDocument *document)
     }
 }
 
-void PaintServersDialog::load_current_document(SPObject * /*object*/, guint /*flags*/)
+void PaintServersDialog::load_current_document()
 {
     std::unique_ptr<PaintServersColumns> columns(getColumns());
-    SPDocument *document = desktop->getDocument();
     Glib::RefPtr<Gtk::ListStore> current = store[CURRENTDOC];
 
     std::vector<Glib::ustring> paints;
     std::vector<Glib::ustring> paints_current;
     std::vector<Glib::ustring> paints_missing;
-    recurse_find_paint(document->getDefs(), paints);
+    recurse_find_paint(getDocument()->getDefs(), paints);
 
     std::sort(paints.begin(), paints.end());
     paints.erase(std::unique(paints.begin(), paints.end()), paints.end());
@@ -390,7 +389,7 @@ void PaintServersDialog::load_current_document(SPObject * /*object*/, guint /*fl
     for (auto paint : paints_missing) {
         Glib::RefPtr<Gdk::Pixbuf> pixbuf(nullptr);
         Glib::ustring id;
-        pixbuf = get_pixbuf(document, paint, &id);
+        pixbuf = get_pixbuf(getDocument(), paint, &id);
         if (!pixbuf) {
             continue;
         }
@@ -417,7 +416,7 @@ void PaintServersDialog::on_document_changed()
 void PaintServersDialog::on_item_activated(const Gtk::TreeModel::Path& path)
 {
     // Get the current selected elements
-    Selection *selection = desktop->getSelection();
+    Selection *selection = getSelection();
     std::vector<SPObject*> const selected_items(selection->items().begin(), selection->items().end());
 
     if (!selected_items.size()) {
@@ -432,7 +431,6 @@ void PaintServersDialog::on_item_activated(const Gtk::TreeModel::Path& path)
     Glib::ustring document_title = (*iter)[columns->document];
     SPDocument *document = document_map[document_title];
     SPObject *paint_server = document->getObjectById(id);
-    SPDocument *document_target = desktop->getDocument();
 
     bool paint_server_exists = false;
     for (auto server : store[CURRENTDOC]->children()) {
@@ -444,9 +442,9 @@ void PaintServersDialog::on_item_activated(const Gtk::TreeModel::Path& path)
 
     if (!paint_server_exists) {
         // Add the paint server to the current document definition
-        Inkscape::XML::Document *xml_doc = document_target->getReprDoc();
+        Inkscape::XML::Document *xml_doc = document->getReprDoc();
         Inkscape::XML::Node *repr = paint_server->getRepr()->duplicate(xml_doc);
-        document_target->getDefs()->appendChild(repr);
+        document->getDefs()->appendChild(repr);
         Inkscape::GC::release(repr);
 
         // Add the pixbuf to the current document store
@@ -469,7 +467,7 @@ void PaintServersDialog::on_item_activated(const Gtk::TreeModel::Path& path)
         item->updateRepr();
     }
 
-    document_target->collectOrphans();
+    document->collectOrphans();
 }
 
 std::vector<SPObject*> PaintServersDialog::extract_elements(SPObject* item)

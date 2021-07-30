@@ -29,10 +29,9 @@
 #include "object/sp-guide.h"
 #include "object/sp-namedview.h"
 
-#include "display/guideline.h"
-
 #include "ui/dialog-events.h"
 #include "ui/tools/tool-base.h"
+#include "ui/widget/spinbutton.h"
 
 #include "widgets/desktop-widget.h"
 
@@ -91,6 +90,14 @@ void GuidelinePropertiesDialog::_modeChanged()
 
 void GuidelinePropertiesDialog::_onOK()
 {
+    this->_onOKimpl();
+    DocumentUndo::done(_guide->document, SP_VERB_NONE,
+                       _("Set guide properties"));
+
+}
+
+void GuidelinePropertiesDialog::_onOKimpl()
+{
     double deg_angle = _spin_angle.getValue(DEG);
     if (!_mode)
         deg_angle += _oldangle;
@@ -132,9 +139,6 @@ void GuidelinePropertiesDialog::_onOK()
     // don't know why, but introduced: 761f7da58cd6d625b88c24eee6fae1b7fa3bfcdd
 
     _guide->set_color(r, g, b, true);
-
-    DocumentUndo::done(_guide->document, SP_VERB_NONE, 
-                       _("Set guide properties"));
 }
 
 void GuidelinePropertiesDialog::_onDelete()
@@ -147,7 +151,8 @@ void GuidelinePropertiesDialog::_onDelete()
 
 void GuidelinePropertiesDialog::_onDuplicate()
 {
-    _guide->duplicate();
+    _guide = _guide->duplicate();
+    this->_onOKimpl();
     DocumentUndo::done(_guide->document, SP_VERB_NONE, _("Duplicate guide"));
 }
 
@@ -223,10 +228,15 @@ void GuidelinePropertiesDialog::_setup() {
     _spin_angle.setUnit(_angle_unit_status);
 
     // position spinbuttons
-    _spin_button_x.setDigits(3);
+    Inkscape::Preferences *prefs = Inkscape::Preferences::get();
+    size_t minimumexponent = std::min(std::abs(prefs->getInt("/options/svgoutput/minimumexponent", -8)), 5); //we limit to 5 to minimize rounding errors 
+    _spin_button_x.setDigits(minimumexponent);
+    _spin_button_x.setAlignment(1.0);
     _spin_button_x.setIncrements(1.0, 10.0);
     _spin_button_x.setRange(-1e6, 1e6);
-    _spin_button_y.setDigits(3);
+    _spin_button_y.setDigits(minimumexponent);
+    
+    _spin_button_y.setAlignment(1.0);
     _spin_button_y.setIncrements(1.0, 10.0);
     _spin_button_y.setRange(-1e6, 1e6);
 
@@ -247,6 +257,8 @@ void GuidelinePropertiesDialog::_setup() {
 
     // angle spinbutton
     _spin_angle.setDigits(3);
+    _spin_angle.setDigits(minimumexponent);
+    _spin_angle.setAlignment(1.0);
     _spin_angle.setIncrements(1.0, 10.0);
     _spin_angle.setRange(-3600., 3600.);
 
@@ -278,14 +290,14 @@ void GuidelinePropertiesDialog::_setup() {
     }
     _locked_toggle.set_active(_guide->getLocked());
 
-    // don't know what this exactly does, but it results in that the dialog closes when entering a value and pressing enter (see LP bug 484187)
-    g_signal_connect_swapped(G_OBJECT(_spin_button_x.getWidget()->gobj()), "activate",
-                              G_CALLBACK(gtk_window_activate_default), gobj());
-    g_signal_connect_swapped(G_OBJECT(_spin_button_y.getWidget()->gobj()), "activate",
-                              G_CALLBACK(gtk_window_activate_default), gobj());
-    g_signal_connect_swapped(G_OBJECT(_spin_angle.getWidget()->gobj()), "activate",
-                              G_CALLBACK(gtk_window_activate_default), gobj());
+    // This results in the dialog closing when entering a value in one of the spinbuttons and pressing enter (see LP bug 484187)
+    auto sbx = dynamic_cast<UI::Widget::SpinButton *>(_spin_button_x.getWidget());
+    auto sby = dynamic_cast<UI::Widget::SpinButton *>(_spin_button_y.getWidget());
+    auto sba = dynamic_cast<UI::Widget::SpinButton *>(_spin_button_y.getWidget());
 
+    if(sbx) sbx->signal_activate().connect(sigc::mem_fun(this, &GuidelinePropertiesDialog::on_sb_activate));
+    if(sby) sby->signal_activate().connect(sigc::mem_fun(this, &GuidelinePropertiesDialog::on_sb_activate));
+    if(sba) sba->signal_activate().connect(sigc::mem_fun(this, &GuidelinePropertiesDialog::on_sb_activate));
 
     // dialog
     set_default_response(Gtk::RESPONSE_OK);
@@ -342,6 +354,11 @@ void GuidelinePropertiesDialog::_setup() {
     property_destroy_with_parent() = true;
 }
 
+void
+GuidelinePropertiesDialog::on_sb_activate()
+{
+    activate_default();
+}
 }
 }
 }

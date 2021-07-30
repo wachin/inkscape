@@ -45,7 +45,7 @@
  *that css UA must comply with two syntaxes.
  *
  *1/the specific syntax that defines the css language
- *for a given level of specificatin (e.g css2 syntax
+ *for a given level of specification (e.g css2 syntax
  *defined in appendix D.1 of the css2 spec)
  *
  *2/the core (general) syntax that is there to allow
@@ -136,6 +136,8 @@ struct _CRParserPriv {
 
 #define CHARS_TAB_SIZE 12
 
+#define RECURSIVE_CALLERS_LIMIT 100
+
 /**
  * IS_NUM:
  *@a_char: the char to test.
@@ -205,7 +207,7 @@ CHECK_PARSING_STATUS (status, TRUE) \
  *Reads the next char from the input stream of the current parser.
  *In case of error, jumps to the "error:" label located in the
  *function where this macro is called.
- *@param a_this the curent instance of #CRParser
+ *@param a_this the current instance of #CRParser
  *@param to_char a pointer to the guint32 char where to store
  *the character read.
  */
@@ -343,9 +345,11 @@ static enum CRStatus cr_parser_parse_selector_core (CRParser * a_this);
 
 static enum CRStatus cr_parser_parse_declaration_core (CRParser * a_this);
 
-static enum CRStatus cr_parser_parse_any_core (CRParser * a_this);
+static enum CRStatus cr_parser_parse_any_core (CRParser * a_this,
+                                               guint      n_calls);
 
-static enum CRStatus cr_parser_parse_block_core (CRParser * a_this);
+static enum CRStatus cr_parser_parse_block_core (CRParser * a_this,
+                                                 guint      n_calls);
 
 static enum CRStatus cr_parser_parse_value_core (CRParser * a_this);
 
@@ -524,11 +528,11 @@ cr_parser_push_error (CRParser * a_this,
         g_return_val_if_fail (a_this && PRIVATE (a_this)
                               && a_msg, CR_BAD_PARAM_ERROR);
 
+        RECORD_INITIAL_POS (a_this, &pos);
+
         error = cr_parser_error_new (a_msg, a_status);
 
         g_return_val_if_fail (error, CR_ERROR);
-
-        RECORD_INITIAL_POS (a_this, &pos);
 
         cr_parser_error_set_pos
                 (error, pos.line, pos.col, pos.next_byte_index - 1);
@@ -783,7 +787,7 @@ cr_parser_parse_atrule_core (CRParser * a_this)
         cr_parser_try_to_skip_spaces_and_comments (a_this);
 
         do {
-                status = cr_parser_parse_any_core (a_this);
+                status = cr_parser_parse_any_core (a_this, 0);
         } while (status == CR_OK);
 
         status = cr_tknzr_get_next_token (PRIVATE (a_this)->tknzr,
@@ -794,7 +798,7 @@ cr_parser_parse_atrule_core (CRParser * a_this)
                 cr_tknzr_unget_token (PRIVATE (a_this)->tknzr, 
                                       token);
                 token = NULL;
-                status = cr_parser_parse_block_core (a_this);
+                status = cr_parser_parse_block_core (a_this, 0);
                 CHECK_PARSING_STATUS (status,
                                       FALSE);
                 goto done;
@@ -929,11 +933,11 @@ cr_parser_parse_selector_core (CRParser * a_this)
 
         RECORD_INITIAL_POS (a_this, &init_pos);
 
-        status = cr_parser_parse_any_core (a_this);
+        status = cr_parser_parse_any_core (a_this, 0);
         CHECK_PARSING_STATUS (status, FALSE);
 
         do {
-                status = cr_parser_parse_any_core (a_this);
+                status = cr_parser_parse_any_core (a_this, 0);
 
         } while (status == CR_OK);
 
@@ -955,16 +959,21 @@ cr_parser_parse_selector_core (CRParser * a_this)
  *in chapter 4.1 of the css2 spec.
  *block ::= '{' S* [ any | block | ATKEYWORD S* | ';' ]* '}' S*;
  *@param a_this the current instance of #CRParser.
+ *@param n_calls used to limit recursion depth
  *FIXME: code this function.
  */
 static enum CRStatus
-cr_parser_parse_block_core (CRParser * a_this)
+cr_parser_parse_block_core (CRParser * a_this,
+                            guint      n_calls)
 {
         CRToken *token = NULL;
         CRInputPos init_pos;
         enum CRStatus status = CR_ERROR;
 
         g_return_val_if_fail (a_this && PRIVATE (a_this), CR_BAD_PARAM_ERROR);
+
+        if (n_calls > RECURSIVE_CALLERS_LIMIT)
+                return CR_ERROR;
 
         RECORD_INITIAL_POS (a_this, &init_pos);
 
@@ -995,13 +1004,13 @@ cr_parser_parse_block_core (CRParser * a_this)
         } else if (token->type == CBO_TK) {
                 cr_tknzr_unget_token (PRIVATE (a_this)->tknzr, token);
                 token = NULL;
-                status = cr_parser_parse_block_core (a_this);
+                status = cr_parser_parse_block_core (a_this, n_calls + 1);
                 CHECK_PARSING_STATUS (status, FALSE);
                 goto parse_block_content;
         } else {
                 cr_tknzr_unget_token (PRIVATE (a_this)->tknzr, token);
                 token = NULL;
-                status = cr_parser_parse_any_core (a_this);
+                status = cr_parser_parse_any_core (a_this, n_calls + 1);
                 CHECK_PARSING_STATUS (status, FALSE);
                 goto parse_block_content;
         }
@@ -1108,7 +1117,7 @@ cr_parser_parse_value_core (CRParser * a_this)
                 status = cr_tknzr_unget_token (PRIVATE (a_this)->tknzr,
                                                token);
                 token = NULL;
-                status = cr_parser_parse_block_core (a_this);
+                status = cr_parser_parse_block_core (a_this, 0);
                 CHECK_PARSING_STATUS (status, FALSE);
                 ref++;
                 goto continue_parsing;
@@ -1122,7 +1131,7 @@ cr_parser_parse_value_core (CRParser * a_this)
                 status = cr_tknzr_unget_token (PRIVATE (a_this)->tknzr,
                                                token);
                 token = NULL;
-                status = cr_parser_parse_any_core (a_this);
+                status = cr_parser_parse_any_core (a_this, 0);
                 if (status == CR_OK) {
                         ref++;
                         goto continue_parsing;
@@ -1161,10 +1170,12 @@ cr_parser_parse_value_core (CRParser * a_this)
  *        | FUNCTION | DASHMATCH | '(' any* ')' | '[' any* ']' ] S*;
  *
  *@param a_this the current instance of #CRParser.
+ *@param n_calls used to limit recursion depth
  *@return CR_OK upon successful completion, an error code otherwise.
  */
 static enum CRStatus
-cr_parser_parse_any_core (CRParser * a_this)
+cr_parser_parse_any_core (CRParser * a_this,
+                          guint      n_calls)
 {
         CRToken *token1 = NULL,
                 *token2 = NULL;
@@ -1172,6 +1183,9 @@ cr_parser_parse_any_core (CRParser * a_this)
         enum CRStatus status = CR_ERROR;
 
         g_return_val_if_fail (a_this, CR_BAD_PARAM_ERROR);
+
+        if (n_calls > RECURSIVE_CALLERS_LIMIT)
+                return CR_ERROR;
 
         RECORD_INITIAL_POS (a_this, &init_pos);
 
@@ -1211,7 +1225,7 @@ cr_parser_parse_any_core (CRParser * a_this)
                  *We consider parameter as being an "any*" production.
                  */
                 do {
-                        status = cr_parser_parse_any_core (a_this);
+                        status = cr_parser_parse_any_core (a_this, n_calls + 1);
                 } while (status == CR_OK);
 
                 ENSURE_PARSING_COND (status == CR_PARSING_ERROR);
@@ -1236,7 +1250,7 @@ cr_parser_parse_any_core (CRParser * a_this)
                 }
 
                 do {
-                        status = cr_parser_parse_any_core (a_this);
+                        status = cr_parser_parse_any_core (a_this, n_calls + 1);
                 } while (status == CR_OK);
 
                 ENSURE_PARSING_COND (status == CR_PARSING_ERROR);
@@ -1264,7 +1278,7 @@ cr_parser_parse_any_core (CRParser * a_this)
                 }
 
                 do {
-                        status = cr_parser_parse_any_core (a_this);
+                        status = cr_parser_parse_any_core (a_this, n_calls + 1);
                 } while (status == CR_OK);
 
                 ENSURE_PARSING_COND (status == CR_PARSING_ERROR);
@@ -1674,9 +1688,9 @@ cr_parser_parse_simple_selector (CRParser * a_this, CRSimpleSel ** a_sel)
         CRInputPos init_pos;
         CRToken *token = NULL;
         CRSimpleSel *sel = NULL;
+        CRPseudo *pseudo = NULL;
         CRAdditionalSel *add_sel_list = NULL;
         gboolean found_sel = FALSE;
-        guint32 cur_char = 0;
 
         g_return_val_if_fail (a_this && a_sel, CR_BAD_PARAM_ERROR);
 
@@ -1700,9 +1714,9 @@ cr_parser_parse_simple_selector (CRParser * a_this, CRSimpleSel ** a_sel)
                 sel->name = cr_string_new_from_string ("*");
                 found_sel = TRUE;
         } else if (token && token->type == IDENT_TK) {
-                sel->name = token->u.str;
                 int comb = (int)sel->type_mask | (int) TYPE_SELECTOR;
                 sel->type_mask = (enum SimpleSelectorType)comb;
+                sel->name = token->u.str;
                 token->u.str = NULL;
                 found_sel = TRUE;
         } else {
@@ -1809,7 +1823,6 @@ cr_parser_parse_simple_selector (CRParser * a_this, CRSimpleSel ** a_sel)
                                  &attr_sel->location) ;
                 } else if (token && (token->type == DELIM_TK)
                            && (token->u.unichar == ':')) {
-                        CRPseudo *pseudo = NULL;
 
                         /*try to parse a pseudo */
 
@@ -1900,6 +1913,8 @@ cr_parser_parse_simple_selector (CRParser * a_this, CRSimpleSel ** a_sel)
 
  error:
 
+        g_clear_pointer (&pseudo, cr_pseudo_destroy);
+
         if (token) {
                 cr_token_destroy (token);
                 token = NULL;
@@ -1958,7 +1973,7 @@ cr_parser_parse_simple_sels (CRParser * a_this,
 
         for (;;) {
                 guint32 next_char = 0;
-                int comb = 0;
+                enum Combinator comb = NO_COMBINATOR;
 
                 sel = NULL;
 
@@ -1984,9 +1999,9 @@ cr_parser_parse_simple_sels (CRParser * a_this,
                 if (status != CR_OK)
                         break;
 
-                if (comb && sel) {
-                        sel->combinator = (enum Combinator)comb;
-                        comb = 0;
+                if (comb != NO_COMBINATOR && sel) {
+                        sel->combinator = comb;
+                        comb = NO_COMBINATOR;
                 }
                 if (sel) {
                         *a_sel = cr_simple_sel_append_simple_sel (*a_sel, 
@@ -2773,6 +2788,8 @@ cr_parser_new (CRTknzr * a_tknzr)
 
         if (a_tknzr) {
                 status = cr_parser_set_tknzr (result, a_tknzr);
+                if (status != CR_OK)
+                        cr_parser_destroy (result);
         }
 
         g_return_val_if_fail (status == CR_OK, NULL);
@@ -2790,7 +2807,7 @@ cr_parser_new (CRTknzr * a_tknzr)
  *of #CRParser. If set to FALSE, it is up to the caller to
  *eventually free it.
  *
- *Instanciates a new parser from a memory buffer.
+ *Instantiates a new parser from a memory buffer.
  * 
  *Returns the newly built parser, or NULL if an error arises.
  */
@@ -2835,6 +2852,8 @@ cr_parser_new_from_input (CRInput * a_input)
         }
 
         result = cr_parser_new (tokenizer);
+        if (!result)
+                g_clear_pointer (&tokenizer, cr_tknzr_unref);
         g_return_val_if_fail (result, NULL);
 
         return result;
@@ -2860,6 +2879,8 @@ cr_parser_new_from_file (const guchar * a_file_uri, enum CREncoding a_enc)
         }
 
         result = cr_parser_new (tokenizer);
+        if (!result)
+                g_clear_pointer (&tokenizer, cr_tknzr_unref);
         g_return_val_if_fail (result, NULL);
         return result;
 }
@@ -3002,6 +3023,8 @@ cr_parser_parse_file (CRParser * a_this,
         g_return_val_if_fail (tknzr != NULL, CR_ERROR);
 
         status = cr_parser_set_tknzr (a_this, tknzr);
+        if (status != CR_OK)
+                g_clear_pointer (&tknzr, cr_tknzr_unref);
         g_return_val_if_fail (status == CR_OK, CR_ERROR);
 
         status = cr_parser_parse (a_this);
@@ -3671,7 +3694,7 @@ cr_parser_parse_import (CRParser * a_this,
                  *will corrupt the memory and lead to hard to debug
                  *random crashes.
                  *This is where C++ and its compile time
-                 *type checking mecanism (through STL containers) would
+                 *type checking mechanism (through STL containers) would
                  *have prevented us to go through this hassle.
                  */
                 for (cur = *a_media_list; cur; cur = cur->next) {
@@ -4129,7 +4152,7 @@ cr_parser_parse_page (CRParser * a_this)
  *set to NULL.
  *@a_charset_sym_location: the parsing location of the charset rule
  *
- *Parses a charset declaration as defined implictly by the css2 spec in
+ *Parses a charset declaration as defined implicitly by the css2 spec in
  *appendix D.1:
  *charset ::= CHARSET_SYM S* STRING S* ';'
  *
@@ -4493,6 +4516,8 @@ cr_parser_parse_buf (CRParser * a_this,
         g_return_val_if_fail (tknzr != NULL, CR_ERROR);
 
         status = cr_parser_set_tknzr (a_this, tknzr);
+        if (status != CR_OK)
+                g_clear_pointer (&tknzr, cr_tknzr_unref);
         g_return_val_if_fail (status == CR_OK, CR_ERROR);
 
         status = cr_parser_parse (a_this);

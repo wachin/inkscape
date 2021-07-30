@@ -34,25 +34,15 @@ static void sp_usepath_move_compensate(Geom::Affine const *mp, SPItem *original,
 static void sp_usepath_delete_self(SPObject *deleted, SPUsePath *offset);
 static void sp_usepath_source_modified(SPObject *iSource, guint flags, SPUsePath *offset);
 
-SPUsePath::SPUsePath(SPObject* i_owner):SPUseReference(i_owner)
+SPUsePath::SPUsePath(SPObject* i_owner): SPUseReference(i_owner)
+    , owner(i_owner)
 {
-    owner=i_owner;
-    originalPath = nullptr;
-    sourceDirty=false;
-    sourceHref = nullptr;
-    sourceRepr = nullptr;
-    sourceObject = nullptr;
     _changed_connection = changedSignal().connect(sigc::bind(sigc::ptr_fun(sp_usepath_href_changed), this)); // listening to myself, this should be virtual instead
-
     user_unlink = nullptr;
 }
 
 SPUsePath::~SPUsePath()
 {
-    if (originalPath != nullptr) {
-        originalPath->unref();
-    }
-
     _changed_connection.disconnect(); // to do before unlinking
 
     quit_listening();
@@ -199,24 +189,18 @@ void SPUsePath::refresh_source()
 {
     sourceDirty = false;
 
-    if (originalPath != nullptr) {
-        originalPath->unref();
-    }
+    originalPath = nullptr;
 
     SPObject *refobj = sourceObject;
     if ( refobj == nullptr ) return;
-    
-    SPItem *item = SP_ITEM(refobj);
 
-    if (SP_IS_SHAPE(item)) {
-        SPCurve *originalCurve = SP_SHAPE(item)->getCurve();
-        if (originalCurve != nullptr) {
-            originalPath = originalCurve->copy();
-        } else {
+    if (auto shape = dynamic_cast<SPShape const *>(refobj)) {
+        originalPath = SPCurve::copy(shape->curve());
+        if (originalPath == nullptr) {
             sourceDirty = true;
         }
-    } else if (SP_IS_TEXT(item)) {
-        originalPath = SP_TEXT(item)->getNormalizedBpath()->copy();
+    } else if (auto text = dynamic_cast<SPText const *>(refobj)) {
+        originalPath = text->getNormalizedBpath();
     }
 }
 

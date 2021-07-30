@@ -110,7 +110,7 @@ class Diffeo(PathModifier):
         self.expand_groups(self.svg.selected, True)
         self.objects_to_paths(self.svg.selected, True)
         self.bbox = self.svg.selection.bounding_box()
-        for node in self.svg.selection.filter(PathElement).values():
+        for node in self.svg.selection.filter(PathElement):
             path = node.path.to_superpath()
             for sub in path:
                 for ctlpt in sub:

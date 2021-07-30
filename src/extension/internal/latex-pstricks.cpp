@@ -163,16 +163,6 @@ unsigned int PrintLatex::release(Inkscape::Extension::Print * /*mod*/)
     return 1;
 }
 
-unsigned int PrintLatex::comment(Inkscape::Extension::Print * /*mod*/,
-                                 const char * comment)
-{
-    if (!_stream) {
-        return 0; // XXX: fixme, returning -1 as unsigned.
-    }
-
-    return fprintf(_stream, "%%! %s\n",comment);
-}
-
 unsigned int PrintLatex::fill(Inkscape::Extension::Print * /*mod*/,
                               Geom::PathVector const &pathv, Geom::Affine const &transform, SPStyle const *style,
                               Geom::OptRect const & /*pbox*/, Geom::OptRect const & /*dbox*/, Geom::OptRect const & /*bbox*/)
@@ -321,14 +311,16 @@ PrintLatex::textToPath(Inkscape::Extension::Print * ext)
 void PrintLatex::init()
 {
     /* SVG in */
+    // clang-format off
     Inkscape::Extension::build_from_mem(
         "<inkscape-extension xmlns=\"" INKSCAPE_EXTENSION_URI "\">\n"
-        "<name>" N_("LaTeX Print") "</name>\n"
-        "<id>" SP_MODULE_KEY_PRINT_LATEX "</id>\n"
-        "<param gui-hidden=\"true\" name=\"destination\" type=\"string\"></param>\n"
-        "<param gui-hidden=\"true\" name=\"textToPath\" type=\"bool\">true</param>\n"
-        "<print/>\n"
+            "<name>" N_("LaTeX Print") "</name>\n"
+            "<id>" SP_MODULE_KEY_PRINT_LATEX "</id>\n"
+            "<param gui-hidden=\"true\" name=\"destination\" type=\"string\"></param>\n"
+            "<param gui-hidden=\"true\" name=\"textToPath\" type=\"bool\">true</param>\n"
+            "<print/>\n"
         "</inkscape-extension>", new PrintLatex());
+    // clang-format on
 }
 
 }  /* namespace Internal */

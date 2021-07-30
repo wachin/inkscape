@@ -10,6 +10,7 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
+#include <gtkmm/window.h>
 #include "util.h"
 
 /*
@@ -24,6 +25,32 @@ Glib::ustring ink_ellipsize_text(Glib::ustring const &src, size_t maxlen)
         return src.substr(0, p1) + "…" + src.substr(p2);
     }
     return src;
+}
+
+/**
+ * Show widget, if the widget has a Gtk::Reveal parent, reveal instead.
+ *
+ * @param widget - The child widget to show.
+ */
+void reveal_widget(Gtk::Widget *widget, bool show)
+{
+    auto revealer = dynamic_cast<Gtk::Revealer *>(widget->get_parent());
+    if (revealer) {
+        revealer->set_reveal_child(show);
+    }
+    if (show) {
+        widget->show();
+    } else if (!revealer) {
+        widget->hide();
+    }
+}
+
+
+bool is_widget_effectively_visible(Gtk::Widget* widget) {
+    if (!widget) return false;
+
+    // TODO: what's the right way to determine if widget is visible on the screen?
+    return widget->get_child_visible();
 }
 
 /*

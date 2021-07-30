@@ -12,6 +12,8 @@
 
 #include "selected-style.h"
 
+#include <vector>
+
 #include <gtkmm/separatormenuitem.h>
 
 
@@ -20,9 +22,6 @@
 #include "gradient-chemistry.h"
 #include "message-context.h"
 #include "selection.h"
-#include "sp-cursor.h"
-
-#include "display/sp-canvas.h"
 
 #include "include/gtkmm_version.h"
 
@@ -34,25 +33,20 @@
 #include "object/sp-radial-gradient.h"
 #include "style.h"
 
-#include "ui/pixmaps/cursor-adj-a.xpm"
-#include "ui/pixmaps/cursor-adj-h.xpm"
-#include "ui/pixmaps/cursor-adj-l.xpm"
-#include "ui/pixmaps/cursor-adj-s.xpm"
-
 #include "svg/css-ostringstream.h"
 #include "svg/svg-color.h"
 
-#include "ui/dialog/dialog-manager.h"
+#include "ui/cursor-utils.h"
+#include "ui/dialog/dialog-container.h"
+#include "ui/dialog/dialog-base.h"
 #include "ui/dialog/fill-and-stroke.h"
-#include "ui/dialog/panel-dialog.h"
 #include "ui/tools/tool-base.h"
+#include "ui/widget/canvas.h"   // Forced redraws.
 #include "ui/widget/color-preview.h"
+#include "ui/widget/gradient-image.h"
 
 #include "widgets/ege-paint-def.h"
-#include "widgets/gradient-image.h"
-#include "widgets/spinbutton-events.h"
 #include "widgets/spw-utilities.h"
-#include "widgets/widget-sizes.h"
 
 using Inkscape::Util::unit_table;
 
@@ -122,7 +116,8 @@ static guint nui_drop_target_entries = G_N_ELEMENTS(ui_drop_target_entries);
 static Dialog::FillAndStroke *get_fill_and_stroke_panel(SPDesktop *desktop);
 
 SelectedStyle::SelectedStyle(bool /*layout*/)
-    : current_stroke_width(0)
+    : Gtk::Box(Gtk::ORIENTATION_HORIZONTAL)
+    , current_stroke_width(0)
     , _sw_unit(nullptr)
     , _desktop(nullptr)
     , _table()
@@ -136,8 +131,8 @@ SelectedStyle::SelectedStyle(bool /*layout*/)
     , _opacity_place()
     , _opacity_adjustment(Gtk::Adjustment::create(100, 0.0, 100, 1.0, 10.0))
     , _opacity_sb(0.02, 0)
-    , _fill()
-    , _stroke()
+    , _fill(Gtk::ORIENTATION_HORIZONTAL, 1)
+    , _stroke(Gtk::ORIENTATION_HORIZONTAL)
     , _stroke_width_place(this)
     , _stroke_width("")
     , _fill_empty_space("")
@@ -147,11 +142,11 @@ SelectedStyle::SelectedStyle(bool /*layout*/)
     _drop[0] = _drop[1] = nullptr;
     _dropEnabled[0] = _dropEnabled[1] = false;
 
-    _fill_label.set_halign(Gtk::ALIGN_START);
+    _fill_label.set_halign(Gtk::ALIGN_END);
     _fill_label.set_valign(Gtk::ALIGN_CENTER);
     _fill_label.set_margin_top(0);
     _fill_label.set_margin_bottom(0);
-    _stroke_label.set_halign(Gtk::ALIGN_START);
+    _stroke_label.set_halign(Gtk::ALIGN_END);
     _stroke_label.set_valign(Gtk::ALIGN_CENTER);
     _stroke_label.set_margin_top(0);
     _stroke_label.set_margin_bottom(0);
@@ -188,42 +183,45 @@ SelectedStyle::SelectedStyle(bool /*layout*/)
 
         _pattern[i].set_markup (_("Pattern"));
         _pattern[i].show_all();
-        __pattern[i] = (i == SS_FILL)? (_("Pattern fill")) : (_("Pattern stroke"));
+        __pattern[i] = (i == SS_FILL)? (_("Pattern (fill)")) : (_("Pattern (stroke)"));
 
         _hatch[i].set_markup(_("Hatch"));
         _hatch[i].show_all();
-        __hatch[i] = (i == SS_FILL) ? (_("Hatch fill")) : (_("Hatch stroke"));
+        __hatch[i] = (i == SS_FILL) ? (_("Hatch (fill)")) : (_("Hatch (stroke)"));
 
         _lgradient[i].set_markup (_("<b>L</b>"));
         _lgradient[i].show_all();
-        __lgradient[i] = (i == SS_FILL)? (_("Linear gradient fill")) : (_("Linear gradient stroke"));
+        __lgradient[i] = (i == SS_FILL)? (_("Linear gradient (fill)")) : (_("Linear gradient (stroke)"));
 
-        _gradient_preview_l[i] =  GTK_WIDGET(sp_gradient_image_new (nullptr));
+        _gradient_preview_l[i] = Gtk::manage(new GradientImage(nullptr));
+        _gradient_box_l[i].set_orientation(Gtk::ORIENTATION_HORIZONTAL);
         _gradient_box_l[i].pack_start(_lgradient[i]);
-        _gradient_box_l[i].pack_start(*(Glib::wrap(_gradient_preview_l[i])));
+        _gradient_box_l[i].pack_start(*_gradient_preview_l[i]);
         _gradient_box_l[i].show_all();
 
         _rgradient[i].set_markup (_("<b>R</b>"));
         _rgradient[i].show_all();
-        __rgradient[i] = (i == SS_FILL)? (_("Radial gradient fill")) : (_("Radial gradient stroke"));
+        __rgradient[i] = (i == SS_FILL)? (_("Radial gradient (fill)")) : (_("Radial gradient (stroke)"));
 
-        _gradient_preview_r[i] = GTK_WIDGET(sp_gradient_image_new (nullptr));
+        _gradient_preview_r[i] = Gtk::manage(new GradientImage(nullptr));
+        _gradient_box_r[i].set_orientation(Gtk::ORIENTATION_HORIZONTAL);
         _gradient_box_r[i].pack_start(_rgradient[i]);
-        _gradient_box_r[i].pack_start(*(Glib::wrap(_gradient_preview_r[i])));
+        _gradient_box_r[i].pack_start(*_gradient_preview_r[i]);
         _gradient_box_r[i].show_all();
 
 #ifdef WITH_MESH
         _mgradient[i].set_markup (_("<b>M</b>"));
         _mgradient[i].show_all();
-        __mgradient[i] = (i == SS_FILL)? (_("Mesh gradient fill")) : (_("Mesh gradient stroke"));
+        __mgradient[i] = (i == SS_FILL)? (_("Mesh gradient (fill)")) : (_("Mesh gradient (stroke)"));
 
-        _gradient_preview_m[i] = GTK_WIDGET(sp_gradient_image_new (nullptr));
+        _gradient_preview_m[i] = Gtk::manage(new GradientImage(nullptr));
+        _gradient_box_m[i].set_orientation(Gtk::ORIENTATION_HORIZONTAL);
         _gradient_box_m[i].pack_start(_mgradient[i]);
-        _gradient_box_m[i].pack_start(*(Glib::wrap(_gradient_preview_m[i])));
+        _gradient_box_m[i].pack_start(*_gradient_preview_m[i]);
         _gradient_box_m[i].show_all();
 #endif
 
-        _many[i].set_markup (_("Different"));
+        _many[i].set_markup (_("≠"));
         _many[i].show_all();
         __many[i] = (i == SS_FILL)? (_("Different fills")) : (_("Different strokes"));
 
@@ -232,7 +230,7 @@ SelectedStyle::SelectedStyle(bool /*layout*/)
         __unset[i] = (i == SS_FILL)? (_("Unset fill")) : (_("Unset stroke"));
 
         _color_preview[i] = new Inkscape::UI::Widget::ColorPreview (0);
-        __color[i] = (i == SS_FILL)? (_("Flat color fill")) : (_("Flat color stroke"));
+        __color[i] = (i == SS_FILL)? (_("Flat color (fill)")) : (_("Flat color (stroke)"));
 
         // TRANSLATORS: A means "Averaged"
         _averaged[i].set_markup (_("<b>a</b>"));
@@ -353,23 +351,35 @@ SelectedStyle::SelectedStyle(bool /*layout*/)
 
         _popup_sw.show_all();
     }
+    // fill row
+    _fill_flag_place.set_size_request(SELECTED_STYLE_FLAG_WIDTH , -1);
 
     _fill_place.add(_na[SS_FILL]);
     _fill_place.set_tooltip_text(__na[SS_FILL]);
-    _fill.pack_start(_fill_place, Gtk::PACK_SHRINK);
-    _fill.pack_start(_fill_empty_space, Gtk::PACK_SHRINK);
+    _fill.set_size_request(SELECTED_STYLE_PLACE_WIDTH, -1);
+    _fill.pack_start(_fill_place, Gtk::PACK_EXPAND_WIDGET);
+
+    _fill_empty_space.set_size_request(SELECTED_STYLE_STROKE_WIDTH);
+
+    // stroke row
+    _stroke_flag_place.set_size_request(SELECTED_STYLE_FLAG_WIDTH, -1);
 
     _stroke_place.add(_na[SS_STROKE]);
     _stroke_place.set_tooltip_text(__na[SS_STROKE]);
+    _stroke.set_size_request(SELECTED_STYLE_PLACE_WIDTH, -1);
+    _stroke.pack_start(_stroke_place, Gtk::PACK_EXPAND_WIDGET);
 
-    _stroke.pack_start(_stroke_place);
     _stroke_width_place.add(_stroke_width);
-    _stroke.pack_start(_stroke_width_place, Gtk::PACK_SHRINK);
+    _stroke_width_place.set_size_request(SELECTED_STYLE_STROKE_WIDTH);
+
+    // opacity selector
+    _opacity_place.add(_opacity_label);
 
     _opacity_sb.set_adjustment(_opacity_adjustment);
     _opacity_sb.set_size_request (SELECTED_STYLE_SB_WIDTH, -1);
     _opacity_sb.set_sensitive (false);
 
+    // arrange in table
     _table.attach(_fill_label, 0, 0, 1, 1);
     _table.attach(_stroke_label, 0, 1, 1, 1);
 
@@ -379,7 +389,8 @@ SelectedStyle::SelectedStyle(bool /*layout*/)
     _table.attach(_fill, 2, 0, 1, 1);
     _table.attach(_stroke, 2, 1, 1, 1);
 
-    _opacity_place.add(_opacity_label);
+    _table.attach(_fill_empty_space, 3, 0, 1, 1);
+    _table.attach(_stroke_width_place, 3, 1, 1, 1);
 
     _table.attach(_opacity_place, 4, 0, 1, 2);
     _table.attach(_opacity_sb, 5, 0, 1, 2);
@@ -413,9 +424,6 @@ SelectedStyle::SelectedStyle(bool /*layout*/)
     _stroke_width_place.signal_button_release_event().connect(sigc::mem_fun(*this, &SelectedStyle::on_sw_click));
     _opacity_sb.signal_populate_popup().connect(sigc::mem_fun(*this, &SelectedStyle::on_opacity_menu));
     _opacity_sb.signal_value_changed().connect(sigc::mem_fun(*this, &SelectedStyle::on_opacity_changed));
-    // Connect to key-press to ensure focus is consistent with other spin buttons when using the keys vs mouse-click
-    g_signal_connect (G_OBJECT (_opacity_sb.gobj()), "key-press-event", G_CALLBACK (spinbutton_keypress), _opacity_sb.gobj());
-    g_signal_connect (G_OBJECT (_opacity_sb.gobj()), "focus-in-event", G_CALLBACK (spinbutton_focus_in), _opacity_sb.gobj());
 }
 
 SelectedStyle::~SelectedStyle()
@@ -428,11 +436,11 @@ SelectedStyle::~SelectedStyle()
     delete subselection_changed_connection;
     _unit_mis.clear();
 
+    _fill_place.remove();
+    _stroke_place.remove();
+
     for (int i = SS_FILL; i <= SS_STROKE; i++) {
         delete _color_preview[i];
-        // FIXME: do we need this? the destroy methods are not exported
-        //sp_gradient_image_destroy(GTK_OBJECT(_gradient_preview_l[i]));
-        //sp_gradient_image_destroy(GTK_OBJECT(_gradient_preview_r[i]));
     }
 
     delete (DropTracker*)_drop[SS_FILL];
@@ -443,7 +451,6 @@ void
 SelectedStyle::setDesktop(SPDesktop *desktop)
 {
     _desktop = desktop;
-    g_object_set_data (G_OBJECT(_opacity_sb.gobj()), "dtw", _desktop->canvas);
 
     Inkscape::Selection *selection = desktop->getSelection();
 
@@ -956,20 +963,20 @@ SelectedStyle::update()
 
                     if (SP_IS_LINEARGRADIENT(server)) {
                         SPGradient *vector = SP_GRADIENT(server)->getVector();
-                        sp_gradient_image_set_gradient(SP_GRADIENT_IMAGE(_gradient_preview_l[i]), vector);
+                        _gradient_preview_l[i]->set_gradient(vector);
                         place->add(_gradient_box_l[i]);
                         place->set_tooltip_text(__lgradient[i]);
                         _mode[i] = SS_LGRADIENT;
                     } else if (SP_IS_RADIALGRADIENT(server)) {
                         SPGradient *vector = SP_GRADIENT(server)->getVector();
-                        sp_gradient_image_set_gradient(SP_GRADIENT_IMAGE(_gradient_preview_r[i]), vector);
+                        _gradient_preview_r[i]->set_gradient(vector);
                         place->add(_gradient_box_r[i]);
                         place->set_tooltip_text(__rgradient[i]);
                         _mode[i] = SS_RGRADIENT;
 #ifdef WITH_MESH
                     } else if (SP_IS_MESHGRADIENT(server)) {
                         SPGradient *array = SP_GRADIENT(server)->getArray();
-                        sp_gradient_image_set_gradient(SP_GRADIENT_IMAGE(_gradient_preview_m[i]), array);
+                        _gradient_preview_m[i]->set_gradient(array);
                         place->add(_gradient_box_m[i]);
                         place->set_tooltip_text(__mgradient[i]);
                         _mode[i] = SS_MGRADIENT;
@@ -1063,30 +1070,36 @@ SelectedStyle::update()
     case QUERY_STYLE_MULTIPLE_AVERAGED:
     case QUERY_STYLE_MULTIPLE_SAME:
     {
-        double w;
-        if (_sw_unit) {
-            w = Inkscape::Util::Quantity::convert(query.stroke_width.computed, "px", _sw_unit);
-        } else {
-            w = query.stroke_width.computed;
-        }
-        current_stroke_width = w;
-
-        {
-            gchar *str = g_strdup_printf(" %#.3g", w);
-            if (str[strlen(str) - 1] == ',' || str[strlen(str) - 1] == '.') {
-                str[strlen(str)-1] = '\0';
-            }
-            _stroke_width.set_markup(str);
-            g_free (str);
-        }
-        {
-            gchar *str = g_strdup_printf(_("Stroke width: %.5g%s%s"),
-                                         w,
-                                         _sw_unit? _sw_unit->abbr.c_str() : "px",
-                                         (result_sw == QUERY_STYLE_MULTIPLE_AVERAGED)?
-                                         _(" (averaged)") : "");
+        if (query.stroke_extensions.hairline) {
+            _stroke_width.set_markup(_("Hairline"));
+            auto str = Glib::ustring::compose(_("Stroke width: %1"), _("Hairline"));
             _stroke_width_place.set_tooltip_text(str);
-            g_free (str);
+        } else {
+            double w;
+            if (_sw_unit) {
+                w = Inkscape::Util::Quantity::convert(query.stroke_width.computed, "px", _sw_unit);
+            } else {
+                w = query.stroke_width.computed;
+            }
+            current_stroke_width = w;
+
+            {
+                gchar *str = g_strdup_printf(" %#.3g", w);
+                if (str[strlen(str) - 1] == ',' || str[strlen(str) - 1] == '.') {
+                    str[strlen(str)-1] = '\0';
+                }
+                _stroke_width.set_markup(str);
+                g_free (str);
+            }
+            {
+                gchar *str = g_strdup_printf(_("Stroke width: %.5g%s%s"),
+                                             w,
+                                             _sw_unit? _sw_unit->abbr.c_str() : "px",
+                                             (result_sw == QUERY_STYLE_MULTIPLE_AVERAGED)?
+                                             _(" (averaged)") : "");
+                _stroke_width_place.set_tooltip_text(str);
+                g_free (str);
+            }
         }
         break;
     }
@@ -1103,7 +1116,7 @@ void SelectedStyle::opacity_1() {_opacity_sb.set_value(100);}
 
 void SelectedStyle::on_opacity_menu (Gtk::Menu *menu) {
 
-    Glib::ListHandle<Gtk::Widget *> children = menu->get_children();
+    std::vector<Gtk::Widget *> children = menu->get_children();
     for (auto iter : children) {
         menu->remove(*iter);
     }
@@ -1152,6 +1165,7 @@ void SelectedStyle::on_opacity_changed ()
     Inkscape::CSSOStringStream os;
     os << CLAMP ((_opacity_adjustment->get_value() / 100), 0.0, 1.0);
     sp_repr_css_set_property (css, "opacity", os.str().c_str());
+
     // FIXME: workaround for GTK breakage: display interruptibility sometimes results in GTK
     // sending multiple value-changed events. As if when Inkscape interrupts redraw for main loop
     // iterations, GTK discovers that this callback hasn't finished yet, and for some weird reason
@@ -1159,28 +1173,21 @@ void SelectedStyle::on_opacity_changed ()
     // me. As a result, scrolling the spinbutton once results in runaway change until it hits 1.0
     // or 0.0. (And no, this is not a race with ::update, I checked that.)
     // Sigh. So we disable interruptibility while we're setting the new value.
-    _desktop->getCanvas()->forceFullRedrawAfterInterruptions(0);
+    _desktop->getCanvas()->forced_redraws_start(0);
     sp_desktop_set_style (_desktop, css);
     sp_repr_css_attr_unref (css);
     DocumentUndo::maybeDone(_desktop->getDocument(), "fillstroke:opacity", SP_VERB_DIALOG_FILL_STROKE,
                             _("Change opacity"));
     // resume interruptibility
-    _desktop->getCanvas()->endForcedFullRedraws();
-    // spinbutton_defocus(GTK_WIDGET(_opacity_sb.gobj()));
+    _desktop->getCanvas()->forced_redraws_stop();
     _opacity_blocked = false;
 }
 
 /* =============================================  RotateableSwatch  */
 
-RotateableSwatch::RotateableSwatch(SelectedStyle *parent, guint mode) :
-    fillstroke(mode),
-    parent(parent),
-    startcolor(0),
-    startcolor_set(false),
-    undokey("ssrot1"),
-    cr(nullptr),
-    cr_set(false)
-
+RotateableSwatch::RotateableSwatch(SelectedStyle *parent, guint mode)
+    : fillstroke(mode)
+    , parent(parent)
 {
 }
 
@@ -1260,27 +1267,17 @@ RotateableSwatch::do_motion(double by, guint modifier) {
         return;
 
     if (!scrolling && !cr_set) {
-        GtkWidget *w = GTK_WIDGET(gobj());
-        GdkPixbuf *pixbuf = nullptr;
 
-        if (modifier == 2) { // saturation
-            pixbuf = gdk_pixbuf_new_from_xpm_data((const gchar **)cursor_adj_s_xpm);
-        } else if (modifier == 1) { // lightness
-            pixbuf = gdk_pixbuf_new_from_xpm_data((const gchar **)cursor_adj_l_xpm);
-        } else if (modifier == 3) { // alpha
-            pixbuf = gdk_pixbuf_new_from_xpm_data((const gchar **)cursor_adj_a_xpm);
-        } else { // hue
-            pixbuf = gdk_pixbuf_new_from_xpm_data((const gchar **)cursor_adj_h_xpm);
+        std::string cursor_filename = "adjust_hue.svg";
+        if (modifier == 2) {
+            cursor_filename = "adjust_saturation.svg";
+        } else if (modifier == 1) {
+            cursor_filename = "adjust_lightness.svg";
+        } else if (modifier == 3) {
+            cursor_filename = "adjust_alpha.svg";
         }
 
-        if (pixbuf != nullptr) {
-            cr = gdk_cursor_new_from_pixbuf(gdk_display_get_default(), pixbuf, 16, 16);
-            g_object_unref(pixbuf);
-            gdk_window_set_cursor(gtk_widget_get_window(w), cr);
-            g_object_unref(cr);
-            cr = nullptr;
-            cr_set = true;
-        }
+        load_svg_cursor(get_display(), get_window(), cursor_filename);
     }
 
     guint32 cc;
@@ -1338,12 +1335,7 @@ RotateableSwatch::do_release(double by, guint modifier) {
     color_adjust(hsla, by, startcolor, modifier);
 
     if (cr_set) {
-        GtkWidget *w = GTK_WIDGET(gobj());
-        gdk_window_set_cursor(gtk_widget_get_window(w), nullptr);
-        if (cr) {
-           g_object_unref(cr);
-           cr = nullptr;
-        }
+        get_window()->set_cursor(); // Use parent window cursor.
         cr_set = false;
     }
 
@@ -1460,16 +1452,12 @@ RotateableStrokeWidth::do_scroll(double by, guint modifier) {
 
 Dialog::FillAndStroke *get_fill_and_stroke_panel(SPDesktop *desktop)
 {
-    if (Dialog::PanelDialogBase *panel_dialog =
-        dynamic_cast<Dialog::PanelDialogBase *>(desktop->_dlg_mgr->getDialog("FillAndStroke"))) {
-        try {
-            Dialog::FillAndStroke &fill_and_stroke =
-                dynamic_cast<Dialog::FillAndStroke &>(panel_dialog->getPanel());
-            return &fill_and_stroke;
-        } catch (std::exception &e) { }
+    Dialog::DialogBase *dialog = desktop->getContainer()->get_dialog("FillStroke");
+    if (!dialog) {
+        desktop->getContainer()->new_dialog("FillStroke");
+        return dynamic_cast<Dialog::FillAndStroke *>(desktop->getContainer()->get_dialog("FillStroke"));
     }
-
-    return nullptr;
+    return dynamic_cast<Dialog::FillAndStroke *>(dialog);
 }
 
 } // namespace Widget

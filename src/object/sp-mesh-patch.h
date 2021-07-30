@@ -16,9 +16,6 @@
 #include <glibmm/ustring.h>
 #include "sp-object.h"
 
-#define SP_MESHPATCH(obj) (dynamic_cast<SPMeshpatch*>((SPObject*)obj))
-#define SP_IS_MESHPATCH(obj) (dynamic_cast<const SPMeshpatch*>((SPObject*)obj) != NULL)
-
 /** Gradient Meshpatch. */
 class SPMeshpatch : public SPObject {
 public:
@@ -33,10 +30,13 @@ public:
 
 protected:
     void build(SPDocument* doc, Inkscape::XML::Node* repr) override;
-    void set(SPAttributeEnum key, const char* value) override;
+    void set(SPAttr key, const char* value) override;
     void modified(unsigned int flags) override;
     Inkscape::XML::Node* write(Inkscape::XML::Document* doc, Inkscape::XML::Node* repr, unsigned int flags) override;
 };
+
+MAKE_SP_OBJECT_DOWNCAST_FUNCTIONS(SP_MESHPATCH, SPMeshpatch)
+MAKE_SP_OBJECT_TYPECHECK_FUNCTIONS(SP_IS_MESHPATCH, SPMeshpatch)
 
 #endif /* !SEEN_SP_MESHPATCH_H */
 

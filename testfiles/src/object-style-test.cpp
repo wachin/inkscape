@@ -45,14 +45,13 @@ rect { fill: #808080; opacity:0.5; }\
   <rect id='eight' class='fosize' style='stroke-width: 50%;'/>\
 </g>\
 </svg>";
-        doc = SPDocument::createNewDocFromMem(docString, static_cast<int>(strlen(docString)), false);
+        doc.reset(SPDocument::createNewDocFromMem(docString, static_cast<int>(strlen(docString)), false));
+        doc->ensureUpToDate();
     }
 
-    ~ObjectTest() override {
-        doc->doUnref();
-    }
+    ~ObjectTest() override = default;
 
-    SPDocument *doc;
+    std::unique_ptr<SPDocument> doc;
 };
 
 /*
@@ -114,34 +113,34 @@ TEST_F(ObjectTest, StyleSource) {
     SPRect *one = dynamic_cast<SPRect *>(doc->getObjectById("one"));
     ASSERT_TRUE(one != nullptr);
 
-    EXPECT_EQ(one->style->fill.style_src, SP_STYLE_SRC_STYLE_PROP);
-    EXPECT_EQ(one->style->stroke.style_src, SP_STYLE_SRC_STYLE_PROP);
-    EXPECT_EQ(one->style->opacity.style_src, SP_STYLE_SRC_STYLE_SHEET);
-    EXPECT_EQ(one->style->stroke_width.style_src, SP_STYLE_SRC_STYLE_PROP);
+    EXPECT_EQ(one->style->fill.style_src, SPStyleSrc::STYLE_PROP);
+    EXPECT_EQ(one->style->stroke.style_src, SPStyleSrc::STYLE_PROP);
+    EXPECT_EQ(one->style->opacity.style_src, SPStyleSrc::STYLE_SHEET);
+    EXPECT_EQ(one->style->stroke_width.style_src, SPStyleSrc::STYLE_PROP);
 
     SPRect *two = dynamic_cast<SPRect *>(doc->getObjectById("two"));
     ASSERT_TRUE(two != nullptr);
 
-    EXPECT_EQ(two->style->fill.style_src, SP_STYLE_SRC_STYLE_SHEET);
-    EXPECT_EQ(two->style->stroke.style_src, SP_STYLE_SRC_STYLE_PROP);
-    EXPECT_EQ(two->style->opacity.style_src, SP_STYLE_SRC_STYLE_SHEET);
-    EXPECT_EQ(two->style->stroke_width.style_src, SP_STYLE_SRC_STYLE_PROP);
+    EXPECT_EQ(two->style->fill.style_src, SPStyleSrc::STYLE_SHEET);
+    EXPECT_EQ(two->style->stroke.style_src, SPStyleSrc::STYLE_PROP);
+    EXPECT_EQ(two->style->opacity.style_src, SPStyleSrc::STYLE_SHEET);
+    EXPECT_EQ(two->style->stroke_width.style_src, SPStyleSrc::STYLE_PROP);
 
     SPRect *three = dynamic_cast<SPRect *>(doc->getObjectById("three"));
     ASSERT_TRUE(three != nullptr);
 
-    EXPECT_EQ(three->style->fill.style_src, SP_STYLE_SRC_STYLE_PROP);
-    EXPECT_EQ(three->style->stroke.style_src, SP_STYLE_SRC_STYLE_PROP);
-    EXPECT_EQ(three->style->opacity.style_src, SP_STYLE_SRC_STYLE_SHEET);
-    EXPECT_EQ(three->style->stroke_width.style_src, SP_STYLE_SRC_STYLE_PROP);
+    EXPECT_EQ(three->style->fill.style_src, SPStyleSrc::STYLE_PROP);
+    EXPECT_EQ(three->style->stroke.style_src, SPStyleSrc::STYLE_PROP);
+    EXPECT_EQ(three->style->opacity.style_src, SPStyleSrc::STYLE_SHEET);
+    EXPECT_EQ(three->style->stroke_width.style_src, SPStyleSrc::STYLE_PROP);
 
     SPRect *four = dynamic_cast<SPRect *>(doc->getObjectById("four"));
     ASSERT_TRUE(four != nullptr);
 
-    EXPECT_EQ(four->style->fill.style_src, SP_STYLE_SRC_STYLE_SHEET);
-    EXPECT_EQ(four->style->stroke.style_src, SP_STYLE_SRC_STYLE_PROP);
-    EXPECT_EQ(four->style->opacity.style_src, SP_STYLE_SRC_STYLE_SHEET);
-    EXPECT_EQ(four->style->stroke_width.style_src, SP_STYLE_SRC_STYLE_PROP);
+    EXPECT_EQ(four->style->fill.style_src, SPStyleSrc::STYLE_SHEET);
+    EXPECT_EQ(four->style->stroke.style_src, SPStyleSrc::STYLE_PROP);
+    EXPECT_EQ(four->style->opacity.style_src, SPStyleSrc::STYLE_SHEET);
+    EXPECT_EQ(four->style->stroke_width.style_src, SPStyleSrc::STYLE_PROP);
 }
 
 /*
@@ -193,5 +192,8 @@ TEST_F(ObjectTest, StyleFontSizes) {
     ASSERT_TRUE(eight != nullptr);
 
     EXPECT_EQ(eight->style->stroke_width.get_value(), Glib::ustring("50%"));
-    EXPECT_EQ(eight->style->stroke_width.computed, 1); // Is this right?
+
+    // stroke-width in percent is relative to viewport size, which is 300x150 in this example.
+    // 50% is 118.59 == ((300^2 + 150^2) / 2)^0.5 * 0.5
+    EXPECT_FLOAT_EQ(eight->style->stroke_width.computed, 118.58541);
 }

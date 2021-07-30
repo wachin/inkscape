@@ -83,6 +83,7 @@ Bag example:
 </dc:subject>
 */
 
+// clang-format off
 struct rdf_double_t rdf_license_empty [] = {
     { nullptr, nullptr }
 };
@@ -222,6 +223,7 @@ struct rdf_license_t rdf_licenses [] = {
 
     { nullptr, nullptr, rdf_license_empty, }
 };
+// clang-format on
 
 #define XML_TAG_NAME_SVG      "svg:svg"
 #define XML_TAG_NAME_METADATA "svg:metadata"
@@ -235,6 +237,7 @@ struct rdf_license_t rdf_licenses [] = {
 // Remember when using the "title" and "tip" elements to pass them through
 // the localization functions when you use them!
 struct rdf_work_entity_t rdf_work_entities [] = {
+    // clang-format off
     { "title", N_("Title:"), "dc:title", RDF_CONTENT,
       N_("A name given to the resource"), RDF_FORMAT_LINE, RDF_EDIT_GENERIC,
     },
@@ -302,6 +305,7 @@ struct rdf_work_entity_t rdf_work_entities [] = {
     { nullptr, nullptr, nullptr, RDF_CONTENT,
       nullptr, RDF_FORMAT_LINE, RDF_EDIT_HARDCODED,
     }
+    // clang-format on
 };
 
 
@@ -539,7 +543,7 @@ const gchar *RDFImpl::getReprText( Inkscape::XML::Node const * repr, struct rdf_
                     const gchar * str = temp->firstChild()->content();
                     if (bag) {
                         holder = bag;
-                        bag = g_strconcat(holder, ", ", str, NULL);
+                        bag = g_strconcat(holder, ", ", str, nullptr);
                         g_free(holder);
                     }
                     else {
@@ -742,7 +746,7 @@ Inkscape::XML::Node *RDFImpl::ensureRdfRootRepr( SPDocument * doc )
             if ( !svg ) {
                 g_critical("Unable to locate svg element.");
             } else {
-                Inkscape::XML::Node * parent = sp_repr_lookup_name( svg, XML_TAG_NAME_METADATA );
+                Inkscape::XML::Node * parent = sp_repr_lookup_name( svg, XML_TAG_NAME_METADATA, 1);
                 if ( parent == nullptr ) {
                     parent = doc->getReprDoc()->createElement( XML_TAG_NAME_METADATA );
                     if ( !parent ) {
@@ -922,9 +926,15 @@ unsigned int rdf_set_work_entity(SPDocument * doc, struct rdf_work_entity_t * en
 unsigned int RDFImpl::setWorkEntity(SPDocument * doc, struct rdf_work_entity_t & entity, const gchar * text)
 {
     int result = 0;
-    if ( !text ) {
-        // FIXME: on a "NULL" text, delete the entity.  For now, blank it.
-        text = "";
+    if (!text || !text[0]) {
+        auto *item = const_cast<Inkscape::XML::Node *>(getWorkRepr(doc, entity.tag));
+        if (item) {
+            sp_repr_unparent(item);
+            if (!strcmp(entity.name, "title")) {
+                doc->getRoot()->setTitle(nullptr);
+            }
+        }
+        return true;
     }
 
     /*
@@ -1166,16 +1176,6 @@ void RDFImpl::setLicense(SPDocument * doc, struct rdf_license_t const * license)
     }
 }
 
-struct rdf_entity_default_t {
-    gchar const * name;
-    gchar const * text;
-};
-struct rdf_entity_default_t rdf_defaults[] = {
-    { "format",      "image/svg+xml", },
-    { "type",        "http://purl.org/dc/dcmitype/StillImage", },
-    { nullptr,          nullptr, }
-};
-
 // Public API:
 void rdf_set_defaults( SPDocument * doc )
 {
@@ -1187,32 +1187,7 @@ void RDFImpl::setDefaults( SPDocument * doc )
 {
     g_assert( doc != nullptr );
 
-    // Create metadata node if it doesn't already exist
-    if (!sp_item_group_get_child_by_name( doc->getRoot(), nullptr,
-                                          XML_TAG_NAME_METADATA)) {
-        if ( !doc->getReprDoc()) {
-            g_critical("XML doc is null.");
-        } else {
-            // create repr
-            Inkscape::XML::Node * rnew = doc->getReprDoc()->createElement(XML_TAG_NAME_METADATA);
-
-            // insert into the document
-            doc->getReprRoot()->addChild(rnew, nullptr);
-
-            // clean up
-            Inkscape::GC::release(rnew);
-        }
-    }
-
-    // install defaults
-    for ( struct rdf_entity_default_t * rdf_default = rdf_defaults; rdf_default->name; rdf_default++) {
-        struct rdf_work_entity_t * entity = rdf_find_entity( rdf_default->name );
-        g_assert( entity != nullptr );
-
-        if ( getWorkEntity( doc, *entity ) == nullptr ) {
-            setWorkEntity( doc, *entity, rdf_default->text );
-        }
-    }
+    // Used to add hard coded defaults here
 }
 
 /*

@@ -15,9 +15,6 @@
 
 #include "sp-object.h"
 
-#define SP_MISSING_GLYPH(obj) (dynamic_cast<SPMissingGlyph*>((SPObject*)obj))
-#define SP_IS_MISSING_GLYPH(obj) (dynamic_cast<const SPMissingGlyph*>((SPObject*)obj) != NULL)
-
 class SPMissingGlyph : public SPObject {
 public:
 	SPMissingGlyph();
@@ -28,7 +25,7 @@ public:
 protected:
     void build(SPDocument* doc, Inkscape::XML::Node* repr) override;
 	void release() override;
-	void set(SPAttributeEnum key, char const* value) override;
+	void set(SPAttr key, char const* value) override;
 	Inkscape::XML::Node* write(Inkscape::XML::Document* doc, Inkscape::XML::Node* repr, unsigned int flags) override;
 
 private:
@@ -37,5 +34,7 @@ private:
     double vert_origin_y;
     double vert_adv_y;
 };
+
+MAKE_SP_OBJECT_TYPECHECK_FUNCTIONS(SP_IS_MISSING_GLYPH, SPMissingGlyph)
 
 #endif //#ifndef __SP_MISSING_GLYPH_H__

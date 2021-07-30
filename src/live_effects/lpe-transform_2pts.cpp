@@ -67,14 +67,14 @@ LPETransform2Pts::LPETransform2Pts(LivePathEffectObject *lpeobject) :
     registerParameter(&lock_length);
     registerParameter(&lock_angle);
 
-    first_knot.param_make_integer(true);
+    first_knot.param_make_integer();
     first_knot.param_set_undo(false);
-    last_knot.param_make_integer(true);
+    last_knot.param_make_integer();
     last_knot.param_set_undo(false);
     helper_size.param_set_range(0, 999);
     helper_size.param_set_increments(1, 1);
     helper_size.param_set_digits(0);
-    offset.param_set_range(-999999.0, 999999.0);
+    offset.param_set_range(std::numeric_limits<double>::lowest(), std::numeric_limits<double>::max());
     offset.param_set_increments(1, 1);
     offset.param_set_digits(2);
     stretch.param_set_range(0, 999.0);
@@ -96,7 +96,7 @@ LPETransform2Pts::doOnApply(SPLPEItem const* lpeitem)
     SPLPEItem * splpeitem = const_cast<SPLPEItem *>(lpeitem);
     SPPath *sp_path = dynamic_cast<SPPath *>(splpeitem);
     if (sp_path) {
-        pathvector = sp_path->getCurveForEdit(true)->get_pathvector();
+        pathvector = sp_path->curveForEdit()->get_pathvector();
     }
     if(!pathvector.empty()) {
         point_a = pathvector.initialPoint();
@@ -119,8 +119,10 @@ LPETransform2Pts::doOnApply(SPLPEItem const* lpeitem)
 
 void LPETransform2Pts::transform_multiply(Geom::Affine const &postmul, bool /*set*/)
 {
-    start.param_transform_multiply(postmul, false);
-    end.param_transform_multiply(postmul, false);
+    if (sp_lpe_item && sp_lpe_item->pathEffectsEnabled() && sp_lpe_item->optimizeTransforms()) {
+        start.param_transform_multiply(postmul, false);
+        end.param_transform_multiply(postmul, false);
+    }
 }
 
 void
@@ -134,7 +136,7 @@ LPETransform2Pts::doBeforeEffect (SPLPEItem const* lpeitem)
     SPLPEItem * splpeitem = const_cast<SPLPEItem *>(lpeitem);
     SPPath *sp_path = dynamic_cast<SPPath *>(splpeitem);
     if (sp_path) {
-        pathvector = sp_path->getCurveForEdit(true)->get_pathvector();
+        pathvector = sp_path->curveForEdit()->get_pathvector();
     }
     if(from_original_width_toggler != from_original_width) {
         from_original_width_toggler = from_original_width;
@@ -190,7 +192,7 @@ LPETransform2Pts::updateIndex()
     SPLPEItem * splpeitem = const_cast<SPLPEItem *>(sp_lpe_item);
     SPPath *sp_path = dynamic_cast<SPPath *>(splpeitem);
     if (sp_path) {
-        pathvector = sp_path->getCurveForEdit(true)->get_pathvector();
+        pathvector = sp_path->curveForEdit()->get_pathvector();
     }
     if(pathvector.empty()) {
         return;
@@ -283,17 +285,17 @@ Gtk::Widget *LPETransform2Pts::newWidget()
 {
     // use manage here, because after deletion of Effect object, others might
     // still be pointing to this widget.
-    Gtk::VBox *vbox = Gtk::manage(new Gtk::VBox(Effect::newWidget()));
+    Gtk::Box *vbox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL));
 
     vbox->set_border_width(5);
     vbox->set_homogeneous(false);
     vbox->set_spacing(6);
 
     std::vector<Parameter *>::iterator it = param_vector.begin();
-    Gtk::HBox * button1 = Gtk::manage(new Gtk::HBox(true,0));
-    Gtk::HBox * button2 = Gtk::manage(new Gtk::HBox(true,0));
-    Gtk::HBox * button3 = Gtk::manage(new Gtk::HBox(true,0));
-    Gtk::HBox * button4 = Gtk::manage(new Gtk::HBox(true,0));
+    Gtk::Box * button1 = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL,0));
+    Gtk::Box * button2 = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL,0));
+    Gtk::Box * button3 = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL,0));
+    Gtk::Box * button4 = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL,0));
     while (it != param_vector.end()) {
         if ((*it)->widget_is_visible) {
             Parameter *param = *it;
@@ -304,7 +306,7 @@ Gtk::Widget *LPETransform2Pts::newWidget()
                 registered_widget->signal_value_changed().connect(sigc::mem_fun(*this, &LPETransform2Pts::updateIndex));
                 widg = registered_widget;
                 if (widg) {
-                    Gtk::HBox *hbox_scalar = dynamic_cast<Gtk::HBox *>(widg);
+                    Gtk::Box *hbox_scalar = dynamic_cast<Gtk::Box *>(widg);
                     std::vector<Gtk::Widget *> child_list = hbox_scalar->get_children();
                     Gtk::Entry *entry_widget = dynamic_cast<Gtk::Entry *>(child_list[1]);
                     entry_widget->set_width_chars(3);

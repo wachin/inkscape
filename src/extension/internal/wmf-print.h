@@ -15,9 +15,6 @@
 #include <3rdparty/libuemf/uwmf.h>
 #include "extension/internal/metafile-print.h"
 
-#include "splivarot.h"             // pieces for union on shapes
-#include "display/canvas-bpath.h"  // for SPWindRule
-
 namespace Inkscape {
 namespace Extension {
 namespace Internal {
@@ -57,7 +54,6 @@ public:
                            unsigned int rs,
                            Geom::Affine const &transform,
                            SPStyle const *style) override;
-    unsigned int comment(Inkscape::Extension::Print *module, const char * comment) override;
     unsigned int text(Inkscape::Extension::Print *module, char const *text,
                               Geom::Point const &p, SPStyle const *style) override;
 

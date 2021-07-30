@@ -85,7 +85,7 @@ Gtk::Widget *LPEBSpline::newWidget()
 {
     // use manage here, because after deletion of Effect object, others might
     // still be pointing to this widget.
-    Gtk::VBox *vbox = Gtk::manage(new Gtk::VBox(Effect::newWidget()));
+    Gtk::Box *vbox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL));
     vbox->set_homogeneous(false);
     vbox->set_border_width(5);
     std::vector<Parameter *>::iterator it = param_vector.begin();
@@ -94,7 +94,7 @@ Gtk::Widget *LPEBSpline::newWidget()
             Parameter *param = *it;
             Gtk::Widget *widg = dynamic_cast<Gtk::Widget *>(param->param_newWidget());
             if (param->param_key == "weight") {
-                Gtk::HBox * buttons = Gtk::manage(new Gtk::HBox(true,0));
+                Gtk::Box * buttons = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL,0));
                 Gtk::Button *default_weight =
                     Gtk::manage(new Gtk::Button(Glib::ustring(_("Default weight"))));
                 default_weight->signal_clicked()
@@ -114,7 +114,7 @@ Gtk::Widget *LPEBSpline::newWidget()
                 .connect(sigc::mem_fun(*this, &LPEBSpline::toWeight));
                 widg = dynamic_cast<Gtk::Widget *>(widg_registered);
                 if (widg) {
-                    Gtk::HBox * hbox_weight_steps = dynamic_cast<Gtk::HBox *>(widg);
+                    Gtk::Box * hbox_weight_steps = dynamic_cast<Gtk::Box *>(widg);
                     std::vector< Gtk::Widget* > childList = hbox_weight_steps->get_children();
                     Gtk::Entry* entry_widget = dynamic_cast<Gtk::Entry *>(childList[1]);
                     entry_widget->set_width_chars(9);
@@ -167,11 +167,9 @@ void LPEBSpline::changeWeight(double weight_ammount)
 {
     SPPath *path = dynamic_cast<SPPath *>(sp_lpe_item);
     if(path) {
-        SPCurve *curve = path->getCurveForEdit();
-        doBSplineFromWidget(curve, weight_ammount/100.0);
-        gchar *str = sp_svg_write_path(curve->get_pathvector());
-        path->setAttribute("inkscape:original-d", str);
-        g_free(str);
+        auto curve = SPCurve::copy(path->curveForEdit());
+        doBSplineFromWidget(curve.get(), weight_ammount / 100.0);
+        path->setAttribute("inkscape:original-d", sp_svg_write_path(curve->get_pathvector()));
     }
 }
 
@@ -198,7 +196,7 @@ void sp_bspline_do_effect(SPCurve *curve, double helper_size, Geom::PathVector &
         Geom::Path::const_iterator curve_it1 = path_it.begin();
         Geom::Path::const_iterator curve_it2 = ++(path_it.begin());
         Geom::Path::const_iterator curve_endit = path_it.end_default();
-        SPCurve *curve_n = new SPCurve();
+        auto curve_n = std::make_unique<SPCurve>();
         Geom::Point previousNode(0, 0);
         Geom::Point node(0, 0);
         Geom::Point point_at1(0, 0);
@@ -222,7 +220,7 @@ void sp_bspline_do_effect(SPCurve *curve, double helper_size, Geom::PathVector &
           }
         }
         while (curve_it1 != curve_endit) {
-            SPCurve *in = new SPCurve();
+            auto in = std::make_unique<SPCurve>();
             in->moveto(curve_it1->initialPoint());
             in->lineto(curve_it1->finalPoint());
             cubic = dynamic_cast<Geom::CubicBezier const *>(&*curve_it1);
@@ -242,10 +240,8 @@ void sp_bspline_do_effect(SPCurve *curve, double helper_size, Geom::PathVector &
                 point_at1 = in->first_segment()->initialPoint();
                 point_at2 = in->first_segment()->finalPoint();
             }
-            in->reset();
-            delete in;
             if ( curve_it2 != curve_endit ) {
-                SPCurve *out = new SPCurve();
+                auto out = std::make_unique<SPCurve>();
                 out->moveto(curve_it2->initialPoint());
                 out->lineto(curve_it2->finalPoint());
                 cubic = dynamic_cast<Geom::CubicBezier const *>(&*curve_it2);
@@ -259,15 +255,13 @@ void sp_bspline_do_effect(SPCurve *curve, double helper_size, Geom::PathVector &
                 } else {
                     next_point_at1 = out->first_segment()->initialPoint();
                 }
-                out->reset();
-                delete out;
             }
             if (path_it.closed() && curve_it2 == curve_endit) {
-                SPCurve *start = new SPCurve();
+                auto start = std::make_unique<SPCurve>();
                 start->moveto(path_it.begin()->initialPoint());
                 start->lineto(path_it.begin()->finalPoint());
                 Geom::D2<Geom::SBasis> sbasis_start = start->first_segment()->toSBasis();
-                SPCurve *line_helper = new SPCurve();
+                auto line_helper = std::make_unique<SPCurve>();
                 cubic = dynamic_cast<Geom::CubicBezier const *>(&*path_it.begin());
                 if (cubic) {
                     line_helper->moveto(sbasis_start.valueAt(
@@ -275,10 +269,8 @@ void sp_bspline_do_effect(SPCurve *curve, double helper_size, Geom::PathVector &
                 } else {
                     line_helper->moveto(start->first_segment()->initialPoint());
                 }
-                start->reset();
-                delete start;
 
-                SPCurve *end = new SPCurve();
+                auto end = std::make_unique<SPCurve>();
                 end->moveto(curve_it1->initialPoint());
                 end->lineto(curve_it1->finalPoint());
                 Geom::D2<Geom::SBasis> sbasis_end = end->first_segment()->toSBasis();
@@ -289,11 +281,7 @@ void sp_bspline_do_effect(SPCurve *curve, double helper_size, Geom::PathVector &
                 } else {
                     line_helper->lineto(end->first_segment()->finalPoint());
                 }
-                end->reset();
-                delete end;
                 sbasis_helper = line_helper->first_segment()->toSBasis();
-                line_helper->reset();
-                delete line_helper;
                 node = sbasis_helper.valueAt(0.5);
                 curve_n->curveto(point_at1, point_at2, node);
                 curve_n->move_endpoints(node, node);
@@ -301,12 +289,10 @@ void sp_bspline_do_effect(SPCurve *curve, double helper_size, Geom::PathVector &
                 curve_n->curveto(point_at1, point_at2, curve_it1->finalPoint());
                 curve_n->move_endpoints(path_it.begin()->initialPoint(), curve_it1->finalPoint());
             } else {
-                SPCurve *line_helper = new SPCurve();
+                auto line_helper = std::make_unique<SPCurve>();
                 line_helper->moveto(point_at2);
                 line_helper->lineto(next_point_at1);
                 sbasis_helper = line_helper->first_segment()->toSBasis();
-                line_helper->reset();
-                delete line_helper;
                 previousNode = node;
                 node = sbasis_helper.valueAt(0.5);
                 Geom::CubicBezier const *cubic2 = dynamic_cast<Geom::CubicBezier const *>(&*curve_it1);
@@ -324,9 +310,7 @@ void sp_bspline_do_effect(SPCurve *curve, double helper_size, Geom::PathVector &
         if (path_it.closed()) {
             curve_n->closepath_current();
         }
-        curve->append(curve_n, false);
-        curve_n->reset();
-        delete curve_n;
+        curve->append(*curve_n, false);
     }
     if(helper_size > 0.0) {
         Geom::PathVector const pathv = curve->get_pathvector();
@@ -365,7 +349,7 @@ void LPEBSpline::doBSplineFromWidget(SPCurve *curve, double weight_ammount)
         Geom::Path::const_iterator curve_it2 = ++(path_it.begin());
         Geom::Path::const_iterator curve_endit = path_it.end_default();
 
-        SPCurve *curve_n = new SPCurve();
+        auto curve_n = std::make_unique<SPCurve>();
         Geom::Point point_at0(0, 0);
         Geom::Point point_at1(0, 0);
         Geom::Point point_at2(0, 0);
@@ -387,7 +371,7 @@ void LPEBSpline::doBSplineFromWidget(SPCurve *curve, double weight_ammount)
           }
         }
         while (curve_it1 != curve_endit) {
-            SPCurve *in = new SPCurve();
+            auto in = std::make_unique<SPCurve>();
             in->moveto(curve_it1->initialPoint());
             in->lineto(curve_it1->finalPoint());
             cubic = dynamic_cast<Geom::CubicBezier const *>(&*curve_it1);
@@ -451,8 +435,6 @@ void LPEBSpline::doBSplineFromWidget(SPCurve *curve, double weight_ammount)
                     point_at2 = in->first_segment()->finalPoint();
                 }
             }
-            in->reset();
-            delete in;
             curve_n->curveto(point_at1, point_at2, point_at3);
             ++curve_it1;
             ++curve_it2;
@@ -466,9 +448,7 @@ void LPEBSpline::doBSplineFromWidget(SPCurve *curve, double weight_ammount)
         if (path_it.closed()) {
             curve_n->closepath_current();
         }
-        curve->append(curve_n, false);
-        curve_n->reset();
-        delete curve_n;
+        curve->append(*curve_n, false);
     }
 }
 

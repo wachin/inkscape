@@ -64,16 +64,16 @@ void SPRoot::build(SPDocument *document, Inkscape::XML::Node *repr)
         repr->setAttribute("version", SVG_VERSION);
     }
 
-    this->readAttr("version");
-    this->readAttr("inkscape:version");
+    this->readAttr(SPAttr::VERSION);
+    this->readAttr(SPAttr::INKSCAPE_VERSION);
     /* It is important to parse these here, so objects will have viewport build-time */
-    this->readAttr("x");
-    this->readAttr("y");
-    this->readAttr("width");
-    this->readAttr("height");
-    this->readAttr("viewBox");
-    this->readAttr("preserveAspectRatio");
-    this->readAttr("onload");
+    this->readAttr(SPAttr::X);
+    this->readAttr(SPAttr::Y);
+    this->readAttr(SPAttr::WIDTH);
+    this->readAttr(SPAttr::HEIGHT);
+    this->readAttr(SPAttr::VIEWBOX);
+    this->readAttr(SPAttr::PRESERVEASPECTRATIO);
+    this->readAttr(SPAttr::ONLOAD);
 
     SPGroup::build(document, repr);
 
@@ -86,7 +86,7 @@ void SPRoot::build(SPDocument *document, Inkscape::XML::Node *repr)
     }
 
     // clear transform, if any was read in - SVG does not allow transform= on <svg>
-    SP_ITEM(this)->transform = Geom::identity();
+    this->transform = Geom::identity();
 }
 
 void SPRoot::release()
@@ -97,22 +97,22 @@ void SPRoot::release()
 }
 
 
-void SPRoot::set(SPAttributeEnum key, const gchar *value)
+void SPRoot::set(SPAttr key, const gchar *value)
 {
     switch (key) {
-    case SP_ATTR_VERSION:
+    case SPAttr::VERSION:
         if (!sp_version_from_string(value, &this->version.svg)) {
             this->version.svg = this->original.svg;
         }
         break;
 
-    case SP_ATTR_INKSCAPE_VERSION:
+    case SPAttr::INKSCAPE_VERSION:
         if (!sp_version_from_string(value, &this->version.inkscape)) {
             this->version.inkscape = this->original.inkscape;
         }
         break;
 
-    case SP_ATTR_X:
+    case SPAttr::X:
         /* Valid for non-root SVG elements; ex, em not handled correctly. */
         if (!this->x.read(value)) {
             this->x.unset(SVGLength::PERCENT, 0.0, 0.0);
@@ -122,7 +122,7 @@ void SPRoot::set(SPAttributeEnum key, const gchar *value)
         this->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG | SP_OBJECT_VIEWPORT_MODIFIED_FLAG);
         break;
 
-    case SP_ATTR_Y:
+    case SPAttr::Y:
         /* Valid for non-root SVG elements; ex, em not handled correctly. */
         if (!this->y.read(value)) {
             this->y.unset(SVGLength::PERCENT, 0.0, 0.0);
@@ -132,31 +132,31 @@ void SPRoot::set(SPAttributeEnum key, const gchar *value)
         this->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG | SP_OBJECT_VIEWPORT_MODIFIED_FLAG);
         break;
 
-    case SP_ATTR_WIDTH:
+    case SPAttr::WIDTH:
         if (!this->width.read(value) || !(this->width.computed > 0.0)) {
             this->width.unset(SVGLength::PERCENT, 1.0, 1.0);
         }
         this->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG | SP_OBJECT_VIEWPORT_MODIFIED_FLAG);
         break;
 
-    case SP_ATTR_HEIGHT:
+    case SPAttr::HEIGHT:
         if (!this->height.read(value) || !(this->height.computed > 0.0)) {
             this->height.unset(SVGLength::PERCENT, 1.0, 1.0);
         }
         this->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG | SP_OBJECT_VIEWPORT_MODIFIED_FLAG);
         break;
 
-    case SP_ATTR_VIEWBOX:
+    case SPAttr::VIEWBOX:
         set_viewBox( value );
         this->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG | SP_OBJECT_VIEWPORT_MODIFIED_FLAG);
         break;
 
-    case SP_ATTR_PRESERVEASPECTRATIO:
+    case SPAttr::PRESERVEASPECTRATIO:
         set_preserveAspectRatio( value );
         this->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG | SP_OBJECT_VIEWPORT_MODIFIED_FLAG);
         break;
 
-    case SP_ATTR_ONLOAD:
+    case SPAttr::ONLOAD:
         this->onload = (char *) value;
         break;
 
@@ -321,11 +321,11 @@ Inkscape::XML::Node *SPRoot::write(Inkscape::XML::Document *xml_doc, Inkscape::X
     }
 
     if (fabs(this->x.computed) > 1e-9) {
-        sp_repr_set_svg_double(repr, "x", this->x.computed);
+        repr->setAttributeSvgDouble("x", this->x.computed);
     }
 
     if (fabs(this->y.computed) > 1e-9) {
-        sp_repr_set_svg_double(repr, "y", this->y.computed);
+        repr->setAttributeSvgDouble("y", this->y.computed);
     }
 
     /* Unlike all other SPObject, here we want to preserve absolute units too (and only here,
@@ -375,6 +375,10 @@ void SPRoot::print(SPPrintContext *ctx)
     SPGroup::print(ctx);
 
     ctx->release();
+}
+
+const char *SPRoot::typeName() const {
+    return "image";
 }
 
 const char *SPRoot::displayName() const {

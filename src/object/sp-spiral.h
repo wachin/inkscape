@@ -25,9 +25,6 @@
 #define SAMPLE_SIZE      8         ///< sample size per one bezier
 
 
-#define SP_SPIRAL(obj) (dynamic_cast<SPSpiral*>((SPObject*)obj))
-#define SP_IS_SPIRAL(obj) (dynamic_cast<const SPSpiral*>((SPObject*)obj) != NULL)
-
 /**
  * A spiral Shape.
  *
@@ -65,10 +62,11 @@ public:
 	void build(SPDocument* doc, Inkscape::XML::Node* repr) override;
 	Inkscape::XML::Node* write(Inkscape::XML::Document *xml_doc, Inkscape::XML::Node *repr, unsigned int flags) override;
 	void update(SPCtx *ctx, unsigned int flags) override;
-	void set(SPAttributeEnum key, char const* value) override;
+	void set(SPAttr key, char const* value) override;
 
 	void snappoints(std::vector<Inkscape::SnapCandidatePoint> &p, Inkscape::SnapPreferences const *snapprefs) const override;
-    const char* displayName() const override;
+        const char* typeName() const override;
+        const char* displayName() const override;
 	char* description() const override;
     void update_patheffect(bool write) override;
 	void set_shape() override;
@@ -77,5 +75,8 @@ private:
 	Geom::Point getTangent(double t) const;
 	void fitAndDraw(SPCurve* c, double dstep, Geom::Point darray[], Geom::Point const& hat1, Geom::Point& hat2, double* t) const;
 };
+
+MAKE_SP_OBJECT_DOWNCAST_FUNCTIONS(SP_SPIRAL, SPSpiral)
+MAKE_SP_OBJECT_TYPECHECK_FUNCTIONS(SP_IS_SPIRAL, SPSpiral)
 
 #endif // SEEN_SP_SPIRAL_H

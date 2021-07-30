@@ -13,14 +13,17 @@
  */
 
 #include <string>
-
+#include <glibmm/i18n.h>
 #include <2geom/transforms.h>
+
 #include "display/drawing-group.h"
 #include "xml/repr.h"
 #include "attributes.h"
 #include "print.h"
 #include "sp-symbol.h"
 #include "document.h"
+#include "inkscape.h"
+#include "desktop.h"
 
 SPSymbol::SPSymbol() : SPGroup(), SPViewBox() {
 }
@@ -28,8 +31,8 @@ SPSymbol::SPSymbol() : SPGroup(), SPViewBox() {
 SPSymbol::~SPSymbol() = default;
 
 void SPSymbol::build(SPDocument *document, Inkscape::XML::Node *repr) {
-    this->readAttr( "viewBox" );
-    this->readAttr( "preserveAspectRatio" );
+    this->readAttr(SPAttr::VIEWBOX);
+    this->readAttr(SPAttr::PRESERVEASPECTRATIO);
 
     SPGroup::build(document, repr);
 }
@@ -38,15 +41,15 @@ void SPSymbol::release() {
 	SPGroup::release();
 }
 
-void SPSymbol::set(SPAttributeEnum key, const gchar* value) {
+void SPSymbol::set(SPAttr key, const gchar* value) {
     switch (key) {
-    case SP_ATTR_VIEWBOX:
+    case SPAttr::VIEWBOX:
         set_viewBox( value );
         // std::cout << "Symbol: ViewBox: " << viewBox << std::endl;
         this->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG | SP_OBJECT_VIEWPORT_MODIFIED_FLAG);
         break;
 
-    case SP_ATTR_PRESERVEASPECTRATIO:
+    case SPAttr::PRESERVEASPECTRATIO:
         set_preserveAspectRatio( value );
         // std::cout << "Symbol: Preserve aspect ratio: " << aspect_align << ", " << aspect_clip << std::endl;
         this->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG | SP_OBJECT_VIEWPORT_MODIFIED_FLAG);
@@ -62,6 +65,67 @@ void SPSymbol::child_added(Inkscape::XML::Node *child, Inkscape::XML::Node *ref)
 	SPGroup::child_added(child, ref);
 }
 
+void SPSymbol::unSymbol()
+{
+    SPDocument *doc = this->document;
+    Inkscape::XML::Document *xml_doc = doc->getReprDoc();
+    // Check if something is selected.
+
+    doc->ensureUpToDate();
+
+    // Create new <g> and insert in current layer
+    Inkscape::XML::Node *group = xml_doc->createElement("svg:g");
+    //TODO: Better handle if no desktop, currently go to defs without it
+    SPDesktop *desktop = SP_ACTIVE_DESKTOP;
+    if(desktop && desktop->doc() == doc) {
+        desktop->currentLayer()->getRepr()->appendChild(group);
+    } else {
+        parent->getRepr()->appendChild(group);
+    }
+
+    // Move all children of symbol to group
+    std::vector<SPObject*> children = childList(false);
+
+    // Converting a group to a symbol inserts a group for non-translational transform.
+    // In converting a symbol back to a group we strip out the inserted group (or any other
+    // group that only adds a transform to the symbol content).
+    if( children.size() == 1 ) {
+        SPObject *object = children[0];
+        if ( dynamic_cast<SPGroup *>( object ) ) {
+            if( object->getAttribute("style") == nullptr ||
+                object->getAttribute("class") == nullptr ) {
+
+                group->setAttribute("transform", object->getAttribute("transform"));
+                children = object->childList(false);
+            }
+        }
+    }
+    for (std::vector<SPObject*>::const_reverse_iterator i=children.rbegin();i!=children.rend();++i){
+        Inkscape::XML::Node *repr = (*i)->getRepr();
+        repr->parent()->removeChild(repr);
+        group->addChild(repr,nullptr);
+    }
+
+    // Copy relevant attributes
+    group->setAttribute("style", getAttribute("style"));
+    group->setAttribute("class", getAttribute("class"));
+    group->setAttribute("title", getAttribute("title"));
+    group->setAttribute("inkscape:transform-center-x",
+                        getAttribute("inkscape:transform-center-x"));
+    group->setAttribute("inkscape:transform-center-y",
+                        getAttribute("inkscape:transform-center-y"));
+
+
+    // Need to delete <symbol>; all <use> elements that referenced <symbol> should
+    // auto-magically reference <g> (if <symbol> deleted after setting <g> 'id').
+    Glib::ustring id = getAttribute("id");
+    group->setAttribute("id", id);
+    
+    deleteObject(true);
+
+    // Clean up
+    Inkscape::GC::release(group);
+}
 
 void SPSymbol::update(SPCtx *ctx, guint flags) {
     if (this->cloned) {

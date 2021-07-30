@@ -201,50 +201,60 @@ export_background_opacity(const Glib::VariantBase&  value, InkscapeApplication *
 }
 
 void
+export_png_color_mode(const Glib::VariantBase&  value, InkscapeApplication *app)
+{
+    Glib::Variant<std::string> s = Glib::VariantBase::cast_dynamic<Glib::Variant<std::string> >(value);
+    app->file_export()->export_png_color_mode = s.get();
+    // std::cout << s.get() << std::endl;
+}
+
+void
 export_do(InkscapeApplication *app)
 {
     SPDocument* document = app->get_active_document();
     std::string filename;
-    if (document->getDocumentURI()) {
-        filename = document->getDocumentURI();
+    if (document->getDocumentFilename()) {
+        filename = document->getDocumentFilename();
     }
     app->file_export()->do_export(document, filename);
 }
 
 std::vector<std::vector<Glib::ustring>> raw_data_output =
 {
-   {"export-type",               "ExportType",              "Export",     N_("Export file type.")                                  },
-   {"export-filename",           "ExportFileName",          "Export",     N_("Export file name.")                                  },
-   {"export-overwrite",          "ExportOverWrite",         "Export",     N_("Export over-write file.")                            },
+    // clang-format off
+    {"app.export-type",               N_("Export Type"),               "Export",     N_("Set export file type")                               },
+    {"app.export-filename",           N_("Export File Name"),          "Export",     N_("Set export file name")                               },
+    {"app.export-overwrite",          N_("Export Overwrite"),          "Export",     N_("Allow to overwrite existing files during export")    },
 
-   {"export-area",               "ExportArea",              "Export",     N_("Export area.")                                       },
-   {"export-area-drawing",       "ExportAreaDrawing",       "Export",     N_("Export drawing area.")                               },
-   {"export-area-page",          "ExportAreaPage",          "Export",     N_("Export page area.")                                  },
-   {"export-margin",             "ExportMargin",            "Export",     N_("Export margin.")                                     },
-   {"export-area-snap",          "ExportAreaSnap",          "Export",     N_("Export snap area to integer values.")                },
-   {"export-width",              "ExportWidth",             "Export",     N_("Export width.")                                      },
-   {"export-height",             "ExportHeight",            "Export",     N_("Export height.")                                     },
+    {"app.export-area",               N_("Export Area"),               "Export",     N_("Set export area")                                    },
+    {"app.export-area-drawing",       N_("Export Area Drawing"),       "Export",     N_("Export drawing area")                                },
+    {"app.export-area-page",          N_("Export Area Page"),          "Export",     N_("Export page area")                                   },
+    {"app.export-margin",             N_("Export Margin"),             "Export",     N_("Set additional export margin")                       },
+    {"app.export-area-snap",          N_("Export Area Snap"),          "Export",     N_("Snap export area to integer values")                 },
+    {"app.export-width",              N_("Export Width"),              "Export",     N_("Set export width")                                   },
+    {"app.export-height",             N_("Export Height"),             "Export",     N_("Set export height")                                  },
 
-   {"export-id",                 "ExportID",                "Export",     N_("Export id(s).")                                      },
-   {"export-id-only",            "ExportIDOnly",            "Export",     N_("Export id(s) only.")                                 },
+    {"app.export-id",                 N_("Export ID"),                 "Export",     N_("Export selected ID(s)")                              },
+    {"app.export-id-only",            N_("Export ID Only"),            "Export",     N_("Hide any objects not given in export-id option")     },
 
-   {"export-plain-svg",          "ExportPlanSVG",           "Export",     N_("Export as plain SVG.")                               },
-   {"export-dpi",                "ExportDPI",               "Export",     N_("Export DPI.")                                        },
-   {"export-ignore-filters",     "ExportIgnoreFilters",     "Export",     N_("Export ignore filters.")                             },
-   {"export-text-to-path",       "ExportTextToPath",        "Export",     N_("Export convert text to paths.")                      },
-   {"export-ps-level",           "ExportPSLevel",           "Export",     N_("Export PostScript level.")                           },
-   {"export-pdf-version",        "ExportPSVersion",         "Export",     N_("Export PDF version.")                                },
-   {"export-latex",              "ExportLaTeX",             "Export",     N_("Export LaTeX.")                                      },
-   {"export-use-hints",          "ExportUseHInts",          "Export",     N_("Export using saved hints.")                          },
-   {"export-background",         "ExportBackground",        "Export",     N_("Export background color.")                           },
-   {"export-background-opacity", "ExportBackgroundOpacity", "Export",     N_("Export background opacity.")                         },
+    {"app.export-plain-svg",          N_("Export Plain SVG"),          "Export",     N_("Export as plain SVG")                                },
+    {"app.export-dpi",                N_("Export DPI"),                "Export",     N_("Set export DPI")                                     },
+    {"app.export-ignore-filters",     N_("Export Ignore Filters"),     "Export",     N_("Export without filters to avoid rasterization for PDF, PS, EPS")},
+    {"app.export-text-to-path",       N_("Export Text to Path"),       "Export",     N_("Convert texts to paths in the exported file")        },
+    {"app.export-ps-level",           N_("Export PS Level"),           "Export",     N_("Set PostScript level")                               },
+    {"app.export-pdf-version",        N_("Export PDF Version"),        "Export",     N_("Set PDF version")                                    },
+    {"app.export-latex",              N_("Export LaTeX"),              "Export",     N_("Export LaTeX")                                       },
+    {"app.export-use-hints",          N_("Export Use Hints"),          "Export",     N_("Export using saved hints")                           },
+    {"app.export-background",         N_("Export Background"),         "Export",     N_("Include background color in exported file")          },
+    {"app.export-background-opacity", N_("Export Background Opacity"), "Export",     N_("Include background opacity in exported file")        },
+    {"app.export-png-color-mode",     N_("Export PNG Color Mode"),     "Export",     N_("Set color mode for PNG export")                      },
 
-   {"export-do",                 "ExportDo",                "Export",     N_("Do export.")                                         }
+    {"app.export-do",                 N_("Do Export"),                 "Export",     N_("Do export")                                          }
+    // clang-format on
 };
 
-template <class T>
 void
-add_actions_output(ConcreteInkscapeApplication<T>* app)
+add_actions_output(InkscapeApplication* app)
 {
     Glib::VariantType Bool(  Glib::VARIANT_TYPE_BOOL);
     Glib::VariantType Int(   Glib::VARIANT_TYPE_INT32);
@@ -254,47 +264,46 @@ add_actions_output(ConcreteInkscapeApplication<T>* app)
 
     // Debian 9 has 2.50.0
 #if GLIB_CHECK_VERSION(2, 52, 0)
+    auto *gapp = app->gio_app();
 
     // Matches command line options
-    app->add_action_with_parameter( "export-type",              String, sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&export_type),         app));
-    app->add_action_with_parameter( "export-filename",          String, sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&export_filename),     app)); // MAY NOT WORK DUE TO std::string
-    app->add_action_with_parameter( "export-overwrite",         Bool,   sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&export_overwrite),    app));
+    // clang-format off
+    gapp->add_action_with_parameter( "export-type",              String, sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&export_type),         app));
+    gapp->add_action_with_parameter( "export-filename",          String, sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&export_filename),     app)); // MAY NOT WORK DUE TO std::string
+    gapp->add_action_with_parameter( "export-overwrite",         Bool,   sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&export_overwrite),    app));
 
-    app->add_action_with_parameter( "export-area",              String, sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&export_area),         app));
-    app->add_action_with_parameter( "export-area-drawing",      Bool,   sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&export_area_drawing), app));
-    app->add_action_with_parameter( "export-area-page",         Bool,   sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&export_area_page),    app));
-    app->add_action_with_parameter( "export-margin",            Int,    sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&export_margin),       app));
-    app->add_action_with_parameter( "export-area-snap",         Bool,   sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&export_area_snap),    app));
-    app->add_action_with_parameter( "export-width",             Int,    sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&export_width),        app));
-    app->add_action_with_parameter( "export-height",            Int,    sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&export_height),       app));
+    gapp->add_action_with_parameter( "export-area",              String, sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&export_area),         app));
+    gapp->add_action_with_parameter( "export-area-drawing",      Bool,   sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&export_area_drawing), app));
+    gapp->add_action_with_parameter( "export-area-page",         Bool,   sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&export_area_page),    app));
+    gapp->add_action_with_parameter( "export-margin",            Int,    sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&export_margin),       app));
+    gapp->add_action_with_parameter( "export-area-snap",         Bool,   sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&export_area_snap),    app));
+    gapp->add_action_with_parameter( "export-width",             Int,    sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&export_width),        app));
+    gapp->add_action_with_parameter( "export-height",            Int,    sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&export_height),       app));
 
-    app->add_action_with_parameter( "export-id",                String, sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&export_id),           app));
-    app->add_action_with_parameter( "export-id-only",           Bool,   sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&export_id_only),      app));
+    gapp->add_action_with_parameter( "export-id",                String, sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&export_id),           app));
+    gapp->add_action_with_parameter( "export-id-only",           Bool,   sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&export_id_only),      app));
 
-    app->add_action_with_parameter( "export-plain-svg",         Bool,   sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&export_plain_svg),    app));
-    app->add_action_with_parameter( "export-dpi",               Double, sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&export_dpi),          app));
-    app->add_action_with_parameter( "export-ignore-filters",    Bool,   sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&export_plain_svg),    app));
-    app->add_action_with_parameter( "export-text-to-path",      Bool,   sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&export_text_to_path), app));
-    app->add_action_with_parameter( "export-ps-level",          Int,    sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&export_ps_level),     app));
-    app->add_action_with_parameter( "export-pdf-version",       String, sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&export_pdf_level),    app));
-    app->add_action_with_parameter( "export-latex",             Bool,   sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&export_latex),        app));
-    app->add_action_with_parameter( "export-use-hints",         Bool,   sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&export_use_hints),    app));
-    app->add_action_with_parameter( "export-background",        String, sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&export_background),   app));
-    app->add_action_with_parameter( "export-background-opacity",Double, sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&export_background_opacity), app));
+    gapp->add_action_with_parameter( "export-plain-svg",         Bool,   sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&export_plain_svg),    app));
+    gapp->add_action_with_parameter( "export-dpi",               Double, sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&export_dpi),          app));
+    gapp->add_action_with_parameter( "export-ignore-filters",    Bool,   sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&export_plain_svg),    app));
+    gapp->add_action_with_parameter( "export-text-to-path",      Bool,   sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&export_text_to_path), app));
+    gapp->add_action_with_parameter( "export-ps-level",          Int,    sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&export_ps_level),     app));
+    gapp->add_action_with_parameter( "export-pdf-version",       String, sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&export_pdf_level),    app));
+    gapp->add_action_with_parameter( "export-latex",             Bool,   sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&export_latex),        app));
+    gapp->add_action_with_parameter( "export-use-hints",         Bool,   sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&export_use_hints),    app));
+    gapp->add_action_with_parameter( "export-background",        String, sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&export_background),   app));
+    gapp->add_action_with_parameter( "export-background-opacity",Double, sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&export_background_opacity), app));
+    gapp->add_action_with_parameter( "export-png-color-mode",    String, sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&export_png_color_mode), app));
 
     // Extra
-    app->add_action(                "export-do",                        sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&export_do),           app));
+    gapp->add_action(                "export-do",                        sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&export_do),           app));
+    // clang-format on
 #else
     std::cerr << "add_actions: Some actions require Glibmm 2.52, compiled with: " << glib_major_version << "." << glib_minor_version << std::endl;
 #endif
 
     app->get_action_extra_data().add_data(raw_data_output);
 }
-
-
-template void add_actions_output(ConcreteInkscapeApplication<Gio::Application>* app);
-template void add_actions_output(ConcreteInkscapeApplication<Gtk::Application>* app);
-
 
 
 /*

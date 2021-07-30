@@ -22,6 +22,8 @@
 #include "desktop.h"
 #include "preferences.h"
 
+constexpr int STYLE_SWATCH_WIDTH = 135;
+
 class SPStyle;
 class SPCSSAttr;
 
@@ -38,7 +40,7 @@ namespace Util {
 namespace UI {
 namespace Widget {
 
-class StyleSwatch : public Gtk::HBox
+class StyleSwatch : public Gtk::Box
 {
 public:
     StyleSwatch (SPCSSAttr *attr, gchar const *main_tip);
@@ -50,8 +52,7 @@ public:
     SPCSSAttr *getStyle();
 
     void setWatchedTool (const char *path, bool synthesize);
-
-    void setClickVerb(sp_verb_t verb_t);
+    void setToolName(const Glib::ustring& tool_name);
     void setDesktop(SPDesktop *desktop);
     bool on_click(GdkEventButton *event);
 
@@ -60,7 +61,7 @@ private:
     class StyleObserver;
 
     SPDesktop *_desktop;
-    sp_verb_t _verb_t;
+    Glib::ustring _tool_name;
     SPCSSAttr *_css;
     ToolObserver *_tool_obs;
     StyleObserver *_style_obs;
@@ -77,7 +78,7 @@ private:
     Gtk::Label _opacity_value;
     Gtk::Widget *_color_preview[2];
     Glib::ustring __color[2];
-    Gtk::HBox _stroke;
+    Gtk::Box _stroke;
     Gtk::EventBox _stroke_width_place;
     Gtk::Label _stroke_width;
 

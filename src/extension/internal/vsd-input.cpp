@@ -29,20 +29,11 @@
 
 #include <libvisio/libvisio.h>
 
-// TODO: Drop this check when librevenge is widespread.
-#if WITH_LIBVISIO01
-  #include <librevenge-stream/librevenge-stream.h>
+#include <librevenge-stream/librevenge-stream.h>
 
-  using librevenge::RVNGString;
-  using librevenge::RVNGFileStream;
-  using librevenge::RVNGStringVector;
-#else
-  #include <libwpd-stream/libwpd-stream.h>
-
-  typedef WPXString                 RVNGString;
-  typedef WPXFileStream             RVNGFileStream;
-  typedef libvisio::VSDStringVector RVNGStringVector;
-#endif
+using librevenge::RVNGString;
+using librevenge::RVNGFileStream;
+using librevenge::RVNGStringVector;
 
 #include <gtkmm/spinbutton.h>
 
@@ -83,12 +74,12 @@ private:
      void _onSpinButtonPress(GdkEventButton* button_event);
      void _onSpinButtonRelease(GdkEventButton* button_event);
 
-     class Gtk::VBox * vbox1;
+     class Gtk::Box * vbox1;
      class Inkscape::UI::View::SVGViewWidget * _previewArea;
      class Gtk::Button * cancelbutton;
      class Gtk::Button * okbutton;
 
-     class Gtk::HBox  * _page_selector_box;
+     class Gtk::Box  * _page_selector_box;
      class Gtk::Label * _labelSelect;
      class Gtk::Label * _labelTotalPages;
      class Gtk::SpinButton * _pageNumberSpin;
@@ -118,11 +109,11 @@ VsdImportDialog::VsdImportDialog(const std::vector<RVNGString> &vec)
      this->property_destroy_with_parent().set_value(false);
 
      // Preview area
-     vbox1 = Gtk::manage(new class Gtk::VBox());
+     vbox1 = Gtk::manage(new class Gtk::Box(Gtk::ORIENTATION_VERTICAL));
      this->get_content_area()->pack_start(*vbox1);
 
      // CONTROLS
-     _page_selector_box = Gtk::manage(new Gtk::HBox());
+     _page_selector_box = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL));
 
      // Labels
      _labelSelect = Gtk::manage(new class Gtk::Label(_("Select page:")));
@@ -263,13 +254,9 @@ SPDocument *VsdInput::open(Inkscape::Extension::Input * /*mod*/, const gchar * u
      }
 
      RVNGStringVector output;
-#if WITH_LIBVISIO01
      librevenge::RVNGSVGDrawingGenerator generator(output, "svg");
 
      if (!libvisio::VisioDocument::parse(&input, &generator)) {
-#else
-     if (!libvisio::VisioDocument::generateSVG(&input, output)) {
-#endif
           return nullptr;
      }
 
@@ -320,8 +307,9 @@ SPDocument *VsdInput::open(Inkscape::Extension::Input * /*mod*/, const gchar * u
 
 void VsdInput::init()
 {
+    // clang-format off
     /* VSD */
-     Inkscape::Extension::build_from_mem(
+    Inkscape::Extension::build_from_mem(
         "<inkscape-extension xmlns=\"" INKSCAPE_EXTENSION_URI "\">\n"
             "<name>" N_("VSD Input") "</name>\n"
             "<id>org.inkscape.input.vsd</id>\n"
@@ -333,8 +321,8 @@ void VsdInput::init()
             "</input>\n"
         "</inkscape-extension>", new VsdInput());
 
-     /* VDX */
-     Inkscape::Extension::build_from_mem(
+    /* VDX */
+    Inkscape::Extension::build_from_mem(
         "<inkscape-extension xmlns=\"" INKSCAPE_EXTENSION_URI "\">\n"
             "<name>" N_("VDX Input") "</name>\n"
             "<id>org.inkscape.input.vdx</id>\n"
@@ -346,8 +334,8 @@ void VsdInput::init()
             "</input>\n"
         "</inkscape-extension>", new VsdInput());
 
-     /* VSDM */
-     Inkscape::Extension::build_from_mem(
+    /* VSDM */
+    Inkscape::Extension::build_from_mem(
         "<inkscape-extension xmlns=\"" INKSCAPE_EXTENSION_URI "\">\n"
             "<name>" N_("VSDM Input") "</name>\n"
             "<id>org.inkscape.input.vsdm</id>\n"
@@ -359,8 +347,8 @@ void VsdInput::init()
             "</input>\n"
         "</inkscape-extension>", new VsdInput());
 
-     /* VSDX */
-     Inkscape::Extension::build_from_mem(
+    /* VSDX */
+    Inkscape::Extension::build_from_mem(
         "<inkscape-extension xmlns=\"" INKSCAPE_EXTENSION_URI "\">\n"
             "<name>" N_("VSDX Input") "</name>\n"
             "<id>org.inkscape.input.vsdx</id>\n"
@@ -371,6 +359,7 @@ void VsdInput::init()
                 "<filetypetooltip>" N_("File format used by Microsoft Visio 2013 and later") "</filetypetooltip>\n"
             "</input>\n"
         "</inkscape-extension>", new VsdInput());
+    // clang-format on
 
      return;
 

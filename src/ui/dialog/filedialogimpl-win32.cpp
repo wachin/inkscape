@@ -1005,7 +1005,7 @@ bool FileOpenDialogImplWin32::set_svg_preview()
 
     gchar *utf8string = g_utf16_to_utf8((const gunichar2*)_path_string,
         _MAX_PATH, NULL, NULL, NULL);
-    SPDocument *svgDoc = SPDocument::createNewDoc (utf8string, 0);
+    std::unique_ptr<SPDocument> svgDoc(SPDocument::createNewDoc(utf8string, 0));
     g_free(utf8string);
 
     // Check the document loaded properly
@@ -1014,7 +1014,6 @@ bool FileOpenDialogImplWin32::set_svg_preview()
     }
     if (svgDoc->getRoot() == NULL)
     {
-        svgDoc->doUnref();
         return false;
     }
 
@@ -1029,26 +1028,24 @@ bool FileOpenDialogImplWin32::set_svg_preview()
     const double scaleFactorY = PreviewSize / svgHeight_px;
     const double scaleFactor = (scaleFactorX > scaleFactorY) ? scaleFactorY : scaleFactorX;
 
-    // Now get the resized values
-    const int scaledSvgWidth  = round(scaleFactor * svgWidth_px);
-    const int scaledSvgHeight = round(scaleFactor * svgHeight_px);
-
-    const double dpi = 96*scaleFactor;
-    Inkscape::Pixbuf * pixbuf = sp_generate_internal_bitmap(svgDoc, NULL, 0, 0, svgWidth_px, svgHeight_px, scaledSvgWidth, scaledSvgHeight, dpi, dpi, (guint32) 0xffffff00, NULL);
+    const double dpi = 96 * scaleFactor;
+    Geom::Rect area(0, 0, svgWidth_px, svgHeight_px);
+    Inkscape::Pixbuf *pixbuf =
+        sp_generate_internal_bitmap(svgDoc.get(), area, dpi);
 
     // Tidy up
-    svgDoc->doUnref();
     if (pixbuf == NULL) {
         return false;
     }
 
     // Create the GDK pixbuf
     _mutex->lock();
-    _preview_bitmap_image = Glib::wrap(pixbuf->getPixbufRaw());
+    _preview_bitmap_image = Glib::wrap(pixbuf->getPixbufRaw(), /* ref */ true);
+    delete pixbuf;
     _preview_document_width = svgWidth_px;
     _preview_document_height = svgHeight_px;
-    _preview_image_width = scaledSvgWidth;
-    _preview_image_height = scaledSvgHeight;
+    _preview_image_width = round(scaleFactor * svgWidth_px);
+    _preview_image_height = round(scaleFactor * svgHeight_px);
     _mutex->unlock();
 
     return true;
@@ -1571,7 +1568,9 @@ FileSaveDialogImplWin32::FileSaveDialogImplWin32(Gtk::Window &parent,
         _title_edit(NULL)
 {
     FileSaveDialog::myDocTitle = docTitle;
-    createFilterMenu();
+
+    if (dialogType != CUSTOM_TYPE)
+        createFilterMenu();
 
     /* The code below sets the default file name */
         myFilename = "";
@@ -1618,12 +1617,12 @@ void FileSaveDialogImplWin32::createFilterMenu()
 
     int filter_count = 0;
     int filter_length = 1;
+    bool is_raster = dialogType == RASTER_TYPES;
 
-    for (Inkscape::Extension::DB::OutputList::iterator current_item = extension_list.begin();
-         current_item != extension_list.end(); ++current_item)
-    {
-        Inkscape::Extension::Output *omod = *current_item;
-        if (omod->deactivated()) continue;
+    for (auto omod : extension_list) {
+        // FIXME: would be nice to grey them out instead of not listing them
+        if (omod->deactivated() || (omod->is_raster() != is_raster))
+            continue;
 
         filter_count++;
 

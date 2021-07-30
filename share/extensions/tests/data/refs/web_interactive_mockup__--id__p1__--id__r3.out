@@ -1,5 +1,5 @@
 <!-- Created with Inkscape (http://www.inkscape.org/) --><svg xmlns:ns1="https://launchpad.net/jessyink" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:cc="http://creativecommons.org/ns#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns:svg="http://www.w3.org/2000/svg" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd" xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape" width="1000" height="1000" viewBox="0 0 1000 1000" version="1.1" id="svg8" inkscape:version="0.92.4 5da689c313, 2019-01-14" sodipodi:docname="test.svg">
-  <script id="inkwebjs" type="text/javascript"><![CDATA[
+  <svg:script id="inkwebjs" type="text/javascript"><![CDATA[
 /* inkweb.js - InkWebEffect:AutoUpdate */
 /*
 **  InkWeb - Inkscape's Javscript features for the open vector web
@@ -9,8 +9,7 @@
 **  ********* Bugs and New Fetures *************************************
 **   If you found any bug on this script or if you want to propose a
 **   new feature, please report it in the inkscape bug tracker
-**   https://bugs.launchpad.net/inkscape/+filebug
-**   and assign that to Aurium.
+**   https://inkscape.org/report .
 **  ********************************************************************
 **
 **  This program is free software: you can redistribute it and/or modify
@@ -216,8 +215,8 @@ InkWeb.moveViewbox = function (conf) {
   document.getElementsByTagName("svg")[0].viewBox.baseVal.y = toEl.getAttribute("y");
 }
 
-InkWeb.log = function () { /* if you need that, use the inkweb-debug.js too */ }
-]]></script><defs id="defs33">
+InkWeb.log = function () { /* requires inkweb-debug.js, not included in Inkscape */ }
+]]></svg:script><defs id="defs33">
     <marker inkscape:stockid="Arrow2Lstart" orient="auto" refY="0.0" refX="0.0" id="Arrow2Lstart" style="overflow:visible" inkscape:isstock="true">
       <path id="path859" style="fill-rule:evenodd;stroke-width:0.625;stroke-linejoin:round;stroke:#000000;stroke-opacity:1;fill:#000000;fill-opacity:1" d="M 8.7185878,4.0337352 L -2.2072895,0.016013256 L 8.7185884,-4.0017078 C 6.9730900,-1.6296469 6.9831476,1.6157441 8.7185878,4.0337352 z " transform="scale(1.1) translate(1,0)"/>
     </marker>

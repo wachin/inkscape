@@ -13,7 +13,7 @@ from .test_inkex_elements_base import SvgTestCase
 class ElementListTestCase(SvgTestCase):
     """Test Element Selections"""
     def setUp(self):
-        super(ElementListTestCase, self).setUp()
+        super().setUp()
         self.svg.selection.set('G', 'B', 'D', 'F')
 
     def test_creation(self):
@@ -107,3 +107,10 @@ class ElementListTestCase(SvgTestCase):
         """Selection can get a bounding box"""
         self.assertEqual(int(self.svg.selection.bounding_box().width), 540)
         self.assertEqual(int(self.svg.selection.bounding_box().height), 550)
+
+    def test_selecting_weird_ids(self):
+        """Selection can contain some chars"""
+        selection = self.svg.selection
+        self.svg.append(PathElement(id="#asdf"))
+        selection.set("#asdf")
+        self.assertEqual(tuple(selection.ids), ('#asdf',))

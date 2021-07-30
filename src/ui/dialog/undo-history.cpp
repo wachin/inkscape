@@ -20,8 +20,6 @@
 #include "ui/icon-loader.h"
 #include "util/signal-blocker.h"
 
-#include "desktop.h"
-
 
 namespace Inkscape {
 namespace UI {
@@ -34,32 +32,31 @@ void CellRendererSPIcon::render_vfunc(const Cairo::RefPtr<Cairo::Context>& cr,
                                       const Gdk::Rectangle& cell_area,
                                       Gtk::CellRendererState flags)
 {
-    // if this event type doesn't have an icon...
-    if ( !Inkscape::Verb::get(_property_event_type)->get_image() ) return;
+    // if there is no icon name.
+    if ( _property_icon_name == "") return;
 
     // if the icon isn't cached, render it to a pixbuf
-    if ( !_icon_cache[_property_event_type] ) {
+    if ( !_icon_cache[_property_icon_name] ) {
 
-        Glib::ustring image_name = Inkscape::Verb::get(_property_event_type)->get_image();
         Gtk::Image* icon = Gtk::manage(new Gtk::Image());
-        icon = sp_get_icon_image(image_name, Gtk::ICON_SIZE_MENU);
+        icon = sp_get_icon_image(_property_icon_name, Gtk::ICON_SIZE_MENU);
 
         if (icon) {
 
             // check icon type (inkscape, gtk, none)
             if ( GTK_IS_IMAGE(icon->gobj()) ) {
-                _property_icon = sp_get_icon_pixbuf(image_name, 16);
+                _property_icon = sp_get_icon_pixbuf(_property_icon_name, 16);
             } else {
                 delete icon;
                 return;
             }
 
             delete icon;
-            property_pixbuf() = _icon_cache[_property_event_type] = _property_icon.get_value();
+            property_pixbuf() = _icon_cache[_property_icon_name] = _property_icon.get_value();
         }
 
     } else {
-        property_pixbuf() = _icon_cache[_property_event_type];
+        property_pixbuf() = _icon_cache[_property_icon_name];
     }
 
     Gtk::CellRendererPixbuf::render_vfunc(cr, widget, background_area,
@@ -90,28 +87,19 @@ UndoHistory& UndoHistory::getInstance()
 }
 
 UndoHistory::UndoHistory()
-    : UI::Widget::Panel("/dialogs/undo-history", SP_VERB_DIALOG_UNDO_HISTORY),
-      _document_replaced_connection(),
-      _desktop(getDesktop()),
-      _document(_desktop ? _desktop->doc() : nullptr),
-      _event_log(_desktop ? _desktop->event_log : nullptr),
-      _columns(_event_log ? &_event_log->getColumns() : nullptr),
+    : DialogBase("/dialogs/undo-history", "UndoHistory"),
+      _event_log(nullptr),
       _scrolled_window(),
       _event_list_store(),
       _event_list_selection(_event_list_view.get_selection()),
-      _deskTrack(),
-      _desktopChangeConn(),
       _callback_connections()
 {
-    if ( !_document || !_event_log || !_columns ) return;
+    auto *_columns = &EventLog::getColumns();
 
     set_size_request(-1, 95);
 
-    _getContents()->pack_start(_scrolled_window);
+    pack_start(_scrolled_window);
     _scrolled_window.set_policy(Gtk::POLICY_NEVER, Gtk::POLICY_AUTOMATIC);
-
-    // connect with the EventLog
-    _connectEventLog();
 
     _event_list_view.set_enable_search(false);
     _event_list_view.set_headers_visible(false);
@@ -122,7 +110,7 @@ UndoHistory::UndoHistory()
     int cols_count = _event_list_view.append_column("Icon", *icon_renderer);
 
     Gtk::TreeView::Column* icon_column = _event_list_view.get_column(cols_count-1);
-    icon_column->add_attribute(icon_renderer->property_event_type(), _columns->type);
+    icon_column->add_attribute(icon_renderer->property_icon_name(), _columns->icon_name);
 
     CellRendererInt* children_renderer = Gtk::manage(new CellRendererInt(greater_than_1));
     children_renderer->property_weight() = 600; // =Pango::WEIGHT_SEMIBOLD (not defined in old versions of pangomm)
@@ -158,73 +146,42 @@ UndoHistory::UndoHistory()
     _callback_connections[EventLog::CALLB_COLLAPSE] =
         _event_list_view.signal_row_collapsed().connect(sigc::mem_fun(*this, &Inkscape::UI::Dialog::UndoHistory::_onCollapseEvent));
 
-    _desktopChangeConn = _deskTrack.connectDesktopChanged( sigc::mem_fun(*this, &UndoHistory::setDesktop) );
-    _deskTrack.connect(GTK_WIDGET(gobj()));
-
-    // connect to be informed of document changes
-    signalDocumentReplaced().connect(sigc::mem_fun(*this, &UndoHistory::_handleDocumentReplaced));
-
     show_all_children();
-
-    // scroll to the selected row
-    _event_list_view.set_cursor(_event_list_store->get_path(_event_log->getCurrEvent()));
 }
 
 UndoHistory::~UndoHistory()
 {
-    _desktopChangeConn.disconnect();
+    disconnectEventLog();
 }
 
-
-void UndoHistory::setDesktop(SPDesktop* desktop)
+void UndoHistory::documentReplaced()
 {
-    Panel::setDesktop(desktop);
-
-    EventLog *newEventLog = desktop ? desktop->event_log : nullptr;
-    if ((_desktop == desktop) && (_event_log == newEventLog)) {
-        // same desktop set
-    }
-    else
-    {
-        _connectDocument(desktop, desktop ? desktop->doc() : nullptr);
+    disconnectEventLog();
+    if (auto document = getDocument()) {
+        g_assert (document->get_event_log() != nullptr);
+        SignalBlocker blocker(&_callback_connections[EventLog::CALLB_SELECTION_CHANGE]);
+        _event_list_view.unset_model();
+        connectEventLog();
     }
 }
 
-void UndoHistory::_connectDocument(SPDesktop* desktop, SPDocument * /*document*/)
+void UndoHistory::disconnectEventLog()
 {
-    // disconnect from prior
     if (_event_log) {
         _event_log->removeDialogConnection(&_event_list_view, &_callback_connections);
+        _event_log->remove_destroy_notify_callback(this);
     }
-
-    SignalBlocker blocker(&_callback_connections[EventLog::CALLB_SELECTION_CHANGE]);
-
-    _event_list_view.unset_model();
-
-    // connect to new EventLog/Desktop
-    _desktop = desktop;
-    _event_log = desktop ? desktop->event_log : nullptr;
-    _document = desktop ? desktop->doc() : nullptr;
-    _connectEventLog();
 }
 
-void UndoHistory::_connectEventLog()
+void UndoHistory::connectEventLog()
 {
-    if (_event_log) {
+    if (auto document = getDocument()) {
+        _event_log = document->get_event_log();
         _event_log->add_destroy_notify_callback(this, &_handleEventLogDestroyCB);
         _event_list_store = _event_log->getEventListStore();
-
         _event_list_view.set_model(_event_list_store);
-
         _event_log->addDialogConnection(&_event_list_view, &_callback_connections);
-        _event_list_view.scroll_to_row(_event_list_store->get_path(_event_list_selection->get_selected()));        
-    }
-}
-
-void UndoHistory::_handleDocumentReplaced(SPDesktop* desktop, SPDocument *document)
-{
-    if ((desktop != _desktop) || (document != _document)) {
-        _connectDocument(desktop, document);
+        _event_list_view.scroll_to_row(_event_list_store->get_path(_event_list_selection->get_selected()));
     }
 }
 
@@ -272,7 +229,7 @@ UndoHistory::_onListSelectionChange()
 
             _event_log->blockNotifications();
             for ( --last ; curr_event != last ; ++curr_event ) {
-                DocumentUndo::redo(_document);
+                DocumentUndo::redo(getDocument());
             }
             _event_log->blockNotifications(false);
 
@@ -306,7 +263,7 @@ UndoHistory::_onListSelectionChange()
 
             while ( selected != last_selected ) {
 
-                DocumentUndo::undo(_document);
+                DocumentUndo::undo(getDocument());
 
                 if ( last_selected->parent() &&
                      last_selected == last_selected->parent()->children().begin() )
@@ -331,7 +288,7 @@ UndoHistory::_onListSelectionChange()
 
             while ( selected != last_selected ) {
 
-                DocumentUndo::redo(_document);
+                DocumentUndo::redo(getDocument());
 
                 if ( !last_selected->children().empty() ) {
                     _event_log->setCurrEventParent(last_selected);
@@ -375,10 +332,10 @@ UndoHistory::_onCollapseEvent(const Gtk::TreeModel::iterator &iter, const Gtk::T
         EventLog::const_iterator last = curr_event_parent->children().end();
 
         _event_log->blockNotifications();
-        DocumentUndo::redo(_document);
+        DocumentUndo::redo(getDocument());
 
         for ( --last ; curr_event != last ; ++curr_event ) {
-            DocumentUndo::redo(_document);
+            DocumentUndo::redo(getDocument());
         }
         _event_log->blockNotifications(false);
 

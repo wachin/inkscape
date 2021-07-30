@@ -56,36 +56,6 @@ static guint count_filter_hrefs(SPObject *o, SPFilter *filter)
     return i;
 }
 
-/**
- * Sets a suitable filter effects area according to given blur radius,
- * expansion and object size.
- */
-static void set_filter_area(Inkscape::XML::Node *repr, gdouble radius,
-                            double expansion, double expansionX,
-                            double expansionY, double width, double height)
-{
-    // TODO: make this more generic, now assumed, that only the blur
-    // being added can affect the required filter area
-
-    double rx = radius * (expansionY != 0 ? (expansion / expansionY) : 1);
-    double ry = radius * (expansionX != 0 ? (expansion / expansionX) : 1);
-
-    if (width != 0 && height != 0) {
-        // If not within the default 10% margin (see
-        // http://www.w3.org/TR/SVG11/filters.html#FilterEffectsRegion), specify margins
-        // The 2.4 is an empirical coefficient: at that distance the cutoff is practically invisible 
-        // (the opacity at 2.4*radius is about 3e-3)
-        double xmargin = 2.4 * (rx) / width;
-        double ymargin = 2.4 * (ry) / height;
-
-        // TODO: set it in UserSpaceOnUse instead?
-        sp_repr_set_svg_double(repr, "x", -xmargin);
-        sp_repr_set_svg_double(repr, "width", 1 + 2 * xmargin);
-        sp_repr_set_svg_double(repr, "y", -ymargin);
-        sp_repr_set_svg_double(repr, "height", 1 + 2 * ymargin);
-    }
-}
-
 SPFilter *new_filter(SPDocument *document)
 {
     g_return_val_if_fail(document != nullptr, NULL);
@@ -192,7 +162,7 @@ filter_add_primitive(SPFilter *filter, const Inkscape::Filters::FilterPrimitiveT
  * Creates a filter with blur primitive of specified radius for an item with the given matrix expansion, width and height
  */
 SPFilter *
-new_filter_gaussian_blur (SPDocument *document, gdouble radius, double expansion, double expansionX, double expansionY, double width, double height)
+new_filter_gaussian_blur (SPDocument *document, gdouble radius, double expansion)
 {
     g_return_val_if_fail(document != nullptr, NULL);
 
@@ -205,8 +175,6 @@ new_filter_gaussian_blur (SPDocument *document, gdouble radius, double expansion
     repr = xml_doc->createElement("svg:filter");
     //repr->setAttribute("inkscape:collect", "always");
 
-    set_filter_area(repr, radius, expansion, expansionX, expansionY,
-                    width, height);
 
     /* Inkscape now supports both sRGB and linear color-interpolation-filters.  
      * But, for the moment, keep sRGB as default value for new filters.
@@ -227,7 +195,7 @@ new_filter_gaussian_blur (SPDocument *document, gdouble radius, double expansion
         stdDeviation /= expansion;
 
     //set stdDeviation attribute
-    sp_repr_set_svg_double(b_repr, "stdDeviation", stdDeviation);
+    b_repr->setAttributeSvgDouble("stdDeviation", stdDeviation);
     
     //set feGaussianBlur as child of filter node
     repr->appendChild(b_repr);
@@ -255,8 +223,7 @@ new_filter_gaussian_blur (SPDocument *document, gdouble radius, double expansion
  * an item with the given matrix expansion, width and height
  */
 static SPFilter *
-new_filter_blend_gaussian_blur (SPDocument *document, const char *blendmode, gdouble radius, double expansion,
-                                double expansionX, double expansionY, double width, double height)
+new_filter_blend_gaussian_blur (SPDocument *document, const char *blendmode, gdouble radius, double expansion)
 {
     g_return_val_if_fail(document != nullptr, NULL);
 
@@ -286,7 +253,6 @@ new_filter_blend_gaussian_blur (SPDocument *document, const char *blendmode, gdo
     SPFilter *f = SP_FILTER( document->getObjectByRepr(repr) );
     // Gaussian blur primitive
     if(radius != 0) {
-        set_filter_area(repr, radius, expansion, expansionX, expansionY, width, height);
         //create feGaussianBlur node
         Inkscape::XML::Node *b_repr;
         b_repr = xml_doc->createElement("svg:feGaussianBlur");
@@ -297,7 +263,7 @@ new_filter_blend_gaussian_blur (SPDocument *document, const char *blendmode, gdo
             stdDeviation /= expansion;
         
         //set stdDeviation attribute
-        sp_repr_set_svg_double(b_repr, "stdDeviation", stdDeviation);
+        b_repr->setAttributeSvgDouble("stdDeviation", stdDeviation);
      
         //set feGaussianBlur as child of filter node
         repr->appendChild(b_repr);
@@ -343,20 +309,7 @@ new_filter_blend_gaussian_blur (SPDocument *document, const char *blendmode, gdo
 SPFilter *
 new_filter_simple_from_item (SPDocument *document, SPItem *item, const char *mode, gdouble radius)
 {
-    Geom::OptRect const r = item->desktopGeometricBounds();
-
-    double width;
-    double height;
-    if (r) {
-        width = r->dimensions()[Geom::X];
-        height= r->dimensions()[Geom::Y];
-    } else {
-        width = height = 0;
-    }
-
-    Geom::Affine i2dt (item->i2dt_affine () );
-
-    return (new_filter_blend_gaussian_blur (document, mode, radius, i2dt.descrim(), i2dt.expansionX(), i2dt.expansionY(), width, height));
+    return new_filter_blend_gaussian_blur(document, mode, radius, item->i2dt_affine().descrim());
 }
 
 /**
@@ -375,7 +328,7 @@ SPFilter *modify_filter_gaussian_blur_from_item(SPDocument *document, SPItem *it
         return new_filter_simple_from_item(document, item, "normal", radius);
     }
 
-    SPFilter *filter = SP_FILTER(item->style->getFilter());
+    SPFilter *filter = item->style->getFilter();
     if (!filter) {
         // We reach here when filter.set is true, but the href is not found in the document
         return new_filter_simple_from_item(document, item, "normal", radius);
@@ -402,27 +355,17 @@ SPFilter *modify_filter_gaussian_blur_from_item(SPDocument *document, SPItem *it
 
     // Get the object size
     Geom::OptRect const r = item->desktopGeometricBounds();
-    double width;
-    double height;
-    if (r) {
-        width = r->dimensions()[Geom::X];
-        height= r->dimensions()[Geom::Y];
-    } else {
-        width = height = 0;
-    }
 
     // Set the filter effects area
-    Inkscape::XML::Node *repr = item->style->getFilter()->getRepr();
-    set_filter_area(repr, radius, expansion, i2d.expansionX(),
-                    i2d.expansionY(), width, height);
+    SPFilter *f = item->style->getFilter();
 
+    Inkscape::XML::Node *repr = f->getRepr();
     // Search for gaussian blur primitives. If found, set the stdDeviation
     // of the first one and return.
     Inkscape::XML::Node *primitive = repr->firstChild();
     while (primitive) {
         if (strcmp("svg:feGaussianBlur", primitive->name()) == 0) {
-            sp_repr_set_svg_double(primitive, "stdDeviation",
-                                   stdDeviation);
+            primitive->setAttributeSvgDouble("stdDeviation", stdDeviation);
             return filter;
         }
         primitive = primitive->next();
@@ -436,7 +379,7 @@ SPFilter *modify_filter_gaussian_blur_from_item(SPDocument *document, SPItem *it
     //b_repr->setAttribute("inkscape:collect", "always");
     
     //set stdDeviation attribute
-    sp_repr_set_svg_double(b_repr, "stdDeviation", stdDeviation);
+    b_repr->setAttributeSvgDouble("stdDeviation", stdDeviation);
     
     //set feGaussianBlur as child of filter node
     filter->getRepr()->appendChild(b_repr);
@@ -456,6 +399,19 @@ void remove_filter (SPObject *item, bool recursive)
     }
     sp_repr_css_attr_unref(css);
 }
+
+// 1.1 COPYPASTECLONESTAMPLPEBUG
+void remove_hidder_filter (SPObject *item)
+{
+    SPFilter *filt = item->style->getFilter();
+    if (filt && filt->getId()) {
+        Glib::ustring filter = filt->getId();
+        if (!filter.rfind("selectable_hidder_filter", 0)) {
+            remove_filter(item, false);
+        }
+    }
+}
+// END COPYPASTECLONESTAMPLPEBUG
 
 /**
  * Removes the first feGaussianBlur from the filter attached to given item.
@@ -521,7 +477,7 @@ void remove_filter_legacy_blend(SPObject *item)
         }
         if (blend && total == 2 && blurcount == 1) {
             blend->deleteObject(true);
-        } else if (total == 1) {
+        } else if (total == 1 && blurcount != 1) {
             remove_filter(item, false);
         }
     }

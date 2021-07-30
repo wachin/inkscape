@@ -55,9 +55,12 @@ Ruler::Ruler(Gtk::Orientation orientation)
 {
     set_name("InkRuler");
 
-    set_events(Gdk::POINTER_MOTION_MASK);
+    set_events(Gdk::POINTER_MOTION_MASK |
+               Gdk::BUTTON_PRESS_MASK   |  // For guide creation
+               Gdk::BUTTON_RELEASE_MASK );
 
     signal_motion_notify_event().connect(sigc::mem_fun(*this, &Ruler::draw_marker_callback));
+    set_no_show_all();
 }
 
 // Set display unit for ruler.

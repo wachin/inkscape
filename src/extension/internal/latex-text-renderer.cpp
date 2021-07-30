@@ -58,7 +58,7 @@ namespace Internal {
  */
 bool
 latex_render_document_text_to_file( SPDocument *doc, gchar const *filename,
-                                    const gchar * const exportId, bool exportDrawing, bool exportCanvas, float bleedmargin_px,
+                                    const gchar * const exportId, bool exportDrawing, bool exportCanvas, double bleedmargin_px,
                                     bool pdflatex)
 {
     doc->ensureUpToDate();
@@ -299,8 +299,14 @@ void LaTeXTextRenderer::sp_text_render(SPText *textobj)
         aligntabular = "{c}";
         break;
     }
-    Geom::Point anchor = textobj->attributes.firstXY() * transform();
-    Geom::Point pos(anchor);
+
+    Geom::Point anchor;
+    const auto baseline_anchor_point = textobj->layout.baselineAnchorPoint();
+    if (baseline_anchor_point) {
+        anchor = (*baseline_anchor_point) * transform();
+    } else {
+        g_warning("LaTeXTextRenderer::sp_text_render: baselineAnchorPoint unset, text position will be wrong. Please report the issue.");
+    }
 
     // determine color and transparency (for now, use rgb color model as it is most native to Inkscape)
     bool has_color = false; // if the item has no color set, don't force black color
@@ -342,7 +348,7 @@ void LaTeXTextRenderer::sp_text_render(SPText *textobj)
     Inkscape::SVGOStringStream os;
     os.setf(std::ios::fixed); // don't use scientific notation
 
-    os << "    \\put(" << pos[Geom::X] << "," << pos[Geom::Y] << "){";
+    os << "    \\put(" << anchor[Geom::X] << "," << anchor[Geom::Y] << "){";
     if (has_color) {
         os << "\\color[rgb]{" << SP_RGBA32_R_F(rgba) << "," << SP_RGBA32_G_F(rgba) << "," << SP_RGBA32_B_F(rgba) << "}";
     }
@@ -600,35 +606,30 @@ LaTeXTextRenderer::sp_item_invoke_render(SPItem *item)
 
     SPRoot *root = dynamic_cast<SPRoot *>(item);
     if (root) {
-        sp_root_render(root);
-    } else {
-        SPGroup *group = dynamic_cast<SPGroup *>(item);
-        if (group) {
-            sp_group_render(group);
-        } else {
-            SPUse *use = dynamic_cast<SPUse *>(item);
-            if (use) {
-                sp_use_render(use);
-            } else {
-                SPText *text = dynamic_cast<SPText *>(item);
-                if (text) {
-                    sp_text_render(text);
-                } else {
-                    SPFlowtext *flowtext = dynamic_cast<SPFlowtext *>(item);
-                    if (flowtext) {
-                        sp_flowtext_render(flowtext);
-                    } else {
-                        // Only PDFLaTeX supports importing a single page of a graphics file,
-                        // so only PDF backend gets interleaved text/graphics
-                        if (_pdflatex && (_omittext_state == EMPTY || _omittext_state == NEW_PAGE_ON_GRAPHIC)) {
-                            writeGraphicPage();
-                        }
-                        _omittext_state = GRAPHIC_ON_TOP;
-                    }
-                }
-            }
-        }
+        return sp_root_render(root);
     }
+    SPGroup *group = dynamic_cast<SPGroup *>(item);
+    if (group) {
+        return sp_group_render(group);
+    }
+    SPUse *use = dynamic_cast<SPUse *>(item);
+    if (use) {
+        return sp_use_render(use);
+    }
+    SPText *text = dynamic_cast<SPText *>(item);
+    if (text) {
+        return sp_text_render(text);
+    }
+    SPFlowtext *flowtext = dynamic_cast<SPFlowtext *>(item);
+    if (flowtext) {
+        return sp_flowtext_render(flowtext);
+    }
+    // Only PDFLaTeX supports importing a single page of a graphics file,
+    // so only PDF backend gets interleaved text/graphics
+    if (_pdflatex && (_omittext_state == EMPTY || _omittext_state == NEW_PAGE_ON_GRAPHIC)) {
+        writeGraphicPage();
+    }
+    _omittext_state = GRAPHIC_ON_TOP;
 }
 
 void
@@ -654,7 +655,7 @@ LaTeXTextRenderer::writeGraphicPage() {
 }
 
 bool
-LaTeXTextRenderer::setupDocument(SPDocument *doc, bool pageBoundingBox, float bleedmargin_px, SPItem *base)
+LaTeXTextRenderer::setupDocument(SPDocument *doc, bool pageBoundingBox, double bleedmargin_px, SPItem *base)
 {
 // The boundingbox calculation here should be exactly the same as the one by CairoRenderer::setupDocument !
 

@@ -43,13 +43,14 @@ public:
     void doBeforeEffect(SPLPEItem const *lpeItem) override;
     void doOnApply(SPLPEItem const* lpeitem) override;
     void doOnRemove(SPLPEItem const* lpeitem) override;
-    void doAfterEffect(SPLPEItem const *lpeitem) override;
+    void doAfterEffect(SPLPEItem const *lpeitem, SPCurve *curve) override;
     void transform_multiply(Geom::Affine const &postmul, bool set) override;
     void applyStyle(SPLPEItem *lpeitem);
     // methods called by path-manipulator upon edits
     void adjustForNewPath(Geom::PathVector const & path_in);
 
     PowerStrokePointArrayParam offset_points;
+    BoolParam not_jump;
 private:
     BoolParam sort_points;
     EnumParam<unsigned> interpolator_type;

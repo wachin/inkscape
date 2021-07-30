@@ -18,15 +18,12 @@
 #include "sp-polygon.h"
 
 
-#define SP_STAR(obj) (dynamic_cast<SPStar*>((SPObject*)obj))
-#define SP_IS_STAR(obj) (dynamic_cast<const SPStar*>((SPObject*)obj) != NULL)
-
 enum SPStarPoint {
 	SP_STAR_POINT_KNOT1,
 	SP_STAR_POINT_KNOT2
 };
 
-class SPStar : public SPPolygon {
+class SPStar : public SPShape {
 public:
 	SPStar();
 	~SPStar() override;
@@ -48,10 +45,11 @@ public:
 
 	void build(SPDocument *document, Inkscape::XML::Node *repr) override;
 	Inkscape::XML::Node* write(Inkscape::XML::Document *xml_doc, Inkscape::XML::Node *repr, unsigned int flags) override;
-	void set(SPAttributeEnum key, char const* value) override;
+	void set(SPAttr key, char const* value) override;
 	void update(SPCtx* ctx, unsigned int flags) override;
 
-    const char* displayName() const override;
+        const char* typeName() const override;
+        const char* displayName() const override;
 	char* description() const override;
 	void snappoints(std::vector<Inkscape::SnapCandidatePoint> &p, Inkscape::SnapPreferences const *snapprefs) const override;
     void update_patheffect(bool write) override;
@@ -64,5 +62,7 @@ void sp_star_position_set (SPStar *star, int sides, Geom::Point center, double r
 Geom::Point sp_star_get_xy (SPStar const *star, SPStarPoint point, int index, bool randomized = false);
 
 
+MAKE_SP_OBJECT_DOWNCAST_FUNCTIONS(SP_STAR, SPStar)
+MAKE_SP_OBJECT_TYPECHECK_FUNCTIONS(SP_IS_STAR, SPStar)
 
 #endif

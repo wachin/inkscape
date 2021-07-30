@@ -69,8 +69,8 @@ appreciate this. New files should have one or two lines describing the
 purpose of the code inside the file.
 
 
-Building
---------
+Building (In Linux distribution)
+--------------------------------
 
 This is the best set of instructions for setting up your build directory...
 
@@ -83,7 +83,7 @@ sudo apt-get install ninja-build ccache
 Next we prepare a build directory with a symlink to Inkscape's share folder, add a profile dir and set the bin folder (optional):
 
 ```bash
-ln -s share share/inkscape
+ln -s $PWD/share ./share/inkscape
 mkdir -p build/conf
 cd build
 export INKSCAPE_PROFILE_DIR=$PWD/conf
@@ -107,9 +107,31 @@ Now we can run `inkscape` that we have built, with the latest resources and code
 ./bin/inkscape
 ```
 
+To build in Non-Linux Platforms check out `INSTALL.md` (Links to Inkscape Wiki pages are given right below "Basic Installation")
+
+Profiling
+---------
+
+To run with profiling, add `-DWITH_PROFILING=ON` to the above cmake script. Compiling and running will be slower and the gmon file will appear only after Inkscape quits.
+
+See: https://wiki.inkscape.org/wiki/index.php/Profiling
+
 Testing
 -------
 
 Before landing a patch, the unit tests should pass.
 
 See: http://wiki.inkscape.org/wiki/index.php/CMake#Using_CMake_to_run_tests
+
+General Guidelines for developers
+----------------------------------
+
+* If you are new, fork the inkscape project (https://gitlab.com/inkscape/inkscape) and create a new branch for each bug/feature you want to work on. Try to Set the CI time to a high value like 2 hour (Go to your fork > Settings > General Pipelines > Timeout)
+* Merge requests (MR) are encouraged for the smallest of contributions. This helps other developers review the code you've written and check for the mistakes that may have slipped by you.
+* Before working on anything big, be sure to discuss your idea with us ([IRC](irc://irc.freenode.org/#inkscape) or [RocketChat](https://chat.inkscape.org/)). Someone else might already have plans you can build upon and we will try to guide you !
+* Adopt the coding style (indentation, bracket placement, reference/pointer placement, variable naming etc. - developer's common sense required!) of existing source so that your changes and code doesn't stand out/feel foreign.
+* Carefully explain your ideas and the changes you've made along with their importance in the MR. Feel free to use pictures !
+* Check the "Allow commits from members who can merge to this target branch" option while submitting the MR.
+* Write informative commit messages ([check this](https://chris.beams.io/posts/git-commit/)). Use full url of bug instead of mentioning just the number in messages and discussions.
+* Try to keep your MR current instead of creating a new one. Rebase your MR sometimes.
+* Inkscape has contributors/developers from across the globe. Some may be unavailable at times but be patient and we will try our best to help you. We are glad to have you!

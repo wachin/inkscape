@@ -22,6 +22,7 @@
 #include <glibmm/markup.h>
 
 #include "bad-uri-exception.h"
+#include "display/curve.h"
 #include "display/drawing-group.h"
 #include "attributes.h"
 #include "document.h"
@@ -78,11 +79,11 @@ SPUse::~SPUse() {
 void SPUse::build(SPDocument *document, Inkscape::XML::Node *repr) {
     SPItem::build(document, repr);
 
-    this->readAttr( "x" );
-    this->readAttr( "y" );
-    this->readAttr( "width" );
-    this->readAttr( "height" );
-    this->readAttr( "xlink:href" );
+    this->readAttr(SPAttr::X);
+    this->readAttr(SPAttr::Y);
+    this->readAttr(SPAttr::WIDTH);
+    this->readAttr(SPAttr::HEIGHT);
+    this->readAttr(SPAttr::XLINK_HREF);
 
     // We don't need to create child here:
     // reading xlink:href will attach ref, and that will cause the changed signal to be emitted,
@@ -107,29 +108,29 @@ void SPUse::release() {
     SPItem::release();
 }
 
-void SPUse::set(SPAttributeEnum key, const gchar* value) {
+void SPUse::set(SPAttr key, const gchar* value) {
     switch (key) {
-        case SP_ATTR_X:
+        case SPAttr::X:
             this->x.readOrUnset(value);
             this->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG);
             break;
 
-        case SP_ATTR_Y:
+        case SPAttr::Y:
             this->y.readOrUnset(value);
             this->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG);
             break;
 
-        case SP_ATTR_WIDTH:
+        case SPAttr::WIDTH:
             this->width.readOrUnset(value, SVGLength::PERCENT, 1.0, 1.0);
             this->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG);
             break;
 
-        case SP_ATTR_HEIGHT:
+        case SPAttr::HEIGHT:
             this->height.readOrUnset(value, SVGLength::PERCENT, 1.0, 1.0);
             this->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG);
             break;
 
-        case SP_ATTR_XLINK_HREF: {
+        case SPAttr::XLINK_HREF: {
             if ( value && this->href && ( strcmp(value, this->href) == 0 ) ) {
                 /* No change, do nothing. */
             } else {
@@ -167,8 +168,8 @@ Inkscape::XML::Node* SPUse::write(Inkscape::XML::Document *xml_doc, Inkscape::XM
 
     SPItem::write(xml_doc, repr, flags);
 
-    sp_repr_set_svg_double(repr, "x", this->x.computed);
-    sp_repr_set_svg_double(repr, "y", this->y.computed);
+    repr->setAttributeSvgDouble("x", this->x.computed);
+    repr->setAttributeSvgDouble("y", this->y.computed);
     repr->setAttribute("width", sp_svg_length_write_with_units(this->width));
     repr->setAttribute("height", sp_svg_length_write_with_units(this->height));
 
@@ -226,6 +227,14 @@ void SPUse::print(SPPrintContext* ctx) {
 
     if (translated) {
         ctx->release();
+    }
+}
+
+const char* SPUse::typeName() const {
+    if (dynamic_cast<SPSymbol *>(child)) {
+        return "symbol";
+    } else {
+        return "clone";
     }
 }
 
@@ -456,7 +465,7 @@ void SPUse::move_compensate(Geom::Affine const *mp) {
     }
 
     // restore item->transform field from the repr, in case it was changed by seltrans
-    this->readAttr ("transform");
+    this->readAttr (SPAttr::TRANSFORM);
 
 
     // calculate the compensation matrix and the advertized movement matrix
@@ -524,7 +533,7 @@ void SPUse::href_changed() {
                 this->attach(this->child, this->lastChild());
                 sp_object_unref(this->child, this);
 
-                this->child->invoke_build(this->document, childrepr, TRUE);
+                this->child->invoke_build(refobj->document, childrepr, TRUE);
 
                 for (SPItemView *v = this->display; v != nullptr; v = v->next) {
                     Inkscape::DrawingItem *ai = this->child->invoke_show(v->arenaitem->drawing(), v->key, v->flags);

@@ -58,7 +58,6 @@ using Inkscape::DocumentUndo;
 static void sp_group_perform_patheffect(SPGroup *group, SPGroup *top_group, Inkscape::LivePathEffect::Effect *lpe, bool write);
 
 SPGroup::SPGroup() : SPLPEItem(),
-    _expanded(false),
     _insert_bottom(false),
     _layer_mode(SPGroup::GROUP)
 {
@@ -67,7 +66,7 @@ SPGroup::SPGroup() : SPLPEItem(),
 SPGroup::~SPGroup() = default;
 
 void SPGroup::build(SPDocument *document, Inkscape::XML::Node *repr) {
-    this->readAttr( "inkscape:groupmode" );
+    this->readAttr(SPAttr::INKSCAPE_GROUPMODE);
 
     SPLPEItem::build(document, repr);
 }
@@ -296,8 +295,27 @@ void SPGroup::print(SPPrintContext *ctx) {
     }
 }
 
+const char *SPGroup::typeName() const {
+    switch (_layer_mode) {
+        case SPGroup::LAYER:
+            return "layer";
+        case SPGroup::MASK_HELPER:
+        case SPGroup::GROUP:
+        default:
+            return "group";
+    }
+}
+
 const char *SPGroup::displayName() const {
-    return _("Group");
+    switch (_layer_mode) {
+        case SPGroup::LAYER:
+            return _("Layer");
+        case SPGroup::MASK_HELPER:
+            return _("Mask Helper");
+        case SPGroup::GROUP:
+        default:
+            return _("Group");
+    }
 }
 
 gchar *SPGroup::description() const {
@@ -306,9 +324,9 @@ gchar *SPGroup::description() const {
         ngettext(_("of <b>%d</b> object"), _("of <b>%d</b> objects"), len), len);
 }
 
-void SPGroup::set(SPAttributeEnum key, gchar const* value) {
+void SPGroup::set(SPAttr key, gchar const* value) {
     switch (key) {
-        case SP_ATTR_INKSCAPE_GROUPMODE:
+        case SPAttr::INKSCAPE_GROUPMODE:
             if ( value && !strcmp(value, "layer") ) {
                 this->setLayerMode(SPGroup::LAYER);
             } else if ( value && !strcmp(value, "maskhelper") ) {
@@ -362,103 +380,88 @@ void SPGroup::snappoints(std::vector<Inkscape::SnapCandidatePoint> &p, Inkscape:
     }
 }
 
-void sp_item_group_ungroup_handle_clones(SPItem *parent, Geom::Affine const g)
+/**
+ * Helper function for ungrouping. Compensates the transform of linked items
+ * (clones, linked offset, text-on-path, text with shape-inside) who's source is a
+ * direct child of the group being ungrouped (or will be moved to a different
+ * group or layer).
+ *
+ * @param item An object which may be linked to `expected_source`
+ * @param expected_source An object who's transform attribute (but not its
+ * i2doc transform) will change (later) due to moving to a different group
+ * @param source_transform A transform which will be applied to
+ * `expected_source` (later) and needs to be compensated in its linked items
+ *
+ * @post item and its representation are updated
+ */
+static void _ungroup_compensate_source_transform(SPItem *item, SPItem const *const expected_source,
+                                                 Geom::Affine const &source_transform)
 {
-    for(std::list<SPObject*>::const_iterator refd=parent->hrefList.begin();refd!=parent->hrefList.end();++refd){
-        SPItem *citem = dynamic_cast<SPItem *>(*refd);
-        if (citem && !citem->cloned) {
-            SPUse *useitem = dynamic_cast<SPUse *>(citem);
-            if (useitem && useitem->get_original() == parent) {
-                Geom::Affine ctrans;
-                ctrans = g.inverse() * citem->transform;
-                gchar *affinestr = sp_svg_transform_write(ctrans);
-                citem->setAttribute("transform", affinestr);
-                g_free(affinestr);
-            }
-        }
+    if (!item || item->cloned) {
+        return;
     }
+
+    SPItem *source = nullptr;
+    SPText *item_text = nullptr;
+    SPOffset *item_offset = nullptr;
+    SPUse *item_use = nullptr;
+
+    if ((item_offset = dynamic_cast<SPOffset *>(item))) {
+        source = sp_offset_get_source(item_offset);
+    } else if ((item_text = dynamic_cast<SPText *>(item))) {
+        source = item_text->get_first_shape_dependency();
+    } else if (auto textpath = dynamic_cast<SPTextPath *>(item)) {
+        item_text = dynamic_cast<SPText*>(textpath->parent);
+        if (!item_text)
+            return;
+        item = item_text;
+        source = sp_textpath_get_path_item(textpath);
+    } else if ((item_use = dynamic_cast<SPUse *>(item))) {
+        source = item_use->get_original();
+    }
+
+    if (source != expected_source) {
+        return;
+    }
+
+    // FIXME: constructing a transform that would fully preserve the appearance of a
+    // textpath if it is ungrouped with its path seems to be impossible in general
+    // case. E.g. if the group was squeezed, to keep the ungrouped textpath squeezed
+    // as well, we'll need to relink it to some "virtual" path which is inversely
+    // stretched relative to the actual path, and then squeeze the textpath back so it
+    // would both fit the actual path _and_ be squeezed as before. It's a bummer.
+
+    auto const adv = item->transform.inverse() * source_transform * item->transform;
+    double const scale = source_transform.descrim();
+
+    if (item_text) {
+        item_text->_adjustFontsizeRecursive(item_text, scale);
+    } else if (item_offset) {
+        item_offset->rad *= scale;
+    } else if (item_use) {
+        item->transform = Geom::Translate(item_use->x.computed, item_use->y.computed) * item->transform;
+        item_use->x = 0;
+        item_use->y = 0;
+    }
+
+    if (!item_use) {
+        item->adjust_stroke_width_recursive(scale);
+        item->adjust_paint_recursive(adv, Geom::identity(), SPItem::PATTERN);
+        item->adjust_paint_recursive(adv, Geom::identity(), SPItem::HATCH);
+        item->adjust_paint_recursive(adv, Geom::identity(), SPItem::GRADIENT);
+    }
+
+    item->transform = source_transform.inverse() * item->transform;
+    item->updateRepr();
 }
 
-void
-sp_recursive_scale_text_size(Inkscape::XML::Node *repr, double scale){
-    for (Inkscape::XML::Node *child = repr->firstChild() ; child; child = child->next() ){
-        if ( child) {
-            sp_recursive_scale_text_size(child, scale);
-        }
-    }
-    SPCSSAttr * css = sp_repr_css_attr(repr,"style");
-    Glib::ustring element = g_quark_to_string(repr->code());
-    if ((css && element == "svg:text") || element == "svg:tspan") {
-        gchar const *w = sp_repr_css_property(css, "font-size", nullptr);
-        if (w) {
-            gchar *units = nullptr;
-            double wd = g_ascii_strtod(w, &units);
-            wd *= scale;
-            if (w != units) {
-                Inkscape::CSSOStringStream os;
-                os << wd << units; // reattach units
-                sp_repr_css_set_property(css, "font-size", os.str().c_str());
-                Glib::ustring css_str;
-                sp_repr_css_write_string(css,css_str);
-                repr->setAttributeOrRemoveIfEmpty("style", css_str);
-            }
-        }
-        w = nullptr;
-        w = sp_repr_css_property(css, "letter-spacing", nullptr);
-        if (w) {
-            gchar *units = nullptr;
-            double wd = g_ascii_strtod(w, &units);
-            wd *= scale;
-            if (w != units) {
-                Inkscape::CSSOStringStream os;
-                os << wd << units; // reattach units
-                sp_repr_css_set_property(css, "letter-spacing", os.str().c_str());
-                Glib::ustring css_str;
-                sp_repr_css_write_string(css,css_str);
-                repr->setAttributeOrRemoveIfEmpty("style", css_str);
-            }
-        }
-        w = nullptr;
-        w = sp_repr_css_property(css, "word-spacing", nullptr);
-        if (w) {
-            gchar *units = nullptr;
-            double wd = g_ascii_strtod(w, &units);
-            wd *= scale;
-            if (w != units) {
-                Inkscape::CSSOStringStream os;
-                os << wd << units; // reattach units
-                sp_repr_css_set_property(css, "word-spacing", os.str().c_str());
-                Glib::ustring css_str;
-                sp_repr_css_write_string(css,css_str);
-                repr->setAttributeOrRemoveIfEmpty("style", css_str);
-            }
-        }
-        gchar const *dx = repr->attribute("dx");
-        if (dx) {
-            gchar ** dxarray = g_strsplit(dx, " ", 0);
-            Inkscape::SVGOStringStream dx_data;
-            while (*dxarray != nullptr) {
-                double pos;
-                sp_svg_number_read_d(*dxarray, &pos);
-                pos *= scale;
-                dx_data << pos << " ";
-                dxarray++;
-            }
-            repr->setAttribute("dx", dx_data.str());
-        }
-        gchar const *dy = repr->attribute("dy");
-        if (dy) {
-            gchar ** dyarray = g_strsplit(dy, " ", 0);
-            Inkscape::SVGOStringStream dy_data;
-            while (*dyarray != nullptr) {
-                double pos;
-                sp_svg_number_read_d(*dyarray, &pos);
-                pos *= scale;
-                dy_data << pos << " ";
-                dyarray++;
-            }
-            repr->setAttribute("dy", dy_data.str());
-        }
+void sp_item_group_ungroup_handle_clones(SPItem *parent, Geom::Affine const g)
+{
+    // copy the list because the original may get invalidated
+    auto hrefListCopy = parent->hrefList;
+
+    for (auto *cobj : hrefListCopy) {
+        _ungroup_compensate_source_transform(dynamic_cast<SPItem *>(cobj), parent, g);
     }
 }
 
@@ -488,7 +491,7 @@ sp_item_group_ungroup (SPGroup *group, std::vector<SPItem*> &children, bool do_d
     {
         SPBox3D *box = dynamic_cast<SPBox3D *>(group);
         if (box) {
-            group = box3d_convert_to_group(box);
+            group = box->convert_to_group();
         }
     }
 
@@ -497,11 +500,13 @@ sp_item_group_ungroup (SPGroup *group, std::vector<SPItem*> &children, bool do_d
     /* Step 1 - generate lists of children objects */
     std::vector<Inkscape::XML::Node *> items;
     std::vector<Inkscape::XML::Node *> objects;
-    Geom::Affine const g(group->transform);
+    Geom::Affine const g = i2anc_affine(group, group->parent);
 
-    for (auto& child: group->children) {
-        if (SPItem *citem = dynamic_cast<SPItem *>(&child)) {
-            sp_item_group_ungroup_handle_clones(citem, g);
+    if (!g.isIdentity()) {
+        for (auto &child : group->children) {
+            if (SPItem *citem = dynamic_cast<SPItem *>(&child)) {
+                sp_item_group_ungroup_handle_clones(citem, g);
+            }
         }
     }
 
@@ -535,58 +540,12 @@ sp_item_group_ungroup (SPGroup *group, std::vector<SPItem*> &children, bool do_d
              * extra complication & maintenance burden and this case is rare.
              */
 
+            // Merging transform
+            citem->transform *= g;
+
             child.updateRepr();
 
             Inkscape::XML::Node *nrepr = child.getRepr()->duplicate(prepr->document());
-
-            // Merging transform
-            Geom::Affine ctrans = citem->transform * g;
-                // We should not apply the group's transformation to both a linked offset AND to its source
-                if (dynamic_cast<SPOffset *>(citem)) { // Do we have an offset at hand (whether it's dynamic or linked)?
-                    SPItem *source = sp_offset_get_source(dynamic_cast<SPOffset *>(citem));
-                    // When dealing with a chain of linked offsets, the transformation of an offset will be
-                    // tied to the transformation of the top-most source, not to any of the intermediate
-                    // offsets. So let's find the top-most source
-                    while (source != nullptr && dynamic_cast<SPOffset *>(source)) {
-                        source = sp_offset_get_source(dynamic_cast<SPOffset *>(source));
-                    }
-                    if (source != nullptr && // If true then we must be dealing with a linked offset ...
-                        group->isAncestorOf(source) ) { // ... of which the source is in the same group
-                        ctrans = citem->transform; // then we should apply the transformation of the group to the offset
-                    }
-                }
-
-            // FIXME: constructing a transform that would fully preserve the appearance of a
-            // textpath if it is ungrouped with its path seems to be impossible in general
-            // case. E.g. if the group was squeezed, to keep the ungrouped textpath squeezed
-            // as well, we'll need to relink it to some "virtual" path which is inversely
-            // stretched relative to the actual path, and then squeeze the textpath back so it
-            // would both fit the actual path _and_ be squeezed as before. It's a bummer.
-
-            // This is just a way to temporarily remember the transform in repr. When repr is
-            // reattached outside of the group, the transform will be written more properly
-            // (i.e. optimized into the object if the corresponding preference is set)
-            gchar *affinestr=sp_svg_transform_write(ctrans);
-            SPText * text = dynamic_cast<SPText *>(citem);
-            if (text) {
-                //this causes a change in text-on-path appearance when there is a non-conformal transform, see bug #1594565
-                SPTextPath * text_path = dynamic_cast<SPTextPath *>(text->firstChild());
-                if (!text_path) {
-                    nrepr->setAttribute("transform", affinestr);
-                } else {
-                    // The following breaks roundtripping  group -> ungroup
-                    // double scale = (ctrans.expansionX() + ctrans.expansionY()) / 2.0;
-                    // sp_recursive_scale_text_size(nrepr, scale);
-                    Geom::Affine ttrans = ctrans.inverse() * SP_ITEM(text)->transform * ctrans;
-                    gchar *affinestr = sp_svg_transform_write(ttrans);
-                    nrepr->setAttribute("transform", affinestr);
-                    g_free(affinestr);
-                }
-            } else {
-                nrepr->setAttribute("transform", affinestr);
-            }
-            g_free(affinestr);
-
             items.push_back(nrepr);
 
         } else {
@@ -597,7 +556,7 @@ sp_item_group_ungroup (SPGroup *group, std::vector<SPItem*> &children, bool do_d
 
     /* Step 2 - clear group */
     // remember the position of the group
-    gint pos = group->getRepr()->position();
+    auto insert_after = group->getRepr()->prev();
 
     // the group is leaving forever, no heir, clones should take note; its children however are going to reemerge
     group->deleteObject(true, false);
@@ -615,12 +574,10 @@ sp_item_group_ungroup (SPGroup *group, std::vector<SPItem*> &children, bool do_d
     }
 
     /* Step 4 - add items */
-    for (auto i=items.rbegin();i!=items.rend();++i) {
-        Inkscape::XML::Node *repr = *i;
+    for (auto *repr : items) {
         // add item
-        // restore position; since the items list was prepended (i.e. reverse), we now add
-        // all children at the same pos, which inverts the order once again
-        prepr->addChildAtPos(repr, pos);
+        prepr->addChild(repr, insert_after);
+        insert_after = repr;
 
         // fill in the children list if non-null
         SPItem *item = static_cast<SPItem *>(doc->getObjectByRepr(repr));
@@ -685,12 +642,6 @@ SPGroup::LayerMode SPGroup::layerDisplayMode(unsigned int dkey) const {
         return (*iter).second;
     } else {
         return GROUP;
-    }
-}
-
-void SPGroup::setExpanded(bool isexpanded) {
-    if ( _expanded != isexpanded ){
-        _expanded = isexpanded;
     }
 }
 
@@ -807,7 +758,7 @@ void SPGroup::scaleChildItemsRec(Geom::Scale const &sc, Geom::Point const &p, bo
                                 SPBox3D *box = dynamic_cast<SPBox3D *>(item);
                                 if (box) {
                                     // Force recalculation from perspective
-                                    box3d_position_set(box);
+                                    box->position_set();
                                 } else if (item->getAttribute("inkscape:connector-type") != nullptr
                                            && (item->getAttribute("inkscape:connection-start") == nullptr
                                                || item->getAttribute("inkscape:connection-end") == nullptr)) {
@@ -820,7 +771,7 @@ void SPGroup::scaleChildItemsRec(Geom::Scale const &sc, Geom::Point const &p, bo
 
                         Persp3D *persp = dynamic_cast<Persp3D *>(item);
                         if (persp) {
-                            persp3d_apply_affine_transformation(persp, final);
+                            persp->apply_affine_transformation(final);
                         } else if (is_text_path && !item->transform.isIdentity()) {
                             // Save and reset current transform
                             Geom::Affine tmp(item->transform);
@@ -903,10 +854,10 @@ void SPGroup::update_patheffect(bool write) {
             LivePathEffectObject *lpeobj = lperef->lpeobject;
             if (lpeobj) {
                 Inkscape::LivePathEffect::Effect *lpe = lpeobj->get_lpe();
-                if (lpe) {
+                if (lpe && lpe->isVisible()) {
                     lpeobj->get_lpe()->doBeforeEffect_impl(this);
                     sp_group_perform_patheffect(this, this, lpe, write);
-                    lpeobj->get_lpe()->doAfterEffect_impl(this);
+                    lpeobj->get_lpe()->doAfterEffect_impl(this, nullptr);
                 }
             }
         }
@@ -930,41 +881,34 @@ sp_group_perform_patheffect(SPGroup *group, SPGroup *top_group, Inkscape::LivePa
                 top_group->applyToMask(clipmaskto, lpe);
             }
             if (sub_shape) {
-                SPCurve * c = sub_shape->getCurve();
+                auto c = SPCurve::copy(sub_shape->curve());
                 bool success = false;
                 // only run LPEs when the shape has a curve defined
                 if (c) {
                     lpe->pathvector_before_effect = c->get_pathvector();
                     c->transform(i2anc_affine(sub_shape, top_group));
-                    sub_shape->setCurveInsync(c);
-                    if (lpe->lpeversion.param_getSVGValue() != "0") { // we are on 1 or up
-                        sub_shape->bbox_vis_cache_is_valid = false;
-                        sub_shape->bbox_geom_cache_is_valid = false;
-                    }
-                    success = top_group->performOnePathEffect(c, sub_shape, lpe);
+                    sub_shape->setCurveInsync(c.get());
+                    success = top_group->performOnePathEffect(c.get(), sub_shape, lpe);
                     c->transform(i2anc_affine(sub_shape, top_group).inverse());
                     Inkscape::XML::Node *repr = sub_item->getRepr();
                     if (c && success) {
-                        sub_shape->setCurveInsync(c);
+                        sub_shape->setCurveInsync(c.get());
+                        if (lpe->lpeversion.param_getSVGValue() != "0") { // we are on 1 or up
+                            sub_shape->bbox_vis_cache_is_valid = false;
+                            sub_shape->bbox_geom_cache_is_valid = false;
+                        }
                         lpe->pathvector_after_effect = c->get_pathvector();
                         if (write) {
-                            gchar *str = sp_svg_write_path(lpe->pathvector_after_effect);
-                            repr->setAttribute("d", str);
+                            repr->setAttribute("d", sp_svg_write_path(lpe->pathvector_after_effect));
 #ifdef GROUP_VERBOSE
                             g_message("sp_group_perform_patheffect writes 'd' attribute");
 #endif
-                            g_free(str);
                         }
-                        c->unref();
                     } else {
                         // LPE was unsuccessful or doeffect stack return null. Read the old 'd'-attribute.
                         if (gchar const * value = repr->attribute("d")) {
                             Geom::PathVector pv = sp_svg_read_pathv(value);
-                            SPCurve *oldcurve = new (std::nothrow) SPCurve(pv);
-                            if (oldcurve) {
-                                sub_shape->setCurve(oldcurve);
-                                oldcurve->unref();
-                            }
+                            sub_shape->setCurve(std::make_unique<SPCurve>(pv));
                         }
                     }
                 }
@@ -976,6 +920,21 @@ sp_group_perform_patheffect(SPGroup *group, SPGroup *top_group, Inkscape::LivePa
         top_group->applyToClipPath(clipmaskto, lpe);
         top_group->applyToMask(clipmaskto, lpe);
     }
+}
+
+/**
+ * Generate a highlight colour if one isn't set and return it.
+ */
+guint32 SPGroup::highlight_color() const {
+    // Parent must not be a layer (root, or similar) and this group must also be a layer
+    if (!_highlightColor && !SP_IS_LAYER(parent) && this->_layer_mode == SPGroup::LAYER) {
+        char const * oid = defaultLabel();
+        if (oid) {
+            // Color based on the last few bits of the label or object id.
+            return default_highlights[oid[(strlen(oid) - 1)] & 0x07];
+        }
+    }
+    return SPItem::highlight_color();
 }
 
 /*

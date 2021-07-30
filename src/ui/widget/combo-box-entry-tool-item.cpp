@@ -26,6 +26,7 @@
 
 #include "combo-box-entry-tool-item.h"
 
+#include <cassert>
 #include <iostream>
 #include <cstring>
 #include <glibmm/ustring.h>
@@ -60,7 +61,6 @@ ComboBoxEntryToolItem::ComboBoxEntryToolItem(Glib::ustring name,
       _active(-1),
       _text(strdup("")),
       _entry_completion(nullptr),
-      _indicator(nullptr),
       _popup(false),
       _info(nullptr),
       _info_cb(nullptr),
@@ -69,14 +69,13 @@ ComboBoxEntryToolItem::ComboBoxEntryToolItem(Glib::ustring name,
       _warning(nullptr),
       _warning_cb(nullptr),
       _warning_cb_id(0),
-      _warning_cb_blocked(false),
-      _altx_name(nullptr)
+      _warning_cb_blocked(false)
 {
     set_name(name);
 
     gchar *action_name = g_strdup( get_name().c_str() );
-    gchar *combobox_name = g_strjoin( nullptr, action_name, "_combobox", NULL );
-    gchar *entry_name =    g_strjoin( nullptr, action_name, "_entry", NULL );
+    gchar *combobox_name = g_strjoin( nullptr, action_name, "_combobox", nullptr );
+    gchar *entry_name =    g_strjoin( nullptr, action_name, "_entry", nullptr );
     g_free( action_name );
 
     GtkWidget* comboBoxEntry = gtk_combo_box_new_with_model_and_entry (_model);
@@ -107,18 +106,25 @@ ComboBoxEntryToolItem::ComboBoxEntryToolItem(Glib::ustring name,
                 nullptr, nullptr );
     }
 
-    // FIXME: once gtk3 migration is done this can be removed
-    // https://bugzilla.gnome.org/show_bug.cgi?id=734915
-    gtk_widget_show_all (comboBoxEntry);
-
     // Optionally add formatting...
     if( _cell_data_func != nullptr ) {
-        GtkCellRenderer *cell = gtk_cell_renderer_text_new();
+        gtk_combo_box_set_popup_fixed_width (GTK_COMBO_BOX(comboBoxEntry), false);
+        this->_cell = gtk_cell_renderer_text_new();
+        int total = gtk_tree_model_iter_n_children (model, nullptr);
+        int height = 30;
+        if (total > 1000) {
+            height = 30000/total;
+            g_warning("You have a huge number of font families (%d), "
+                      "and Cairo is limiting the size of widgets you can draw.\n"
+                      "Your preview cell height is capped to %d.",
+                      total, height);
+        }
+        gtk_cell_renderer_set_fixed_size(_cell, -1, height);
+        g_signal_connect(G_OBJECT(comboBoxEntry), "popup", G_CALLBACK(combo_box_popup_cb), this);
         gtk_cell_layout_clear( GTK_CELL_LAYOUT( comboBoxEntry ) );
-        gtk_cell_layout_pack_start( GTK_CELL_LAYOUT( comboBoxEntry ), cell, true );
-        gtk_cell_layout_set_cell_data_func (GTK_CELL_LAYOUT( comboBoxEntry ), cell,
-                GtkCellLayoutDataFunc (_cell_data_func),
-                nullptr, nullptr );
+        gtk_cell_layout_pack_start( GTK_CELL_LAYOUT( comboBoxEntry ), _cell, true );
+        gtk_cell_layout_set_cell_data_func (GTK_CELL_LAYOUT( comboBoxEntry ), _cell,
+                GtkCellLayoutDataFunc (_cell_data_func), 0, nullptr );
     }
 
     // Optionally widen the combobox width... which widens the drop-down list in list mode.
@@ -150,11 +156,6 @@ ComboBoxEntryToolItem::ComboBoxEntryToolItem(Glib::ustring name,
             popup_enable();
         }
 
-        // Add altx_name if required
-        if( _altx_name ) {
-            g_object_set_data( G_OBJECT( child ), _altx_name, _entry );
-        }
-
         // Add signal for GtkEntry to check if finished typing.
         g_signal_connect( G_OBJECT(child), "activate", G_CALLBACK(entry_activate_cb), this );
         g_signal_connect( G_OBJECT(child), "key-press-event", G_CALLBACK(keypress_cb), this );
@@ -167,11 +168,11 @@ ComboBoxEntryToolItem::ComboBoxEntryToolItem(Glib::ustring name,
 
 // Setters/Getters ---------------------------------------------------
 
-gchar*
+Glib::ustring
 ComboBoxEntryToolItem::get_active_text()
 {
-  gchar* text = g_strdup( _text );
-  return text;
+    assert(_text);
+    return _text;
 }
 
 /*
@@ -425,18 +426,6 @@ ComboBoxEntryToolItem::set_warning_cb(gpointer warning_cb)
     _warning_cb = warning_cb;
 }
 
-void
-ComboBoxEntryToolItem::set_altx_name(const gchar* altx_name)
-{
-    g_free(_altx_name);
-    _altx_name = g_strdup( altx_name );
-
-    // Widget may not have been created....
-    if(_entry) {
-        g_object_set_data( G_OBJECT(_entry), _altx_name, _entry );
-    }
-}
-
 // Internal ---------------------------------------------------
 
 // Return row of active text or -1 if not found. If exclude is true,
@@ -575,6 +564,21 @@ ComboBoxEntryToolItem::combo_box_changed_cb( GtkComboBox* widget, gpointer data 
   }
 }
 
+gboolean ComboBoxEntryToolItem::combo_box_popup_cb(ComboBoxEntryToolItem *widget, gpointer data)
+{
+    auto w = reinterpret_cast<ComboBoxEntryToolItem *>(data);
+    GtkComboBox *comboBoxEntry = GTK_COMBO_BOX(w->_combobox);
+    static int already_clicked = 0;
+    if ((already_clicked == 1) && w->_cell_data_func) {
+        // first click is always displaying something wrong.
+        // Second loading of the screen should have preallocated space, and only has to render the text now
+        gtk_cell_layout_set_cell_data_func(GTK_CELL_LAYOUT(comboBoxEntry), w->_cell,
+                                           GtkCellLayoutDataFunc(w->_cell_data_func), widget, nullptr);
+    }
+    already_clicked++;
+    return true;
+}
+
 void
 ComboBoxEntryToolItem::entry_activate_cb( GtkEntry *widget,
                                         gpointer  data )
@@ -641,7 +645,7 @@ ComboBoxEntryToolItem::defocus()
 }
 
 gboolean
-ComboBoxEntryToolItem::keypress_cb( GtkWidget * /*widget*/, GdkEventKey *event, gpointer data )
+ComboBoxEntryToolItem::keypress_cb( GtkWidget *entry, GdkEventKey *event, gpointer data )
 {
     gboolean wasConsumed = FALSE; /* default to report event not consumed */
     guint key = 0;
@@ -652,10 +656,19 @@ ComboBoxEntryToolItem::keypress_cb( GtkWidget * /*widget*/, GdkEventKey *event, 
 
     switch ( key ) {
 
-        // TODO Add bindings for Tab/LeftTab
         case GDK_KEY_Escape:
         {
             //gtk_spin_button_set_value( GTK_SPIN_BUTTON(widget), action->private_data->lastVal );
+            action->defocus();
+            wasConsumed = TRUE;
+        }
+        break;
+
+        case GDK_KEY_Tab:
+        {
+            // Fire activation similar to how Return does, but also return focus to text object
+            // itself
+            entry_activate_cb( GTK_ENTRY (entry), data );
             action->defocus();
             wasConsumed = TRUE;
         }

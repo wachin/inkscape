@@ -13,11 +13,14 @@
 
 #include "live_effects/lpe-patternalongpath.h"
 #include "live_effects/lpeobject.h"
+
 #include "display/curve.h"
 
 #include "object/sp-shape.h"
 
-#include "knotholder.h"
+#include "ui/knot/knot-holder.h"
+#include "ui/knot/knot-holder-entity.h"
+
 // TODO due to internal breakage in glibmm headers, this must be last:
 #include <glibmm/i18n.h>
 
@@ -61,10 +64,12 @@ namespace WPAP {
 } // WPAP
 
 static const Util::EnumData<PAPCopyType> PAPCopyTypeData[PAPCT_END] = {
+    // clang-format off
     {PAPCT_SINGLE,               N_("Single"),               "single"},
     {PAPCT_SINGLE_STRETCHED,     N_("Single, stretched"),    "single_stretched"},
     {PAPCT_REPEATED,             N_("Repeated"),             "repeated"},
     {PAPCT_REPEATED_STRETCHED,   N_("Repeated, stretched"),  "repeated_stretched"}
+    // clang-format on
 };
 static const Util::EnumDataConverter<PAPCopyType> PAPCopyTypeConverter(PAPCopyTypeData, PAPCT_END);
 
@@ -116,7 +121,9 @@ LPEPatternAlongPath::~LPEPatternAlongPath()
 
 void LPEPatternAlongPath::transform_multiply(Geom::Affine const &postmul, bool /*set*/)
 {
-    pattern.param_transform_multiply(postmul, false);
+    if (sp_lpe_item && sp_lpe_item->pathEffectsEnabled() && sp_lpe_item->optimizeTransforms()) {
+        pattern.param_transform_multiply(postmul, false);
+    }
 }
 
 void
@@ -281,8 +288,8 @@ void
 LPEPatternAlongPath::addKnotHolderEntities(KnotHolder *knotholder, SPItem *item)
 {
     _knot_entity = new WPAP::KnotHolderEntityWidthPatternAlongPath(this);
-    _knot_entity->create(nullptr, item, knotholder, Inkscape::CTRL_TYPE_LPE, _("Change the width"),
-                         SP_KNOT_SHAPE_CIRCLE);
+    _knot_entity->create(nullptr, item, knotholder, Inkscape::CANVAS_ITEM_CTRL_TYPE_LPE, "LPE:PatternAlongPath",
+                         _("Change the width"));
     knotholder->add(_knot_entity);
     if (hide_knot) {
         _knot_entity->knot->hide();
@@ -299,8 +306,8 @@ KnotHolderEntityWidthPatternAlongPath::knot_set(Geom::Point const &p, Geom::Poin
 
     Geom::Point const s = snap_knot_position(p, state);
     SPShape const *sp_shape = dynamic_cast<SPShape const *>(SP_LPE_ITEM(item));
-    if (sp_shape) {
-        SPCurve *curve_before = sp_shape->getCurveForEdit();
+    if (sp_shape && lpe->original_height) {
+        auto curve_before = SPCurve::copy(sp_shape->curveForEdit());
         if (curve_before) {
             Geom::Path const *path_in = curve_before->first_path();
             Geom::Point ptA = path_in->pointAt(Geom::PathTime(0, 0.0));
@@ -319,10 +326,12 @@ KnotHolderEntityWidthPatternAlongPath::knot_set(Geom::Point const &p, Geom::Poin
             } else {
                 lpe->prop_scale.param_set_value(Geom::distance(s , ptA)/(lpe->original_height/2.0));
             }
-            Inkscape::Preferences *prefs = Inkscape::Preferences::get();
-            prefs->setDouble("/live_effects/pap/width", lpe->prop_scale);
-            curve_before->unref();
         }
+        if (!lpe->original_height) {
+            lpe->prop_scale.param_set_value(0);
+        }
+        Inkscape::Preferences *prefs = Inkscape::Preferences::get();
+        prefs->setDouble("/live_effects/skeletal/width", lpe->prop_scale);
     }
     sp_lpe_item_update_patheffect (SP_LPE_ITEM(item), false, true);
 }
@@ -333,7 +342,7 @@ KnotHolderEntityWidthPatternAlongPath::knot_get() const
     LPEPatternAlongPath *lpe = dynamic_cast<LPEPatternAlongPath *> (_effect);
     SPShape const *sp_shape = dynamic_cast<SPShape const *>(SP_LPE_ITEM(item));
     if (sp_shape) {
-        SPCurve *curve_before = sp_shape->getCurveForEdit();
+        auto curve_before = SPCurve::copy(sp_shape->curveForEdit());
         if (curve_before) {
             Geom::Path const *path_in = curve_before->first_path();
             Geom::Point ptA = path_in->pointAt(Geom::PathTime(0, 0.0));
@@ -353,7 +362,6 @@ KnotHolderEntityWidthPatternAlongPath::knot_get() const
                 lpe->helper_path.push_back(hp);
                 hp.clear();
             }
-            curve_before->unref();
             return result_point;
         }
     }

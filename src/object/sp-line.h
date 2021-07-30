@@ -18,9 +18,6 @@
 #include "svg/svg-length.h"
 #include "sp-shape.h"
 
-#define SP_LINE(obj) (dynamic_cast<SPLine*>((SPObject*)obj))
-#define SP_IS_LINE(obj) (dynamic_cast<const SPLine*>((SPObject*)obj) != NULL)
-
 class SPLine : public SPShape {
 public:
 	SPLine();
@@ -33,8 +30,9 @@ public:
 
 	void build(SPDocument *document, Inkscape::XML::Node *repr) override;
 	Inkscape::XML::Node* write(Inkscape::XML::Document *xml_doc, Inkscape::XML::Node *repr, unsigned int flags) override;
-	void set(SPAttributeEnum key, char const* value) override;
+	void set(SPAttr key, char const* value) override;
 
+	const char* typeName() const override;
 	const char* displayName() const override;
 	Geom::Affine set_transform(Geom::Affine const &transform) override;
 	void convert_to_guides() const override;

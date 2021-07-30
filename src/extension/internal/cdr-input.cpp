@@ -29,20 +29,11 @@
 
 #include <libcdr/libcdr.h>
 
-// TODO: Drop this check when librevenge is widespread.
-#if WITH_LIBCDR01
-  #include <librevenge-stream/librevenge-stream.h>
+#include <librevenge-stream/librevenge-stream.h>
 
-  using librevenge::RVNGString;
-  using librevenge::RVNGFileStream;
-  using librevenge::RVNGStringVector;
-#else
-  #include <libwpd-stream/libwpd-stream.h>
-
-  typedef WPXString               RVNGString;
-  typedef WPXFileStream           RVNGFileStream;
-  typedef libcdr::CDRStringVector RVNGStringVector;
-#endif
+using librevenge::RVNGString;
+using librevenge::RVNGFileStream;
+using librevenge::RVNGStringVector;
 
 #include <gtkmm/grid.h>
 #include <gtkmm/spinbutton.h>
@@ -84,12 +75,12 @@ private:
      void _onSpinButtonPress(GdkEventButton* button_event);
      void _onSpinButtonRelease(GdkEventButton* button_event);
 
-     class Gtk::VBox * vbox1;
+     class Gtk::Box * vbox1;
      class Inkscape::UI::View::SVGViewWidget * _previewArea;
      class Gtk::Button * cancelbutton;
      class Gtk::Button * okbutton;
 
-     class Gtk::HBox  * _page_selector_box;
+     class Gtk::Box  * _page_selector_box;
      class Gtk::Label * _labelSelect;
      class Gtk::Label * _labelTotalPages;
      class Gtk::SpinButton * _pageNumberSpin;
@@ -118,11 +109,11 @@ CdrImportDialog::CdrImportDialog(const std::vector<RVNGString> &vec)
      this->property_destroy_with_parent().set_value(false);
 
      // Preview area
-     vbox1 = Gtk::manage(new class Gtk::VBox());
+     vbox1 = Gtk::manage(new class Gtk::Box(Gtk::ORIENTATION_VERTICAL));
      this->get_content_area()->pack_start(*vbox1);
 
      // CONTROLS
-     _page_selector_box = Gtk::manage(new Gtk::HBox());
+     _page_selector_box = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL));
 
      // "Select page:" label
      _labelSelect = Gtk::manage(new class Gtk::Label(_("Select page:")));
@@ -263,13 +254,9 @@ SPDocument *CdrInput::open(Inkscape::Extension::Input * /*mod*/, const gchar * u
      }
 
      RVNGStringVector output;
-#if WITH_LIBCDR01
      librevenge::RVNGSVGDrawingGenerator generator(output, "svg");
 
      if (!libcdr::CDRDocument::parse(&input, &generator)) {
-#else
-     if (!libcdr::CDRDocument::generateSVG(&input, output)) {
-#endif
           return nullptr;
      }
 
@@ -320,8 +307,9 @@ SPDocument *CdrInput::open(Inkscape::Extension::Input * /*mod*/, const gchar * u
 
 void CdrInput::init()
 {
+    // clang-format off
     /* CDR */
-     Inkscape::Extension::build_from_mem(
+    Inkscape::Extension::build_from_mem(
         "<inkscape-extension xmlns=\"" INKSCAPE_EXTENSION_URI "\">\n"
             "<name>" N_("Corel DRAW Input") "</name>\n"
             "<id>org.inkscape.input.cdr</id>\n"
@@ -334,7 +322,7 @@ void CdrInput::init()
         "</inkscape-extension>", new CdrInput());
 
     /* CDT */
-     Inkscape::Extension::build_from_mem(
+    Inkscape::Extension::build_from_mem(
         "<inkscape-extension xmlns=\"" INKSCAPE_EXTENSION_URI "\">\n"
             "<name>" N_("Corel DRAW templates input") "</name>\n"
             "<id>org.inkscape.input.cdt</id>\n"
@@ -347,7 +335,7 @@ void CdrInput::init()
         "</inkscape-extension>", new CdrInput());
 
     /* CCX */
-     Inkscape::Extension::build_from_mem(
+    Inkscape::Extension::build_from_mem(
         "<inkscape-extension xmlns=\"" INKSCAPE_EXTENSION_URI "\">\n"
             "<name>" N_("Corel DRAW Compressed Exchange files input") "</name>\n"
             "<id>org.inkscape.input.ccx</id>\n"
@@ -360,7 +348,7 @@ void CdrInput::init()
         "</inkscape-extension>", new CdrInput());
 
     /* CMX */
-     Inkscape::Extension::build_from_mem(
+    Inkscape::Extension::build_from_mem(
         "<inkscape-extension xmlns=\"" INKSCAPE_EXTENSION_URI "\">\n"
             "<name>" N_("Corel DRAW Presentation Exchange files input") "</name>\n"
             "<id>org.inkscape.input.cmx</id>\n"
@@ -371,6 +359,7 @@ void CdrInput::init()
                 "<filetypetooltip>" N_("Open presentation exchange files saved in Corel DRAW") "</filetypetooltip>\n"
             "</input>\n"
         "</inkscape-extension>", new CdrInput());
+    // clang-format on
 
      return;
 

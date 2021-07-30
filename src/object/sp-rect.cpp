@@ -40,23 +40,23 @@ void SPRect::build(SPDocument* doc, Inkscape::XML::Node* repr) {
 
     SPShape::build(doc, repr);
 
-    this->readAttr("x");
-    this->readAttr("y");
-    this->readAttr("width");
-    this->readAttr("height");
-    this->readAttr("rx");
-    this->readAttr("ry");
+    this->readAttr(SPAttr::X);
+    this->readAttr(SPAttr::Y);
+    this->readAttr(SPAttr::WIDTH);
+    this->readAttr(SPAttr::HEIGHT);
+    this->readAttr(SPAttr::RX);
+    this->readAttr(SPAttr::RY);
 
 #ifdef OBJECT_TRACE
     objectTrace( "SPRect::build", false );
 #endif
 }
 
-void SPRect::set(SPAttributeEnum key, gchar const *value) {
+void SPRect::set(SPAttr key, gchar const *value) {
 
 #ifdef OBJECT_TRACE
     std::stringstream temp;
-    temp << "SPRect::set: " << key  << " " << (value?value:"null");
+    temp << "SPRect::set: " << sp_attribute_name(key)  << " " << (value?value:"null");
     objectTrace( temp.str() );
 #endif
 
@@ -69,19 +69,19 @@ void SPRect::set(SPAttributeEnum key, gchar const *value) {
     double const ex = em * 0.5;
 
     switch (key) {
-        case SP_ATTR_X:
+        case SPAttr::X:
             this->x.readOrUnset(value);
             this->x.update( em, ex, w );
             this->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG);
             break;
 
-        case SP_ATTR_Y:
+        case SPAttr::Y:
             this->y.readOrUnset(value);
             this->y.update( em, ex, h );
             this->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG);
             break;
 
-        case SP_ATTR_WIDTH:
+        case SPAttr::WIDTH:
             if (!this->width.read(value) || this->width.value < 0.0) {
             	this->width.unset();
             }
@@ -89,7 +89,7 @@ void SPRect::set(SPAttributeEnum key, gchar const *value) {
             this->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG);
             break;
 
-        case SP_ATTR_HEIGHT:
+        case SPAttr::HEIGHT:
             if (!this->height.read(value) || this->height.value < 0.0) {
             	this->height.unset();
             }
@@ -97,7 +97,7 @@ void SPRect::set(SPAttributeEnum key, gchar const *value) {
             this->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG);
             break;
 
-        case SP_ATTR_RX:
+        case SPAttr::RX:
             if (!this->rx.read(value) || this->rx.value <= 0.0) {
             	this->rx.unset();
             }
@@ -105,7 +105,7 @@ void SPRect::set(SPAttributeEnum key, gchar const *value) {
             this->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG);
             break;
 
-        case SP_ATTR_RY:
+        case SPAttr::RY:
             if (!this->ry.read(value) || this->ry.value <= 0.0) {
             	this->ry.unset();
             }
@@ -166,19 +166,19 @@ Inkscape::XML::Node * SPRect::write(Inkscape::XML::Document *xml_doc, Inkscape::
         repr->setCodeUnsafe(g_quark_from_string("svg:path"));
         repr->setAttribute("sodipodi:type", "rect");
     }
-    sp_repr_set_svg_length(repr, "width",  this->width);
-    sp_repr_set_svg_length(repr, "height", this->height);
+    repr->setAttributeSvgLength("width", this->width);
+    repr->setAttributeSvgLength("height", this->height);
 
     if (this->rx._set) {
-    	sp_repr_set_svg_length(repr, "rx", this->rx);
+    	repr->setAttributeSvgLength("rx", this->rx);
     }
 
     if (this->ry._set) {
-    	sp_repr_set_svg_length(repr, "ry", this->ry);
+    	repr->setAttributeSvgLength("ry", this->ry);
     }
 
-    sp_repr_set_svg_length(repr, "x", this->x);
-    sp_repr_set_svg_length(repr, "y", this->y);
+    repr->setAttributeSvgLength("x", this->x);
+    repr->setAttributeSvgLength("y", this->y);
     // write d=
     if (strcmp(repr->name(), "svg:rect") != 0) {
         set_rect_path_attribute(repr); // include set_shape()
@@ -194,6 +194,10 @@ Inkscape::XML::Node * SPRect::write(Inkscape::XML::Document *xml_doc, Inkscape::
     return repr;
 }
 
+const char* SPRect::typeName() const {
+    return "rect";
+}
+
 const char* SPRect::displayName() const {
     return _("Rectangle");
 }
@@ -207,10 +211,8 @@ void SPRect::set_shape() {
         if (this->getRepr()->attribute("d")) {
             // unconditionally read the curve from d, if any, to preserve appearance
             Geom::PathVector pv = sp_svg_read_pathv(this->getRepr()->attribute("d"));
-            SPCurve *cold = new SPCurve(pv);
-            this->setCurveInsync(cold);
-            this->setCurveBeforeLPE( cold );
-            cold->unref();
+            setCurveInsync(std::make_unique<SPCurve>(pv));
+            setCurveBeforeLPE(curve());
         }
 
         return;
@@ -221,7 +223,7 @@ void SPRect::set_shape() {
         return;
     }
 
-    SPCurve *c = new SPCurve();
+    auto c = std::make_unique<SPCurve>();
 
     double const x = this->x.computed;
     double const y = this->y.computed;
@@ -287,32 +289,27 @@ void SPRect::set_shape() {
 
     /* Reset the shape's curve to the "original_curve"
     * This is very important for LPEs to work properly! (the bbox might be recalculated depending on the curve in shape)*/
-    SPCurve * before = this->getCurveBeforeLPE();
-    bool haslpe = this->hasPathEffectOnClipOrMaskRecursive(this);
-    if (before || haslpe) {
-        if (c && before && before->get_pathvector() != c->get_pathvector()){
-            this->setCurveBeforeLPE(c);
-            sp_lpe_item_update_patheffect(this, true, false);
-        } else if(haslpe) {
-            this->setCurveBeforeLPE(c);
-        } else {
-            //This happends on undo, fix bug:#1791784
-            this->setCurveInsync(c);
-        }
-    } else {
-        this->setCurveInsync(c);
-    }
-    if (before) {
-        before->unref();
+
+    auto const before = this->curveBeforeLPE();
+    if (before && before->get_pathvector() != c->get_pathvector()) {
+        setCurveBeforeLPE(std::move(c));
+        sp_lpe_item_update_patheffect(this, true, false);
+        return;
     }
     if (this->hasPathEffectOnClipOrMaskRecursive(this)) {
+        setCurveBeforeLPE(std::move(c));
+
         Inkscape::XML::Node *rectrepr = this->getRepr();
         if (strcmp(rectrepr->name(), "svg:rect") == 0) {
             sp_lpe_item_update_patheffect(this, true, false);
             this->write(rectrepr->document(), rectrepr, SP_OBJECT_MODIFIED_FLAG);
         }
+
+        return;
     }
-    c->unref();
+
+    // This happends on undo, fix bug:#1791784
+    setCurveInsync(std::move(c));
 }
 
 bool SPRect::set_rect_path_attribute(Inkscape::XML::Node *repr)
@@ -321,11 +318,7 @@ bool SPRect::set_rect_path_attribute(Inkscape::XML::Node *repr)
     this->set_shape();
 
     if (_curve) {
-        gchar *d = sp_svg_write_path(_curve->get_pathvector());
-
-        repr->setAttribute("d", d);
-
-        g_free(d);
+        repr->setAttribute("d", sp_svg_write_path(_curve->get_pathvector()));
     } else {
         repr->removeAttribute("d");
     }
@@ -381,7 +374,6 @@ Geom::Affine SPRect::set_transform(Geom::Affine const& xform) {
     if (pathEffectsEnabled() && !optimizeTransforms()) {
         return xform;
     }
-    notifyTransform(xform);
     /* Calculate rect start in parent coords. */
     Geom::Point pos(Geom::Point(this->x.computed, this->y.computed) * xform);
 

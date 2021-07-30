@@ -15,10 +15,17 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
+#include <utility>
+#include <vector>
+#include <glibmm/ustring.h>
+
+class SPDocument;
+
 void text_put_on_path();
 void text_remove_from_path();
 void text_remove_all_kerns();
 void text_flow_into_shape();
+void text_flow_shape_subtract();
 void text_unflow();
 void flowtext_to_text();
 enum text_ref_t { TEXT_REF_DEF = 0x1, TEXT_REF_EXTERNAL = 0x2, TEXT_REF_INTERNAL = 0x4, };

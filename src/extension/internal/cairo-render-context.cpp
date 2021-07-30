@@ -25,18 +25,19 @@
 #define PANGO_ENABLE_ENGINE
 #endif
 
+#include "cairo-render-context.h"
 
 #include <csignal>
 #include <cerrno>
 #include <2geom/pathvector.h>
 
 #include <glib.h>
-
 #include <glibmm/i18n.h>
+
 #include "display/drawing.h"
 #include "display/curve.h"
-#include "display/canvas-bpath.h"
 #include "display/cairo-utils.h"
+
 #include "object/sp-item.h"
 #include "object/sp-item-group.h"
 #include "object/sp-hatch.h"
@@ -52,7 +53,6 @@
 #include "libnrtype/FontFactory.h" // USE_PANGO_WIN32
 #endif
 
-#include "cairo-render-context.h"
 #include "cairo-renderer.h"
 #include "extension/system.h"
 
@@ -1148,7 +1148,7 @@ CairoRenderContext::_createPatternPainter(SPPaintServer const *const paintserver
 
     // show items and render them
     for (SPPattern *pat_i = pat; pat_i != nullptr; pat_i = pat_i->ref ? pat_i->ref->getObject() : nullptr) {
-        if (pat_i && SP_IS_OBJECT(pat_i) && pattern_hasItemChildren(pat_i)) { // find the first one with item children
+        if (pat_i && pattern_hasItemChildren(pat_i)) { // find the first one with item children
             for (auto& child: pat_i->children) {
                 if (SP_IS_ITEM(&child)) {
                     SP_ITEM(&child)->invoke_show(drawing, dkey, SP_ITEM_REFERENCE_FLAGS);
@@ -1177,7 +1177,7 @@ CairoRenderContext::_createPatternPainter(SPPaintServer const *const paintserver
 
     // hide all items
     for (SPPattern *pat_i = pat; pat_i != nullptr; pat_i = pat_i->ref ? pat_i->ref->getObject() : nullptr) {
-        if (pat_i && SP_IS_OBJECT(pat_i) && pattern_hasItemChildren(pat_i)) { // find the first one with item children
+        if (pat_i && pattern_hasItemChildren(pat_i)) { // find the first one with item children
             for (auto& child: pat_i->children) {
                 if (SP_IS_ITEM(&child)) {
                     SP_ITEM(&child)->invoke_hide(dkey);
@@ -1273,15 +1273,15 @@ CairoRenderContext::_createPatternForPaintServer(SPPaintServer const *const pain
     cairo_pattern_t *pattern = nullptr;
     bool apply_bbox2user = FALSE;
 
-    if (SP_IS_LINEARGRADIENT (paintserver)) {
+    auto const paintserver_mutable = const_cast<SPPaintServer *>(paintserver);
 
-            SPLinearGradient *lg=SP_LINEARGRADIENT(paintserver);
+    if (auto lg = dynamic_cast<SPLinearGradient *>(paintserver_mutable)) {
 
-            SP_GRADIENT(lg)->ensureVector(); // when exporting from commandline, vector is not built
+            lg->ensureVector(); // when exporting from commandline, vector is not built
 
             Geom::Point p1 (lg->x1.computed, lg->y1.computed);
             Geom::Point p2 (lg->x2.computed, lg->y2.computed);
-            if (pbox && SP_GRADIENT(lg)->getUnits() == SP_GRADIENT_UNITS_OBJECTBOUNDINGBOX) {
+            if (pbox && lg->getUnits() == SP_GRADIENT_UNITS_OBJECTBOUNDINGBOX) {
                 // convert to userspace
                 Geom::Affine bbox2user(pbox->width(), 0, 0, pbox->height(), pbox->left(), pbox->top());
                 p1 *= bbox2user;
@@ -1297,17 +1297,15 @@ CairoRenderContext::_createPatternForPaintServer(SPPaintServer const *const pain
                 lg->vector.stops[i].color.get_rgb_floatv(rgb);
                 cairo_pattern_add_color_stop_rgba(pattern, lg->vector.stops[i].offset, rgb[0], rgb[1], rgb[2], lg->vector.stops[i].opacity * alpha);
             }
-    } else if (SP_IS_RADIALGRADIENT (paintserver)) {
+    } else if (auto rg = dynamic_cast<SPRadialGradient *>(paintserver_mutable)) {
 
-        SPRadialGradient *rg=SP_RADIALGRADIENT(paintserver);
-
-        SP_GRADIENT(rg)->ensureVector(); // when exporting from commandline, vector is not built
+        rg->ensureVector(); // when exporting from commandline, vector is not built
 
         Geom::Point c (rg->cx.computed, rg->cy.computed);
         Geom::Point f (rg->fx.computed, rg->fy.computed);
         double r = rg->r.computed;
         double fr = rg->fr.computed;
-        if (pbox && SP_GRADIENT(rg)->getUnits() == SP_GRADIENT_UNITS_OBJECTBOUNDINGBOX)
+        if (pbox && rg->getUnits() == SP_GRADIENT_UNITS_OBJECTBOUNDINGBOX)
             apply_bbox2user = true;
 
         // create radial gradient pattern
@@ -1319,9 +1317,7 @@ CairoRenderContext::_createPatternForPaintServer(SPPaintServer const *const pain
             rg->vector.stops[i].color.get_rgb_floatv(rgb);
             cairo_pattern_add_color_stop_rgba(pattern, rg->vector.stops[i].offset, rgb[0], rgb[1], rgb[2], rg->vector.stops[i].opacity * alpha);
         }
-    } else if (SP_IS_MESHGRADIENT (paintserver)) {
-        SPMeshGradient *mg = SP_MESHGRADIENT(paintserver);
-
+    } else if (auto mg = dynamic_cast<SPMeshGradient *>(paintserver_mutable)) {
         pattern = mg->pattern_new(_cr, pbox, 1.0);
     } else if (SP_IS_PATTERN (paintserver)) {
         pattern = _createPatternPainter(paintserver, pbox);
@@ -1332,7 +1328,7 @@ CairoRenderContext::_createPatternForPaintServer(SPPaintServer const *const pain
     }
 
     if (pattern && SP_IS_GRADIENT(paintserver)) {
-        SPGradient *g = SP_GRADIENT(paintserver);
+        auto g = dynamic_cast<SPGradient *>(paintserver_mutable);
 
         // set extend type
         SPGradientSpread spread = g->fetchSpread();
@@ -1457,7 +1453,14 @@ CairoRenderContext::_setStrokeStyle(SPStyle const *style, Geom::OptRect const &p
         cairo_set_dash(_cr, nullptr, 0, 0.0);  // disable dashing
     }
 
-    cairo_set_line_width(_cr, style->stroke_width.computed);
+    // This allows hairlines to be drawn properly in PDF, PS, Win32-Print, etc.
+    // It requires the following pull request in Cairo:
+    // https://gitlab.freedesktop.org/cairo/cairo/merge_requests/21
+    if (style->stroke_extensions.hairline) {
+        ink_cairo_set_hairline(_cr);
+    } else {
+        cairo_set_line_width(_cr, style->stroke_width.computed);
+    }
 
     // set line join type
     cairo_line_join_t join = CAIRO_LINE_JOIN_MITER;
@@ -1576,8 +1579,8 @@ CairoRenderContext::renderPathVector(Geom::PathVector const & pathv, SPStyle con
 
     bool no_fill = style->fill.isNone() || style->fill_opacity.value == 0 ||
         order == STROKE_ONLY;
-    bool no_stroke = style->stroke.isNone() || style->stroke_width.computed < 1e-9 ||
-                    style->stroke_opacity.value == 0 || order == FILL_ONLY;
+    bool no_stroke = style->stroke.isNone() || (!style->stroke_extensions.hairline && style->stroke_width.computed < 1e-9) ||
+                     style->stroke_opacity.value == 0 || order == FILL_ONLY;
 
     if (no_fill && no_stroke)
         return true;
@@ -1656,7 +1659,6 @@ bool CairoRenderContext::renderImage(Inkscape::Pixbuf *pb,
     int h = pb->height();
 
     // TODO: reenable merge_opacity if useful
-    float opacity = _state->opacity;
 
     cairo_surface_t *image_surface = pb->getSurfaceRaw();
     if (cairo_surface_status(image_surface)) {

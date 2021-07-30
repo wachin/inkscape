@@ -16,12 +16,14 @@
 #include <stdexcept>
 
 #include <libxml/parser.h>
+#include <libxml/xinclude.h>
 
 #include "xml/repr.h"
 #include "xml/attribute-record.h"
 #include "xml/rebase-hrefs.h"
 #include "xml/simple-document.h"
 #include "xml/text-node.h"
+#include "xml/node.h"
 
 #include "io/sys.h"
 #include "io/stream/stringstream.h"
@@ -38,12 +40,11 @@
 #include <glibmm/miscutils.h>
 
 using Inkscape::IO::Writer;
-using Inkscape::Util::List;
-using Inkscape::Util::cons;
 using Inkscape::XML::Document;
 using Inkscape::XML::SimpleDocument;
 using Inkscape::XML::Node;
 using Inkscape::XML::AttributeRecord;
+using Inkscape::XML::AttributeVector;
 using Inkscape::XML::rebase_href_attrs;
 
 Document *sp_repr_do_read (xmlDocPtr doc, const gchar *default_ns);
@@ -58,7 +59,7 @@ static void sp_repr_write_stream_root_element(Node *repr, Writer &out,
 static void sp_repr_write_stream_element(Node *repr, Writer &out,
                                          gint indent_level, bool add_whitespace,
                                          Glib::QueryQuark elide_prefix,
-                                         List<AttributeRecord const> attributes,
+                                         const AttributeVector & attributes,
                                          int inlineattrs, int indent,
                                          gchar const *old_href_abs_base,
                                          gchar const *new_href_abs_base);
@@ -220,8 +221,14 @@ xmlDocPtr XmlSource::readXml()
     // Allow NOENT only if we're filtering out SYSTEM and PUBLIC entities
     if (LoadEntities)     parse_options |= XML_PARSE_NOENT;
 
-    return xmlReadIO( readCb, closeCb, this,
+    auto doc = xmlReadIO( readCb, closeCb, this,
                       filename, getEncoding(), parse_options);
+
+    if (doc && doc->properties && xmlXIncludeProcessFlags(doc, XML_PARSE_NOXINCNODE) < 0) {
+        g_warning("XInclude processing failed for %s", filename);
+    }
+
+    return doc;
 }
 
 int XmlSource::readCb( void * context, char * buffer, int len )
@@ -439,10 +446,10 @@ Glib::QueryQuark qname_prefix(Glib::QueryQuark qname) {
 namespace {
 
 void promote_to_namespace(Node *repr, const gchar *prefix) {
-    if ( repr->type() == Inkscape::XML::ELEMENT_NODE ) {
+    if ( repr->type() == Inkscape::XML::NodeType::ELEMENT_NODE ) {
         GQuark code = repr->code();
         if (!qname_prefix(code).id()) {
-            gchar *svg_name = g_strconcat(prefix, ":", g_quark_to_string(code), NULL);
+            gchar *svg_name = g_strconcat(prefix, ":", g_quark_to_string(code), nullptr);
             repr->setCodeUnsafe(g_quark_from_string(svg_name));
             g_free(svg_name);
         }
@@ -635,13 +642,13 @@ static void sp_repr_save_writer(Document *doc, Inkscape::IO::Writer *out,
          repr; repr = repr->next())
     {
         Inkscape::XML::NodeType const node_type = repr->type();
-        if ( node_type == Inkscape::XML::ELEMENT_NODE ) {
+        if ( node_type == Inkscape::XML::NodeType::ELEMENT_NODE ) {
             sp_repr_write_stream_root_element(repr, *out, TRUE, default_ns, inlineattrs, indent,
                                               old_href_abs_base, new_href_abs_base);
         } else {
             sp_repr_write_stream(repr, *out, 0, TRUE, GQuark(0), inlineattrs, indent,
                                  old_href_abs_base, new_href_abs_base);
-            if ( node_type == Inkscape::XML::COMMENT_NODE ) {
+            if ( node_type == Inkscape::XML::NodeType::COMMENT_NODE ) {
                 out->writeChar('\n');
             }
         }
@@ -707,8 +714,8 @@ bool sp_repr_save_rebased_file(Document *doc, gchar const *const filename, gchar
         return false;
     }
 
-    Glib::ustring old_href_abs_base;
-    Glib::ustring new_href_abs_base;
+    std::string old_href_abs_base;
+    std::string new_href_abs_base;
 
     if (old_base) {
         old_href_abs_base = old_base;
@@ -721,8 +728,8 @@ bool sp_repr_save_rebased_file(Document *doc, gchar const *const filename, gchar
         if (Glib::path_is_absolute(for_filename)) {
             new_href_abs_base = Glib::path_get_dirname(for_filename);
         } else {
-            Glib::ustring const cwd = Glib::get_current_dir();
-            Glib::ustring const for_abs_filename = Glib::build_filename(cwd, for_filename);
+            std::string const cwd = Glib::get_current_dir();
+            std::string const for_abs_filename = Glib::build_filename(cwd, for_filename);
             new_href_abs_base = Glib::path_get_dirname(for_abs_filename);
         }
 
@@ -827,12 +834,11 @@ void add_ns_map_entry(NSMap &ns_map, Glib::QueryQuark prefix) {
 }
 
 void populate_ns_map(NSMap &ns_map, Node &repr) {
-    if ( repr.type() == Inkscape::XML::ELEMENT_NODE ) {
+    if ( repr.type() == Inkscape::XML::NodeType::ELEMENT_NODE ) {
         add_ns_map_entry(ns_map, qname_prefix(repr.code()));
-        for ( List<AttributeRecord const> iter=repr.attributeList() ;
-              iter ; ++iter )
+        for ( const auto & iter : repr.attributeList() )
         {
-            Glib::QueryQuark prefix=qname_prefix(iter->key);
+            Glib::QueryQuark prefix=qname_prefix(iter.key);
             if (prefix.id()) {
                 add_ns_map_entry(ns_map, prefix);
             }
@@ -864,7 +870,7 @@ static void sp_repr_write_stream_root_element(Node *repr, Writer &out,
 
     // Sort attributes in a canonical order (helps with "diffing" SVG files).only if not set disable optimizations
     bool sort = !prefs->getBool("/options/svgoutput/disable_optimizations") && prefs->getBool("/options/svgoutput/sort_attributes");
-    if (sort) sp_attribute_sort_tree( repr );
+    if (sort) sp_attribute_sort_tree( *repr );
 
     Glib::QueryQuark xml_prefix=g_quark_from_static_string("xml");
 
@@ -876,8 +882,10 @@ static void sp_repr_write_stream_root_element(Node *repr, Writer &out,
         elide_prefix = g_quark_from_string(sp_xml_ns_uri_prefix(default_ns, nullptr));
     }
 
-    List<AttributeRecord const> attributes=repr->attributeList();
-    for (auto & iter : ns_map) 
+    auto attributes = repr->attributeList(); // copy
+
+    using Inkscape::Util::share_string;
+    for (auto iter : ns_map) 
     {
         Glib::QueryQuark prefix=iter.first;
         ptr_shared ns_uri=iter.second;
@@ -885,13 +893,15 @@ static void sp_repr_write_stream_root_element(Node *repr, Writer &out,
         if (prefix.id()) {
             if ( prefix != xml_prefix ) {
                 if ( elide_prefix == prefix ) {
-                    attributes = cons(AttributeRecord(g_quark_from_static_string("xmlns"), ns_uri), attributes);
+                    //repr->setAttribute(share_string("xmlns"), share_string(ns_uri));
+                    attributes.emplace_back(g_quark_from_static_string("xmlns"), ns_uri);
                 }
 
                 Glib::ustring attr_name="xmlns:";
                 attr_name.append(g_quark_to_string(prefix));
                 GQuark key = g_quark_from_string(attr_name.c_str());
-                attributes = cons(AttributeRecord(key, ns_uri), attributes);
+                //repr->setAttribute(share_string(attr_name.c_str()), share_string(ns_uri));
+                attributes.emplace_back(key, ns_uri);
             }
         } else {
             // if there are non-namespaced elements, we can't globally
@@ -911,8 +921,10 @@ void sp_repr_write_stream( Node *repr, Writer &out, gint indent_level,
                            gchar const *const new_href_base)
 {
     switch (repr->type()) {
-        case Inkscape::XML::TEXT_NODE: {
-            if( dynamic_cast<const Inkscape::XML::TextNode *>(repr)->is_CData() ) {
+        case Inkscape::XML::NodeType::TEXT_NODE: {
+            auto textnode = dynamic_cast<const Inkscape::XML::TextNode *>(repr);
+            assert(textnode);
+            if (textnode->is_CData()) {
                 // Preserve CDATA sections, not converting '&' to &amp;, etc.
                 out.printf( "<![CDATA[%s]]>", repr->content() );
             } else {
@@ -920,15 +932,15 @@ void sp_repr_write_stream( Node *repr, Writer &out, gint indent_level,
             }
             break;
         }
-        case Inkscape::XML::COMMENT_NODE: {
+        case Inkscape::XML::NodeType::COMMENT_NODE: {
             repr_write_comment( out, repr->content(), add_whitespace, indent_level, indent );
             break;
         }
-        case Inkscape::XML::PI_NODE: {
+        case Inkscape::XML::NodeType::PI_NODE: {
             out.printf( "<?%s %s?>", repr->name(), repr->content() );
             break;
         }
-        case Inkscape::XML::ELEMENT_NODE: {
+        case Inkscape::XML::NodeType::ELEMENT_NODE: {
             sp_repr_write_stream_element( repr, out, indent_level,
                                           add_whitespace, elide_prefix,
                                           repr->attributeList(),
@@ -936,7 +948,7 @@ void sp_repr_write_stream( Node *repr, Writer &out, gint indent_level,
                                           old_href_base, new_href_base);
             break;
         }
-        case Inkscape::XML::DOCUMENT_NODE: {
+        case Inkscape::XML::NodeType::DOCUMENT_NODE: {
             g_assert_not_reached();
             break;
         }
@@ -950,7 +962,7 @@ void sp_repr_write_stream( Node *repr, Writer &out, gint indent_level,
 void sp_repr_write_stream_element( Node * repr, Writer & out,
                                    gint indent_level, bool add_whitespace,
                                    Glib::QueryQuark elide_prefix,
-                                   List<AttributeRecord const> attributes, 
+                                   const AttributeVector & attributes, 
                                    int inlineattrs, int indent,
                                    gchar const *old_href_base,
                                    gchar const *new_href_base )
@@ -997,10 +1009,8 @@ void sp_repr_write_stream_element( Node * repr, Writer & out,
         }
     }
 
-    for ( List<AttributeRecord const> iter = rebase_href_attrs(old_href_base, new_href_base,
-                                                               attributes);
-          iter ; ++iter )
-    {
+    const auto rbd = rebase_href_attrs(old_href_base, new_href_base, attributes);
+    for (const auto &iter : rbd) {
         if (!inlineattrs) {
             out.writeChar('\n');
             if (indent) {
@@ -1011,14 +1021,14 @@ void sp_repr_write_stream_element( Node * repr, Writer & out,
                 }
             }
         }
-        out.printf(" %s=\"", g_quark_to_string(iter->key));
-        repr_quote_write(out, iter->value);
+        out.printf(" %s=\"", g_quark_to_string(iter.key));
+        repr_quote_write(out, iter.value);
         out.writeChar('"');
     }
 
     loose = TRUE;
     for (child = repr->firstChild() ; child != nullptr; child = child->next()) {
-        if (child->type() == Inkscape::XML::TEXT_NODE) {
+        if (child->type() == Inkscape::XML::NodeType::TEXT_NODE) {
             loose = FALSE;
             break;
         }

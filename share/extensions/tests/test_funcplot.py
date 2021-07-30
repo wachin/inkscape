@@ -1,7 +1,8 @@
 # coding=utf-8
-from funcplot import FuncPlot
+from funcplot import FuncPlot, math_eval
 from inkex.tester import ComparisonMixin, TestCase
 from inkex.tester.filters import CompareNumericFuzzy
+import math
 
 class FuncPlotBasicTest(ComparisonMixin, TestCase):
     effect_class = FuncPlot

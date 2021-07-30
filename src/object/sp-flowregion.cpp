@@ -170,9 +170,13 @@ Inkscape::XML::Node *SPFlowregion::write(Inkscape::XML::Document *xml_doc, Inksc
     return repr;
 }
 
+const char* SPFlowregion::typeName() const {
+    return "text-flow";
+}
+
 const char* SPFlowregion::displayName() const {
-	// TRANSLATORS: "Flow region" is an area where text is allowed to flow
-	return _("Flow Region");
+    // TRANSLATORS: "Flow region" is an area where text is allowed to flow
+    return _("Flow Region");
 }
 
 SPFlowregionExclude::SPFlowregionExclude() : SPItem() {
@@ -311,6 +315,10 @@ Inkscape::XML::Node *SPFlowregionExclude::write(Inkscape::XML::Document *xml_doc
     return repr;
 }
 
+const char* SPFlowregionExclude::typeName() const {
+    return "text-flow";
+}
+
 const char* SPFlowregionExclude::displayName() const {
 	/* TRANSLATORS: A region "cut out of" a flow region; text is not allowed to flow inside the
 	 * flow excluded region.  flowRegionExclude in SVG 1.2: see
@@ -319,30 +327,31 @@ const char* SPFlowregionExclude::displayName() const {
 	return _("Flow Excluded Region");
 }
 
-static void         UnionShape(Shape **base_shape, Shape const *add_shape)
+static void UnionShape(Shape *&base_shape, Shape const *add_shape)
 {
-    if (*base_shape == nullptr)
-        *base_shape = new Shape;
-	if ( (*base_shape)->hasEdges() == false ) {
-		(*base_shape)->Copy(const_cast<Shape*>(add_shape));
-	} else if ( add_shape->hasEdges() ) {
-		Shape* temp=new Shape;
-		temp->Booleen(const_cast<Shape*>(add_shape), *base_shape, bool_op_union);
-		delete *base_shape;
-		*base_shape = temp;
-	}
+    if (base_shape == nullptr)
+        base_shape = new Shape;
+
+    if (base_shape->hasEdges() == false) {
+        base_shape->Copy(const_cast<Shape *>(add_shape));
+    } else if (add_shape->hasEdges()) {
+        Shape *temp = new Shape;
+        temp->Booleen(const_cast<Shape *>(add_shape), base_shape, bool_op_union);
+        delete base_shape;
+        base_shape = temp;
+    }
 }
 
 static void         GetDest(SPObject* child,Shape **computed)
 {
-	if ( child == nullptr || dynamic_cast<SPItem *>(child) == nullptr ) return;
+    auto item = dynamic_cast<SPItem *>(child);
+    if (item == nullptr)
+        return;
 
-	SPCurve *curve=nullptr;
-	Geom::Affine tr_mat;
+    std::unique_ptr<SPCurve> curve;
+    Geom::Affine tr_mat;
 
     SPObject* u_child = child;
-    SPItem *item = dynamic_cast<SPItem *>(u_child);
-    g_assert(item != nullptr);
     SPUse *use = dynamic_cast<SPUse *>(item);
     if ( use ) {
         u_child = use->child;
@@ -352,10 +361,10 @@ static void         GetDest(SPObject* child,Shape **computed)
     }
     SPShape *shape = dynamic_cast<SPShape *>(u_child);
     if ( shape ) {
-        if (!(shape->_curve)) {
+        if (!shape->curve()) {
             shape->set_shape();
         }
-        curve = shape->getCurve();
+        curve = SPCurve::copy(shape->curve());
     } else {
         SPText *text = dynamic_cast<SPText *>(u_child);
         if ( text ) {
@@ -376,13 +385,10 @@ static void         GetDest(SPObject* child,Shape **computed)
 		} else {
 			uncross->ConvertToShape(n_shp,fill_nonZero);
 		}
-		UnionShape(computed, uncross);
+		UnionShape(*computed, uncross);
 		delete uncross;
 		delete n_shp;
 		delete temp;
-		curve->unref();
-	} else {
-//		printf("no curve\n");
 	}
 }
 

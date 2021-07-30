@@ -21,6 +21,7 @@ namespace UI {
 namespace Widget {
 
 InkFlowBox::InkFlowBox(const gchar *name)
+: Gtk::Box(Gtk::ORIENTATION_VERTICAL)
 {
     set_name(name);
     this->pack_start(_controller, false, false, 0);
@@ -72,7 +73,7 @@ void InkFlowBox::on_toggle(gint pos, Gtk::ToggleButton *tbutton)
         bool active = true;
         for (auto child : tbutton->get_parent()->get_children()) {
             if (tbutton != child) {
-                dynamic_cast<Gtk::ToggleButton *>(child)->set_active(active);
+                static_cast<Gtk::ToggleButton *>(child)->set_active(active);
                 active = false;
             }
         }
@@ -97,7 +98,7 @@ void InkFlowBox::on_global_toggle(Gtk::ToggleButton *tbutton)
         bool active = true;
         for (auto child : tbutton->get_parent()->get_children()) {
             if (tbutton != child) {
-                dynamic_cast<Gtk::ToggleButton *>(child)->set_active(active);
+                static_cast<Gtk::ToggleButton *>(child)->set_active(active);
                 active = false;
             }
         }

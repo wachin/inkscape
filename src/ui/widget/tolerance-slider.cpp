@@ -66,8 +66,8 @@ void ToleranceSlider::init (const Glib::ustring& label1, const Glib::ustring& la
     //             +
     //           hbox
     
-    _vbox = new Gtk::VBox;
-    _hbox = Gtk::manage(new Gtk::HBox);
+    _vbox = new Gtk::Box(Gtk::ORIENTATION_VERTICAL);
+    _hbox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL));
     
     Gtk::Label *theLabel1 = Gtk::manage(new Gtk::Label(label1));
     theLabel1->set_use_underline();
@@ -177,7 +177,7 @@ void ToleranceSlider::update (double val)
     if (_wr->isUpdating())
         return;
 
-    SPDesktop *dt = SP_ACTIVE_DESKTOP;
+    SPDesktop *dt = _wr->desktop();
     if (!dt) 
         return;
 

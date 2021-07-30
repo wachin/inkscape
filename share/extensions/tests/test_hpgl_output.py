@@ -8,5 +8,4 @@ class HPGLOutputBasicTest(ComparisonMixin, TestCase):
         'svg/shapes.svg',
         'svg/hpgl_multipen.svg'
     ]
-    python3_only = True
     comparisons = [()]

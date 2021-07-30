@@ -1,10 +1,29 @@
 Installation
 ============
 
+Required Dependencies
+---------------------
+
+The Inkscape core depends on several other libraries that you will need
+install, if they are not already present on your system. The most
+typical libraries you may need to install are: 
+[Boehm-GC](http://www.hboehm.info/gc/), 
+[libsigc++](https://github.com/libsigcplusplus/libsigcplusplus), 
+[gtkmm](https://www.gtkmm.org/).
+
+Make sure you got the submodules code when fetching the code 
+(either by using `--recurse-submodules` on the git clone command, as recommended on the [Getting started](https://inkscape.org/develop/getting-started/#fetching-the-source-code) page, or by running `git submodule init && git submodule update`)
+
+Please see [the wiki page on compiling Inkscape](http://wiki.inkscape.org/wiki/index.php/CompilingInkscape) for the
+most current dependencies, including links to the source tarballs. 
+For common linux-distributions (Ubuntu, Debian, Fedora) you can use 
+[a bash-script](https://gitlab.com/inkscape/inkscape-ci-docker/-/raw/master/install_dependencies.sh?inline=false) 
+for getting required libraries.
+
 Basic Installation
 ------------------
 
-Inkscape version 0.92 and newer can be build using CMake:
+For Linux based Free Desktops, Inkscape version 0.92 and newer can be built using CMake:
 
 ```sh
 mkdir build
@@ -14,29 +33,25 @@ make
 make install
 ```
 
-Other platforms such as Windows and Mac require a lot more and are considered
-a developer and packager task. These instructions are kept on the Inkscape wiki.
+See `CONTRIBUTING.md` for more developer details and the [wiki](https://wiki.inkscape.org/wiki/index.php?title=Compiling_Inkscape).
+
+For non-linux platforms, please see the Inkscape wiki pages here:
+
+For building on ChromeOS, please click [here](
+https://wiki.inkscape.org/wiki/index.php?title=Compiling_Inkscape_on_Chrome_OS)
+
+For building on Windows, please click [here](
+https://wiki.inkscape.org/wiki/index.php?title=Compiling_Inkscape_on_Windows_with_MSYS2)
+
+For building on Mac, please click [here](
+https://wiki.inkscape.org/wiki/index.php?title=CompilingMacOsX)
+
 
 Running Without Installing
 --------------------------
 
 For developers and others who want to run Inkscape without installing it please
 see the ***Building*** section in the `CONTRIBUTING.md` file.
-
-Required Dependencies
----------------------
-
-The Inkscape core depends on several other libraries that you will need
-install, if they are not already present on your system. The most
-typical libraries you may need to install are:
-
-* [Boehm-GC](http://www.hboehm.info/gc/)
-* [libsigc++](https://github.com/libsigcplusplus/libsigcplusplus)
-* [gtkmm](https://www.gtkmm.org/)
-
-Please see [the wiki page on compiling Inkscape](http://wiki.inkscape.org/wiki/index.php/CompilingInkscape) for the
-most current dependencies, including links to the source tarballs.
-
 
 Extensions
 ----------

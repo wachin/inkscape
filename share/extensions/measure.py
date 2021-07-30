@@ -72,7 +72,7 @@ class MeasureLength(inkex.EffectExtension):
         factor *= scale / self.svg.unittouu('1' + self.options.unit)
 
         # loop over all selected paths
-        for node in self.svg.selection.filter(inkex.PathElement).values():
+        for node in self.svg.selection.filter(inkex.PathElement):
             csp = node.path.transform(node.composed_transform()).to_superpath()
             if self.options.mtype == "length":
                 slengths, stotal = csplength(csp)

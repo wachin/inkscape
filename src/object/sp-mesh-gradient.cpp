@@ -49,10 +49,10 @@ void SPMeshGradient::build(SPDocument *document, Inkscape::XML::Node *repr) {
     SPGradient::build(document, repr);
 
     // Start coordinate of meshgradient
-    this->readAttr( "x" );
-    this->readAttr( "y" );
+    this->readAttr(SPAttr::X);
+    this->readAttr(SPAttr::Y);
 
-    this->readAttr( "type" );
+    this->readAttr(SPAttr::TYPE);
 
 #ifdef OBJECT_TRACE
     objectTrace( "SPMeshGradient::build", false );
@@ -60,13 +60,13 @@ void SPMeshGradient::build(SPDocument *document, Inkscape::XML::Node *repr) {
 }
 
 
-void SPMeshGradient::set(SPAttributeEnum key, gchar const *value) {
+void SPMeshGradient::set(SPAttr key, gchar const *value) {
 #ifdef OBJECT_TRACE
   objectTrace( "SPMeshGradient::set" );
 #endif
 
     switch (key) {
-        case SP_ATTR_X:
+        case SPAttr::X:
             if (!this->x.read(value)) {
                 this->x.unset(SVGLength::NONE, 0.0, 0.0);
             }
@@ -74,7 +74,7 @@ void SPMeshGradient::set(SPAttributeEnum key, gchar const *value) {
             this->requestModified(SP_OBJECT_MODIFIED_FLAG);
             break;
 
-        case SP_ATTR_Y:
+        case SPAttr::Y:
             if (!this->y.read(value)) {
                 this->y.unset(SVGLength::NONE, 0.0, 0.0);
             }
@@ -82,7 +82,7 @@ void SPMeshGradient::set(SPAttributeEnum key, gchar const *value) {
             this->requestModified(SP_OBJECT_MODIFIED_FLAG);
             break;
 
-        case SP_ATTR_TYPE:
+        case SPAttr::TYPE:
 	    if (value) {
 	      if (!strcmp(value, "coons")) {
 		this->type = SP_MESH_TYPE_COONS;
@@ -124,11 +124,11 @@ Inkscape::XML::Node* SPMeshGradient::write(Inkscape::XML::Document *xml_doc, Ink
     }
 
     if ((flags & SP_OBJECT_WRITE_ALL) || this->x._set) {
-    	sp_repr_set_svg_double(repr, "x", this->x.computed);
+    	repr->setAttributeSvgDouble("x", this->x.computed);
     }
 
     if ((flags & SP_OBJECT_WRITE_ALL) || this->y._set) {
-    	sp_repr_set_svg_double(repr, "y", this->y.computed);
+    	repr->setAttributeSvgDouble("y", this->y.computed);
     }
 
     if ((flags & SP_OBJECT_WRITE_ALL) || this->type_set) {

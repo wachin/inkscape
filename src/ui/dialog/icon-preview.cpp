@@ -73,7 +73,7 @@ void IconPreviewPanel::on_button_clicked(int which)
 
         hot = which;
         updateMagnify();
-        _getContents()->queue_draw();
+        queue_draw();
     }
 }
 
@@ -86,24 +86,19 @@ void IconPreviewPanel::on_button_clicked(int which)
 /**
  * Constructor
  */
-IconPreviewPanel::IconPreviewPanel() :
-    UI::Widget::Panel("/dialogs/iconpreview", SP_VERB_VIEW_ICON_PREVIEW),
-    deskTrack(),
-    desktop(nullptr),
-    document(nullptr),
-    drawing(nullptr),
-    visionkey(0),
-    timer(nullptr),
-    renderTimer(nullptr),
-    pending(false),
-    minDelay(0.1),
-    targetId(),
-    hot(1),
-    selectionButton(nullptr),
-    desktopChangeConn(),
-    docReplacedConn(),
-    docModConn(),
-    selChangedConn()
+IconPreviewPanel::IconPreviewPanel()
+    : DialogBase("/dialogs/iconpreview", "IconPreview")
+    , drawing(nullptr)
+    , visionkey(0)
+    , timer(nullptr)
+    , renderTimer(nullptr)
+    , pending(false)
+    , minDelay(0.1)
+    , targetId()
+    , hot(1)
+    , selectionButton(nullptr)
+    , docModConn()
+    , iconBox(Gtk::ORIENTATION_VERTICAL)
 {
     Inkscape::Preferences *prefs = Inkscape::Preferences::get();
     numEntries = 0;
@@ -159,7 +154,7 @@ IconPreviewPanel::IconPreviewPanel() :
 
     magLabel.set_label( *labels[hot] );
 
-    Gtk::VBox* magBox = new Gtk::VBox();
+    Gtk::Box* magBox = new Gtk::Box(Gtk::ORIENTATION_VERTICAL);
 
     UI::Widget::Frame *magFrame = Gtk::manage(new UI::Widget::Frame(_("Magnified:")));
     magFrame->add( magnified );
@@ -168,8 +163,8 @@ IconPreviewPanel::IconPreviewPanel() :
     magBox->pack_start( magLabel, Gtk::PACK_SHRINK );
 
 
-    Gtk::VBox *verts = new Gtk::VBox();
-    Gtk::HBox *horiz = nullptr;
+    Gtk::Box *verts = new Gtk::Box(Gtk::ORIENTATION_VERTICAL);
+    Gtk::Box *horiz = nullptr;
     int previous = 0;
     int avail = 0;
     for ( int i = numEntries - 1; i >= 0; --i ) {
@@ -177,9 +172,8 @@ IconPreviewPanel::IconPreviewPanel() :
         pixMem[i] = new guchar[sizes[i] * stride];
         memset( pixMem[i], 0x00, sizes[i] * stride );
 
-        GdkPixbuf *pb = gdk_pixbuf_new_from_data( pixMem[i], GDK_COLORSPACE_RGB, TRUE, 8, sizes[i], sizes[i], stride, /*(GdkPixbufDestroyNotify)g_free*/nullptr, nullptr );
-        GtkImage* img = GTK_IMAGE( gtk_image_new_from_pixbuf( pb ) );
-        images[i] = Glib::wrap(img);
+        auto pb = Gdk::Pixbuf::create_from_data(pixMem[i], Gdk::COLORSPACE_RGB, true, 8, sizes[i], sizes[i], stride);
+        images[i] = Gtk::make_managed<Gtk::Image>(pb);
         Glib::ustring label(*labels[i]);
         buttons[i] = new Gtk::ToggleToolButton(label);
         buttons[i]->set_active( i == hot );
@@ -213,7 +207,7 @@ IconPreviewPanel::IconPreviewPanel() :
             }
             if (sizes[i] <= avail) {
                 if (!horiz) {
-                    horiz = Gtk::manage(new Gtk::HBox());
+                    horiz = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL));
                     avail = previous;
                     verts->pack_end(*horiz, Gtk::PACK_SHRINK);
                 }
@@ -243,19 +237,17 @@ IconPreviewPanel::IconPreviewPanel() :
     gint val = prefs->getBool("/iconpreview/selectionOnly");
     selectionButton->set_active( val != 0 );
 
-
-    _getContents()->pack_start(iconBox, Gtk::PACK_SHRINK);
+    pack_start(iconBox, Gtk::PACK_SHRINK);
 
     show_all_children();
-
-    // Connect this up last
-    desktopChangeConn = deskTrack.connectDesktopChanged( sigc::mem_fun(*this, &IconPreviewPanel::setDesktop) );
-    deskTrack.connect(GTK_WIDGET(gobj()));
 }
 
 IconPreviewPanel::~IconPreviewPanel()
 {
-    setDesktop(nullptr);
+    if (drawing) {
+        delete drawing;
+        drawing = nullptr;
+    }
     if (timer) {
         timer->stop();
         delete timer;
@@ -267,11 +259,7 @@ IconPreviewPanel::~IconPreviewPanel()
         renderTimer = nullptr;
     }
 
-    selChangedConn.disconnect();
     docModConn.disconnect();
-    docReplacedConn.disconnect();
-    desktopChangeConn.disconnect();
-    deskTrack.disconnect();
 }
 
 //#########################################################################
@@ -294,54 +282,33 @@ static Glib::ustring getTimestr()
 }
 #endif // ICON_VERBOSE
 
-void IconPreviewPanel::setDesktop( SPDesktop* desktop )
+void IconPreviewPanel::selectionModified(Selection *selection, guint flags)
 {
-    Panel::setDesktop(desktop);
-
-    SPDocument *newDoc = (desktop) ? desktop->doc() : nullptr;
-
-    if ( desktop != this->desktop ) {
-        docReplacedConn.disconnect();
-        selChangedConn.disconnect();
-
-        this->desktop = Panel::getDesktop();
-        if ( this->desktop ) {
-            docReplacedConn = this->desktop->connectDocumentReplaced(sigc::hide<0>(sigc::mem_fun(this, &IconPreviewPanel::setDocument)));
-            if ( this->desktop->selection && Inkscape::Preferences::get()->getBool("/iconpreview/autoRefresh", true) ) {
-                selChangedConn = this->desktop->selection->connectChanged(sigc::hide(sigc::mem_fun(this, &IconPreviewPanel::queueRefresh)));
-            }
-        }
+    if (getDesktop() && Inkscape::Preferences::get()->getBool("/iconpreview/autoRefresh", true)) {
+        queueRefresh();
     }
-    setDocument(newDoc);
-    deskTrack.setBase(desktop);
 }
 
-void IconPreviewPanel::setDocument( SPDocument *document )
+void IconPreviewPanel::documentReplaced()
 {
-    if (this->document != document) {
-        docModConn.disconnect();
-        if (drawing) {
-            this->document->getRoot()->invoke_hide(visionkey);
-            delete drawing;
-            drawing = nullptr;
+    if (drawing) {
+        if (auto document = getDocument()) {
+            document->getRoot()->invoke_hide(visionkey);
         }
-        this->document = document;
-        if (this->document) {
-            drawing = new Inkscape::Drawing();
-            visionkey = SPItem::display_key_new(1);
-            drawing->setRoot(this->document->getRoot()->invoke_show(*drawing, visionkey, SP_ITEM_SHOW_DISPLAY));
-
-            if ( Inkscape::Preferences::get()->getBool("/iconpreview/autoRefresh", true) ) {
-                docModConn = this->document->connectModified(sigc::hide(sigc::mem_fun(this, &IconPreviewPanel::queueRefresh)));
-            }
-            queueRefresh();
-        }
+        delete drawing;
+        drawing = nullptr;
+    }
+    if (auto document = getDocument()) {
+        drawing = new Inkscape::Drawing();
+        visionkey = SPItem::display_key_new(1);
+        drawing->setRoot(document->getRoot()->invoke_show(*drawing, visionkey, SP_ITEM_SHOW_DISPLAY));
+        queueRefresh();
     }
 }
 
 void IconPreviewPanel::refreshPreview()
 {
-    SPDesktop *desktop = getDesktop();
+    auto document = getDocument();
     if (!timer) {
         timer = new Glib::Timer();
     }
@@ -351,7 +318,7 @@ void IconPreviewPanel::refreshPreview()
 #endif //ICON_VERBOSE
         // Do not refresh too quickly
         queueRefresh();
-    } else if ( desktop && desktop->doc() ) {
+    } else if (document) {
 #if ICON_VERBOSE
         g_message( "%s Refreshing preview.", getTimestr().c_str() );
 #endif // ICON_VERBOSE
@@ -359,18 +326,12 @@ void IconPreviewPanel::refreshPreview()
         SPObject *target = nullptr;
         if ( selectionButton && selectionButton->get_active() )
         {
-            target = (hold && !targetId.empty()) ? desktop->doc()->getObjectById( targetId.c_str() ) : nullptr;
+            target = (hold && !targetId.empty()) ? document->getObjectById( targetId.c_str() ) : nullptr;
             if ( !target ) {
                 targetId.clear();
-                Inkscape::Selection * sel = desktop->getSelection();
-                if ( sel ) {
-                    //g_message("found a selection to play with");
-
-                	auto items = sel->items();
-                    for(auto i=items.begin();!target && i!=items.end();++i){
-                        SPItem* item = *i;
-                        gchar const *id = item->getId();
-                        if ( id ) {
+                if (auto selection = getSelection()) {
+                    for (auto item : selection->items()) {
+                        if (gchar const *id = item->getId()) {
                             targetId = id;
                             target = item;
                         }
@@ -378,9 +339,9 @@ void IconPreviewPanel::refreshPreview()
                 }
             }
         } else {
-            target = desktop->currentRoot();
+            target = getDesktop()->currentRoot();
         }
-        if ( target ) {
+        if (target) {
             renderPreview(target);
         }
 #if ICON_VERBOSE

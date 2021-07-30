@@ -24,16 +24,16 @@ namespace Inkscape {
 namespace LivePathEffect {
 
 static const Util::EnumData<Filllpemethod> FilllpemethodData[] = {
-    { FLM_ORIGINALD, N_("Without LPE's"), "originald" }, 
+    { FLM_ORIGINALD, N_("Without LPEs"), "originald" }, 
     { FLM_BSPLINESPIRO, N_("With Spiro or BSpline"), "bsplinespiro" },
-    { FLM_D, N_("With LPE's"), "d" }
+    { FLM_D, N_("With all LPEs"), "d" }
 };
 static const Util::EnumDataConverter<Filllpemethod> FLMConverter(FilllpemethodData, FLM_END);
 
 LPEFillBetweenMany::LPEFillBetweenMany(LivePathEffectObject *lpeobject)
     : Effect(lpeobject)
     , linked_paths(_("Linked path:"), _("Paths from which to take the original path data"), "linkedpaths", &wr, this)
-    , method(_("LPE's on linked:"), _("LPE's on linked"), "method", FLMConverter, &wr, this, FLM_BSPLINESPIRO)
+    , method(_("LPEs:"), _("Which LPEs of the linked paths should be considered"), "method", FLMConverter, &wr, this, FLM_BSPLINESPIRO)
     , join(_("Join subpaths"), _("Join subpaths"), "join", &wr, this, true)
     , close(_("Close"), _("Close path"), "close", &wr, this, true)
     , autoreverse(_("Autoreverse"), _("Autoreverse"), "autoreverse", &wr, this, true)
@@ -71,7 +71,6 @@ void LPEFillBetweenMany::doEffect (SPCurve * curve)
     if (transf != Geom::identity()) {
         sp_lpe_item->doWriteTransform(Geom::identity());
     }
-    bool closedlink = false;
     SPDesktop *desktop = SP_ACTIVE_DESKTOP;
     Inkscape::Selection *selection = nullptr;
     if (desktop) {

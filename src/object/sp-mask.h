@@ -19,9 +19,6 @@
 #include "uri-references.h"
 #include "xml/node.h"
 
-#define SP_MASK(obj) (dynamic_cast<SPMask*>((SPObject*)obj))
-#define SP_IS_MASK(obj) (dynamic_cast<const SPMask*>((SPObject*)obj) != NULL)
-
 namespace Inkscape {
 
 class Drawing;
@@ -65,13 +62,15 @@ protected:
 
 	void child_added(Inkscape::XML::Node* child, Inkscape::XML::Node* ref) override;
 
-	void set(SPAttributeEnum key, const char* value) override;
+	void set(SPAttr key, const char* value) override;
 
 	void update(SPCtx* ctx, unsigned int flags) override;
 	void modified(unsigned int flags) override;
 
 	Inkscape::XML::Node* write(Inkscape::XML::Document* doc, Inkscape::XML::Node* repr, unsigned int flags) override;
 };
+
+MAKE_SP_OBJECT_TYPECHECK_FUNCTIONS(SP_IS_MASK, SPMask)
 
 class SPMaskReference : public Inkscape::URIReference {
 public:

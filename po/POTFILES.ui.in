@@ -1,5 +1,15 @@
+../share/ui/color-palette.glade
+../share/ui/command-palette-operation.glade
 ../share/ui/dialog-css.glade
 ../share/ui/dialog-livepatheffect-add.glade
 ../share/ui/dialog-livepatheffect-effect.glade
+../share/ui/dialog-save-template.glade
+../share/ui/dialog-text-edit.glade
 ../share/ui/dialog-trace.glade
-../share/ui/inkscape-application.glade
+../share/ui/gradient-edit.glade
+../share/ui/inkscape-about.glade
+../share/ui/inkscape-start.glade
+../share/ui/menu-view.ui
+../share/ui/toolbar-snap.ui
+../share/ui/toolbar-tool.ui
+../share/ui/toolbar-zoom.ui

@@ -22,11 +22,13 @@
 #include <cstddef>
 #include <deque>
 #include <map>
+#include <memory>
 #include <vector>
 
 #include <boost/ptr_container/ptr_list.hpp>
 
 #include <glibmm/ustring.h>
+#include <giomm/simpleactiongroup.h>
 #include <sigc++/sigc++.h>
 
 #include <2geom/affine.h>
@@ -38,6 +40,7 @@
 #include "event.h"
 #include "gc-anchored.h"
 #include "gc-finalized.h"
+#include "object/sp-namedview.h"
 
 #include "inkgc/gc-managed.h"
 
@@ -88,7 +91,6 @@ namespace Inkscape {
 }
 
 class SPDefs;
-class SP3DBox;
 class Persp3D;
 class Persp3DImpl;
 class SPItemCtx;
@@ -104,6 +106,8 @@ class SPDocument : public Inkscape::GC::Managed<>,
 {
 
 public:
+    /// For sanity check in SPObject::requestDisplayUpdate
+    unsigned update_in_progress = 0;
 
     /************ Functions *****************/
 
@@ -115,21 +119,25 @@ public:
 
 
     // Document creation ------------------
-    static SPDocument *createDoc(Inkscape::XML::Document *rdoc, char const *uri,
+    static SPDocument *createDoc(Inkscape::XML::Document *rdoc, char const *filename,
             char const *base, char const *name, bool keepalive,
             SPDocument *parent);
-    static SPDocument *createNewDoc(char const*uri, bool keepalive,
+    static SPDocument *createNewDoc(char const *filename, bool keepalive,
             bool make_new = false, SPDocument *parent=nullptr );
     static SPDocument *createNewDocFromMem(char const*buffer, int length, bool keepalive);
-           SPDocument *createChildDoc(std::string const &uri);
+           SPDocument *createChildDoc(std::string const &filename);
 
+    // Make a copy, you are responsible for the copy.
+    std::unique_ptr<SPDocument> copy() const;
 
     // Document status --------------------
     void setVirgin(bool Virgin) { virgin = Virgin; }
     bool getVirgin() { return virgin; }
+    const SPDocument *getOriginalDocument() const { return _original_document.get(); }
 
-    SPDocument *doRef();
-    SPDocument *doUnref();
+    //! Increment reference count by one and return a self-dereferencing pointer.
+    std::unique_ptr<SPDocument> doRef();
+    std::unique_ptr<SPDocument const> doRef() const;
 
     bool isModifiedSinceSave() const { return modified_since_save; }
     bool isModifiedSinceAutoSave() const { return modified_since_autosave; }
@@ -140,19 +148,21 @@ public:
     bool rerouting_handler();
 
     void requestModified();
-    bool _updateDocument(); // Used by stand-alone sp_document_idle_handler
+    bool _updateDocument(int flags); // Used by stand-alone sp_document_idle_handler
     int ensureUpToDate();
 
     bool addResource(char const *key, SPObject *object);
     bool removeResource(char const *key, SPObject *object);
     std::vector<SPObject *> const getResourceList(char const *key);
 
-    void do_change_uri(char const *const filename, bool const rebase);
-    void changeUriAndHrefs(char const *uri);
+    void do_change_filename(char const *const filename, bool const rebase);
+    void changeFilenameAndHrefs(char const *filename);
     void setXMLDialogSelectedObject(SPObject *activexmltree) { _activexmltree = activexmltree; }
     SPObject *getXMLDialogSelectedObject() { return _activexmltree; }
 
-  private:
+    Inkscape::EventLog* get_event_log() { return _event_log; }
+
+private:
     void _importDefsNode(SPDocument *source, Inkscape::XML::Node *defs, Inkscape::XML::Node *target_defs);
     SPObject *_activexmltree;
 
@@ -177,6 +187,7 @@ public:
 
     Inkscape::XML::Node *getReprRoot() { return rroot; }
     Inkscape::XML::Node *getReprNamedView();
+    SPNamedView *getNamedView();
 
     /** Our Inkscape::XML::Document. */
     Inkscape::XML::Document *getReprDoc() { return rdoc; }
@@ -185,22 +196,23 @@ public:
 
     std::vector<Glib::ustring> getLanguages() const;
 
+    SPDocument *getParent() { return _parent_document; }
+    SPDocument const *getParent() const { return _parent_document; }
+
     // Styling
     CRCascade    *getStyleCascade() { return style_cascade; }
-    CRStyleSheet *getStyleSheet()   { return style_sheet; }
-    void const setStyleSheet(CRStyleSheet* sheet) { style_sheet = sheet; }
 
     // File information --------------------
 
-    /** A filename (not a URI yet), or NULL */
-    void setDocumentUri(char const *document_uri);
-    char const *getDocumentURI() const { return document_uri; }
+    /** A filename, or NULL */
+    void setDocumentFilename(char const *filename);
+    char const *getDocumentFilename() const { return document_filename; }
 
     /** To be used for resolving relative hrefs. */
     void setDocumentBase( char const* document_base );
     char const *getDocumentBase() const { return document_base; };
 
-    /** basename(uri) or other human-readable label for the document. */
+    /** basename or other human-readable label for the document. */
     char const* getDocumentName() const { return document_name; }
 
 
@@ -287,6 +299,9 @@ public:
     void collectOrphans();
 
 
+    // Actions ---------------------------------
+    Glib::RefPtr<Gio::SimpleActionGroup> getActionGroup() { return action_group; }
+
     /************* Data ***************/
 private:
 
@@ -295,7 +310,6 @@ private:
     Avoid::Router *router; // Instance of the connector router
 
     // Document status -----------------------
-    int ref_count;  // Temp to check refcounting
 
     bool keepalive; ///< false if temporary document (e.g. to generate a PNG for display in a dialog).
     bool virgin ;   ///< Has the document never been touched?
@@ -314,15 +328,16 @@ private:
     boost::ptr_list<SPDocument> _child_documents;
     // Conversely this is a parent document because this is a child.
     SPDocument *_parent_document;
+    // When copying documents, this can refer to it's original
+    std::unique_ptr<SPDocument const> _original_document;
 
     // Styling
     CRCascade *style_cascade;
-    CRStyleSheet *style_sheet;
 
     // File information ----------------------
-    char *document_uri;   ///< A filename (not a URI yet), or NULL
+    char *document_filename;   ///< A filename, or NULL
     char *document_base;  ///< To be used for resolving relative hrefs.
-    char *document_name;  ///< basename(uri) or other human-readable label for the document.
+    char *document_name;  ///< basename or other human-readable label for the document.
 
     // Find items ----------------------------
     std::map<std::string, SPObject *> iddef;
@@ -338,6 +353,7 @@ private:
 
     // Document undo/redo ----------------------
     friend Inkscape::DocumentUndo;
+    Inkscape::EventLog *_event_log = nullptr;
 
     /* Undo/Redo state */
     bool sensitive; /* If we save actions to undo stack */
@@ -360,13 +376,15 @@ private:
 
     std::vector<SPObject *> _collection_queue; ///< Orphans
 
+    // Actions ---------------------------------
+    Glib::RefPtr<Gio::SimpleActionGroup> action_group;
 
     /*********** Signals **************/
 
     typedef sigc::signal<void, SPObject *> IDChangedSignal;
     typedef sigc::signal<void> ResourcesChangedSignal;
     typedef sigc::signal<void, unsigned> ModifiedSignal;
-    typedef sigc::signal<void, char const *> URISetSignal;
+    typedef sigc::signal<void, char const *> FilenameSetSignal;
     typedef sigc::signal<void, double, double> ResizedSignal;
     typedef sigc::signal<void> ReconstructionStart;
     typedef sigc::signal<void> ReconstructionFinish;
@@ -379,7 +397,7 @@ private:
     IDChangedSignalMap id_changed_signals;
 
     SPDocument::ModifiedSignal modified_signal;
-    SPDocument::URISetSignal uri_set_signal;
+    SPDocument::FilenameSetSignal filename_set_signal;
     SPDocument::ResizedSignal resized_signal;
     SPDocument::ReconstructionStart _reconstruction_start_signal;
     SPDocument::ReconstructionFinish  _reconstruction_finish_signal;
@@ -415,7 +433,7 @@ public:
 
     sigc::connection connectDestroy(sigc::signal<void>::slot_type slot);
     sigc::connection connectModified(ModifiedSignal::slot_type slot);
-    sigc::connection connectURISet(URISetSignal::slot_type slot);
+    sigc::connection connectFilenameSet(FilenameSetSignal::slot_type slot);
     sigc::connection connectResized(ResizedSignal::slot_type slot);
     sigc::connection connectCommit(CommitSignal::slot_type slot);
     sigc::connection connectIdChanged(const char *id, IDChangedSignal::slot_type slot);
@@ -432,6 +450,13 @@ public:
     void emitReconstructionFinish();
     void emitResizedSignal(double width, double height);
 };
+
+namespace std {
+template <>
+struct default_delete<SPDocument> {
+    void operator()(SPDocument *ptr) const { Inkscape::GC::release(ptr); }
+};
+}; // namespace std
 
 /*
  * Ideas: How to overcome style invalidation nightmare

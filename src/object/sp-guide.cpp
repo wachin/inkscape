@@ -16,31 +16,34 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
-#include <algorithm>
 #include <cstring>
-#include <string>
 #include <vector>
-
-#include "display/sp-canvas.h"
-#include "display/guideline.h"
-#include "svg/svg.h"
-#include "svg/svg-color.h"
-#include "svg/stringstream.h"
-#include "attributes.h"
-#include "sp-guide.h"
-#include "sp-item-notify-moveto.h"
 #include <glibmm/i18n.h>
-#include <xml/repr.h>
-#include <remove-last.h>
-#include "inkscape.h"
+
+#include "attributes.h"
 #include "desktop.h"
-#include "sp-root.h"
-#include "sp-namedview.h"
+#include "desktop-events.h"
 #include "document-undo.h"
 #include "helper-fns.h"
+#include "inkscape.h"
 #include "verbs.h"
 
+#include "sp-guide.h"
+#include "sp-namedview.h"
+#include "sp-root.h"
+
+#include "display/control/canvas-item-guideline.h"
+
+#include "svg/stringstream.h"
+#include "svg/svg-color.h"
+#include "svg/svg.h"
+
+#include "ui/widget/canvas.h" // Should really be here
+
+#include "xml/repr.h"
+
 using Inkscape::DocumentUndo;
+
 
 SPGuide::SPGuide()
     : SPObject()
@@ -52,12 +55,11 @@ SPGuide::SPGuide()
     , hicolor(0xff00007f)
 {}
 
-void SPGuide::setColor(guint32 c)
+void SPGuide::setColor(guint32 color)
 {
-    color = c;
-
-    for(auto view : this->views) {
-        sp_guideline_set_color(view, this->color);
+    this->color = color;
+    for (auto view : views) {
+        view->set_stroke(color);
     }
 }
 
@@ -65,11 +67,11 @@ void SPGuide::build(SPDocument *document, Inkscape::XML::Node *repr)
 {
     SPObject::build(document, repr);
 
-    this->readAttr( "inkscape:color" );
-    this->readAttr( "inkscape:label" );
-    this->readAttr( "inkscape:locked" );
-    this->readAttr( "orientation" );
-    this->readAttr( "position" );
+    this->readAttr(SPAttr::INKSCAPE_COLOR);
+    this->readAttr(SPAttr::INKSCAPE_LABEL);
+    this->readAttr(SPAttr::INKSCAPE_LOCKED);
+    this->readAttr(SPAttr::ORIENTATION);
+    this->readAttr(SPAttr::POSITION);
 
     /* Register */
     document->addResource("guide", this);
@@ -77,8 +79,8 @@ void SPGuide::build(SPDocument *document, Inkscape::XML::Node *repr)
 
 void SPGuide::release()
 {
-    for(auto view : this->views) {
-        sp_guideline_delete(view);
+    for(auto view : views) {
+        delete view;
     }
     this->views.clear();
 
@@ -90,14 +92,14 @@ void SPGuide::release()
     SPObject::release();
 }
 
-void SPGuide::set(SPAttributeEnum key, const gchar *value) {
+void SPGuide::set(SPAttr key, const gchar *value) {
     switch (key) {
-    case SP_ATTR_INKSCAPE_COLOR:
+    case SPAttr::INKSCAPE_COLOR:
         if (value) {
             this->setColor(sp_svg_read_color(value, 0x0000ff00) | 0x7f);
         }
         break;
-    case SP_ATTR_INKSCAPE_LABEL:
+    case SPAttr::INKSCAPE_LABEL:
         // this->label already freed in sp_guideline_set_label (src/display/guideline.cpp)
         // see bug #1498444, bug #1469514
         if (value) {
@@ -108,12 +110,12 @@ void SPGuide::set(SPAttributeEnum key, const gchar *value) {
 
         this->set_label(this->label, false);
         break;
-    case SP_ATTR_INKSCAPE_LOCKED:
+    case SPAttr::INKSCAPE_LOCKED:
         if (value) {
             this->set_locked(helperfns_read_bool(value, false), false);
         }
         break;
-    case SP_ATTR_ORIENTATION:
+    case SPAttr::ORIENTATION:
     {
         if (value && !strcmp(value, "horizontal")) {
             /* Visual representation of a horizontal line, constrain vertically (y coordinate). */
@@ -147,7 +149,7 @@ void SPGuide::set(SPAttributeEnum key, const gchar *value) {
         this->set_normal(this->normal_to_line, false);
     }
     break;
-    case SP_ATTR_POSITION:
+    case SPAttr::POSITION:
     {
         if (value) {
             gchar ** strarray = g_strsplit(value, ",", 2);
@@ -232,8 +234,8 @@ SPGuide *SPGuide::createSPGuide(SPDocument *doc, Geom::Point const &pt1, Geom::P
         }
     }
 
-    sp_repr_set_point(repr, "position", Geom::Point( newx, newy ));
-    sp_repr_set_point(repr, "orientation", n);
+    repr->setAttributePoint("position", Geom::Point( newx, newy ));
+    repr->setAttributePoint("orientation", n);
 
     SPNamedView *namedview = sp_document_namedview(doc, nullptr);
     if (namedview) {
@@ -249,7 +251,14 @@ SPGuide *SPGuide::createSPGuide(SPDocument *doc, Geom::Point const &pt1, Geom::P
 }
 
 SPGuide *SPGuide::duplicate(){
-    return SPGuide::createSPGuide(document, point_on_line, Geom::Point(point_on_line[Geom::X] + normal_to_line[Geom::Y],point_on_line[Geom::Y] - normal_to_line[Geom::X]));
+    return SPGuide::createSPGuide(
+        document,
+        point_on_line,
+        Geom::Point(
+            point_on_line[Geom::X] + normal_to_line[Geom::Y],
+            point_on_line[Geom::Y] - normal_to_line[Geom::X]
+            )
+        );
 }
 
 void sp_guide_pt_pairs_to_guides(SPDocument *doc, std::list<std::pair<Geom::Point, Geom::Point> > &pts)
@@ -292,37 +301,33 @@ void sp_guide_delete_all_guides(SPDesktop *dt)
     DocumentUndo::done(doc, SP_VERB_NONE, _("Delete All Guides"));
 }
 
-void SPGuide::showSPGuide(SPCanvasGroup *group, GCallback handler)
+// Actually, create a new guide.
+void SPGuide::showSPGuide(Inkscape::CanvasItemGroup *group)
 {
-    SPCanvasItem *item = sp_guideline_new(group, label, point_on_line, normal_to_line);
-    sp_guideline_set_color(SP_GUIDELINE(item), color);
-    sp_guideline_set_locked(SP_GUIDELINE(item), locked);
-    
-    g_signal_connect(G_OBJECT(item), "event", G_CALLBACK(handler), this);
+    Glib::ustring ulabel = (label?label:"");
+    auto item = new Inkscape::CanvasItemGuideLine(group, ulabel, point_on_line, normal_to_line);
+    item->set_stroke(color);
+    item->set_locked(locked);
 
-    views.push_back(SP_GUIDELINE(item));
+    item->connect_event(sigc::bind(sigc::ptr_fun(&sp_dt_guide_event), item, this));
+
+    views.push_back(item);
 }
 
 void SPGuide::showSPGuide()
 {
-    for(std::vector<SPGuideLine *>::const_iterator it = this->views.begin(); it != this->views.end(); ++it) {
-        sp_canvas_item_show(SP_CANVAS_ITEM(*it));
-        if((*it)->origin) {
-          sp_canvas_item_show(SP_CANVAS_ITEM((*it)->origin));
-        }  else {
-            //reposition to same place to show knots
-            sp_guideline_set_position(*it, point_on_line);
-        }
+    for (auto view : views) {
+        view->show();
     }
 }
 
-void SPGuide::hideSPGuide(SPCanvas *canvas)
+// Actually deleted guide from a particular canvas.
+void SPGuide::hideSPGuide(Inkscape::UI::Widget::Canvas *canvas)
 {
     g_assert(canvas != nullptr);
-    g_assert(SP_IS_CANVAS(canvas));
-    for(std::vector<SPGuideLine *>::iterator it = this->views.begin(); it != this->views.end(); ++it) {
-        if (canvas == SP_CANVAS_ITEM(*it)->canvas) {
-            sp_guideline_delete(*it);
+    for (auto it = views.begin(); it != views.end(); ++it) {
+        if (canvas == (*it)->get_canvas()) { // A guide can be displayed on more than one desktop with the same document.
+            delete (*it);
             views.erase(it);
             return;
         }
@@ -333,37 +338,23 @@ void SPGuide::hideSPGuide(SPCanvas *canvas)
 
 void SPGuide::hideSPGuide()
 {
-    for(std::vector<SPGuideLine *>::const_iterator it = this->views.begin(); it != this->views.end(); ++it) {
-        sp_canvas_item_hide(SP_CANVAS_ITEM(*it));
-        if ((*it)->origin) {
-            sp_canvas_item_hide(SP_CANVAS_ITEM((*it)->origin));
-        }
+    for(auto view : views) {
+        view->hide();
     }
 }
 
-void SPGuide::sensitize(SPCanvas *canvas, bool sensitive)
+void SPGuide::sensitize(Inkscape::UI::Widget::Canvas *canvas, bool sensitive)
 {
     g_assert(canvas != nullptr);
-    g_assert(SP_IS_CANVAS(canvas));
 
-    for(std::vector<SPGuideLine *>::const_iterator it = this->views.begin(); it != this->views.end(); ++it) {
-        if (canvas == SP_CANVAS_ITEM(*it)->canvas) {
-            sp_guideline_set_sensitive(*it, sensitive);
+    for (auto view : views) {
+        if (canvas == view->get_canvas()) {
+            view->set_sensitive(sensitive);
             return;
         }
     }
 
     assert(false);
-}
-
-Geom::Point SPGuide::getPositionFrom(Geom::Point const &pt) const
-{
-    return -(pt - point_on_line);
-}
-
-double SPGuide::getDistanceFrom(Geom::Point const &pt) const
-{
-    return Geom::dot(pt - point_on_line, normal_to_line);
 }
 
 /**
@@ -376,11 +367,12 @@ void SPGuide::moveto(Geom::Point const point_on_line, bool const commit)
     if(this->locked) {
         return;
     }
+
     for(auto view : this->views) {
-        sp_guideline_set_position(view, point_on_line);
+        view->set_origin(point_on_line);
     }
 
-    /* Calling sp_repr_set_point must precede calling sp_item_notify_moveto in the commit
+    /* Calling Inkscape::XML::Node::setAttributePoint must precede calling sp_item_notify_moveto in the commit
        case, so that the guide's new position is available for sp_item_rm_unsatisfied_cns. */
     if (commit) {
         // If root viewBox set, interpret guides in terms of viewBox (90/96)
@@ -406,18 +398,8 @@ void SPGuide::moveto(Geom::Point const point_on_line, bool const commit)
         }
 
         //XML Tree being used here directly while it shouldn't be.
-        sp_repr_set_point(getRepr(), "position", Geom::Point(newx, newy) );
+        getRepr()->setAttributePoint("position", Geom::Point(newx, newy) );
     }
-
-/*  DISABLED CODE BECAUSE  SPGuideAttachment  IS NOT USE AT THE MOMENT (johan)
-    for (std::vector<SPGuideAttachment>::const_iterator i(attached_items.begin()),
-             iEnd(attached_items.end());
-         i != iEnd; ++i)
-    {
-        SPGuideAttachment const &att = *i;
-        sp_item_notify_moveto(*att.item, this, att.snappoint_ix, position, commit);
-    }
-*/
 }
 
 /**
@@ -431,7 +413,7 @@ void SPGuide::set_normal(Geom::Point const normal_to_line, bool const commit)
         return;
     }
     for(auto view : this->views) {
-        sp_guideline_set_normal(view, normal_to_line);
+        view->set_normal(normal_to_line);
     }
 
     /* Calling sp_repr_set_svg_point must precede calling sp_item_notify_moveto in the commit
@@ -445,18 +427,8 @@ void SPGuide::set_normal(Geom::Point const normal_to_line, bool const commit)
             normal[Geom::X] *= -1.0;
         }
 
-        sp_repr_set_point(getRepr(), "orientation", normal);
+        getRepr()->setAttributePoint("orientation", normal);
     }
-
-/*  DISABLED CODE BECAUSE  SPGuideAttachment  IS NOT USE AT THE MOMENT (johan)
-    for (std::vector<SPGuideAttachment>::const_iterator i(attached_items.begin()),
-             iEnd(attached_items.end());
-         i != iEnd; ++i)
-    {
-        SPGuideAttachment const &att = *i;
-        sp_item_notify_moveto(*att.item, this, att.snappoint_ix, position, commit);
-    }
-*/
 }
 
 void SPGuide::set_color(const unsigned r, const unsigned g, const unsigned b, bool const commit)
@@ -464,7 +436,7 @@ void SPGuide::set_color(const unsigned r, const unsigned g, const unsigned b, bo
     this->color = (r << 24) | (g << 16) | (b << 8) | 0x7f;
 
     if (! views.empty()) {
-        sp_guideline_set_color(views[0], this->color);
+        views[0]->set_stroke(color);
     }
 
     if (commit) {
@@ -479,7 +451,7 @@ void SPGuide::set_locked(const bool locked, bool const commit)
 {
     this->locked = locked;
     if ( !views.empty() ) {
-        sp_guideline_set_locked(views[0], locked);
+        views[0]->set_locked(locked);
     }
 
     if (commit) {
@@ -490,7 +462,7 @@ void SPGuide::set_locked(const bool locked, bool const commit)
 void SPGuide::set_label(const char* label, bool const commit)
 {
     if (!views.empty()) {
-        sp_guideline_set_label(views[0], label);
+        views[0]->set_label(label);
     }
 
     if (commit) {
@@ -540,7 +512,7 @@ char* SPGuide::description(bool const verbose) const
         
         if (verbose) {
             gchar *oldDescr = descr;
-            descr = g_strconcat(oldDescr, shortcuts, NULL);
+            descr = g_strconcat(oldDescr, shortcuts, nullptr);
             g_free(oldDescr);
         }
 
@@ -553,15 +525,6 @@ char* SPGuide::description(bool const verbose) const
 void sp_guide_remove(SPGuide *guide)
 {
     g_assert(SP_IS_GUIDE(guide));
-
-    for (std::vector<SPGuideAttachment>::const_iterator i(guide->attached_items.begin()),
-             iEnd(guide->attached_items.end());
-         i != iEnd; ++i)
-    {
-        SPGuideAttachment const &att = *i;
-        remove_last(att.item->constraints, SPGuideConstraint(guide, att.snappoint_ix));
-    }
-    guide->attached_items.clear();
 
     //XML Tree being used directly while it shouldn't be.
     sp_repr_unparent(guide->getRepr());

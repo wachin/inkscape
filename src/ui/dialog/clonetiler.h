@@ -11,14 +11,15 @@
 #ifndef __SP_CLONE_TILER_H__
 #define __SP_CLONE_TILER_H__
 
-#include "ui/widget/panel.h"
-
-#include "ui/dialog/desktop-tracker.h"
+#include "ui/dialog/dialog-base.h"
 #include "ui/widget/color-picker.h"
 
 namespace Gtk {
-    class CheckButton;
+    class Box;
     class ComboBox;
+    class Grid;
+    class Notebook;
+    class SizeGroup;
     class ToggleButton;
 }
 
@@ -34,12 +35,14 @@ namespace Inkscape {
 namespace UI {
 
 namespace Widget {
+    class CheckButtonInternal;
     class UnitMenu;
 }
 
 namespace Dialog {
 
-class CloneTiler : public Widget::Panel {
+class CloneTiler : public DialogBase
+{
 public:
     CloneTiler();
     ~CloneTiler() override;
@@ -58,8 +61,8 @@ protected:
         PICK_L
     };
 
-    GtkWidget * new_tab(GtkWidget *nb, const gchar *label);
-    GtkWidget * table_x_y_rand(int values);
+    Gtk::Box * new_tab(Gtk::Notebook *nb, const gchar *label);
+    Gtk::Grid * table_x_y_rand(int values);
     Gtk::Widget * spinbox(const char          *tip,
                           const Glib::ustring &attr,
                           double               lower,
@@ -68,8 +71,7 @@ protected:
                           bool                 exponent = false);
     Gtk::Widget * checkbox(const char          *tip,
                            const Glib::ustring &attr);
-    void table_attach(GtkWidget *table, GtkWidget *widget, float align, int row, int col);
-    void table_attach(GtkWidget *table, Gtk::Widget *widget, float align, int row, int col);
+    void table_attach(Gtk::Grid *table, Gtk::Widget *widget, float align, int row, int col);
 
     void       symgroup_changed(Gtk::ComboBox *cb);
     void       on_picker_color_changed(guint rgba);
@@ -97,7 +99,7 @@ protected:
                  Glib::ustring const &pref);
     void remove(bool do_undo = true);
     void reset();
-    void reset_recursive(GtkWidget *w);
+    void reset_recursive(Gtk::Widget *w);
     void switch_to_create();
     void switch_to_fill();
     void unclump();
@@ -147,45 +149,28 @@ private:
     CloneTiler(CloneTiler const &d) = delete;
     CloneTiler& operator=(CloneTiler const &d) = delete;
 
-    Gtk::CheckButton *_b;
-    Gtk::CheckButton *_cb_keep_bbox;
-    GtkWidget *nb;
-    SPDesktop *desktop;
-    DesktopTracker deskTrack;
+    UI::Widget::CheckButtonInternal *_b;
+    UI::Widget::CheckButtonInternal *_cb_keep_bbox;
+    Gtk::Notebook *nb = nullptr;
     Inkscape::UI::Widget::ColorPicker *color_picker;
-    GtkSizeGroup* table_row_labels;
+    Glib::RefPtr<Gtk::SizeGroup> table_row_labels;
     Inkscape::UI::Widget::UnitMenu *unit_menu;
 
     Glib::RefPtr<Gtk::Adjustment> fill_width;
     Glib::RefPtr<Gtk::Adjustment> fill_height;
 
-    sigc::connection desktopChangeConn;
     sigc::connection selectChangedConn;
     sigc::connection externChangedConn;
-    sigc::connection subselChangedConn;
-    sigc::connection selectModifiedConn;
     sigc::connection color_changed_connection;
     sigc::connection unitChangedConn;
 
-    /**
-     * Can be invoked for setting the desktop. Currently not used.
-     */
-    void setDesktop(SPDesktop *desktop) override;
-
-    /**
-     * Is invoked by the desktop tracker when the desktop changes.
-     */
-    void setTargetDesktop(SPDesktop *desktop);
-
     // Variables that used to be set using GObject
-    GtkWidget *_buttons_on_tiles;
-    GtkWidget *_dotrace;
-    GtkWidget *_status;
+    Gtk::Box *_buttons_on_tiles;
+    Gtk::Box *_dotrace;
+    Gtk::Label *_status;
     Gtk::Box *_rowscols;
     Gtk::Box *_widthheight;
-    
 };
-
 
 enum {
     TILE_P1,

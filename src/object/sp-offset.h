@@ -17,9 +17,6 @@
 
 #include "sp-shape.h"
 
-#define SP_OFFSET(obj) (dynamic_cast<SPOffset*>((SPObject*)obj))
-#define SP_IS_OFFSET(obj) (dynamic_cast<const SPOffset*>((SPObject*)obj) != NULL)
-
 class SPUseReference;
 
 /**
@@ -77,7 +74,7 @@ public:
     sigc::connection _transformed_connection;
 
 	void build(SPDocument *document, Inkscape::XML::Node *repr) override;
-	void set(SPAttributeEnum key, char const* value) override;
+	void set(SPAttr key, char const* value) override;
 	void update(SPCtx *ctx, unsigned int flags) override;
 	Inkscape::XML::Node* write(Inkscape::XML::Document *xml_doc, Inkscape::XML::Node *repr, unsigned flags) override;
 	void release() override;
@@ -93,6 +90,8 @@ double sp_offset_distance_to_original (SPOffset * offset, Geom::Point px);
 void sp_offset_top_point (SPOffset const *offset, Geom::Point *px);
 
 SPItem *sp_offset_get_source (SPOffset *offset);
+
+MAKE_SP_OBJECT_DOWNCAST_FUNCTIONS(SP_OFFSET, SPOffset)
 
 #endif
 

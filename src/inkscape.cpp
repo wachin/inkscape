@@ -15,18 +15,15 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
-#include <cerrno>
 #include <unistd.h>
 
 #include <map>
 
-#include <glibmm/fileutils.h>
 #include <glibmm/regex.h>
 
 #include <gtkmm/icontheme.h>
 #include <gtkmm/messagedialog.h>
 
-#include <glib/gstdio.h>
 #include <glibmm/i18n.h>
 #include <glibmm/miscutils.h>
 #include <glibmm/convert.h>
@@ -43,25 +40,19 @@
 
 #include "extension/db.h"
 #include "extension/init.h"
-#include "extension/output.h"
 #include "extension/system.h"
 
 #include "helper/action-context.h"
 
 #include "io/resource.h"
-#include "io/resource-manager.h"
+#include "io/fix-broken-links.h"
 #include "io/sys.h"
 
 #include "libnrtype/FontFactory.h"
 
 #include "object/sp-root.h"
-#include "object/sp-style-elem.h"
 
-#include "svg/svg-color.h"
-
-#include "object/sp-root.h"
-#include "object/sp-style-elem.h"
-
+#include "ui/themes.h"
 #include "ui/dialog/debug.h"
 #include "ui/tools/tool-base.h"
 
@@ -228,13 +219,12 @@ Application::Application(bool use_gui) :
         auto icon_theme = Gtk::IconTheme::get_default();
         icon_theme->prepend_search_path(get_path_ustring(SYSTEM, ICONS));
         icon_theme->prepend_search_path(get_path_ustring(USER, ICONS));
-        add_gtk_css();
+        themecontext = new Inkscape::UI::ThemeContext();
+        themecontext->add_gtk_css(false);
         /* Load the preferences and menus */
         load_menus();
         Inkscape::DeviceManager::getManager().loadConfig();
     }
-
-    Inkscape::ResourceManager::getManager();
 
     /* set language for user interface according setting in preferences */
     Glib::ustring ui_language = prefs->getString("/ui/language");
@@ -302,173 +292,6 @@ Application::~Application()
 
     refCount = 0;
     // gtk_main_quit ();
-}
-
-
-Glib::ustring Application::get_symbolic_colors()
-{
-    Glib::ustring css_str;
-    gchar colornamed[64];
-    gchar colornamedsuccess[64];
-    gchar colornamedwarning[64];
-    gchar colornamederror[64];
-    gchar colornamed_inverse[64];
-    Inkscape::Preferences *prefs = Inkscape::Preferences::get();
-    Glib::ustring themeiconname = prefs->getString("/theme/iconTheme");
-    guint32 colorsetbase = 0x2E3436ff;
-    guint32 colorsetbase_inverse = colorsetbase ^ 0xffffff00;
-    guint32 colorsetsuccess = 0x4AD589ff;
-    guint32 colorsetwarning = 0xF57900ff;
-    guint32 colorseterror = 0xCC0000ff;
-    colorsetbase = prefs->getUInt("/theme/" + themeiconname + "/symbolicBaseColor", colorsetbase);
-    colorsetsuccess = prefs->getUInt("/theme/" + themeiconname + "/symbolicSuccessColor", colorsetsuccess);
-    colorsetwarning = prefs->getUInt("/theme/" + themeiconname + "/symbolicWarningColor", colorsetwarning);
-    colorseterror = prefs->getUInt("/theme/" + themeiconname + "/symbolicErrorColor", colorseterror);
-    sp_svg_write_color(colornamed, sizeof(colornamed), colorsetbase);
-    sp_svg_write_color(colornamedsuccess, sizeof(colornamedsuccess), colorsetsuccess);
-    sp_svg_write_color(colornamedwarning, sizeof(colornamedwarning), colorsetwarning);
-    sp_svg_write_color(colornamederror, sizeof(colornamederror), colorseterror);
-    colorsetbase_inverse = colorsetbase ^ 0xffffff00;
-    sp_svg_write_color(colornamed_inverse, sizeof(colornamed_inverse), colorsetbase_inverse);
-    css_str += "*{-gtk-icon-palette: success ";
-    css_str += colornamedsuccess;
-    css_str += ", warning ";
-    css_str += colornamedwarning;
-    css_str += ", error ";
-    css_str += colornamederror;
-    css_str += ";}";
-    css_str += "#InkRuler,";
-    /* ":not(.rawstyle) > image" works only on images in first level of widget container
-    if in the future we use a complex widget with more levels and we dont want to tweak the color
-    here, retaining default we can add more lines like ":not(.rawstyle) > > image" */
-    css_str += ":not(.rawstyle) > image";
-    css_str += "{color:";
-    css_str += colornamed;
-    css_str += ";}";
-    css_str += ".dark .forcebright :not(.rawstyle) > image,";
-    css_str += ".dark .forcebright image:not(.rawstyle),";
-    css_str += ".bright .forcedark :not(.rawstyle) > image,";
-    css_str += ".bright .forcedark image:not(.rawstyle),";
-    css_str += ".dark :not(.rawstyle) > image.forcebright,";
-    css_str += ".dark image.forcebright:not(.rawstyle),";
-    css_str += ".bright :not(.rawstyle) > image.forcedark,";
-    css_str += ".bright image.forcedark:not(.rawstyle),";
-    css_str += ".inverse :not(.rawstyle) > image,";
-    css_str += ".inverse image:not(.rawstyle)";
-    css_str += "{color:";
-    css_str += colornamed_inverse;
-    css_str += ";}";
-    return css_str;
-}
-
-/**
- * \brief Add our CSS style sheets
- */
-void Application::add_gtk_css()
-{
-    using namespace Inkscape::IO::Resource;
-    // Add style sheet (GTK3)
-    auto const screen = Gdk::Screen::get_default();
-    Inkscape::Preferences *prefs = Inkscape::Preferences::get();
-    gchar *gtkThemeName = nullptr;
-    gchar *gtkIconThemeName = nullptr;
-    Glib::ustring themeiconname;
-    gboolean gtkApplicationPreferDarkTheme;
-    GtkSettings *settings = gtk_settings_get_default();
-    if (settings) {
-        g_object_get(settings, "gtk-icon-theme-name", &gtkIconThemeName, NULL);
-        g_object_get(settings, "gtk-theme-name", &gtkThemeName, NULL);
-        g_object_get(settings, "gtk-application-prefer-dark-theme", &gtkApplicationPreferDarkTheme, NULL);
-        g_object_set(settings, "gtk-application-prefer-dark-theme",
-                     prefs->getBool("/theme/preferDarkTheme", gtkApplicationPreferDarkTheme), NULL);
-        prefs->setString("/theme/defaultTheme", Glib::ustring(gtkThemeName));
-        prefs->setString("/theme/defaultIconTheme", Glib::ustring(gtkIconThemeName));
-        Glib::ustring gtkthemename = prefs->getString("/theme/gtkTheme");
-        if (gtkthemename != "") {
-            g_object_set(settings, "gtk-theme-name", gtkthemename.c_str(), NULL);
-        } else {
-            prefs->setString("/theme/gtkTheme", Glib::ustring(gtkThemeName));
-        }
-        themeiconname = prefs->getString("/theme/iconTheme");
-        if (themeiconname != "") {
-            g_object_set(settings, "gtk-icon-theme-name", themeiconname.c_str(), NULL);
-        } else {
-            prefs->setString("/theme/iconTheme", Glib::ustring(gtkIconThemeName));
-        }
-
-    }
-
-    g_free(gtkThemeName);
-    g_free(gtkIconThemeName);
-
-    Glib::ustring style = get_filename(UIS, "style.css");
-    if (!style.empty()) {
-        auto provider = Gtk::CssProvider::create();
-        try {
-            provider->load_from_path(style);
-        } catch (const Gtk::CssProviderError &ex) {
-            g_critical("CSSProviderError::load_from_path(): failed to load '%s'\n(%s)", style.c_str(),
-                       ex.what().c_str());
-        }
-        Gtk::StyleContext::add_provider_for_screen(screen, provider, GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
-    }
-
-    Glib::ustring gtkthemename = prefs->getString("/theme/gtkTheme");
-    gtkthemename += ".css";
-    style = get_filename(UIS, gtkthemename.c_str(), false, true);
-    if (!style.empty()) {
-        if (themeprovider) {
-            Gtk::StyleContext::remove_provider_for_screen(screen, themeprovider);
-        }
-        if (!themeprovider) {
-            themeprovider = Gtk::CssProvider::create();
-        }
-        try {
-            themeprovider->load_from_path(style);
-        } catch (const Gtk::CssProviderError &ex) {
-            g_critical("CSSProviderError::load_from_path(): failed to load '%s'\n(%s)", style.c_str(),
-                       ex.what().c_str());
-        }
-        Gtk::StyleContext::add_provider_for_screen(screen, themeprovider, GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
-    }
-
-    if (!colorizeprovider) {
-        colorizeprovider = Gtk::CssProvider::create();
-    }
-    Glib::ustring css_str = "";
-    if (prefs->getBool("/theme/symbolicIcons", false)) {
-        css_str = get_symbolic_colors();
-    }
-    try {
-        colorizeprovider->load_from_data(css_str);
-    } catch (const Gtk::CssProviderError &ex) {
-        g_critical("CSSProviderError::load_from_data(): failed to load '%s'\n(%s)", css_str.c_str(), ex.what().c_str());
-    }
-    Gtk::StyleContext::add_provider_for_screen(screen, colorizeprovider, GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
-}
-
-void Application::readStyleSheets(bool forceupd)
-{
-    SPDocument *document = SP_ACTIVE_DOCUMENT;
-    Inkscape::XML::Node *root = document->getReprRoot();
-    std::vector<Inkscape::XML::Node *> styles;
-    for (unsigned i = 0; i < root->childCount(); ++i) {
-        Inkscape::XML::Node *child = root->nthChild(i);
-        if (child && strcmp(child->name(), "svg:style") == 0) {
-            styles.push_back(child);
-        }
-    }
-    if (forceupd || styles.size() > 1) {
-        document->setStyleSheet(nullptr);
-        for (auto style : styles) {
-            gchar const *id = style->attribute("id");
-            if (id) {
-                SPStyleElem *styleelem = dynamic_cast<SPStyleElem *>(document->getObjectById(id));
-                styleelem->read_content();
-            }
-        }
-        document->getRoot()->emitModified(SP_OBJECT_MODIFIED_CASCADE);
-    }
 }
 
 /** Sets the keyboard modifier to map to Alt.
@@ -564,9 +387,16 @@ Application::crash_handler (int /*signum*/)
             char c[1024];
             g_snprintf (c, 1024, "%.256s.%s.%d.svg", docname, sptstr, count);
 
+            const char* document_filename = doc->getDocumentFilename();
+            char* document_base = nullptr;
+            if (document_filename) {
+                document_base = g_path_get_dirname(document_filename);
+            }
+
             // Find a location
             const char* locations[] = {
-                doc->getDocumentBase(),
+                // Don't use getDocumentBase as that also can be unsaved template locations.
+                document_base,
                 g_get_home_dir(),
                 g_get_tmp_dir(),
                 curdir,
@@ -574,13 +404,16 @@ Application::crash_handler (int /*signum*/)
             FILE *file = nullptr;
             for(auto & location : locations) {
                 if (!location) continue; // It seems to be okay, but just in case
-                gchar * filename = g_build_filename(location, c, NULL);
+                gchar * filename = g_build_filename(location, c, nullptr);
                 Inkscape::IO::dump_fopen_call(filename, "E");
                 file = Inkscape::IO::fopen_utf8name(filename, "w");
                 if (file) {
                     g_snprintf (c, 1024, "%s", filename); // we want the complete path to be stored in c (for reporting purposes)
                     break;
                 }
+            }
+            if (document_base) {
+                g_free(document_base);
             }
 
             // Save
@@ -749,9 +582,8 @@ void
 Application::eventcontext_set (Inkscape::UI::Tools::ToolBase * eventcontext)
 {
     g_return_if_fail (eventcontext != nullptr);
-    g_return_if_fail (SP_IS_EVENT_CONTEXT (eventcontext));
 
-    if (DESKTOP_IS_ACTIVE (eventcontext->desktop)) {
+    if (DESKTOP_IS_ACTIVE (eventcontext->getDesktop())) {
         signal_eventcontext_set.emit(eventcontext);
     }
 }
@@ -788,7 +620,6 @@ Application::remove_desktop (SPDesktop * desktop)
         g_error("Attempted to remove desktop not in list.");
     }
 
-    desktop->setEventContext("");
 
     if (DESKTOP_IS_ACTIVE (desktop)) {
         signal_deactivate_desktop.emit(desktop);
@@ -807,6 +638,7 @@ Application::remove_desktop (SPDesktop * desktop)
                 desktop->getSelection()->clear();
         }
     }
+    desktop->setEventContext("");
 
     _desktops->erase(std::find(_desktops->begin(), _desktops->end(), desktop));
 
@@ -957,34 +789,6 @@ void
 Application::switch_desktops_prev()
 {
     prev_desktop()->presentWindow();
-}
-
-void
-Application::dialogs_hide()
-{
-    signal_dialogs_hide.emit();
-    _dialogs_toggle = false;
-}
-
-
-
-void
-Application::dialogs_unhide()
-{
-    signal_dialogs_unhide.emit();
-    _dialogs_toggle = true;
-}
-
-
-
-void
-Application::dialogs_toggle()
-{
-    if (_dialogs_toggle) {
-        dialogs_hide();
-    } else {
-        dialogs_unhide();
-    }
 }
 
 void

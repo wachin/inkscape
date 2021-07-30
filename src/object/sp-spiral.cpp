@@ -44,13 +44,13 @@ SPSpiral::~SPSpiral() = default;
 void SPSpiral::build(SPDocument * document, Inkscape::XML::Node * repr) {
     SPShape::build(document, repr);
 
-    this->readAttr("sodipodi:cx");
-    this->readAttr("sodipodi:cy");
-    this->readAttr("sodipodi:expansion");
-    this->readAttr("sodipodi:revolution");
-    this->readAttr("sodipodi:radius");
-    this->readAttr("sodipodi:argument");
-    this->readAttr("sodipodi:t0");
+    this->readAttr(SPAttr::SODIPODI_CX);
+    this->readAttr(SPAttr::SODIPODI_CY);
+    this->readAttr(SPAttr::SODIPODI_EXPANSION);
+    this->readAttr(SPAttr::SODIPODI_REVOLUTION);
+    this->readAttr(SPAttr::SODIPODI_RADIUS);
+    this->readAttr(SPAttr::SODIPODI_ARGUMENT);
+    this->readAttr(SPAttr::SODIPODI_T0);
 }
 
 Inkscape::XML::Node* SPSpiral::write(Inkscape::XML::Document *xml_doc, Inkscape::XML::Node *repr, guint flags) {
@@ -63,13 +63,13 @@ Inkscape::XML::Node* SPSpiral::write(Inkscape::XML::Document *xml_doc, Inkscape:
          * sodipodi:spiral="cx cy exp revo rad arg t0"
          */
         repr->setAttribute("sodipodi:type", "spiral");
-        sp_repr_set_svg_double(repr, "sodipodi:cx", this->cx);
-        sp_repr_set_svg_double(repr, "sodipodi:cy", this->cy);
-        sp_repr_set_svg_double(repr, "sodipodi:expansion", this->exp);
-        sp_repr_set_svg_double(repr, "sodipodi:revolution", this->revo);
-        sp_repr_set_svg_double(repr, "sodipodi:radius", this->rad);
-        sp_repr_set_svg_double(repr, "sodipodi:argument", this->arg);
-        sp_repr_set_svg_double(repr, "sodipodi:t0", this->t0);
+        repr->setAttributeSvgDouble("sodipodi:cx", this->cx);
+        repr->setAttributeSvgDouble("sodipodi:cy", this->cy);
+        repr->setAttributeSvgDouble("sodipodi:expansion", this->exp);
+        repr->setAttributeSvgDouble("sodipodi:revolution", this->revo);
+        repr->setAttributeSvgDouble("sodipodi:radius", this->rad);
+        repr->setAttributeSvgDouble("sodipodi:argument", this->arg);
+        repr->setAttributeSvgDouble("sodipodi:t0", this->t0);
     }
 
      // make sure the curve is rebuilt with all up-to-date parameters
@@ -81,19 +81,17 @@ Inkscape::XML::Node* SPSpiral::write(Inkscape::XML::Document *xml_doc, Inkscape:
             return nullptr;
     }
 
-    char *d = sp_svg_write_path(this->_curve->get_pathvector());
-    repr->setAttribute("d", d);
-    g_free(d);
+    repr->setAttribute("d", sp_svg_write_path(this->_curve->get_pathvector()));
 
     SPShape::write(xml_doc, repr, flags | SP_SHAPE_WRITE_PATH);
 
     return repr;
 }
 
-void SPSpiral::set(SPAttributeEnum key, gchar const* value) {
+void SPSpiral::set(SPAttr key, gchar const* value) {
     /// \todo fixme: we should really collect updates
     switch (key) {
-    case SP_ATTR_SODIPODI_CX:
+    case SPAttr::SODIPODI_CX:
         if (!sp_svg_length_read_computed_absolute (value, &this->cx)) {
         	this->cx = 0.0;
         }
@@ -101,7 +99,7 @@ void SPSpiral::set(SPAttributeEnum key, gchar const* value) {
         this->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG);
         break;
 
-    case SP_ATTR_SODIPODI_CY:
+    case SPAttr::SODIPODI_CY:
         if (!sp_svg_length_read_computed_absolute (value, &this->cy)) {
         	this->cy = 0.0;
         }
@@ -109,7 +107,7 @@ void SPSpiral::set(SPAttributeEnum key, gchar const* value) {
         this->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG);
         break;
 
-    case SP_ATTR_SODIPODI_EXPANSION:
+    case SPAttr::SODIPODI_EXPANSION:
         if (value) {
             /** \todo
                          * FIXME: check that value looks like a (finite)
@@ -127,7 +125,7 @@ void SPSpiral::set(SPAttributeEnum key, gchar const* value) {
         this->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG);
         break;
 
-    case SP_ATTR_SODIPODI_REVOLUTION:
+    case SPAttr::SODIPODI_REVOLUTION:
         if (value) {
         	this->revo = g_ascii_strtod (value, nullptr);
             this->revo = CLAMP (this->revo, 0.05, 1024.0);
@@ -138,7 +136,7 @@ void SPSpiral::set(SPAttributeEnum key, gchar const* value) {
         this->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG);
         break;
 
-    case SP_ATTR_SODIPODI_RADIUS:
+    case SPAttr::SODIPODI_RADIUS:
         if (!sp_svg_length_read_computed_absolute (value, &this->rad)) {
         	this->rad = MAX (this->rad, 0.001);
         }
@@ -146,7 +144,7 @@ void SPSpiral::set(SPAttributeEnum key, gchar const* value) {
         this->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG);
         break;
 
-    case SP_ATTR_SODIPODI_ARGUMENT:
+    case SPAttr::SODIPODI_ARGUMENT:
         if (value) {
         	this->arg = g_ascii_strtod (value, nullptr);
             /** \todo
@@ -164,7 +162,7 @@ void SPSpiral::set(SPAttributeEnum key, gchar const* value) {
         this->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG);
         break;
 
-    case SP_ATTR_SODIPODI_T0:
+    case SPAttr::SODIPODI_T0:
         if (value) {
         	this->t0 = g_ascii_strtod (value, nullptr);
         	this->t0 = CLAMP (this->t0, 0.0, 0.999);
@@ -194,6 +192,10 @@ void SPSpiral::update(SPCtx *ctx, guint flags) {
     }
 
     SPShape::update(ctx, flags);
+}
+
+const char* SPSpiral::typeName() const {
+    return "spiral";
 }
 
 const char* SPSpiral::displayName() const {
@@ -299,10 +301,8 @@ void SPSpiral::set_shape() {
         if (this->getRepr()->attribute("d")) {
             // unconditionally read the curve from d, if any, to preserve appearance
             Geom::PathVector pv = sp_svg_read_pathv(this->getRepr()->attribute("d"));
-            SPCurve *cold = new SPCurve(pv);
-            this->setCurveInsync(cold);
-            this->setCurveBeforeLPE( cold );
-            cold->unref();
+            setCurveInsync(std::make_unique<SPCurve>(pv));
+            setCurveBeforeLPE(curve());
         }
 
         return;
@@ -312,7 +312,7 @@ void SPSpiral::set_shape() {
 
     this->requestModified(SP_OBJECT_MODIFIED_FLAG);
 
-    SPCurve *c = new SPCurve ();
+    auto c = std::make_unique<SPCurve>();
 
 #ifdef SPIRAL_VERBOSE
     g_print ("cx=%g, cy=%g, exp=%g, revo=%g, rad=%g, arg=%g, t0=%g\n",
@@ -336,36 +336,32 @@ void SPSpiral::set_shape() {
 
     double t;
     for (t = this->t0; t < (1.0 - tstep);) {
-        this->fitAndDraw(c, dstep, darray, hat1, hat2, &t);
+        this->fitAndDraw(c.get(), dstep, darray, hat1, hat2, &t);
 
         hat1 = -hat2;
     }
 
     if ((1.0 - t) > SP_EPSILON) {
-        this->fitAndDraw(c, (1.0 - t) / (SAMPLE_SIZE - 1.0), darray, hat1, hat2, &t);
+        this->fitAndDraw(c.get(), (1.0 - t) / (SAMPLE_SIZE - 1.0), darray, hat1, hat2, &t);
     }
 
     /* Reset the shape's curve to the "original_curve"
      * This is very important for LPEs to work properly! (the bbox might be recalculated depending on the curve in shape)*/
-    SPCurve * before = this->getCurveBeforeLPE();
-    bool haslpe = this->hasPathEffectOnClipOrMaskRecursive(this);
-    if (before || haslpe) {
-        if (c && before && before->get_pathvector() != c->get_pathvector()){
-            this->setCurveBeforeLPE(c);
-            sp_lpe_item_update_patheffect(this, true, false);
-        } else if(haslpe) {
-            this->setCurveBeforeLPE(c);
-        } else {
-            //This happends on undo, fix bug:#1791784
-            this->setCurveInsync(c);
-        }
-    } else {
-        this->setCurveInsync(c);
+
+    auto const before = this->curveBeforeLPE();
+    if (before && before->get_pathvector() != c->get_pathvector()) {
+        setCurveBeforeLPE(std::move(c));
+        sp_lpe_item_update_patheffect(this, true, false);
+        return;
     }
-    if (before) {
-        before->unref();
+
+    if (hasPathEffectOnClipOrMaskRecursive(this)) {
+        setCurveBeforeLPE(std::move(c));
+        return;
     }
-    c->unref();
+
+    // This happends on undo, fix bug:#1791784
+    setCurveInsync(std::move(c));
 }
 
 /**
@@ -416,7 +412,6 @@ Geom::Affine SPSpiral::set_transform(Geom::Affine const &xform)
     if (!xform.withoutTranslation().isUniformScale()) {
         return xform;
     }
-    notifyTransform(xform);
     /* Calculate spiral start in parent coords. */
     Geom::Point pos( Geom::Point(this->cx, this->cy) * xform );
 

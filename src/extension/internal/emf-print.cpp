@@ -23,6 +23,8 @@
  *      http://msdn.microsoft.com/library/en-us/gdi/metafile_5hkj.asp
  */
 
+#include "emf-print.h"
+
 #include <cstring>
 #include <glibmm/miscutils.h>
 #include <3rdparty/libuemf/symbol_convert.h>
@@ -31,17 +33,23 @@
 #include <2geom/pathvector.h>
 #include <2geom/rect.h>
 #include <2geom/curves.h>
-
-#include "helper/geom.h"
-#include "helper/geom-curves.h"
-#include "util/units.h"
+#include <2geom/svg-path-parser.h> // to get from SVG text to Geom::Path
 
 #include "inkscape-version.h"
 
-#include "extension/system.h"
-#include "extension/print.h"
 #include "document.h"
 #include "path-prefix.h"
+#include "style.h"
+#include "style-enums.h"          // Fill rules
+
+#include "display/cairo-utils.h"  // for Inkscape::Pixbuf::PF_CAIRO
+#include "display/curve.h"
+
+#include "extension/system.h"
+#include "extension/print.h"
+
+#include "helper/geom.h"
+#include "helper/geom-curves.h"
 
 #include "object/sp-pattern.h"
 #include "object/sp-image.h"
@@ -52,16 +60,10 @@
 #include "object/sp-root.h"
 #include "object/sp-shape.h"
 #include "object/sp-clippath.h"
-#include "style.h"
-#include "display/cairo-utils.h"
 
-#include "splivarot.h"             // pieces for union on shapes
-#include "2geom/svg-path-parser.h" // to get from SVG text to Geom::Path
-#include "display/canvas-bpath.h"  // for SPWindRule
-#include "display/cairo-utils.h"  // for Inkscape::Pixbuf::PF_CAIRO
+#include "path/path-boolop.h"
 
-#include "emf-print.h"
-
+#include "util/units.h"
 
 namespace Inkscape {
 namespace Extension {
@@ -318,21 +320,6 @@ unsigned int PrintEmf::finish(Inkscape::Extension::Print * /*mod*/)
     return 0;
 }
 
-
-unsigned int PrintEmf::comment(
-    Inkscape::Extension::Print * /*module*/,
-    const char * /*comment*/)
-{
-    if (!et) {
-        return 0;
-    }
-
-    // earlier versions had flush of fill here, but it never executed and was removed
-
-    return 0;
-}
-
-
 // fcolor is defined when gradients are being expanded, it is the color of one stripe or ring.
 int PrintEmf::create_brush(SPStyle const *style, PU_COLORREF fcolor)
 {
@@ -412,11 +399,11 @@ int PrintEmf::create_brush(SPStyle const *style, PU_COLORREF fcolor)
 
             if (SP_IS_LINEARGRADIENT(paintserver)) {
                 lg = SP_LINEARGRADIENT(paintserver);
-                SP_GRADIENT(lg)->ensureVector(); // when exporting from commandline, vector is not built
+                lg->ensureVector(); // when exporting from commandline, vector is not built
                 fill_mode = DRAW_LINEAR_GRADIENT;
             } else if (SP_IS_RADIALGRADIENT(paintserver)) {
                 rg = SP_RADIALGRADIENT(paintserver);
-                SP_GRADIENT(rg)->ensureVector(); // when exporting from commandline, vector is not built
+                rg->ensureVector(); // when exporting from commandline, vector is not built
                 fill_mode = DRAW_RADIAL_GRADIENT;
             } else {
                 // default fill
@@ -612,7 +599,7 @@ int PrintEmf::create_pen(SPStyle const *style, const Geom::Affine &transform)
             if (SP_IS_LINEARGRADIENT(paintserver)) {
                 SPLinearGradient *lg = SP_LINEARGRADIENT(paintserver);
 
-                SP_GRADIENT(lg)->ensureVector(); // when exporting from commandline, vector is not built
+                lg->ensureVector(); // when exporting from commandline, vector is not built
 
                 Geom::Point p1(lg->x1.computed, lg->y1.computed);
                 Geom::Point p2(lg->x2.computed, lg->y2.computed);
@@ -625,7 +612,7 @@ int PrintEmf::create_pen(SPStyle const *style, const Geom::Affine &transform)
             } else if (SP_IS_RADIALGRADIENT(paintserver)) {
                 SPRadialGradient *rg = SP_RADIALGRADIENT(paintserver);
 
-                SP_GRADIENT(rg)->ensureVector(); // when exporting from commandline, vector is not built
+                rg->ensureVector(); // when exporting from commandline, vector is not built
                 double r = rg->r.computed;
 
                 Geom::Point c(rg->cx.computed, rg->cy.computed);
@@ -1073,11 +1060,12 @@ void  PrintEmf::do_clip_if_present(SPStyle const *style){
 
 Geom::PathVector PrintEmf::merge_PathVector_with_group(Geom::PathVector const &combined_pathvector, SPItem const *item, const Geom::Affine &transform)
 {
-    Geom::PathVector new_combined_pathvector;
-    if(!SP_IS_GROUP(item))return(new_combined_pathvector);  // sanity test, only a group should be passed in, return empty if something else happens
+    // sanity test, only a group should be passed in, return empty if something else happens
+    auto group = dynamic_cast<SPGroup const *>(item);
+    if (!group)
+        return {};
 
-    new_combined_pathvector = combined_pathvector;
-    SPGroup *group = SP_GROUP(item);
+    Geom::PathVector new_combined_pathvector = combined_pathvector;
     Geom::Affine tfc = item->transform * transform;
     for (auto& child: group->children) {
         item = SP_ITEM(&child);
@@ -1097,12 +1085,15 @@ Geom::PathVector PrintEmf::merge_PathVector_with_group(Geom::PathVector const &c
 Geom::PathVector PrintEmf::merge_PathVector_with_shape(Geom::PathVector const &combined_pathvector, SPItem const *item, const Geom::Affine &transform)
 {
     Geom::PathVector new_combined_pathvector;
-    if(!SP_IS_SHAPE(item))return(new_combined_pathvector);  // sanity test, only a shape should be passed in, return empty if something else happens
+    auto shape = dynamic_cast<SPShape const *>(item);
+
+    // sanity test, only a shape should be passed in, return empty if something else happens
+    if (!shape)
+        return new_combined_pathvector;
 
     Geom::Affine tfc = item->transform * transform;
-    SPShape *shape = SP_SHAPE(item);
-    if (shape->_curve) {
-        Geom::PathVector const & new_vect = shape->_curve->get_pathvector();
+    if (shape->curve()) {
+        Geom::PathVector const &new_vect = shape->curve()->get_pathvector();
         if(combined_pathvector.empty()){
             new_combined_pathvector = new_vect * tfc;
         }
@@ -2181,21 +2172,23 @@ unsigned int PrintEmf::text(Inkscape::Extension::Print * /*mod*/, char const *te
 void PrintEmf::init()
 {
     /* EMF print */
+    // clang-format off
     Inkscape::Extension::build_from_mem(
         "<inkscape-extension xmlns=\"" INKSCAPE_EXTENSION_URI "\">\n"
-        "<name>Enhanced Metafile Print</name>\n"
-        "<id>org.inkscape.print.emf</id>\n"
-        "<param gui-hidden=\"true\" name=\"destination\" type=\"string\"></param>\n"
-        "<param gui-hidden=\"true\" name=\"textToPath\" type=\"bool\">true</param>\n"
-        "<param gui-hidden=\"true\" name=\"pageBoundingBox\" type=\"bool\">true</param>\n"
-        "<param gui-hidden=\"true\" name=\"FixPPTCharPos\" type=\"bool\">false</param>\n"
-        "<param gui-hidden=\"true\" name=\"FixPPTDashLine\" type=\"bool\">false</param>\n"
-        "<param gui-hidden=\"true\" name=\"FixPPTGrad2Polys\" type=\"bool\">false</param>\n"
-        "<param gui-hidden=\"true\" name=\"FixPPTLinGrad\" type=\"bool\">false</param>\n"
-        "<param gui-hidden=\"true\" name=\"FixPPTPatternAsHatch\" type=\"bool\">false</param>\n"
-        "<param gui-hidden=\"true\" name=\"FixImageRot\" type=\"bool\">false</param>\n"
-        "<print/>\n"
+            "<name>Enhanced Metafile Print</name>\n"
+            "<id>org.inkscape.print.emf</id>\n"
+            "<param gui-hidden=\"true\" name=\"destination\" type=\"string\"></param>\n"
+            "<param gui-hidden=\"true\" name=\"textToPath\" type=\"bool\">true</param>\n"
+            "<param gui-hidden=\"true\" name=\"pageBoundingBox\" type=\"bool\">true</param>\n"
+            "<param gui-hidden=\"true\" name=\"FixPPTCharPos\" type=\"bool\">false</param>\n"
+            "<param gui-hidden=\"true\" name=\"FixPPTDashLine\" type=\"bool\">false</param>\n"
+            "<param gui-hidden=\"true\" name=\"FixPPTGrad2Polys\" type=\"bool\">false</param>\n"
+            "<param gui-hidden=\"true\" name=\"FixPPTLinGrad\" type=\"bool\">false</param>\n"
+            "<param gui-hidden=\"true\" name=\"FixPPTPatternAsHatch\" type=\"bool\">false</param>\n"
+            "<param gui-hidden=\"true\" name=\"FixImageRot\" type=\"bool\">false</param>\n"
+            "<print/>\n"
         "</inkscape-extension>", new PrintEmf());
+    // clang-format on
 
     return;
 }

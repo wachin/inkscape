@@ -76,15 +76,15 @@ SPMarker::~SPMarker() = default;
  * \see SPObject::build()
  */
 void SPMarker::build(SPDocument *document, Inkscape::XML::Node *repr) {
-    this->readAttr( "markerUnits" );
-    this->readAttr( "refX" );
-    this->readAttr( "refY" );
-    this->readAttr( "markerWidth" );
-    this->readAttr( "markerHeight" );
-    this->readAttr( "orient" );
-    this->readAttr( "viewBox" );
-    this->readAttr( "preserveAspectRatio" );
-    this->readAttr( "style" );
+    this->readAttr(SPAttr::MARKERUNITS);
+    this->readAttr(SPAttr::REFX);
+    this->readAttr(SPAttr::REFY);
+    this->readAttr(SPAttr::MARKERWIDTH);
+    this->readAttr(SPAttr::MARKERHEIGHT);
+    this->readAttr(SPAttr::ORIENT);
+    this->readAttr(SPAttr::VIEWBOX);
+    this->readAttr(SPAttr::PRESERVEASPECTRATIO);
+    this->readAttr(SPAttr::STYLE);
 
     SPGroup::build(document, repr);
 }
@@ -114,9 +114,9 @@ void SPMarker::release() {
 }
 
 
-void SPMarker::set(SPAttributeEnum key, const gchar* value) {
+void SPMarker::set(SPAttr key, const gchar* value) {
 	switch (key) {
-	case SP_ATTR_MARKERUNITS:
+	case SPAttr::MARKERUNITS:
 		this->markerUnits_set = FALSE;
 		this->markerUnits = SP_MARKER_UNITS_STROKEWIDTH;
 
@@ -132,27 +132,27 @@ void SPMarker::set(SPAttributeEnum key, const gchar* value) {
 		this->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG | SP_OBJECT_VIEWPORT_MODIFIED_FLAG);
 		break;
 
-	case SP_ATTR_REFX:
+	case SPAttr::REFX:
 	    this->refX.readOrUnset(value);
 		this->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG);
 		break;
 
-	case SP_ATTR_REFY:
+	case SPAttr::REFY:
 	    this->refY.readOrUnset(value);
 		this->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG);
 		break;
 
-	case SP_ATTR_MARKERWIDTH:
+	case SPAttr::MARKERWIDTH:
 	    this->markerWidth.readOrUnset(value, SVGLength::NONE, 3.0, 3.0);
 		this->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG);
 		break;
 
-	case SP_ATTR_MARKERHEIGHT:
+	case SPAttr::MARKERHEIGHT:
 	    this->markerHeight.readOrUnset(value, SVGLength::NONE, 3.0, 3.0);
 		this->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG);
 		break;
 
-	case SP_ATTR_ORIENT:
+	case SPAttr::ORIENT:
 		this->orient_set = FALSE;
 		this->orient_mode = MARKER_ORIENT_ANGLE;
 		this->orient = 0.0;
@@ -176,12 +176,12 @@ void SPMarker::set(SPAttributeEnum key, const gchar* value) {
 		this->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG);
 		break;
 
-	case SP_ATTR_VIEWBOX:
+	case SPAttr::VIEWBOX:
             set_viewBox( value );
             this->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG | SP_OBJECT_VIEWPORT_MODIFIED_FLAG);
             break;
 
-	case SP_ATTR_PRESERVEASPECTRATIO:
+	case SPAttr::PRESERVEASPECTRATIO:
             set_preserveAspectRatio( value );
             this->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG | SP_OBJECT_VIEWPORT_MODIFIED_FLAG);
             break;
@@ -244,25 +244,25 @@ Inkscape::XML::Node* SPMarker::write(Inkscape::XML::Document *xml_doc, Inkscape:
 	}
 
 	if (this->refX._set) {
-		sp_repr_set_svg_double(repr, "refX", this->refX.computed);
+		repr->setAttributeSvgDouble("refX", this->refX.computed);
 	} else {
 		repr->removeAttribute("refX");
 	}
 
 	if (this->refY._set) {
-		sp_repr_set_svg_double (repr, "refY", this->refY.computed);
+		repr->setAttributeSvgDouble("refY", this->refY.computed);
 	} else {
 		repr->removeAttribute("refY");
 	}
 
 	if (this->markerWidth._set) {
-		sp_repr_set_svg_double (repr, "markerWidth", this->markerWidth.computed);
+		repr->setAttributeSvgDouble("markerWidth", this->markerWidth.computed);
 	} else {
 		repr->removeAttribute("markerWidth");
 	}
 
 	if (this->markerHeight._set) {
-		sp_repr_set_svg_double (repr, "markerHeight", this->markerHeight.computed);
+		repr->setAttributeSvgDouble("markerHeight", this->markerHeight.computed);
 	} else {
 		repr->removeAttribute("markerHeight");
 	}
@@ -273,7 +273,7 @@ Inkscape::XML::Node* SPMarker::write(Inkscape::XML::Document *xml_doc, Inkscape:
             } else if (this->orient_mode == MARKER_ORIENT_AUTO_START_REVERSE) {
                 repr->setAttribute("orient", "auto-start-reverse");
             } else {
-                sp_repr_set_css_double(repr, "orient", this->orient.computed);
+                repr->setAttributeCssDouble("orient", this->orient.computed);
             }
 	} else {
             repr->removeAttribute("orient");
@@ -437,10 +437,10 @@ const gchar *generate_marker(std::vector<Inkscape::XML::Node*> &reprs, Geom::Rec
     // stroke width:
     //repr->setAttribute("markerUnits", "userSpaceOnUse");
 
-    sp_repr_set_svg_double(repr, "markerWidth", bounds.dimensions()[Geom::X]);
-    sp_repr_set_svg_double(repr, "markerHeight", bounds.dimensions()[Geom::Y]);
-    sp_repr_set_svg_double(repr, "refX", center[Geom::X]);
-    sp_repr_set_svg_double(repr, "refY", center[Geom::Y]);
+    repr->setAttributeSvgDouble("markerWidth", bounds.dimensions()[Geom::X]);
+    repr->setAttributeSvgDouble("markerHeight", bounds.dimensions()[Geom::Y]);
+    repr->setAttributeSvgDouble("refX", center[Geom::X]);
+    repr->setAttributeSvgDouble("refY", center[Geom::Y]);
 
     repr->setAttribute("orient", "auto");
 

@@ -26,8 +26,7 @@
 
 #include "xml/node-event-vector.h"
 
-#define SP_TEXT(obj) (dynamic_cast<SPText*>((SPObject*)obj))
-#define SP_IS_TEXT(obj) (dynamic_cast<const SPText*>((SPObject*)obj) != NULL)
+#include <memory>
 
 /* Text specific flags */
 #define SP_TEXT_CONTENT_MODIFIED_FLAG SP_OBJECT_USER_MODIFIED_FLAG_A
@@ -41,8 +40,7 @@ public:
 	~SPText() override;
 
     /** Converts the text object to its component curves */
-    SPCurve *getNormalizedBpath() const
-        {return layout.convertToCurves();}
+    std::unique_ptr<SPCurve> getNormalizedBpath() const;
 
     /** Completely recalculates the layout. */
     void rebuildLayout();
@@ -69,7 +67,10 @@ public:
     /** discards the drawing objects representing this text. */
     void _clearFlow(Inkscape::DrawingGroup *in_arena);
 
-    bool _optimizeTextpathText;
+    bool _optimizeTextpathText = false;
+
+    /** Union all exclusion shapes. */
+    Shape* getExclusionShape() const;
 
 private:
 
@@ -82,9 +83,6 @@ private:
     breaks and makes sure both that they are assigned the correct SPObject and
     that we don't get a spurious extra one at the end of the flow. */
     unsigned _buildLayoutInput(SPObject *object, Inkscape::Text::Layout::OptionalTextTagAttrs const &parent_optional_attrs, unsigned parent_attrs_offset, bool in_textpath);
-
-    /** Union all exclusion shapes. */
-    Shape* _buildExclusionShape() const;
 
     /** Find first x/y values which may be in a descendent element. */
     SVGLength* _getFirstXLength();
@@ -99,13 +97,14 @@ private:
     void release() override;
     void child_added(Inkscape::XML::Node* child, Inkscape::XML::Node* ref) override;
     void remove_child(Inkscape::XML::Node* child) override;
-    void set(SPAttributeEnum key, const char* value) override;
+    void set(SPAttr key, const char* value) override;
     void update(SPCtx* ctx, unsigned int flags) override;
     void modified(unsigned int flags) override;
     Inkscape::XML::Node* write(Inkscape::XML::Document* doc, Inkscape::XML::Node* repr, unsigned int flags) override;
 
     Geom::OptRect bbox(Geom::Affine const &transform, SPItem::BBoxType type) const override;
     void print(SPPrintContext *ctx) override;
+    const char* typeName() const override;
     const char* displayName() const override;
     char* description() const override;
     Inkscape::DrawingItem* show(Inkscape::Drawing &drawing, unsigned int key, unsigned int flags) override;
@@ -124,12 +123,15 @@ private:
     bool has_shape_inside() const;
     Geom::OptRect get_frame();                        // Gets inline-size or shape-inside frame.
     Inkscape::XML::Node* get_first_rectangle();       // Gets first shape-inside rectangle (if it exists).
-    std::vector<Glib::ustring> get_shapes() const;    // Gets list of shapes in shape-inside.
+    SPItem *get_first_shape_dependency();
     void remove_newlines();                           // Removes newlines in text.
 };
 
 SPItem *create_text_with_inline_size (SPDesktop *desktop, Geom::Point p0, Geom::Point p1);
 SPItem *create_text_with_rectangle   (SPDesktop *desktop, Geom::Point p0, Geom::Point p1);
+
+MAKE_SP_OBJECT_DOWNCAST_FUNCTIONS(SP_TEXT, SPText)
+MAKE_SP_OBJECT_TYPECHECK_FUNCTIONS(SP_IS_TEXT, SPText)
 
 #endif
 

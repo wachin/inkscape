@@ -7,11 +7,11 @@ set(svg_SRC
 	stringstream.cpp
 	strip-trailing-zeros.cpp
 	svg-affine.cpp
+	svg-affine-parser.cpp
 	svg-color.cpp
 	svg-angle.cpp
 	svg-length.cpp
 	svg-path.cpp
-	# test-stubs.cpp
 
 
 	# -------
@@ -20,16 +20,11 @@ set(svg_SRC
 	path-string.h
 	stringstream.h
 	strip-trailing-zeros.h
-	svg-affine-test.h
-	svg-color-test.h
 	svg-color.h
 	svg-icc-color.h
 	svg-angle.h
-	svg-length-test.h
 	svg-length.h
-	svg-path-geom-test.h
 	svg.h
-	# test-stubs.h
 
 )
 

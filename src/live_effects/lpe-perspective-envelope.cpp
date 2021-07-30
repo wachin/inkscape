@@ -69,10 +69,12 @@ LPEPerspectiveEnvelope::~LPEPerspectiveEnvelope()
 
 void LPEPerspectiveEnvelope::transform_multiply(Geom::Affine const &postmul, bool /*set*/)
 {
-    up_left_point.param_transform_multiply(postmul, false);
-    up_right_point.param_transform_multiply(postmul, false);
-    down_left_point.param_transform_multiply(postmul, false);
-    down_right_point.param_transform_multiply(postmul, false);
+    if (sp_lpe_item && sp_lpe_item->pathEffectsEnabled() && sp_lpe_item->optimizeTransforms()) {
+        up_left_point.param_transform_multiply(postmul, false);
+        up_right_point.param_transform_multiply(postmul, false);
+        down_left_point.param_transform_multiply(postmul, false);
+        down_right_point.param_transform_multiply(postmul, false);
+    }
 }
 
 bool pointInTriangle(Geom::Point const &p, std::vector<Geom::Point> points)
@@ -164,7 +166,7 @@ void LPEPerspectiveEnvelope::doEffect(SPCurve *curve)
         if (path_it.empty())
             continue;
         //Itreadores
-        SPCurve *nCurve = new SPCurve();
+        auto nCurve = std::make_unique<SPCurve>();
         Geom::Path::const_iterator curve_it1 = path_it.begin();
         Geom::Path::const_iterator curve_endit = path_it.end_default();
 
@@ -210,9 +212,7 @@ void LPEPerspectiveEnvelope::doEffect(SPCurve *curve)
             nCurve->move_endpoints(point_at3, point_at3);
             nCurve->closepath_current();
         }
-        curve->append(nCurve, false);
-        nCurve->reset();
-        delete nCurve;
+        curve->append(*nCurve);
     }
 }
 
@@ -261,14 +261,14 @@ Gtk::Widget *
 LPEPerspectiveEnvelope::newWidget()
 {
     // use manage here, because after deletion of Effect object, others might still be pointing to this widget.
-    Gtk::VBox * vbox = Gtk::manage( new Gtk::VBox(Effect::newWidget()) );
+    Gtk::Box *vbox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL));
 
     vbox->set_border_width(5);
     vbox->set_homogeneous(false);
     vbox->set_spacing(6);
     std::vector<Parameter *>::iterator it = param_vector.begin();
-    Gtk::HBox * hbox_up_handles = Gtk::manage(new Gtk::HBox(false,0));
-    Gtk::HBox * hbox_down_handles = Gtk::manage(new Gtk::HBox(false,0));
+    Gtk::Box * hbox_up_handles = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL,0));
+    Gtk::Box * hbox_down_handles = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL,0));
     while (it != param_vector.end()) {
         if ((*it)->widget_is_visible) {
             Parameter * param = *it;
@@ -277,9 +277,9 @@ LPEPerspectiveEnvelope::newWidget()
                     param->param_key == "up_right_point" ||
                     param->param_key == "down_left_point" ||
                     param->param_key == "down_right_point") {
-                Gtk::HBox * point_hbox = dynamic_cast<Gtk::HBox *>(widg);
+                Gtk::Box * point_hbox = dynamic_cast<Gtk::Box *>(widg);
                 std::vector< Gtk::Widget* > child_list = point_hbox->get_children();
-                Gtk::HBox * point_hboxHBox = dynamic_cast<Gtk::HBox *>(child_list[0]);
+                Gtk::Box * point_hboxHBox = dynamic_cast<Gtk::Box *>(child_list[0]);
                 std::vector< Gtk::Widget* > child_list2 = point_hboxHBox->get_children();
                 point_hboxHBox->remove(child_list2[0][0]);
                 Glib::ustring * tip = param->param_getTooltip();
@@ -321,12 +321,12 @@ LPEPerspectiveEnvelope::newWidget()
         ++it;
     }
     vbox->pack_start(*hbox_up_handles,true, true, 2);
-    Gtk::HBox * hbox_middle = Gtk::manage(new Gtk::HBox(true,2));
+    Gtk::Box * hbox_middle = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL,2));
     hbox_middle->pack_start(*Gtk::manage(new Gtk::Separator(Gtk::ORIENTATION_HORIZONTAL)), Gtk::PACK_EXPAND_WIDGET);
     hbox_middle->pack_start(*Gtk::manage(new Gtk::Separator(Gtk::ORIENTATION_HORIZONTAL)), Gtk::PACK_EXPAND_WIDGET);
     vbox->pack_start(*hbox_middle, false, true, 2);
     vbox->pack_start(*hbox_down_handles, true, true, 2);
-    Gtk::HBox * hbox = Gtk::manage(new Gtk::HBox(false,0));
+    Gtk::Box * hbox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL,0));
     Gtk::Button* reset_button = Gtk::manage(new Gtk::Button(_("_Clear"), true));
     reset_button->set_image_from_icon_name("edit-clear");
     reset_button->signal_clicked().connect(sigc::mem_fun (*this,&LPEPerspectiveEnvelope::resetGrid));
@@ -385,6 +385,17 @@ void
 LPEPerspectiveEnvelope::doBeforeEffect (SPLPEItem const* lpeitem)
 {
     original_bbox(lpeitem, false, true);
+    if (Geom::are_near(boundingbox_X.min(),boundingbox_X.max()) || 
+        Geom::are_near(boundingbox_Y.min(),boundingbox_Y.max())) 
+    {
+        g_warning("Coulden`t appy perspective/envelope to a element with geometric width or height equal 0 we add a temporary bounding box to allow handle");
+        if (Geom::are_near(boundingbox_X.min(), boundingbox_X.max())) {
+            boundingbox_X = Geom::Interval(boundingbox_X.min() - 3, boundingbox_X.max() + 3);
+        }
+        if (Geom::are_near(boundingbox_Y.min(), boundingbox_Y.max())) {
+            boundingbox_Y = Geom::Interval(boundingbox_Y.min() - 3, boundingbox_Y.max() + 3);
+        }
+    }
     Geom::Line vert(Geom::Point(boundingbox_X.middle(),boundingbox_Y.max()), Geom::Point(boundingbox_X.middle(), boundingbox_Y.min()));
     Geom::Line horiz(Geom::Point(boundingbox_X.min(),boundingbox_Y.middle()), Geom::Point(boundingbox_X.max(), boundingbox_Y.middle()));
     if(vertical_mirror) {
@@ -511,6 +522,16 @@ LPEPerspectiveEnvelope::doBeforeEffect (SPLPEItem const* lpeitem)
 void
 LPEPerspectiveEnvelope::setDefaults()
 {
+    if (Geom::are_near(boundingbox_X.min(),boundingbox_X.max()) || 
+        Geom::are_near(boundingbox_Y.min(),boundingbox_Y.max())) 
+    {
+        if (Geom::are_near(boundingbox_X.min(), boundingbox_X.max())) {
+            boundingbox_X = Geom::Interval(boundingbox_X.min() - 3, boundingbox_X.max() + 3);
+        }
+        if (Geom::are_near(boundingbox_Y.min(), boundingbox_Y.max())) {
+            boundingbox_Y = Geom::Interval(boundingbox_Y.min() - 3, boundingbox_Y.max() + 3);
+        }
+    }
     Geom::Point up_left(boundingbox_X.min(), boundingbox_Y.min());
     Geom::Point up_right(boundingbox_X.max(), boundingbox_Y.min());
     Geom::Point down_left(boundingbox_X.min(), boundingbox_Y.max());
@@ -545,8 +566,7 @@ LPEPerspectiveEnvelope::addCanvasIndicators(SPLPEItem const */*lpeitem*/, std::v
 {
     hp_vec.clear();
 
-    SPCurve *c = new SPCurve();
-    c->reset();
+    auto c = std::make_unique<SPCurve>();
     c->moveto(up_left_point);
     c->lineto(up_right_point);
     c->lineto(down_right_point);

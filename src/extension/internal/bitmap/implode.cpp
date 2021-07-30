@@ -33,19 +33,21 @@ Implode::refreshParameters(Inkscape::Extension::Effect* module) {
 void
 Implode::init()
 {
-	Inkscape::Extension::build_from_mem(
-		"<inkscape-extension xmlns=\"" INKSCAPE_EXTENSION_URI "\">\n"
-			"<name>" N_("Implode") "</name>\n"
-			"<id>org.inkscape.effect.bitmap.implode</id>\n"
-			"<param name=\"factor\" gui-text=\"" N_("Factor:") "\" type=\"float\" min=\"0\" max=\"100\">10</param>\n"
-			"<effect>\n"
-				"<object-type>all</object-type>\n"
-				"<effects-menu>\n"
-					"<submenu name=\"" N_("Raster") "\" />\n"
-				"</effects-menu>\n"
-				"<menu-tip>" N_("Implode selected bitmap(s)") "</menu-tip>\n"
-			"</effect>\n"
-		"</inkscape-extension>\n", new Implode());
+    // clang-format off
+    Inkscape::Extension::build_from_mem(
+        "<inkscape-extension xmlns=\"" INKSCAPE_EXTENSION_URI "\">\n"
+            "<name>" N_("Implode") "</name>\n"
+            "<id>org.inkscape.effect.bitmap.implode</id>\n"
+            "<param name=\"factor\" gui-text=\"" N_("Factor:") "\" type=\"float\" min=\"0\" max=\"100\">10</param>\n"
+            "<effect>\n"
+                "<object-type>all</object-type>\n"
+                "<effects-menu>\n"
+                    "<submenu name=\"" N_("Raster") "\" />\n"
+                "</effects-menu>\n"
+                "<menu-tip>" N_("Implode selected bitmap(s)") "</menu-tip>\n"
+            "</effect>\n"
+        "</inkscape-extension>\n", new Implode());
+    // clang-format on
 }
 
 }; /* namespace Bitmap */

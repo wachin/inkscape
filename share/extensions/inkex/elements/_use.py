@@ -36,7 +36,7 @@ class Use(ShapeElement):
 
     @classmethod
     def new(cls, elem, x, y, **attrs): # pylint: disable=arguments-differ
-        ret = super(Use, cls).new(x=x, y=y, **attrs)
+        ret = super().new(x=x, y=y, **attrs)
         ret.href = elem
         return ret
 

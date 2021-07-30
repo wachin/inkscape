@@ -22,10 +22,6 @@
 #include "sp-item-group.h"
 #include "viewbox.h"
 
-#define SP_TYPE_SYMBOL (sp_symbol_get_type ())
-#define SP_SYMBOL(obj) (dynamic_cast<SPSymbol*>((SPObject*)obj))
-#define SP_IS_SYMBOL(obj) (dynamic_cast<const SPSymbol*>((SPObject*)obj) != NULL)
-
 class SPSymbol : public SPGroup, public SPViewBox {
 public:
 	SPSymbol();
@@ -33,8 +29,9 @@ public:
 
 	void build(SPDocument *document, Inkscape::XML::Node *repr) override;
 	void release() override;
-	void set(SPAttributeEnum key, char const* value) override;
+	void set(SPAttr key, char const* value) override;
 	void update(SPCtx *ctx, unsigned int flags) override;
+    void unSymbol();
 	Inkscape::XML::Node* write(Inkscape::XML::Document *xml_doc, Inkscape::XML::Node *repr, unsigned int flags) override;
 
 	void modified(unsigned int flags) override;
@@ -45,5 +42,7 @@ public:
 	Geom::OptRect bbox(Geom::Affine const &transform, SPItem::BBoxType type) const override;
 	void hide (unsigned int key) override;
 };
+
+MAKE_SP_OBJECT_TYPECHECK_FUNCTIONS(SP_IS_SYMBOL, SPSymbol)
 
 #endif

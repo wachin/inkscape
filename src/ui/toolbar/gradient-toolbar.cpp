@@ -37,12 +37,12 @@
 #include "ui/icon-names.h"
 #include "ui/tools/gradient-tool.h"
 #include "ui/util.h"
+#include "ui/widget/canvas.h"
 #include "ui/widget/color-preview.h"
 #include "ui/widget/combo-tool-item.h"
+#include "ui/widget/gradient-image.h"
 #include "ui/widget/spin-button-tool-item.h"
-
-#include "widgets/gradient-image.h"
-#include "widgets/gradient-vector.h"
+#include "ui/widget/gradient-vector-selector.h"
 
 using Inkscape::DocumentUndo;
 using Inkscape::UI::Tools::ToolBase;
@@ -460,7 +460,7 @@ GradientToolbar::GradientToolbar(SPDesktop *desktop)
             row[columns.col_sensitive] = true;
         }
 
-        _spread_cb = Gtk::manage(UI::Widget::ComboToolItem::create(_("Repeat: "),
+        _spread_cb = Gtk::manage(UI::Widget::ComboToolItem::create(_("Repeat"),
                                         // TRANSLATORS: for info, see http://www.w3.org/TR/2000/CR-SVG-20000802/pservers.html#LinearGradientSpreadMethodAttribute
                                         _("Whether to fill with flat color beyond the ends of the gradient vector "
                                           "(spreadMethod=\"pad\"), or repeat the gradient in the same direction "
@@ -514,7 +514,7 @@ GradientToolbar::GradientToolbar(SPDesktop *desktop)
         _offset_adj = Gtk::Adjustment::create(offset_val, 0.0, 1.0, 0.01, 0.1);
         _offset_item = Gtk::manage(new UI::Widget::SpinButtonToolItem("gradient-stopoffset", C_("Gradient", "Offset:"), _offset_adj, 0.01, 2));
         _offset_item->set_tooltip_text(_("Offset of selected stop"));
-        _offset_item->set_focus_widget(Glib::wrap(GTK_WIDGET(desktop->canvas)));
+        _offset_item->set_focus_widget(desktop->canvas);
         _offset_adj->signal_value_changed().connect(sigc::mem_fun(*this, &GradientToolbar::stop_offset_adjustment_changed));
         add(*_offset_item);
         _offset_item->set_sensitive(false);
@@ -772,7 +772,7 @@ GradientToolbar::stop_offset_adjustment_changed()
     SPStop *stop = get_selected_stop();
     if (stop) {
         stop->offset = _offset_adj->get_value();
-        sp_repr_set_css_double(stop->getRepr(), "offset", stop->offset);
+        stop->getRepr()->setAttributeCssDouble("offset", stop->offset);
 
         DocumentUndo::maybeDone(stop->document, "gradient:stop:offset", SP_VERB_CONTEXT_GRADIENT,
                                 _("Change gradient stop offset"));
@@ -872,7 +872,9 @@ GradientToolbar::check_ec(SPDesktop* desktop, Inkscape::UI::Tools::ToolBase* ec)
         // connect to selection modified and changed signals
         _connection_changed  = selection->connectChanged(sigc::mem_fun(*this, &GradientToolbar::selection_changed));
         _connection_modified = selection->connectModified(sigc::mem_fun(*this, &GradientToolbar::selection_modified));
-        _connection_subselection_changed = desktop->connectToolSubselectionChanged(sigc::mem_fun(*this, &GradientToolbar::drag_selection_changed));
+        _connection_subselection_changed = desktop->connect_gradient_stop_selected([=](void* sender, SPStop* stop){
+            drag_selection_changed(nullptr);
+        });
 
         // Is this necessary? Couldn't hurt.
         selection_changed(selection);

@@ -31,7 +31,6 @@ namespace Widget {
   public:
       Feature( const Glib::ustring& name, OTSubstitution& glyphs, int options, Glib::ustring family, Gtk::Grid& grid, int &row, FontVariants* parent)
           : _name (name)
-          , _options (options)
       {
           Gtk::Label* table_name = Gtk::manage (new Gtk::Label());
           table_name->set_markup ("\"" + name + "\" ");
@@ -145,12 +144,11 @@ namespace Widget {
 
   private:
       Glib::ustring _name;
-      int _options;
       std::vector <Gtk::RadioButton*> buttons;
   };
 
   FontVariants::FontVariants () :
-    Gtk::VBox (),
+    Gtk::Box (Gtk::ORIENTATION_VERTICAL),
     _ligatures_frame          ( Glib::ustring(C_("Font feature", "Ligatures"    )) ),
     _ligatures_common         ( Glib::ustring(C_("Font feature", "Common"       )) ),
     _ligatures_discretionary  ( Glib::ustring(C_("Font feature", "Discretionary")) ),
@@ -204,7 +202,8 @@ namespace Widget {
     _position_changed( false ),
     _caps_changed( false ),
     _numeric_changed( false ),
-    _asian_changed( false )
+    _asian_changed( false ),
+    _feature_vbox(Gtk::ORIENTATION_VERTICAL)
 
   {
 
@@ -229,20 +228,24 @@ namespace Widget {
     _ligatures_contextual.signal_clicked().connect ( sigc::mem_fun(*this, &FontVariants::ligatures_callback) );
 
     // Restrict label widths (some fonts have lots of ligatures). Must also set ellipsize mode.
-    _ligatures_label_common.set_max_width_chars(        60 );
-    _ligatures_label_discretionary.set_max_width_chars( 60 );
-    _ligatures_label_historical.set_max_width_chars(    60 );
-    _ligatures_label_contextual.set_max_width_chars(    60 );
-
-    _ligatures_label_common.set_ellipsize(        Pango::ELLIPSIZE_END );
-    _ligatures_label_discretionary.set_ellipsize( Pango::ELLIPSIZE_END );
-    _ligatures_label_historical.set_ellipsize(    Pango::ELLIPSIZE_END );
-    _ligatures_label_contextual.set_ellipsize(    Pango::ELLIPSIZE_END );
-
-    _ligatures_label_common.set_lines(        5 );
-    _ligatures_label_discretionary.set_lines( 5 );
-    _ligatures_label_historical.set_lines(    5 );
-    _ligatures_label_contextual.set_lines(    5 );
+    Gtk::Label* labels[] = {
+        &_ligatures_label_common,
+        &_ligatures_label_discretionary,
+        &_ligatures_label_historical,
+        &_ligatures_label_contextual
+    };
+    for (auto label : labels) {
+        // char limit - not really needed, since number of lines is restricted
+        label->set_max_width_chars(999);
+        // show ellipsis when text overflows
+        label->set_ellipsize(Pango::ELLIPSIZE_END);
+        // up to 5 lines
+        label->set_lines(5);
+        // multiline
+        label->set_line_wrap();
+        // break it as needed
+        label->set_line_wrap_mode(Pango::WRAP_WORD_CHAR);
+    }
 
     // Allow user to select characters. Not useful as this selects the ligatures.
     // _ligatures_label_common.set_selectable(        true );
@@ -1305,7 +1308,6 @@ namespace Widget {
       }
 
       // East Asian
-      bool default_variant = _asian_default_variant.get_active();
       bool jis78           = _asian_jis78.get_active();
       bool jis83           = _asian_jis83.get_active();
       bool jis90           = _asian_jis90.get_active();
@@ -1381,15 +1383,12 @@ namespace Widget {
       else if ( _caps_titling.get_active()    ) markup += "titl=1,";
 
       // Numeric
-      bool default_style = _numeric_default_style.get_active();
       bool lining        = _numeric_lining.get_active();
       bool old_style     = _numeric_old_style.get_active();
 
-      bool default_width = _numeric_default_width.get_active();
       bool proportional  = _numeric_proportional.get_active();
       bool tabular       = _numeric_tabular.get_active();
 
-      bool default_fractions = _numeric_default_fractions.get_active();
       bool diagonal          = _numeric_diagonal.get_active();
       bool stacked           = _numeric_stacked.get_active();
 
@@ -1406,14 +1405,13 @@ namespace Widget {
       if (slashed_zero)    markup += "zero=1,";
 
       // East Asian
-      bool default_variant = _asian_default_variant.get_active();
       bool jis78           = _asian_jis78.get_active();
       bool jis83           = _asian_jis83.get_active();
       bool jis90           = _asian_jis90.get_active();
       bool jis04           = _asian_jis04.get_active();
       bool simplified      = _asian_simplified.get_active();
       bool traditional     = _asian_traditional.get_active();
-      bool asian_width     = _asian_default_width.get_active();
+      //bool asian_width     = _asian_default_width.get_active();
       bool fwid            = _asian_full_width.get_active();
       bool pwid            = _asian_proportional_width.get_active();
       bool ruby            = _asian_ruby.get_active();

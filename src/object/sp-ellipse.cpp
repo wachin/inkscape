@@ -58,27 +58,27 @@ void SPGenericEllipse::build(SPDocument *document, Inkscape::XML::Node *repr)
 
     switch ( type ) {
         case SP_GENERIC_ELLIPSE_ARC:
-            this->readAttr("sodipodi:cx");
-            this->readAttr("sodipodi:cy");
-            this->readAttr("sodipodi:rx");
-            this->readAttr("sodipodi:ry");
-            this->readAttr("sodipodi:start");
-            this->readAttr("sodipodi:end");
-            this->readAttr("sodipodi:open");
-            this->readAttr("sodipodi:arc-type");
+            this->readAttr(SPAttr::SODIPODI_CX);
+            this->readAttr(SPAttr::SODIPODI_CY);
+            this->readAttr(SPAttr::SODIPODI_RX);
+            this->readAttr(SPAttr::SODIPODI_RY);
+            this->readAttr(SPAttr::SODIPODI_START);
+            this->readAttr(SPAttr::SODIPODI_END);
+            this->readAttr(SPAttr::SODIPODI_OPEN);
+            this->readAttr(SPAttr::SODIPODI_ARC_TYPE);
             break;
 
         case SP_GENERIC_ELLIPSE_CIRCLE:
-            this->readAttr("cx");
-            this->readAttr("cy");
-            this->readAttr("r");
+            this->readAttr(SPAttr::CX);
+            this->readAttr(SPAttr::CY);
+            this->readAttr(SPAttr::R);
             break;
 
         case SP_GENERIC_ELLIPSE_ELLIPSE:
-            this->readAttr("cx");
-            this->readAttr("cy");
-            this->readAttr("rx");
-            this->readAttr("ry");
+            this->readAttr(SPAttr::CX);
+            this->readAttr(SPAttr::CY);
+            this->readAttr(SPAttr::RX);
+            this->readAttr(SPAttr::RY);
             break;
 
         default:
@@ -92,7 +92,7 @@ void SPGenericEllipse::build(SPDocument *document, Inkscape::XML::Node *repr)
     SPShape::build(document, repr);
 }
 
-void SPGenericEllipse::set(SPAttributeEnum key, gchar const *value)
+void SPGenericEllipse::set(SPAttr key, gchar const *value)
 {
     // There are multiple ways to set internal cx, cy, rx, and ry (via SVG attributes or Sodipodi
     // attributes) thus we don't want to unset them if a read fails (e.g., when we explicitly clear
@@ -107,35 +107,35 @@ void SPGenericEllipse::set(SPAttributeEnum key, gchar const *value)
 
     SVGLength t;
     switch (key) {
-    case SP_ATTR_CX:
-    case SP_ATTR_SODIPODI_CX:
+    case SPAttr::CX:
+    case SPAttr::SODIPODI_CX:
         if( t.read(value) ) cx = t;
         cx.update( em, ex, w );
         this->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG);
         break;
 
-    case SP_ATTR_CY:
-    case SP_ATTR_SODIPODI_CY:
+    case SPAttr::CY:
+    case SPAttr::SODIPODI_CY:
         if( t.read(value) ) cy = t;
         cy.update( em, ex, h );
         this->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG);
         break;
 
-    case SP_ATTR_RX:
-    case SP_ATTR_SODIPODI_RX:
+    case SPAttr::RX:
+    case SPAttr::SODIPODI_RX:
         if( t.read(value) && t.value > 0.0 ) rx = t;
         rx.update( em, ex, w );
         this->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG);
         break;
 
-    case SP_ATTR_RY:
-    case SP_ATTR_SODIPODI_RY:
+    case SPAttr::RY:
+    case SPAttr::SODIPODI_RY:
         if( t.read(value) && t.value > 0.0 ) ry = t;
         ry.update( em, ex, h );
         this->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG);
         break;
 
-    case SP_ATTR_R:
+    case SPAttr::R:
         if( t.read(value) && t.value > 0.0 ) {
             this->ry = this->rx = t;
         }
@@ -144,7 +144,7 @@ void SPGenericEllipse::set(SPAttributeEnum key, gchar const *value)
         this->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG);
         break;
 
-    case SP_ATTR_SODIPODI_START:
+    case SPAttr::SODIPODI_START:
         if (value) {
             sp_svg_number_read_d(value, &this->start);
         } else {
@@ -153,7 +153,7 @@ void SPGenericEllipse::set(SPAttributeEnum key, gchar const *value)
         this->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG);
         break;
 
-    case SP_ATTR_SODIPODI_END:
+    case SPAttr::SODIPODI_END:
         if (value) {
             sp_svg_number_read_d(value, &this->end);
         } else {
@@ -162,7 +162,7 @@ void SPGenericEllipse::set(SPAttributeEnum key, gchar const *value)
         this->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG);
         break;
 
-    case SP_ATTR_SODIPODI_OPEN:
+    case SPAttr::SODIPODI_OPEN:
         // This is for reading in old files.
         if ((!value) || strcmp(value,"true")) {
             this->arc_type = SP_GENERIC_ELLIPSE_ARC_TYPE_SLICE;
@@ -172,7 +172,7 @@ void SPGenericEllipse::set(SPAttributeEnum key, gchar const *value)
         this->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG);
         break;
 
-    case SP_ATTR_SODIPODI_ARC_TYPE:
+    case SPAttr::SODIPODI_ARC_TYPE:
         // To read in old files that use 'open', we need to not set if value is null.
         // We could also check inkscape version.
         if (value) {
@@ -288,15 +288,15 @@ Inkscape::XML::Node *SPGenericEllipse::write(Inkscape::XML::Document *xml_doc, I
             if (flags & SP_OBJECT_WRITE_EXT) {
 
                 repr->setAttribute("sodipodi:type", "arc");
-                sp_repr_set_svg_length(repr, "sodipodi:cx", cx);
-                sp_repr_set_svg_length(repr, "sodipodi:cy", cy);
-                sp_repr_set_svg_length(repr, "sodipodi:rx", rx);
-                sp_repr_set_svg_length(repr, "sodipodi:ry", ry);
+                repr->setAttributeSvgLength("sodipodi:cx", cx);
+                repr->setAttributeSvgLength("sodipodi:cy", cy);
+                repr->setAttributeSvgLength("sodipodi:rx", rx);
+                repr->setAttributeSvgLength("sodipodi:ry", ry);
 
                 // write start and end only if they are non-trivial; otherwise remove
                 if (_isSlice()) {
-                    sp_repr_set_svg_double(repr, "sodipodi:start", start);
-                    sp_repr_set_svg_double(repr, "sodipodi:end", end);
+                    repr->setAttributeSvgDouble("sodipodi:start", start);
+                    repr->setAttributeSvgDouble("sodipodi:end", end);
 
                     switch ( arc_type ) {
                         case SP_GENERIC_ELLIPSE_ARC_TYPE_SLICE:
@@ -328,9 +328,9 @@ Inkscape::XML::Node *SPGenericEllipse::write(Inkscape::XML::Document *xml_doc, I
             break;
 
         case SP_GENERIC_ELLIPSE_CIRCLE:
-            sp_repr_set_svg_length(repr, "cx", cx);
-            sp_repr_set_svg_length(repr, "cy", cy);
-            sp_repr_set_svg_length(repr, "r",  rx);
+            repr->setAttributeSvgLength("cx", cx);
+            repr->setAttributeSvgLength("cy", cy);
+            repr->setAttributeSvgLength("r", rx);
             repr->removeAttribute("rx");
             repr->removeAttribute("ry");
             repr->removeAttribute("sodipodi:cx");
@@ -346,10 +346,10 @@ Inkscape::XML::Node *SPGenericEllipse::write(Inkscape::XML::Document *xml_doc, I
             break;
 
         case SP_GENERIC_ELLIPSE_ELLIPSE:
-            sp_repr_set_svg_length(repr, "cx", cx);
-            sp_repr_set_svg_length(repr, "cy", cy);
-            sp_repr_set_svg_length(repr, "rx", rx);
-            sp_repr_set_svg_length(repr, "ry", ry);
+            repr->setAttributeSvgLength("cx", cx);
+            repr->setAttributeSvgLength("cy", cy);
+            repr->setAttributeSvgLength("rx", rx);
+            repr->setAttributeSvgLength("ry", ry);
             repr->removeAttribute("r");
             repr->removeAttribute("sodipodi:cx");
             repr->removeAttribute("sodipodi:cy");
@@ -374,13 +374,24 @@ Inkscape::XML::Node *SPGenericEllipse::write(Inkscape::XML::Document *xml_doc, I
     return repr;
 }
 
+const char *SPGenericEllipse::typeName() const
+{
+    switch (type) {
+        case SP_GENERIC_ELLIPSE_UNDEFINED:
+        case SP_GENERIC_ELLIPSE_ARC:
+            return "arc";
+        case SP_GENERIC_ELLIPSE_CIRCLE:
+        case SP_GENERIC_ELLIPSE_ELLIPSE:
+        default:
+            return "circle"; //
+    }
+}
+
 const char *SPGenericEllipse::displayName() const
 {
-
     switch ( type ) {
         case SP_GENERIC_ELLIPSE_UNDEFINED:
         case SP_GENERIC_ELLIPSE_ARC:
-
             if (_isSlice()) {
                 switch ( arc_type ) {
                     case SP_GENERIC_ELLIPSE_ARC_TYPE_SLICE:
@@ -393,20 +404,14 @@ const char *SPGenericEllipse::displayName() const
                         return _("Arc");
                         break;
                 }
-            } else {
-                return _("Ellipse");
-            }
-
-        case SP_GENERIC_ELLIPSE_CIRCLE:
-            return _("Circle");
-
+            } // fallback to ellipse
         case SP_GENERIC_ELLIPSE_ELLIPSE:
             return _("Ellipse");
-
+        case SP_GENERIC_ELLIPSE_CIRCLE:
+            return _("Circle");
         default:
             return "Unknown ellipse: ERROR";
     }
-    return ("Shouldn't be here");
 }
 
 // Create path for rendering shape on screen
@@ -419,9 +424,7 @@ void SPGenericEllipse::set_shape()
         if (this->getRepr()->attribute("d")) {
             // unconditionally read the curve from d, if any, to preserve appearance
             Geom::PathVector pv = sp_svg_read_pathv(this->getRepr()->attribute("d"));
-            SPCurve *cold = new SPCurve(pv);
-            this->setCurveInsync(cold);
-            cold->unref();
+            setCurveInsync(std::make_unique<SPCurve>(pv));
         }
 
         return;
@@ -431,8 +434,6 @@ void SPGenericEllipse::set_shape()
     }
 
     this->normalize();
-
-    SPCurve *c = nullptr;
 
     // For simplicity, we use a circle with center (0, 0) and radius 1 for our calculations.
     Geom::Circle circle(0, 0, 1);
@@ -466,7 +467,8 @@ void SPGenericEllipse::set_shape()
     } else {
         pb.flush();
     }
-    c = new SPCurve(pb.peek());
+
+    auto c = std::make_unique<SPCurve>(pb.peek());
 
     // gchar *str = sp_svg_write_path(curve->get_pathvector());
     // std::cout << "  path: " << str << std::endl;
@@ -478,31 +480,24 @@ void SPGenericEllipse::set_shape()
     
     /* Reset the shape's curve to the "original_curve"
      * This is very important for LPEs to work properly! (the bbox might be recalculated depending on the curve in shape)*/
-    SPCurve * before = this->getCurveBeforeLPE();
-    bool haslpe = this->hasPathEffectOnClipOrMaskRecursive(this);
-    if (before || haslpe) {
-        if (c && before && before->get_pathvector() != c->get_pathvector()){
-            this->setCurveBeforeLPE(c);
-            sp_lpe_item_update_patheffect(this, true, false);
-        } else if(haslpe) {
-            this->setCurveBeforeLPE(c);
-        } else {
-            //This happends on undo, fix bug:#1791784
-            this->setCurveInsync(c);
-        }
-    } else {
-        this->setCurveInsync(c);
+    auto const before = this->curveBeforeLPE();
+    if (before && before->get_pathvector() != c->get_pathvector()) {
+        setCurveBeforeLPE(std::move(c));
+        sp_lpe_item_update_patheffect(this, true, false);
+        return;
     }
 
-    if (before) {
-        before->unref();
+    if (hasPathEffectOnClipOrMaskRecursive(this)) {
+        setCurveBeforeLPE(std::move(c));
+        return;
     }
-    c->unref();
+
+    // This happends on undo, fix bug:#1791784
+    setCurveInsync(std::move(c));
 }
 
 Geom::Affine SPGenericEllipse::set_transform(Geom::Affine const &xform)
 {
-    notifyTransform(xform);
     if (pathEffectsEnabled() && !optimizeTransforms()) {
         return xform;
     }
@@ -651,11 +646,7 @@ bool SPGenericEllipse::set_elliptical_path_attribute(Inkscape::XML::Node *repr)
     this->set_shape();
 
     if (_curve) {
-        gchar* d = sp_svg_write_path(_curve->get_pathvector());
-
-        repr->setAttribute("d", d);
-
-        g_free(d);
+        repr->setAttribute("d", sp_svg_write_path(_curve->get_pathvector()));
     } else {
         repr->removeAttribute("d");
     }
@@ -682,8 +673,9 @@ void SPGenericEllipse::position_set(gdouble x, gdouble y, gdouble rx, gdouble ry
     }
 
     this->arc_type = (GenericEllipseArcType)prefs->getInt("/tools/shapes/arc/arc_type", 0);
-    if (_isSlice()) {
-        this->type = SP_GENERIC_ELLIPSE_ARC;
+    if (this->type != SP_GENERIC_ELLIPSE_ARC && _isSlice()) {
+        // force an update while creating shapes, so correct rendering is shown initially
+        updateRepr();
     }
 
     this->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG);

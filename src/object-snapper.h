@@ -11,6 +11,7 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
+#include <memory>
 #include "snapper.h"
 #include "snap-candidate.h"
 
@@ -19,6 +20,7 @@ class SPNamedView;
 class SPItem;
 class SPObject;
 class SPPath;
+class SPDesktop;
 
 namespace Inkscape
 {
@@ -59,24 +61,8 @@ public:
                   std::vector<SnapCandidatePoint> *unselected_nodes) const override;
 
 private:
-    //store some lists of candidates, points and paths, so we don't have to rebuild them for each point we want to snap
-    std::vector<SnapCandidateItem> *_candidates;
-    std::vector<SnapCandidatePoint> *_points_to_snap_to;
-    std::vector<SnapCandidatePath > *_paths_to_snap_to;
-
-    /**
-     * Find all items within snapping range.
-     * @param parent Pointer to the document's root, or to a clipped path or mask object.
-     * @param it List of items to ignore.
-     * @param bbox_to_snap Bounding box hulling the whole bunch of points, all from the same selection and having the same transformation.
-     * @param clip_or_mask The parent object being passed is either a clip or mask.
-     */
-    void _findCandidates(SPObject* parent,
-                       std::vector<SPItem const *> const *it,
-                       bool const &first_point,
-                       Geom::Rect const &bbox_to_snap,
-                       bool const _clip_or_mask,
-                       Geom::Affine const additional_affine) const;
+    std::unique_ptr<std::vector<SnapCandidatePoint>> _points_to_snap_to;
+    std::unique_ptr<std::vector<SnapCandidatePath >> _paths_to_snap_to;
 
     void _snapNodes(IntermSnapResults &isr,
                       Inkscape::SnapCandidatePoint const &p, // in desktop coordinates
@@ -125,7 +111,7 @@ private:
 
 }; // end of ObjectSnapper class
 
-void getBBoxPoints(Geom::OptRect const bbox, std::vector<SnapCandidatePoint> *points, bool const isTarget, bool const includeCorners, bool const includeLineMidpoints, bool const includeObjectMidpoints);
+void getBBoxPoints(Geom::OptRect const bbox, std::vector<SnapCandidatePoint> *points, bool const isTarget, bool const includeCorners, bool const includeLineMidpoints, bool const includeObjectMidpoints, bool const isAlignment = false);
 
 } // end of namespace Inkscape
 

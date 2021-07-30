@@ -14,6 +14,7 @@
 
 #include "display/curve.h"
 #include "live_effects/effect.h"
+#include "live_effects/lpeobject.h"
 
 #include "object/uri.h"
 #include "object/sp-shape.h"
@@ -43,11 +44,11 @@ OriginalPathParam::~OriginalPathParam()
 Gtk::Widget *
 OriginalPathParam::param_newWidget()
 {
-    Gtk::HBox *_widget = Gtk::manage(new Gtk::HBox());
+    Gtk::Box *_widget = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL));
 
     { // Label
         Gtk::Label *pLabel = Gtk::manage(new Gtk::Label(param_label));
-        static_cast<Gtk::HBox*>(_widget)->pack_start(*pLabel, true, true);
+        _widget->pack_start(*pLabel, true, true);
         pLabel->set_tooltip_text(param_tooltip);
     }
 
@@ -60,7 +61,7 @@ OriginalPathParam::param_newWidget()
         pButton->add(*pIcon);
         pButton->show();
         pButton->signal_clicked().connect(sigc::mem_fun(*this, &OriginalPathParam::on_link_button_click));
-        static_cast<Gtk::HBox*>(_widget)->pack_start(*pButton, true, true);
+        _widget->pack_start(*pButton, true, true);
         pButton->set_tooltip_text(_("Link to path in clipboard"));
     }
 
@@ -73,50 +74,14 @@ OriginalPathParam::param_newWidget()
         pButton->add(*pIcon);
         pButton->show();
         pButton->signal_clicked().connect(sigc::mem_fun(*this, &OriginalPathParam::on_select_original_button_click));
-        static_cast<Gtk::HBox*>(_widget)->pack_start(*pButton, true, true);
+        _widget->pack_start(*pButton, true, true);
         pButton->set_tooltip_text(_("Select original"));
     }
 
-    static_cast<Gtk::HBox*>(_widget)->show_all_children();
+    _widget->show_all_children();
 
     return dynamic_cast<Gtk::Widget *> (_widget);
 }
-
-void
-OriginalPathParam::linked_modified_callback(SPObject *linked_obj, guint /*flags*/)
-{
-    SPCurve *curve = nullptr;
-    if (SP_IS_SHAPE(linked_obj)) {
-        if (_from_original_d) {
-            curve = SP_SHAPE(linked_obj)->getCurveForEdit();
-        } else {
-            curve = SP_SHAPE(linked_obj)->getCurve();
-        }
-    }
-    if (SP_IS_TEXT(linked_obj)) {
-        curve = SP_TEXT(linked_obj)->getNormalizedBpath();
-    }
-
-    if (curve == nullptr) {
-        // curve invalid, set empty pathvector
-        _pathvector = Geom::PathVector();
-    } else {
-        _pathvector = curve->get_pathvector();
-        curve->unref();
-    }
-
-    must_recalculate_pwd2 = true;
-    emit_changed();
-    SP_OBJECT(param_effect->getLPEObj())->requestModified(SP_OBJECT_MODIFIED_FLAG);
-}
-
-void
-OriginalPathParam::linked_transformed_callback(Geom::Affine const * /*rel_transf*/, SPItem * /*moved_item*/)
-{
-/** \todo find good way to compensate for referenced path transform, like done for normal clones.
- *        See sp-use.cpp: sp_use_move_compensate */
-}
-
 
 void
 OriginalPathParam::on_select_original_button_click()
@@ -129,7 +94,7 @@ OriginalPathParam::on_select_original_button_click()
     Inkscape::Selection *selection = desktop->getSelection();
     selection->clear();
     selection->set(original);
-    SP_OBJECT(param_effect->getLPEObj())->requestModified(SP_OBJECT_MODIFIED_FLAG);
+    param_effect->getLPEObj()->requestModified(SP_OBJECT_MODIFIED_FLAG);
 }
 
 } /* namespace LivePathEffect */

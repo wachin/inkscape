@@ -20,13 +20,21 @@
 #include <cstddef>
 #include <glibmm/ustring.h>
 #include <sigc++/connection.h>
+#include <2geom/generic-interval.h>
+#include <2geom/pathvector.h>
 
 #include "svg/svg-length.h"
+#include "object/sp-object.h"
+
+class SPCurve;
+
+#include <memory>
 
 namespace Inkscape {
 
 class Drawing;
 class DrawingShape;
+class DrawingItem;
 
 }
 
@@ -37,8 +45,6 @@ public:
 
     SVGLength offset;
 
-    void setCurve(SPCurve *curve, bool owner);
-
     bool isValid() const;
 
     Inkscape::DrawingItem *show(Inkscape::Drawing &drawing, unsigned int key, Geom::OptInterval extents);
@@ -47,12 +53,12 @@ public:
     void setStripExtents(unsigned int key, Geom::OptInterval const &extents);
     Geom::Interval bounds() const;
 
-    SPCurve *calculateRenderCurve(unsigned key) const;
+    std::unique_ptr<SPCurve> calculateRenderCurve(unsigned key) const;
 
 protected:
     void build(SPDocument* doc, Inkscape::XML::Node* repr) override;
     void release() override;
-    void set(SPAttributeEnum key, const gchar* value) override;
+    void set(SPAttr key, const gchar* value) override;
     void update(SPCtx* ctx, unsigned int flags) override;
 
 private:
@@ -74,11 +80,11 @@ private:
 
     gdouble _repeatLength() const;
     void _updateView(View &view);
-    SPCurve *_calculateRenderCurve(View const &view) const;
+    std::unique_ptr<SPCurve> _calculateRenderCurve(View const &view) const;
 
     void _readHatchPathVector(char const *str, Geom::PathVector &pathv, bool &continous_join);
 
-    SPCurve *_curve;
+    std::unique_ptr<SPCurve> _curve;
     bool _continuous;
 };
 

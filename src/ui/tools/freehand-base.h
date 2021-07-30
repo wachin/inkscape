@@ -20,11 +20,15 @@
 #include "ui/tools/tool-base.h"
 #include "live_effects/effect-enum.h"
 
-struct SPCanvasItem;
+#include <memory>
+
 class SPCurve;
+class SPCanvasItem;
+
 struct SPDrawAnchor;
 
 namespace Inkscape {
+    class CanvasItemBpath;
     class Selection;
 }
 
@@ -43,13 +47,14 @@ namespace Inkscape {
 namespace UI {
 namespace Tools {
 
+enum shapeType { NONE, TRIANGLE_IN, TRIANGLE_OUT, ELLIPSE, CLIPBOARD, BEND_CLIPBOARD, LAST_APPLIED };
+
 class FreehandBase : public ToolBase {
 public:
-    FreehandBase(gchar const *const *cursor_shape);
+    FreehandBase(const std::string& cursor_filename);
     ~FreehandBase() override;
 
     Inkscape::Selection *selection;
-    SPCanvasItem *grab;
 
     bool attach;
 
@@ -58,27 +63,28 @@ public:
     guint32 green_color;
     guint32 highlight_color;
 
-    // Red
-    SPCanvasItem *red_bpath;
-    SPCurve *red_curve;
+    // Red - Last segment as it's drawn.
+    Inkscape::CanvasItemBpath *red_bpath;
+    std::unique_ptr<SPCurve> red_curve;
+    std::optional<Geom::Point> red_curve_get_last_point();
 
-    // Blue
-    SPCanvasItem *blue_bpath;
-    SPCurve *blue_curve;
+    // Blue - New path after LPE as it's drawn.
+    Inkscape::CanvasItemBpath *blue_bpath;
+    std::unique_ptr<SPCurve> blue_curve;
 
-    // Green
-    std::vector<SPCanvasItem*> green_bpaths;
-    SPCurve *green_curve;
+    // Green - New path as it's drawn.
+    std::vector<Inkscape::CanvasItemBpath *> green_bpaths;
+    std::unique_ptr<SPCurve> green_curve;
     SPDrawAnchor *green_anchor;
     gboolean green_closed; // a flag meaning we hit the green anchor, so close the path on itself
 
     // White
     SPItem *white_item;
-    std::list<SPCurve *> white_curves;
+    std::list<std::unique_ptr<SPCurve>> white_curves;
     std::vector<SPDrawAnchor*> white_anchors;
 
     // Temporary modified curve when start anchor
-    SPCurve *sa_overwrited;
+    std::unique_ptr<SPCurve> sa_overwrited;
 
     // Start anchor
     SPDrawAnchor *sa;
@@ -87,7 +93,7 @@ public:
     SPDrawAnchor *ea;
 
 
-    /* type of the LPE that is to be applied automatically to a finished path (if any) */
+    /* Type of the LPE that is to be applied automatically to a finished path (if any) */
     Inkscape::LivePathEffect::EffectType waiting_LPE_type;
 
     sigc::connection sel_changed_connection;
@@ -131,9 +137,9 @@ void spdc_concat_colors_and_flush(FreehandBase *dc, gboolean forceclosed);
  *  @param o origin point.
  *  @param state  keyboard state to check if ctrl or shift was pressed.
  */
-void spdc_endpoint_snap_rotation(ToolBase const *const ec, Geom::Point &p, Geom::Point const &o, guint state);
+void spdc_endpoint_snap_rotation(ToolBase* const ec, Geom::Point &p, Geom::Point const &o, guint state);
 
-void spdc_endpoint_snap_free(ToolBase const *ec, Geom::Point &p, boost::optional<Geom::Point> &start_of_line, guint state);
+void spdc_endpoint_snap_free(ToolBase* const ec, Geom::Point &p, std::optional<Geom::Point> &start_of_line, guint state);
 
 /**
  * If we have an item and a waiting LPE, apply the effect to the item

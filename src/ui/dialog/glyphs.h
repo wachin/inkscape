@@ -8,10 +8,9 @@
 #ifndef SEEN_DIALOGS_GLYPHS_H
 #define SEEN_DIALOGS_GLYPHS_H
 
-#include "ui/widget/panel.h"
 #include <gtkmm/treemodel.h>
-#include "ui/dialog/desktop-tracker.h"
 
+#include "ui/dialog/dialog-base.h"
 
 namespace Gtk {
 class ComboBoxText;
@@ -35,7 +34,7 @@ class GlyphColumns;
 /**
  * A panel that displays character glyphs.
  */
-class GlyphsPanel : public Inkscape::UI::Widget::Panel
+class GlyphsPanel : public DialogBase
 {
 public:
     GlyphsPanel();
@@ -43,7 +42,8 @@ public:
 
     static GlyphsPanel& getInstance();
 
-    void setDesktop(SPDesktop *desktop) override;
+    void selectionChanged(Selection *selection) override;
+    void selectionModified(Selection *selection, guint flags) override;
 
 protected:
 
@@ -57,26 +57,20 @@ private:
 
     void glyphActivated(Gtk::TreeModel::Path const & path);
     void glyphSelectionChanged();
-    void setTargetDesktop(SPDesktop *desktop);
-    void selectionModifiedCB(guint flags);
     void readSelection( bool updateStyle, bool updateContent );
     void calcCanInsert();
     void insertText();
 
-
     Glib::RefPtr<Gtk::ListStore> store;
     Gtk::IconView *iconView;
-    Gtk::Entry *entry;
-    Gtk::Label *label;
-    Gtk::Button *insertBtn;
+    Glib::RefPtr<Gtk::Entry> entry;
+    Glib::RefPtr<Gtk::Label> label;
+    Glib::RefPtr<Gtk::Button> insertBtn;
     Gtk::ComboBoxText *scriptCombo;
     Gtk::ComboBoxText *rangeCombo;
     Inkscape::UI::Widget::FontSelector *fontSelector;
-    SPDesktop *targetDesktop;
-    DesktopTracker deskTrack;
 
     std::vector<sigc::connection> instanceConns;
-    std::vector<sigc::connection> desktopConns;
 };
 
 

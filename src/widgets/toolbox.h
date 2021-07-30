@@ -15,6 +15,8 @@
  */
 
 #include <glibmm/ustring.h>
+#include <gtk/gtk.h>
+#include <gtkmm/enums.h>
 
 #include "preferences.h"
 
@@ -54,10 +56,7 @@ public:
     static GtkWidget *createCommandsToolbox();
     static GtkWidget *createSnapToolbox();
 
-
     static Glib::ustring getToolboxName(GtkWidget* toolbox);
-
-    static void updateSnapToolbox(SPDesktop *desktop, Inkscape::UI::Tools::ToolBase *eventcontext, GtkWidget *toolbox);
 
     static GtkIconSize prefToSize(Glib::ustring const &path, int base = 0 );
     static Gtk::IconSize prefToSize_mm(Glib::ustring const &path, int base = 0);

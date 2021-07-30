@@ -30,6 +30,12 @@
 
 #include "rotateable.h"
 
+constexpr int SELECTED_STYLE_SB_WIDTH = 48;
+constexpr int SELECTED_STYLE_PLACE_WIDTH = 50;
+constexpr int SELECTED_STYLE_STROKE_WIDTH = 40;
+constexpr int SELECTED_STYLE_FLAG_WIDTH = 12;
+constexpr int SELECTED_STYLE_WIDTH = 250;
+
 class SPDesktop;
 
 namespace Inkscape {
@@ -61,6 +67,7 @@ enum {
     SS_STROKE
 };
 
+class GradientImage;
 class SelectedStyle;
 
 class RotateableSwatch : public Rotateable {
@@ -79,13 +86,12 @@ private:
 
     SelectedStyle *parent;
 
-    guint32 startcolor;
-    bool startcolor_set;
+    guint32 startcolor = 0;
+    bool startcolor_set = false;
 
-    gchar const *undokey;
+    gchar const *undokey = "ssrot1";
 
-    GdkCursor *cr;
-    bool cr_set;
+    bool cr_set = false;
 };
 
 class RotateableStrokeWidth : public Rotateable {
@@ -110,7 +116,7 @@ private:
 /**
  * Selected style indicator (fill, stroke, opacity).
  */
-class SelectedStyle : public Gtk::HBox
+class SelectedStyle : public Gtk::Box
 {
 public:
     SelectedStyle(bool layout = true);
@@ -163,21 +169,21 @@ protected:
     Gtk::Label _lgradient[2];
     Glib::ustring __lgradient[2];
 
-    GtkWidget *_gradient_preview_l[2];
-    Gtk::HBox _gradient_box_l[2];
+    GradientImage *_gradient_preview_l[2];
+    Gtk::Box _gradient_box_l[2];
 
     Gtk::Label _rgradient[2];
     Glib::ustring __rgradient[2];
 
-    GtkWidget *_gradient_preview_r[2];
-    Gtk::HBox _gradient_box_r[2];
+    GradientImage *_gradient_preview_r[2];
+    Gtk::Box _gradient_box_r[2];
 
 #ifdef WITH_MESH
     Gtk::Label _mgradient[2];
     Glib::ustring __mgradient[2];
 
-    GtkWidget *_gradient_preview_m[2];
-    Gtk::HBox _gradient_box_m[2];
+    GradientImage *_gradient_preview_m[2];
+    Gtk::Box _gradient_box_m[2];
 #endif
 
     Gtk::Label _many[2];
@@ -194,8 +200,8 @@ protected:
     Gtk::Label _multiple[2];
     Glib::ustring __multiple[2];
 
-    Gtk::HBox _fill;
-    Gtk::HBox _stroke;
+    Gtk::Box _fill;
+    Gtk::Box _stroke;
     RotateableStrokeWidth _stroke_width_place;
     Gtk::Label _stroke_width;
     Gtk::Label _fill_empty_space;

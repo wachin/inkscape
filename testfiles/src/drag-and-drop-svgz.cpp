@@ -2,7 +2,7 @@
 /**
  * @file
  * Test that svgz (= compressed SVG) import/drag-and-drop
- * is working: https://gitlab.com/inkscape/inkscape/issues/906 .
+ * is working: https://gitlab.com/inkscape/inkscape/-/issues/906 .
  *
  */
 /*
@@ -18,6 +18,7 @@
 #include "extension/db.h"
 #include "extension/find_extension_by_mime.h"
 #include "extension/internal/svgz.h"
+#include "io/resource.h"
 #include "path-prefix.h"
 #include "preferences.h"
 
@@ -26,8 +27,7 @@
 
 class SvgzImportTest : public DocPerCaseTest {
   public:
-    SvgzImportTest() {}
-    void TestBody()
+    void TestBody() override
     {
         ASSERT_TRUE(_doc != nullptr);
         ASSERT_TRUE(_doc->getRoot() != nullptr);
@@ -36,7 +36,10 @@ class SvgzImportTest : public DocPerCaseTest {
         prefs->setBool("/options/onimport", true);
         auto ext = Inkscape::Extension::find_by_mime("image/svg+xml-compressed");
         ext->set_gui(true);
-        auto fn = Glib::build_filename(INKSCAPE_EXAMPLESDIR, "tiger.svgz");
+
+        using namespace Inkscape::IO::Resource;
+        auto fn = get_path_string(SYSTEM, EXAMPLES, "tiger.svgz");
+
         auto imod = dynamic_cast<Inkscape::Extension::Input *>(ext);
         auto svg_mod = (new Inkscape::Extension::Internal::Svg);
         ASSERT_TRUE(svg_mod->open(imod, fn.c_str()) != nullptr);

@@ -19,6 +19,7 @@
 
 #include "bad-uri-exception.h"
 #include "svg/svg.h"
+#include "svg/svg-color.h"
 #include "print.h"
 #include "display/drawing-item.h"
 #include "attributes.h"
@@ -35,7 +36,6 @@
 #include "sp-desc.h"
 #include "sp-guide.h"
 #include "sp-hatch.h"
-#include "sp-item-rm-unsatisfied-cns.h"
 #include "sp-mask.h"
 #include "sp-pattern.h"
 #include "sp-rect.h"
@@ -47,7 +47,6 @@
 #include "sp-use.h"
 
 #include "style.h"
-#include "uri.h"
 
 
 #include "util/find-last-if.h"
@@ -73,8 +72,7 @@ SPItem::SPItem() : SPObject() {
     sensitive = TRUE;
     bbox_valid = FALSE;
 
-    _highlightColor = nullptr;
-
+    _highlightColor = 0;
     transform_center_x = 0;
     transform_center_y = 0;
 
@@ -188,26 +186,27 @@ bool SPItem::isHidden(unsigned display_key) const {
     return true;
 }
 
+
+void SPItem::setHighlight(guint32 color) {
+    _highlightColor = color;
+    updateRepr();
+}
+
 bool SPItem::isHighlightSet() const {
-    return _highlightColor != nullptr;
+    return _highlightColor != 0;
 }
 
 guint32 SPItem::highlight_color() const {
-    if (_highlightColor)
-    {
-        return atoi(_highlightColor) | 0x00000000;
+    if (isHighlightSet()) {
+        return _highlightColor;
     }
-    else {
-        SPItem const *item = dynamic_cast<SPItem const *>(parent);
-        if (parent && (parent != this) && item)
-        {
-            return item->highlight_color();
-        }
-        else
-        {
-            static Inkscape::Preferences *prefs = Inkscape::Preferences::get();
-            return prefs->getInt("/tools/nodes/highlight_color", 0xff0000ff);
-        }
+
+    SPItem const *item = dynamic_cast<SPItem const *>(parent);
+    if (parent && (parent != this) && item) {
+        return item->highlight_color();
+    } else {
+        static Inkscape::Preferences *prefs = Inkscape::Preferences::get();
+        return prefs->getInt("/tools/nodes/highlight_color", 0xaaaaaaff);
     }
 }
 
@@ -409,20 +408,26 @@ void SPItem::moveTo(SPItem *target, bool intoafter) {
 }
 
 void SPItem::build(SPDocument *document, Inkscape::XML::Node *repr) {
-	SPItem* object = this;
+#ifdef OBJECT_TRACE
+    objectTrace( "SPItem::build");
+#endif
 
-    object->readAttr( "style" );
-    object->readAttr( "transform" );
-    object->readAttr( "clip-path" );
-    object->readAttr( "mask" );
-    object->readAttr( "sodipodi:insensitive" );
-    object->readAttr( "inkscape:transform-center-x" );
-    object->readAttr( "inkscape:transform-center-y" );
-    object->readAttr( "inkscape:connector-avoid" );
-    object->readAttr( "inkscape:connection-points" );
-    object->readAttr( "inkscape:highlight-color" );
+    SPItem* object = this;
+    object->readAttr(SPAttr::STYLE);
+    object->readAttr(SPAttr::TRANSFORM);
+    object->readAttr(SPAttr::CLIP_PATH);
+    object->readAttr(SPAttr::MASK);
+    object->readAttr(SPAttr::SODIPODI_INSENSITIVE);
+    object->readAttr(SPAttr::TRANSFORM_CENTER_X);
+    object->readAttr(SPAttr::TRANSFORM_CENTER_Y);
+    object->readAttr(SPAttr::CONNECTOR_AVOID);
+    object->readAttr(SPAttr::CONNECTION_POINTS);
+    object->readAttr(SPAttr::INKSCAPE_HIGHLIGHT_COLOR);
 
     SPObject::build(document, repr);
+#ifdef OBJECT_TRACE
+    objectTrace( "SPItem::build", false);
+#endif
 }
 
 void SPItem::release() {
@@ -456,12 +461,17 @@ void SPItem::release() {
     //item->_transformed_signal.~signal();
 }
 
-void SPItem::set(SPAttributeEnum key, gchar const* value) {
+void SPItem::set(SPAttr key, gchar const* value) {
+#ifdef OBJECT_TRACE
+    std::stringstream temp;
+    temp << "SPItem::set: " << sp_attribute_name(key)  << " " << (value?value:"null");
+    objectTrace( temp.str() );
+#endif
     SPItem *item = this;
     SPItem* object = item;
 
     switch (key) {
-        case SP_ATTR_TRANSFORM: {
+        case SPAttr::TRANSFORM: {
             Geom::Affine t;
             if (value && sp_svg_transform_read(value, &t)) {
                 item->set_item_transform(t);
@@ -470,21 +480,21 @@ void SPItem::set(SPAttributeEnum key, gchar const* value) {
             }
             break;
         }
-        case SP_PROP_CLIP_PATH: {
+        case SPAttr::CLIP_PATH: {
             auto uri = extract_uri(value);
             if (!uri.empty() || item->clip_ref) {
                 item->getClipRef().try_attach(uri.c_str());
             }
             break;
         }
-        case SP_PROP_MASK: {
+        case SPAttr::MASK: {
             auto uri = extract_uri(value);
             if (!uri.empty() || item->mask_ref) {
                 item->getMaskRef().try_attach(uri.c_str());
             }
             break;
         }
-        case SP_ATTR_SODIPODI_INSENSITIVE:
+        case SPAttr::SODIPODI_INSENSITIVE:
         {
             item->sensitive = !value;
             for (SPItemView *v = item->display; v != nullptr; v = v->next) {
@@ -492,22 +502,20 @@ void SPItem::set(SPAttributeEnum key, gchar const* value) {
             }
             break;
         }
-        case SP_ATTR_INKSCAPE_HIGHLIGHT_COLOR:
+        case SPAttr::INKSCAPE_HIGHLIGHT_COLOR:
         {
-            g_free(item->_highlightColor);
+            item->_highlightColor = 0;
             if (value) {
-                item->_highlightColor = g_strdup(value);
-            } else {
-                item->_highlightColor = nullptr;
+                item->_highlightColor = sp_svg_read_color(value, 0x0) | 0xff;
             }
             break;
         }
-        case SP_ATTR_CONNECTOR_AVOID:
+        case SPAttr::CONNECTOR_AVOID:
             if (value || item->avoidRef) {
                 item->getAvoidRef().setAvoid(value);
             }
             break;
-        case SP_ATTR_TRANSFORM_CENTER_X:
+        case SPAttr::TRANSFORM_CENTER_X:
             if (value) {
                 item->transform_center_x = g_strtod(value, nullptr);
             } else {
@@ -515,7 +523,7 @@ void SPItem::set(SPAttributeEnum key, gchar const* value) {
             }
             object->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG);
             break;
-        case SP_ATTR_TRANSFORM_CENTER_Y:
+        case SPAttr::TRANSFORM_CENTER_Y:
             if (value) {
                 item->transform_center_y = g_strtod(value, nullptr);
                 item->transform_center_y *= -document->yaxisdir();
@@ -524,22 +532,29 @@ void SPItem::set(SPAttributeEnum key, gchar const* value) {
             }
             object->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG);
             break;
-        case SP_PROP_SYSTEM_LANGUAGE:
-        case SP_PROP_REQUIRED_FEATURES:
-        case SP_PROP_REQUIRED_EXTENSIONS:
+        case SPAttr::SYSTEM_LANGUAGE:
+        case SPAttr::REQUIRED_FEATURES:
+        case SPAttr::REQUIRED_EXTENSIONS:
             {
                 item->resetEvaluated();
                 // pass to default handler
             }
         default:
             if (SP_ATTRIBUTE_IS_CSS(key)) {
-                style->clear(key);
+                // FIXME: See if this is really necessary. Also, check after modifying SPIPaint to preserve
+                // non-#abcdef color formats.
+
+                // Propergate the property change to all clones
+                style->readFromObject(object);
                 object->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG | SP_OBJECT_STYLE_MODIFIED_FLAG);
             } else {
                 SPObject::set(key, value);
             }
             break;
     }
+#ifdef OBJECT_TRACE
+    objectTrace( "SPItem::set", false);
+#endif
 }
 
 void SPItem::clip_ref_changed(SPObject *old_clip, SPObject *clip, SPItem *item)
@@ -748,20 +763,18 @@ Inkscape::XML::Node* SPItem::write(Inkscape::XML::Document *xml_doc, Inkscape::X
         }
     }
 
-    gchar *c = sp_svg_transform_write(item->transform);
-    repr->setAttribute("transform", c);
-    g_free(c);
+    repr->setAttributeOrRemoveIfEmpty("transform", sp_svg_transform_write(item->transform));
 
     if (flags & SP_OBJECT_WRITE_EXT) {
         repr->setAttribute("sodipodi:insensitive", ( item->sensitive ? nullptr : "true" ));
         if (item->transform_center_x != 0)
-            sp_repr_set_svg_double (repr, "inkscape:transform-center-x", item->transform_center_x);
+            repr->setAttributeSvgDouble("inkscape:transform-center-x", item->transform_center_x);
         else
             repr->removeAttribute("inkscape:transform-center-x");
         if (item->transform_center_y != 0) {
             auto y = item->transform_center_y;
             y *= -document->yaxisdir();
-            sp_repr_set_svg_double (repr, "inkscape:transform-center-y", y);
+            repr->setAttributeSvgDouble("inkscape:transform-center-y", y);
         } else
             repr->removeAttribute("inkscape:transform-center-y");
     }
@@ -778,8 +791,8 @@ Inkscape::XML::Node* SPItem::write(Inkscape::XML::Document *xml_doc, Inkscape::X
             repr->setAttributeOrRemoveIfEmpty("mask", value);
         }
     }
-    if (item->_highlightColor){
-        repr->setAttribute("inkscape:highlight-color", item->_highlightColor);
+    if (item->isHighlightSet()){
+        repr->setAttribute("inkscape:highlight-color", SPColor(item->_highlightColor).toString());
     } else {
         repr->removeAttribute("inkscape:highlight-color");
     }
@@ -815,7 +828,7 @@ Geom::OptRect SPItem::visualBounds(Geom::Affine const &transform, bool wfilter, 
     Geom::OptRect bbox;
 
 
-    SPFilter *filter = (style && style->filter.href) ? dynamic_cast<SPFilter *>(style->getFilter()) : nullptr;
+    SPFilter *filter = style ? style->getFilter() : nullptr;
     if (filter && wfilter) {
         // call the subclass method
     	// CPPIFY
@@ -898,8 +911,6 @@ Geom::OptRect SPItem::documentPreferredBounds() const
         return documentBounds(SPItem::GEOMETRIC_BBOX);
     }
 }
-
-
 
 Geom::OptRect SPItem::documentGeometricBounds() const
 {
@@ -1044,6 +1055,20 @@ void SPItem::invoke_print(SPPrintContext *ctx)
     }
 }
 
+/**
+ * The item's type name, not node tag name. NOT translated.
+ *
+ * @return The item's type name (default: 'item')
+ */
+const char* SPItem::typeName() const {
+    return "item";
+}
+
+/**
+ * The item's type name as a translated human string.
+ *
+ * Translated string for UI display.
+ */
 const char* SPItem::displayName() const {
     return _("Object");
 }
@@ -1088,7 +1113,6 @@ gchar *SPItem::detailedDescription() const {
 bool SPItem::isFiltered() const {
 	return (style && style->filter.href && style->filter.href->getObject());
 }
-
 
 SPObject* SPItem::isInMask() const {
     SPObject* parent = this->parent;
@@ -1532,12 +1556,16 @@ void SPItem::doWriteTransform(Geom::Affine const &transform, Geom::Affine const 
     // If onSetTransform is not overridden, CItem::onSetTransform will return the transform it was given as a parameter.
     // onSetTransform cannot be pure due to the fact that not all visible Items are transformable.
     SPLPEItem * lpeitem = SP_LPE_ITEM(this);
+    if (lpeitem) {
+        lpeitem->notifyTransform(transform);
+    }
     if ( // run the object's set_transform (i.e. embed transform) only if:
         (dynamic_cast<SPText *>(this) && firstChild() && dynamic_cast<SPTextPath *>(firstChild())) ||
              (!preserve && // user did not chose to preserve all transforms
              (!clip_ref || !clip_ref->getObject()) && // the object does not have a clippath
              (!mask_ref || !mask_ref->getObject()) && // the object does not have a mask
-             !(!transform.isTranslation() && style && style->getFilter())) // the object does not have a filter, or the transform is translation (which is supposed to not affect filters)
+             !(!transform.isTranslation() && style && style->getFilter()))
+                // the object does not have a filter, or the transform is translation (which is supposed to not affect filters)
         )
     {
         transform_attr = this->set_transform(transform);
@@ -1592,7 +1620,6 @@ void SPItem::set_item_transform(Geom::Affine const &transform_matrix)
         /* The SP_OBJECT_USER_MODIFIED_FLAG_B is used to mark the fact that it's only a
            transformation.  It's apparently not used anywhere else. */
         requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG | SP_OBJECT_USER_MODIFIED_FLAG_B);
-        sp_item_rm_unsatisfied_cns(*this);
     }
 }
 

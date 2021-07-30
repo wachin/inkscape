@@ -17,17 +17,23 @@
 #define INKSCAPE_UI_DIALOG_ALIGN_AND_DISTRIBUTE_H
 
 #include <list>
-#include "ui/widget/panel.h"
-#include "ui/widget/frame.h"
 
 #include <gtkmm/frame.h>
 #include <gtkmm/comboboxtext.h>
 #include <gtkmm/label.h>
+
 #include <gtkmm/checkbutton.h>
+#include <gtkmm/comboboxtext.h>
+#include <gtkmm/frame.h>
 #include <gtkmm/grid.h>
+#include <gtkmm/label.h>
+#include <list>
 
 #include "2geom/rect.h"
-#include "ui/dialog/desktop-tracker.h"
+#include "helper/auto-connection.h"
+#include "ui/dialog/dialog-base.h"
+#include "ui/widget/frame.h"
+#include "ui/widget/scrollprotected.h"
 
 class SPItem;
 
@@ -40,13 +46,15 @@ namespace Dialog {
 
 class Action;
 
-
-class AlignAndDistribute : public Widget::Panel {
+class AlignAndDistribute : public Gtk::Box
+{
 public:
-    AlignAndDistribute();
+    AlignAndDistribute(DialogBase* dlg);
     ~AlignAndDistribute() override;
 
-    static AlignAndDistribute &getInstance() { return *new AlignAndDistribute(); }
+    void desktopReplaced();
+    void selectionChanged(Inkscape::Selection*);
+    void toolChanged(SPDesktop* desktop, Inkscape::UI::Tools::ToolBase* ec);
 
     Gtk::Grid &align_table(){return _alignTable;}
     Gtk::Grid &distribute_table(){return _distributeTable;}
@@ -58,18 +66,20 @@ public:
 
     Geom::OptRect randomize_bbox;
 
+    SPDesktop* getDesktop();
 protected:
+    DialogBase* _parent;
 
     void on_ref_change();
     void on_node_ref_change();
     void on_selgrp_toggled();
     void on_oncanvas_toggled();
-    void addDistributeButton(const Glib::ustring &id, const Glib::ustring tiptext, 
-                                      guint row, guint col, bool onInterSpace, 
+    void addDistributeButton(const Glib::ustring &id, const Glib::ustring tiptext,
+                                      guint row, guint col, bool onInterSpace,
                                       Geom::Dim2 orientation, float kBegin, float kEnd);
-    void addAlignButton(const Glib::ustring &id, const Glib::ustring tiptext, 
+    void addAlignButton(const Glib::ustring &id, const Glib::ustring tiptext,
                         guint row, guint col);
-    void addNodeButton(const Glib::ustring &id, const Glib::ustring tiptext, 
+    void addNodeButton(const Glib::ustring &id, const Glib::ustring tiptext,
                         guint col, Geom::Dim2 orientation, bool distribute);
     void addRemoveOverlapsButton(const Glib::ustring &id,
                         const Glib::ustring tiptext,
@@ -86,44 +96,40 @@ protected:
     void addExchangePositionsClockwiseButton(const Glib::ustring &id,
                         const Glib::ustring tiptext,
                         guint row, guint col);
-    void addUnclumpButton(const Glib::ustring &id, const Glib::ustring tiptext, 
+    void addUnclumpButton(const Glib::ustring &id, const Glib::ustring tiptext,
                         guint row, guint col);
-    void addRandomizeButton(const Glib::ustring &id, const Glib::ustring tiptext, 
+    void addRandomizeButton(const Glib::ustring &id, const Glib::ustring tiptext,
                         guint row, guint col);
     void addBaselineButton(const Glib::ustring &id, const Glib::ustring tiptext,
                            guint row, guint col, Gtk::Grid &table, Geom::Dim2 orientation, bool distribute);
-    void setTargetDesktop(SPDesktop *desktop);
 
     std::list<Action *> _actionList;
     UI::Widget::Frame _alignFrame, _distributeFrame, _rearrangeFrame, _removeOverlapFrame, _nodesFrame;
     Gtk::Grid _alignTable, _distributeTable, _rearrangeTable, _removeOverlapTable, _nodesTable;
-    Gtk::HBox _anchorBox;
-    Gtk::HBox _selgrpBox;
-    Gtk::VBox _alignBox;
-    Gtk::VBox _alignBoxNode;
-    Gtk::HBox _alignTableBox;
-    Gtk::HBox _distributeTableBox;
-    Gtk::HBox _rearrangeTableBox;
-    Gtk::HBox _removeOverlapTableBox;
-    Gtk::HBox _nodesTableBox;
+    Gtk::Box _anchorBox;
+    Gtk::Box _selgrpBox;
+    Gtk::Box _alignBox;
+    Gtk::Box _alignBoxNode;
+    Gtk::Box _alignTableBox;
+    Gtk::Box _distributeTableBox;
+    Gtk::Box _rearrangeTableBox;
+    Gtk::Box _removeOverlapTableBox;
+    Gtk::Box _nodesTableBox;
     Gtk::Label _anchorLabel;
     Gtk::Label _anchorLabelNode;
     Gtk::ToggleButton _selgrp;
     Gtk::ToggleButton _oncanvas;
-    Gtk::ComboBoxText _combo;
-    Gtk::HBox _anchorBoxNode;
-    Gtk::ComboBoxText _comboNode;
+    Inkscape::UI::Widget::ScrollProtected<Gtk::ComboBoxText> _combo;
+    Gtk::Box _anchorBoxNode;
+    Inkscape::UI::Widget::ScrollProtected<Gtk::ComboBoxText> _comboNode;
 
-    SPDesktop *_desktop;
-    DesktopTracker _deskTrack;
-    sigc::connection _desktopChangeConn;
-    sigc::connection _toolChangeConn;
-    sigc::connection _selChangeConn;
+    Inkscape::auto_connection _tool_changed;
 private:
     AlignAndDistribute(AlignAndDistribute const &d) = delete;
     AlignAndDistribute& operator=(AlignAndDistribute const &d) = delete;
-};
 
+    friend class Align;
+};
 
 struct BBoxSort
 {
@@ -150,12 +156,14 @@ public :
     virtual ~Action()= default;
 
     AlignAndDistribute &_dialog;
+    void setDesktop(SPDesktop *desktop) { _desktop = desktop; }
 
+protected:
+    SPDesktop *_desktop;
 private :
     virtual void on_button_click(){}
 
     Glib::ustring _id;
-    Gtk::Grid &_parent;
 };
 
 
@@ -187,11 +195,8 @@ private :
 
 
     void on_button_click() override {
-        //Retrieve selected objects
-        SPDesktop *desktop = _dialog.getDesktop();
-        if (!desktop) return;
-
-        do_action(desktop, _index);
+        if (!_desktop) return;
+        do_action(_desktop, _index);
     }
 
     static void do_action(SPDesktop *desktop, int index);

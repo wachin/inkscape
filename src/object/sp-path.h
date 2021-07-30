@@ -23,9 +23,6 @@
 
 class SPCurve;
 
-#define SP_PATH(obj) (dynamic_cast<SPPath*>((SPObject*)obj))
-#define SP_IS_PATH(obj) (dynamic_cast<const SPPath*>((SPObject*)obj) != NULL)
-
 /**
  * SVG <path> implementation
  */
@@ -42,10 +39,11 @@ public:
     void release() override;
     void update(SPCtx* ctx, unsigned int flags) override;
 
-    void set(SPAttributeEnum key, char const* value) override;
+    void set(SPAttr key, char const* value) override;
     void update_patheffect(bool write) override;
     Inkscape::XML::Node* write(Inkscape::XML::Document *xml_doc, Inkscape::XML::Node *repr, unsigned int flags) override;
 
+    const char* typeName() const override;
     const char* displayName() const override;
     char* description() const override;
     Geom::Affine set_transform(Geom::Affine const &transform) override;
@@ -53,6 +51,9 @@ public:
 private:
     SPStyleSrc d_source;  // Source of 'd' value, saved for output.
 };
+
+MAKE_SP_OBJECT_DOWNCAST_FUNCTIONS(SP_PATH, SPPath)
+MAKE_SP_OBJECT_TYPECHECK_FUNCTIONS(SP_IS_PATH, SPPath)
 
 #endif // SEEN_SP_PATH_H
 

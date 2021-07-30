@@ -13,13 +13,13 @@
 
 #include <cstring>
 #include <ctime>
+#include <iomanip>
 #include <sstream>
 #include <utility>
 #include <glibmm/fileutils.h>
 #include <glibmm/convert.h>
 #include <glibmm/i18n.h>
 #include <glib/gstdio.h>
-#include <gtk/gtk.h>
 #include "preferences.h"
 #include "preferences-skeleton.h"
 #include "inkscape.h"
@@ -321,10 +321,8 @@ std::vector<Preferences::Entry> Preferences::getAllEntries(Glib::ustring const &
     std::vector<Entry> temp;
     Inkscape::XML::Node *node = _getNode(path, false);
     if (node) {
-        // argh - purge this Util::List nonsense from XML classes fast
-        Inkscape::Util::List<Inkscape::XML::AttributeRecord const> alist = node->attributeList();
-        for (; alist; ++alist) {
-            temp.push_back( Entry(path + '/' + g_quark_to_string(alist->key), static_cast<void const*>(alist->value.pointer())) );
+        for (const auto & iter : node->attributeList()) {
+            temp.push_back( Entry(path + '/' + g_quark_to_string(iter.key), static_cast<void const*>(iter.value.pointer())) );
         }
     }
     return temp;
@@ -384,7 +382,8 @@ void Preferences::setBool(Glib::ustring const &pref_path, bool value)
  */
 void Preferences::setPoint(Glib::ustring const &pref_path, Geom::Point value)
 {
-    _setRawValue(pref_path, Glib::ustring::compose("%1",value[Geom::X]) + "," + Glib::ustring::compose("%1",value[Geom::Y]));
+    setDouble(pref_path + "/x", value[Geom::X]);
+    setDouble(pref_path + "/y", value[Geom::Y]);
 }
 
 /**
@@ -417,7 +416,8 @@ void Preferences::setUInt(Glib::ustring const &pref_path, unsigned int value)
  */
 void Preferences::setDouble(Glib::ustring const &pref_path, double value)
 {
-    _setRawValue(pref_path, Glib::ustring::compose("%1",value));
+    static constexpr auto digits10 = std::numeric_limits<double>::digits10; // number of decimal digits that are ensured to be precise
+    _setRawValue(pref_path, Glib::ustring::format(std::setprecision(digits10), value));
 }
 
 /**
@@ -429,7 +429,8 @@ void Preferences::setDouble(Glib::ustring const &pref_path, double value)
  */
 void Preferences::setDoubleUnit(Glib::ustring const &pref_path, double value, Glib::ustring const &unit_abbr)
 {
-    Glib::ustring str = Glib::ustring::compose("%1%2",value,unit_abbr);
+    static constexpr auto digits10 = std::numeric_limits<double>::digits10; // number of decimal digits that are ensured to be precise
+    Glib::ustring str = Glib::ustring::compose("%1%2", Glib::ustring::format(std::setprecision(digits10), value), unit_abbr);
     _setRawValue(pref_path, str);
 }
 
@@ -462,7 +463,7 @@ void Preferences::mergeStyle(Glib::ustring const &pref_path, SPCSSAttr *style)
 {
     SPCSSAttr *current = getStyle(pref_path);
     sp_repr_css_merge(current, style);
-    sp_attribute_purge_default_style(current, SP_ATTR_CLEAN_DEFAULT_REMOVE);
+    sp_attribute_purge_default_style(current, SP_ATTRCLEAN_DEFAULT_REMOVE);
     Glib::ustring css_str;
     sp_repr_css_write_string(current, css_str);
     _setRawValue(pref_path, css_str);
@@ -782,18 +783,6 @@ bool Preferences::_extractBool(Entry const &v)
     }
 }
 
-Geom::Point Preferences::_extractPoint(Entry const &v)
-{
-    if (v.cached_point) return v.value_point;
-    v.cached_point = true;
-    gchar const *s = static_cast<gchar const *>(v._value);
-    gchar ** strarray = g_strsplit(s, ",", 2);
-    double newx = atoi(strarray[0]);
-    double newy = atoi(strarray[1]);
-    g_strfreev (strarray);
-    return Geom::Point(newx, newy);
-}
-
 int Preferences::_extractInt(Entry const &v)
 {
     if (v.cached_int) return v.value_int;
@@ -972,6 +961,11 @@ void Preferences::unload(bool save)
         delete _instance;
         _instance = nullptr;
     }
+}
+
+Glib::ustring Preferences::getPrefsFilename() const
+{ //
+    return Glib::filename_to_utf8(_prefs_filename);
 }
 
 Preferences *Preferences::_instance = nullptr;

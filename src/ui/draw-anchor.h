@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 /** @file
- * TODO: insert short description here
+ * The nodes at the ends of the path in the pen/pencil tools.
  *//*
  * Authors: see git history
  *
@@ -16,7 +16,12 @@
 
 #include <2geom/point.h>
 
+#include <memory>
+
 namespace Inkscape {
+
+class CanvasItemCtrl;
+
 namespace UI {
 namespace Tools {
 
@@ -27,17 +32,18 @@ class FreehandBase;
 }
 
 class SPCurve;
-struct SPCanvasItem;
 
 /// The drawing anchor.
 /// \todo Make this a regular knot, this will allow setting statusbar tips.
 struct SPDrawAnchor { 
+    ~SPDrawAnchor();
+
     Inkscape::UI::Tools::FreehandBase *dc;
-    SPCurve *curve;
-    unsigned int start : 1;
-    unsigned int active : 1;
+    std::unique_ptr<SPCurve> curve;
+    bool start : 1;
+    bool active : 1;
     Geom::Point dp;
-    SPCanvasItem *ctrl;
+    Inkscape::CanvasItemCtrl *ctrl = nullptr;
 };
 
 

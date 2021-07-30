@@ -37,13 +37,30 @@ class SPDesktop;
 
 class InkscapeApplication
 {
+    Glib::RefPtr<Gio::Application> _gio_application;
+
 public:
-    virtual void on_startup() = 0;
-    virtual void on_startup2() = 0;
-    virtual InkFileExportCmd* file_export() = 0;
-    virtual int  on_handle_local_options(const Glib::RefPtr<Glib::VariantDict>& options) = 0;
-    virtual void on_new() = 0;
-    virtual void on_quit() = 0;
+    /// Singleton instance
+    static InkscapeApplication &singleton();
+    /// Singleton instance, if it exists (will not create it)
+    static InkscapeApplication *instance();
+
+    /// The Gtk application instance, or NULL if running headless without display
+    Gtk::Application *gtk_app() { return dynamic_cast<Gtk::Application *>(_gio_application.get()); }
+    /// The Gio application instance, never NULL
+    Gio::Application *gio_app() { return _gio_application.get(); }
+
+    InkscapeWindow *create_window(SPDocument *document, bool replace);
+    void create_window(const Glib::RefPtr<Gio::File> &file = Glib::RefPtr<Gio::File>());
+    bool destroy_window(InkscapeWindow *window);
+    void destroy_all();
+    void print_action_list();
+
+    void on_startup2();
+    InkFileExportCmd *file_export() { return &_file_export; }
+    int on_handle_local_options(const Glib::RefPtr<Glib::VariantDict> &options);
+    void on_new();
+    void on_quit();
 
     // Gio::Actions need to know what document, selection, view to work on.
     // In headless mode, these are set for each file processed.
@@ -104,6 +121,8 @@ public:
     // void reference()   { /*printf("reference()\n"  );*/ }
     // void unreference() { /*printf("unreference()\n");*/ }
 
+    int get_number_of_windows() const;
+
 protected:
     bool _with_gui    = true;
     bool _batch_process = false; // Temp
@@ -112,7 +131,8 @@ protected:
     bool _auto_export = false;
     int _pdf_page     = 1;
     int _pdf_poppler  = false;
-    InkscapeApplication() = default;
+    bool _use_command_line_argument = false;
+    InkscapeApplication();
 
     // Documents are owned by the application which is responsible for opening/saving/exporting. WIP
     // std::vector<SPDocument*> _documents;   For a true headless version
@@ -131,52 +151,16 @@ protected:
 
     // Extra data associated with actions (Label, Section, Tooltip/Help).
     InkActionExtraData _action_extra_data;
-};
 
-// T can be either:
-//   Gio::Application (window server is not present, required for CI testing) or
-//   Gtk::Application (window server is present).
-// With Gtk::Application, one can still run "headless" by not creating any windows.
-template <class T> class ConcreteInkscapeApplication : public T, public InkscapeApplication
-{
-public:
-    static ConcreteInkscapeApplication<T>& get_instance();
-
-private:
-    ConcreteInkscapeApplication();
-
-public:
-    InkFileExportCmd* file_export() override { return &_file_export; }
-    InkscapeWindow*   create_window(SPDocument *document, bool replace);
-    void              create_window(const Glib::RefPtr<Gio::File>& file = Glib::RefPtr<Gio::File>(),
-                                    bool add_to_recent = true, bool replace_empty = true);
-    bool              destroy_window(InkscapeWindow* window);
-    void              destroy_all();
-    void              print_action_list();
-
-protected:
-    void on_startup()  override;
-    void on_startup2() override;
-    void on_activate() override;
-    void on_open(const Gio::Application::type_vec_files& files, const Glib::ustring& hint) override;
+    void on_activate();
+    void on_open(const Gio::Application::type_vec_files &files, const Glib::ustring &hint);
     void process_document(SPDocument* document, std::string output_path);
     void parse_actions(const Glib::ustring& input, action_vector_t& action_vector);
 
-private:
-    // Callbacks
-    int  on_handle_local_options(const Glib::RefPtr<Glib::VariantDict>& options) override;
-
-    // Actions
-    void on_new() override;
-    void on_quit() override;
     void on_about();
-
     void shell();
 
     void _start_main_option_section(const Glib::ustring& section_name = "");
-
-    Glib::RefPtr<Gtk::Builder> _builder;
-
 };
 
 #endif // INKSCAPE_APPLICATION_H

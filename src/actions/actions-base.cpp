@@ -16,10 +16,11 @@
 #include "actions-base.h"
 #include "actions-helper.h"
 
+#include "actions/actions-extra-data.h"
 #include "inkscape-application.h"
 
 #include "inkscape.h"             // Inkscape::Application
-#include "inkscape-version.h"     // Inkscape version
+#include "inkscape-version-info.h"// Inkscape version
 #include "path-prefix.h"          // Extension directory
 #include "extension/init.h"       // List verbs
 #include "verbs.h"                // List verbs
@@ -31,14 +32,19 @@
 void
 print_inkscape_version()
 {
-    std::cout << "Inkscape " << Inkscape::version_string << std::endl;
-    std::cerr << "    Pango version: " << pango_version_string() << std::endl;
+    std::cout << Inkscape::inkscape_version() << std::endl;
+}
+
+void
+print_debug_info()
+{
+    std::cout << Inkscape::debug_info() << std::endl;
 }
 
 void
 print_system_data_directory()
 {
-    std::cout << INKSCAPE_SYSTEMDIR << std::endl;
+    std::cout << Glib::build_filename(get_inkscape_datadir(), "inkscape") << std::endl;
 }
 
 void
@@ -125,11 +131,13 @@ query_all_recurse (SPObject *o)
     if (item && item->getId()) {
         Geom::OptRect area = item->documentVisualBounds();
         if (area) {
+            // clang-format off
             std::cout << item->getId()               << ","
                       << area->min()[Geom::X]        << ","
                       << area->min()[Geom::Y]        << ","
                       << area->dimensions()[Geom::X] << ","
                       << area->dimensions()[Geom::Y] << std::endl;
+            // clang-format on
         }
 
         for (auto& child: o->children) {
@@ -218,56 +226,60 @@ quit_inkscape(InkscapeApplication* app)
 
 std::vector<std::vector<Glib::ustring>> raw_data_base =
 {
-    {"inkscape-version",          "InkscapeVersion",         "Base",       N_("Print Inkscape version and exit.")                   },
-    {"system-data-directory",     "InkscapeSystemDir",       "Base",       N_("Print system data directory and exit.")              },
-    {"user-data-directory",       "InkscapeUserDir",         "Base",       N_("Print user data directory and exit.")                },
-    {"action-list",               "InkscapeActions",         "Base",       N_("Print a list of actions and exit.")                  },
-    {"verb-list",                 "InkscapeVerbs",           "Base",       N_("Print a list of verbs and exit.")                    },
-    {"verb",                      "Verb",                    "Base",       N_("Execute verb(s).")                                   },
-    {"vacuum-defs",               "VacuumDefs",              "Base",       N_("Remove unused definitions (gradients, etc.).")       },
-    {"quit-inkscape",             "QuitInkscape",            "Base",       N_("Immediately quit Inkscape.")                         },
+    // clang-format off
+    {"app.inkscape-version",          N_("Inkscape Version"),        "Base",       N_("Print Inkscape version and exit")                   },
+    {"app.debug-info",                N_("Debug Info"),              "Base",       N_("Print debugging information and exit")              },
+    {"app.system-data-directory",     N_("System Directory"),        "Base",       N_("Print system data directory and exit")              },
+    {"app.user-data-directory",       N_("User Directory"),          "Base",       N_("Print user data directory and exit")                },
+    {"app.action-list",               N_("List Actions"),            "Base",       N_("Print a list of actions and exit")                  },
+    {"app.verb-list",                 N_("List Verbs"),              "Base",       N_("Print a list of verbs and exit")                    },
+    {"app.verb",                      N_("Execute Verb"),            "Base",       N_("Execute verb(s)")                                   },
+    {"app.vacuum-defs",               N_("Clean up Document"),       "Base",       N_("Remove unused definitions (gradients, etc.)")       },
+    {"app.quit-inkscape",             N_("Quit"),                    "Base",       N_("Immediately quit Inkscape")                         },
 
-    {"open-page",                 "ImportPageNumber",        "Import",     N_("Import page number.")                                },
-    {"convert-dpi-method",        "ImportDPIMethod",         "Import",     N_("Import DPI convert method.")                         },
-    {"no-convert-baseline",       "ImportBaselineConvert",   "Import",     N_("Import convert text baselines.")                     },
+    {"app.open-page",                 N_("Import Page Number"),      "Import",     N_("Select PDF page number to import")                  },
+    {"app.convert-dpi-method",        N_("Import DPI Method"),       "Import",     N_("Set DPI conversion method for legacy Inkscape files")},
+    {"app.no-convert-baseline",       N_("No Import Baseline Conversion"), "Import", N_("Do not convert text baselines in legacy Inkscape files")},
 
-    {"query-x",                   "QueryX",                  "Query",      N_("Query 'x' value(s) of selected objects.")            },
-    {"query-y",                   "QueryY",                  "Query",      N_("Query 'y' value(s) of selected objects.")            },
-    {"query-width",               "QueryWidth",              "Query",      N_("Query 'width' value(s) of object(s).")               },
-    {"query-height",              "QueryHeight",             "Query",      N_("Query 'height' value(s) of object(s).")              },
-    {"query-all",                 "QueryAll",                "Query",      N_("Query 'x', 'y', 'width', and 'height'.")             }
+    {"app.query-x",                   N_("Query X"),                 "Query",      N_("Query 'x' value(s) of selected objects")            },
+    {"app.query-y",                   N_("Query Y"),                 "Query",      N_("Query 'y' value(s) of selected objects")            },
+    {"app.query-width",               N_("Query Width"),             "Query",      N_("Query 'width' value(s) of object(s)")               },
+    {"app.query-height",              N_("Query Height"),            "Query",      N_("Query 'height' value(s) of object(s)")              },
+    {"app.query-all",                 N_("Query All"),               "Query",      N_("Query 'x', 'y', 'width', and 'height'")             }
+    // clang-format on
 };
 
-template<class T>
 void
-add_actions_base(ConcreteInkscapeApplication<T>* app)
+add_actions_base(InkscapeApplication* app)
 {
+    auto *gapp = app->gio_app();
+
     // Note: "radio" actions are just an easy way to set type without using templating.
-    app->add_action(               "inkscape-version",                                    sigc::ptr_fun(&print_inkscape_version)                 );
-    app->add_action(               "system-data-directory",                               sigc::ptr_fun(&print_system_data_directory)            );
-    app->add_action(               "user-data-directory",                                 sigc::ptr_fun(&print_user_data_directory)              );
-    app->add_action(               "action-list",       sigc::mem_fun(app, &ConcreteInkscapeApplication<T>::print_action_list)                    );
-    app->add_action(               "verb-list",                                           sigc::ptr_fun(&print_verb_list)                        );
-    app->add_action_radio_string(  "verb",               sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&verbs),                     app), "null");
-    app->add_action(               "vacuum-defs",        sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&vacuum_defs),               app)        );
-    app->add_action(               "quit-inkscape",      sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&quit_inkscape),             app)        );
+    // clang-format off
+    gapp->add_action(               "inkscape-version",                                    sigc::ptr_fun(&print_inkscape_version)                 );
+    gapp->add_action(               "debug-info",                                          sigc::ptr_fun(&print_debug_info)                       );
+    gapp->add_action(               "system-data-directory",                               sigc::ptr_fun(&print_system_data_directory)            );
+    gapp->add_action(               "user-data-directory",                                 sigc::ptr_fun(&print_user_data_directory)              );
+    gapp->add_action(               "action-list",       sigc::mem_fun(app, &InkscapeApplication::print_action_list)                    );
+    gapp->add_action(               "verb-list",                                           sigc::ptr_fun(&print_verb_list)                        );
+    gapp->add_action_radio_string(  "verb",               sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&verbs),                     app), "null");
+    gapp->add_action(               "vacuum-defs",        sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&vacuum_defs),               app)        );
+    gapp->add_action(               "quit-inkscape",      sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&quit_inkscape),             app)        );
 
-    app->add_action_radio_integer( "open-page",                                           sigc::ptr_fun(&pdf_page),                             0);
-    app->add_action_radio_string(  "convert-dpi-method",                                  sigc::ptr_fun(&convert_dpi_method),              "none");
-    app->add_action(               "no-convert-baseline",                                 sigc::ptr_fun(&no_convert_baseline)                    );
+    gapp->add_action_radio_integer( "open-page",                                           sigc::ptr_fun(&pdf_page),                             0);
+    gapp->add_action_radio_string(  "convert-dpi-method",                                  sigc::ptr_fun(&convert_dpi_method),              "none");
+    gapp->add_action(               "no-convert-baseline",                                 sigc::ptr_fun(&no_convert_baseline)                    );
 
 
-    app->add_action(               "query-x",            sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&query_x),                   app)        );
-    app->add_action(               "query-y",            sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&query_y),                   app)        );
-    app->add_action(               "query-width",        sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&query_width),               app)        );
-    app->add_action(               "query-height",       sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&query_height),              app)        );
-    app->add_action(               "query-all",          sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&query_all),                 app)        );
+    gapp->add_action(               "query-x",            sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&query_x),                   app)        );
+    gapp->add_action(               "query-y",            sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&query_y),                   app)        );
+    gapp->add_action(               "query-width",        sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&query_width),               app)        );
+    gapp->add_action(               "query-height",       sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&query_height),              app)        );
+    gapp->add_action(               "query-all",          sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&query_all),                 app)        );
+    // clang-format on
 
     app->get_action_extra_data().add_data(raw_data_base);
 }
-
-template void add_actions_base(ConcreteInkscapeApplication<Gio::Application>* app);
-template void add_actions_base(ConcreteInkscapeApplication<Gtk::Application>* app);
 
 /*
   Local Variables:

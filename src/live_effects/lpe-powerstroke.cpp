@@ -11,24 +11,26 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
-#include "live_effects/lpe-powerstroke.h"
-#include "live_effects/lpe-powerstroke-interpolators.h"
-#include "live_effects/lpe-simplify.h"
-#include "live_effects/lpeobject.h"
-
-#include "svg/svg-color.h"
-#include "desktop-style.h"
-#include "svg/css-ostringstream.h"
-#include "display/curve.h"
-
 #include <2geom/elliptical-arc.h>
 #include <2geom/path-sink.h>
 #include <2geom/path-intersection.h>
 #include <2geom/circle.h>
-#include "helper/geom.h"
 
-#include "object/sp-shape.h"
+#include "live_effects/lpe-powerstroke.h"
+#include "live_effects/lpe-powerstroke-interpolators.h"
+#include "live_effects/lpe-simplify.h"
+#include "live_effects/lpeobject.h"
+#include "live_effects/fill-conversion.h"
+
+#include "desktop-style.h"
 #include "style.h"
+
+#include "display/curve.h"
+#include "display/control/canvas-item-enums.h"
+#include "helper/geom.h"
+#include "object/sp-shape.h"
+#include "svg/css-ostringstream.h"
+#include "svg/svg-color.h"
 
 // TODO due to internal breakage in glibmm headers, this must be last:
 #include <glibmm/i18n.h>
@@ -38,7 +40,7 @@ namespace Geom {
 
 /** Find the point where two straight lines cross.
 */
-static boost::optional<Point> intersection_point( Point const & origin_a, Point const & vector_a,
+static std::optional<Point> intersection_point( Point const & origin_a, Point const & vector_a,
                                            Point const & origin_b, Point const & vector_b)
 {
     Coord denom = cross(vector_a, vector_b);
@@ -46,7 +48,7 @@ static boost::optional<Point> intersection_point( Point const & origin_a, Point 
         Coord t = (cross(vector_b, origin_a) + cross(origin_b, vector_b)) / denom;
         return origin_a + t * vector_a;
     }
-    return boost::none;
+    return std::nullopt;
 }
 
 static Geom::CubicBezier sbasis_to_cubicbezier(Geom::D2<Geom::SBasis> const & sbasis_in)
@@ -147,7 +149,7 @@ static const Util::EnumData<unsigned> LineJoinTypeData[] = {
     {LINEJOIN_BEVEL, N_("Beveled"),   "bevel"},
     {LINEJOIN_ROUND, N_("Rounded"),   "round"},
 //    {LINEJOIN_EXTRP_MITER,  N_("Extrapolated"),      "extrapolated"}, // disabled because doesn't work well
-    {LINEJOIN_EXTRP_MITER_ARC, N_("Extrapolated arc"),     "extrp_arc"}, 
+    {LINEJOIN_EXTRP_MITER_ARC, N_("Extrapolated arc"),     "extrp_arc"},
     {LINEJOIN_MITER, N_("Miter"),     "miter"},
     {LINEJOIN_SPIRO, N_("Spiro"),     "spiro"},
 };
@@ -156,10 +158,11 @@ static const Util::EnumDataConverter<unsigned> LineJoinTypeConverter(LineJoinTyp
 LPEPowerStroke::LPEPowerStroke(LivePathEffectObject *lpeobject) :
     Effect(lpeobject),
     offset_points(_("Offset points"), _("Offset points"), "offset_points", &wr, this),
+    not_jump(_("No jumping handles"), _("Allow to move handles along the path without them automatically attaching to the nearest path segment"), "not_jump", &wr, this, false),
     sort_points(_("Sort points"), _("Sort offset points according to their time value along the curve"), "sort_points", &wr, this, true),
     interpolator_type(_("Interpolator type:"), _("Determines which kind of interpolator will be used to interpolate between stroke width along the path"), "interpolator_type", InterpolatorTypeConverter, &wr, this, Geom::Interpolate::INTERP_CENTRIPETAL_CATMULLROM),
     interpolator_beta(_("Smoothness:"), _("Sets the smoothness for the CubicBezierJohan interpolator; 0 = linear interpolation, 1 = smooth"), "interpolator_beta", &wr, this, 0.2),
-    scale_width(_("Width scale:"), _("Width scale all points"), "scale_width", &wr, this, 1.0),
+    scale_width(_("Width factor:"), _("Scale the stroke's width uniformly along the whole path"), "scale_width", &wr, this, 1.0),
     start_linecap_type(_("Start cap:"), _("Determines the shape of the path's start"), "start_linecap_type", LineCapTypeConverter, &wr, this, LINECAP_ZERO_WIDTH),
     linejoin_type(_("Join:"), _("Determines the shape of the path's corners"), "linejoin_type", LineJoinTypeConverter, &wr, this, LINEJOIN_ROUND),
     miter_limit(_("Miter limit:"), _("Maximum length of the miter (in units of stroke width)"), "miter_limit", &wr, this, 4.),
@@ -173,6 +176,7 @@ LPEPowerStroke::LPEPowerStroke(LivePathEffectObject *lpeobject) :
     interpolator_beta.param_set_range(0.,1.);
 
     registerParameter(&offset_points);
+    registerParameter(&not_jump);
     registerParameter(&sort_points);
     registerParameter(&interpolator_type);
     registerParameter(&interpolator_beta);
@@ -181,7 +185,7 @@ LPEPowerStroke::LPEPowerStroke(LivePathEffectObject *lpeobject) :
     registerParameter(&miter_limit);
     registerParameter(&scale_width);
     registerParameter(&end_linecap_type);
-    scale_width.param_set_range(0.0, Geom::infinity());
+    scale_width.param_set_range(0.0, std::numeric_limits<double>::max());
     scale_width.param_set_increments(0.1, 0.1);
     scale_width.param_set_digits(4);
     recusion_limit = 0;
@@ -190,7 +194,7 @@ LPEPowerStroke::LPEPowerStroke(LivePathEffectObject *lpeobject) :
 
 LPEPowerStroke::~LPEPowerStroke() = default;
 
-void 
+void
 LPEPowerStroke::doBeforeEffect(SPLPEItem const *lpeItem)
 {
     offset_points.set_scale_width(scale_width);
@@ -202,44 +206,16 @@ LPEPowerStroke::doBeforeEffect(SPLPEItem const *lpeItem)
 
 void LPEPowerStroke::applyStyle(SPLPEItem *lpeitem)
 {
-    SPCSSAttr *css = sp_repr_css_attr_new();
-    if (lpeitem->style) {
-        if (lpeitem->style->stroke.isPaintserver()) {
-            SPPaintServer *server = lpeitem->style->getStrokePaintServer();
-            if (server) {
-                Glib::ustring str;
-                str += "url(#";
-                str += server->getId();
-                str += ")";
-                sp_repr_css_set_property(css, "fill", str.c_str());
-            }
-        } else if (lpeitem->style->stroke.isColor()) {
-            gchar c[64];
-            sp_svg_write_color(
-                c, sizeof(c),
-                lpeitem->style->stroke.value.color.toRGBA32(SP_SCALE24_TO_FLOAT(lpeitem->style->stroke_opacity.value)));
-            sp_repr_css_set_property(css, "fill", c);
-        } else {
-            sp_repr_css_set_property(css, "fill", "none");
-        }
-    } else {
-        sp_repr_css_unset_property(css, "fill");
-    }
-
-    sp_repr_css_set_property(css, "fill-rule", "nonzero");
-    sp_repr_css_set_property(css, "stroke", "none");
-
-    sp_desktop_apply_css_recursive(lpeitem, css, true);
-    sp_repr_css_attr_unref(css);
+    lpe_shape_convert_stroke_and_fill(SP_SHAPE(lpeitem));
 }
 
 void
 LPEPowerStroke::doOnApply(SPLPEItem const* lpeitem)
 {
-    if (SP_IS_SHAPE(lpeitem)) {
+    if (auto shape = dynamic_cast<SPShape const *>(lpeitem)) {
         SPLPEItem* item = const_cast<SPLPEItem*>(lpeitem);
         std::vector<Geom::Point> points;
-        Geom::PathVector const &pathv = pathv_to_linear_and_cubic_beziers(SP_SHAPE(lpeitem)->_curve->get_pathvector());
+        Geom::PathVector const &pathv = pathv_to_linear_and_cubic_beziers(shape->curve()->get_pathvector());
         double width = (lpeitem && lpeitem->style) ? lpeitem->style->stroke_width.computed / 2 : 1.;
         Inkscape::Preferences *prefs = Inkscape::Preferences::get();
         Glib::ustring pref_path_pp = "/live_effects/powerstroke/powerpencil";
@@ -277,36 +253,11 @@ LPEPowerStroke::doOnApply(SPLPEItem const* lpeitem)
 
 void LPEPowerStroke::doOnRemove(SPLPEItem const* lpeitem)
 {
-    if (SP_IS_SHAPE(lpeitem) && !keep_paths) {
-        SPLPEItem *item = const_cast<SPLPEItem*>(lpeitem);
-        SPCSSAttr *css = sp_repr_css_attr_new ();
-        if (lpeitem->style->fill.isPaintserver()) {
-            SPPaintServer * server = lpeitem->style->getFillPaintServer();
-            if (server) {
-                Glib::ustring str;
-                str += "url(#";
-                str += server->getId();
-                str += ")";
-                sp_repr_css_set_property (css, "stroke", str.c_str());
-            }
-        } else if (lpeitem->style->fill.isColor()) {
-            char c[64] = {0};
-            sp_svg_write_color (c, sizeof(c), lpeitem->style->fill.value.color.toRGBA32(SP_SCALE24_TO_FLOAT(lpeitem->style->fill_opacity.value)));
-            sp_repr_css_set_property (css, "stroke", c);
-        } else {
-            sp_repr_css_set_property (css, "stroke", "none");
-        }
+    auto lpeitem_mutable = const_cast<SPLPEItem *>(lpeitem);
+    auto shape = dynamic_cast<SPShape *>(lpeitem_mutable);
 
-        Inkscape::CSSOStringStream os;
-        os << std::abs(offset_points.median_width()) * 2;
-        sp_repr_css_set_property (css, "stroke-width", os.str().c_str());
-
-        sp_repr_css_set_property(css, "fill", "none");
-
-        sp_desktop_apply_css_recursive(item, css, true);
-        sp_repr_css_attr_unref (css);
-
-        item->updateRepr();
+    if (shape && !keep_paths) {
+        lpe_shape_revert_stroke_and_fill(shape, offset_points.median_width() * 2);
     }
 }
 
@@ -371,7 +322,7 @@ static Geom::Path path_from_piecewise_fix_cusps( Geom::Piecewise<Geom::D2<Geom::
                        A 2Geom method was created to do exactly this :)
                        */
 
-                    boost::optional<Geom::Point> O = intersection_point( B[prev_i].at1(), tang1,
+                    std::optional<Geom::Point> O = intersection_point( B[prev_i].at1(), tang1,
                                                                               B[i].at0(), tang2 );
                     if (!O) {
                         // no center found, i.e. 180 degrees round
@@ -442,16 +393,16 @@ static Geom::Path path_from_piecewise_fix_cusps( Geom::Piecewise<Geom::D2<Geom::
                         bool solok = true;
                         bool point0bad = false;
                         bool point1bad = false;
-                        if ( dot(tang2, solutions[0].point() - B[i].at0()) > 0) 
+                        if ( dot(tang2, solutions[0].point() - B[i].at0()) > 0)
                         {
                             // points[0] is bad, choose points[1]
                             point0bad = true;
                         }
-                        if ( dot(tang2, solutions[1].point() - B[i].at0()) > 0) 
-                        { 
+                        if ( dot(tang2, solutions[1].point() - B[i].at0()) > 0)
+                        {
                             // points[1] is bad, choose points[0]
                             point1bad = true;
-                        } 
+                        }
                         if (!point0bad && !point1bad ) {
                             // both points are good, choose nearest
                             sol = ( distanceSq(B[i].at0(), solutions[0].point()) < distanceSq(B[i].at0(), solutions[1].point()) ) ?
@@ -479,7 +430,7 @@ static Geom::Path path_from_piecewise_fix_cusps( Geom::Piecewise<Geom::D2<Geom::
                                 build_from_sbasis(pb,arc0->toSBasis(), tol, false);
                                 build = true;
                             } else if (arc1) {
-                                boost::optional<Geom::Point> p = intersection_point( B[prev_i].at1(), tang1,
+                                std::optional<Geom::Point> p = intersection_point( B[prev_i].at1(), tang1,
                                                                                 B[i].at0(), tang2 );
                                 if (p) {
                                     // check size of miter
@@ -500,7 +451,7 @@ static Geom::Path path_from_piecewise_fix_cusps( Geom::Piecewise<Geom::D2<Geom::
                         }
                         if (!solok || !(arc0 && build)) {
                             // fall back to miter
-                            boost::optional<Geom::Point> p = intersection_point( B[prev_i].at1(), tang1,
+                            std::optional<Geom::Point> p = intersection_point( B[prev_i].at1(), tang1,
                                                                                 B[i].at0(), tang2 );
                             if (p) {
                                 // check size of miter
@@ -523,7 +474,7 @@ static Geom::Path path_from_piecewise_fix_cusps( Geom::Piecewise<Geom::D2<Geom::
                         }
                     } else {
                         // fall back to miter
-                        boost::optional<Geom::Point> p = intersection_point( B[prev_i].at1(), tang1,
+                        std::optional<Geom::Point> p = intersection_point( B[prev_i].at1(), tang1,
                                                                             B[i].at0(), tang2 );
                         if (p) {
                             // check size of miter
@@ -547,7 +498,7 @@ static Geom::Path path_from_piecewise_fix_cusps( Geom::Piecewise<Geom::D2<Geom::
                     break;
                 }
                 case LINEJOIN_MITER: {
-                    boost::optional<Geom::Point> p = intersection_point( B[prev_i].at1(), tang1,
+                    std::optional<Geom::Point> p = intersection_point( B[prev_i].at1(), tang1,
                                                                          B[i].at0(), tang2 );
                     if (p) {
                         // check size of miter
@@ -675,7 +626,7 @@ LPEPowerStroke::doEffect_path (Geom::PathVector const & path_in)
         std::vector<Geom::Point> ts_close;
         //we have only one knot or overwrite before
         Geom::Point start = Geom::Point( pwd2_in.domain().min(), ts.front()[Geom::Y]);
-        Geom::Point end   = Geom::Point( pwd2_in.domain().max(), ts.front()[Geom::Y]); 
+        Geom::Point end   = Geom::Point( pwd2_in.domain().max(), ts.front()[Geom::Y]);
         if (ts.size() > 1) {
             end = Geom::Point(pwd2_in.domain().max(), 0);
             Geom::Point tmpstart(0, 0);
@@ -709,7 +660,7 @@ LPEPowerStroke::doEffect_path (Geom::PathVector const & path_in)
     for (auto & t : ts) {
         t[Geom::X] *= xcoord_scaling;
     }
-    
+
     Geom::Path strokepath = interpolator->interpolateToPath(ts);
     delete interpolator;
 
@@ -831,7 +782,7 @@ void LPEPowerStroke::transform_multiply(Geom::Affine const &postmul, bool /*set*
     offset_points.param_transform_multiply(postmul, false);
 }
 
-void LPEPowerStroke::doAfterEffect(SPLPEItem const *lpeitem)
+void LPEPowerStroke::doAfterEffect(SPLPEItem const *lpeitem, SPCurve *curve)
 {
     if (pathvector_before_effect[0].size() == pathvector_after_effect[0].size()) {
         if (recusion_limit < 6) {

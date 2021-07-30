@@ -9,7 +9,7 @@
 # - ${INKSCAPE_SOURCE_DIR}
 # - ${INKSCAPE_BINARY_DIR}
 
-set(INKSCAPE_REVISION "e86c870879, 2021-01-15")
+set(INKSCAPE_REVISION "unknown")
 
 if(EXISTS ${INKSCAPE_SOURCE_DIR}/.git)
     execute_process(COMMAND git rev-parse --short HEAD

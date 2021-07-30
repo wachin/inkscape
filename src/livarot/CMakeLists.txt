@@ -28,7 +28,6 @@ set(livarot_SRC
 	AVL.h
 	AlphaLigne.h
 	BitLigne.h
-	Livarot.h
 	LivarotDefs.h
 	Path.h
 	Shape.h
@@ -42,3 +41,4 @@ set(livarot_SRC
 )
 
 add_inkscape_lib(livarot_LIB "${livarot_SRC}")
+target_link_libraries(livarot_LIB PUBLIC 2Geom::2geom)

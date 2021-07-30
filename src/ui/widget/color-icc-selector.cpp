@@ -15,6 +15,7 @@
 #include <utility>
 
 #include <gtkmm/adjustment.h>
+#include <gtkmm/spinbutton.h>
 #include <glibmm/i18n.h>
 
 #include "colorspace.h"
@@ -29,10 +30,10 @@
 #include "ui/widget/color-icc-selector.h"
 #include "ui/widget/color-scales.h"
 #include "ui/widget/color-slider.h"
+#include "ui/widget/scrollprotected.h"
 
 #define noDEBUG_LCMS
 
-#if defined(HAVE_LIBLCMS2)
 #include "object/color-profile.h"
 #include "cms-system.h"
 #include "color-profile-cms-fns.h"
@@ -40,7 +41,6 @@
 #ifdef DEBUG_LCMS
 #include "preferences.h"
 #endif // DEBUG_LCMS
-#endif // defined(HAVE_LIBLCMS2)
 
 #ifdef DEBUG_LCMS
 extern guint update_in_progress;
@@ -69,16 +69,20 @@ extern guint update_in_progress;
 
 namespace {
 
+GtkWidget *_scrollprotected_combo_box_new_with_model(GtkTreeModel *model)
+{
+    auto combobox = Gtk::manage(new Inkscape::UI::Widget::ScrollProtected<Gtk::ComboBox>());
+    gtk_combo_box_set_model(combobox->gobj(), model);
+    return GTK_WIDGET(combobox->gobj());
+}
+
 size_t maxColorspaceComponentCount = 0;
 
-#if defined(HAVE_LIBLCMS2)
 
 /**
  * Internal variable to track all known colorspaces.
  */
 std::set<cmsUInt32Number> knownColorspaces;
-
-#endif
 
 /**
  * Helper function to handle GTK2/GTK3 attachment #ifdef code.
@@ -129,7 +133,6 @@ colorspace::Component::Component(std::string name, std::string tip, guint scale)
 {
 }
 
-#if defined(HAVE_LIBLCMS2)
 static cmsUInt16Number *getScratch()
 {
     // bytes per pixel * input channels * width
@@ -203,8 +206,6 @@ std::vector<colorspace::Component> colorspace::getColorSpaceInfo(Inkscape::Color
     return getColorSpaceInfo(asICColorSpaceSig(prof->getColorSpace()));
 }
 
-#endif // defined(HAVE_LIBLCMS2)
-
 namespace Inkscape {
 namespace UI {
 namespace Widget {
@@ -235,7 +236,7 @@ class ComponentUI {
     }
 
     colorspace::Component _component;
-    GtkAdjustment *_adj; // Component adjustment
+    Glib::RefPtr<Gtk::Adjustment> _adj; // Component adjustment
     Inkscape::UI::Widget::ColorSlider *_slider;
     GtkWidget *_btn;   // spinbutton
     GtkWidget *_label; // Label
@@ -251,7 +252,7 @@ class ColorICCSelectorImpl {
 
     ~ColorICCSelectorImpl();
 
-    static void _adjustmentChanged(GtkAdjustment *adjustment, ColorICCSelectorImpl *cs);
+    void _adjustmentChanged(Glib::RefPtr<Gtk::Adjustment> &adjustment);
 
     void _sliderGrabbed();
     void _sliderReleased();
@@ -260,10 +261,9 @@ class ColorICCSelectorImpl {
     static void _profileSelected(GtkWidget *src, gpointer data);
     static void _fixupHit(GtkWidget *src, gpointer data);
 
-#if defined(HAVE_LIBLCMS2)
     void _setProfile(SVGICCColor *profile);
     void _switchToProfile(gchar const *name);
-#endif
+    
     void _updateSliders(gint ignore);
     void _profilesChanged(std::string const &name);
 
@@ -279,17 +279,15 @@ class ColorICCSelectorImpl {
 
     std::vector<ComponentUI> _compUI;
 
-    GtkAdjustment *_adj; // Channel adjustment
+    Glib::RefPtr<Gtk::Adjustment> _adj; // Channel adjustment
     Inkscape::UI::Widget::ColorSlider *_slider;
     GtkWidget *_sbtn;  // Spinbutton
     GtkWidget *_label; // Label
 
-#if defined(HAVE_LIBLCMS2)
     std::string _profileName;
     Inkscape::ColorProfile *_prof;
     guint _profChannelCount;
     gulong _profChangedID;
-#endif // defined(HAVE_LIBLCMS2)
 };
 
 
@@ -328,18 +326,15 @@ ColorICCSelectorImpl::ColorICCSelectorImpl(ColorICCSelector *owner, SelectedColo
     , _slider(nullptr)
     , _sbtn(nullptr)
     , _label(nullptr)
-#if defined(HAVE_LIBLCMS2)
     , _profileName()
     , _prof(nullptr)
     , _profChannelCount(0)
     , _profChangedID(0)
-#endif // defined(HAVE_LIBLCMS2)
 {
 }
 
 ColorICCSelectorImpl::~ColorICCSelectorImpl()
 {
-    _adj = nullptr;
     _sbtn = nullptr;
     _label = nullptr;
 }
@@ -370,11 +365,11 @@ void ColorICCSelector::init()
 
     // Combobox and store with 2 columns : label (0) and full name (1)
     GtkListStore *store = gtk_list_store_new(2, G_TYPE_STRING, G_TYPE_STRING);
-    _impl->_profileSel = gtk_combo_box_new_with_model(GTK_TREE_MODEL(store));
+    _impl->_profileSel = _scrollprotected_combo_box_new_with_model(GTK_TREE_MODEL(store));
 
     GtkCellRenderer *renderer = gtk_cell_renderer_text_new();
     gtk_cell_layout_pack_start(GTK_CELL_LAYOUT(_impl->_profileSel), renderer, TRUE);
-    gtk_cell_layout_set_attributes(GTK_CELL_LAYOUT(_impl->_profileSel), renderer, "text", 0, NULL);
+    gtk_cell_layout_set_attributes(GTK_CELL_LAYOUT(_impl->_profileSel), renderer, "text", 0, nullptr);
 
     GtkTreeIter iter;
     gtk_list_store_append(store, &iter);
@@ -385,23 +380,15 @@ void ColorICCSelector::init()
 
     attachToGridOrTable(t, _impl->_profileSel, 1, row, 1, 1);
 
-#if defined(HAVE_LIBLCMS2)
     _impl->_profChangedID = g_signal_connect(G_OBJECT(_impl->_profileSel), "changed",
                                              G_CALLBACK(ColorICCSelectorImpl::_profileSelected), (gpointer)_impl);
-#else
-    gtk_widget_set_sensitive(_impl->_profileSel, false);
-#endif // defined(HAVE_LIBLCMS2)
-
 
     row++;
 
 // populate the data for colorspaces and channels:
-#if defined(HAVE_LIBLCMS2)
     std::vector<colorspace::Component> things = colorspace::getColorSpaceInfo(cmsSigRgbData);
-#endif // defined(HAVE_LIBLCMS2)
 
     for (size_t i = 0; i < maxColorspaceComponentCount; i++) {
-#if defined(HAVE_LIBLCMS2)
         if (i < things.size()) {
             _impl->_compUI.emplace_back(things[i]);
         }
@@ -410,12 +397,7 @@ void ColorICCSelector::init()
         }
 
         std::string labelStr = (i < things.size()) ? things[i].name.c_str() : "";
-#else
-        _impl->_compUI.push_back(ComponentUI());
-
-        std::string labelStr = ".";
-#endif
-
+        
         _impl->_compUI[i]._label = gtk_label_new_with_mnemonic(labelStr.c_str());
 
         gtk_widget_set_halign(_impl->_compUI[i]._label, GTK_ALIGN_END);
@@ -429,27 +411,20 @@ void ColorICCSelector::init()
         gdouble step = static_cast<gdouble>(scaleValue) / 100.0;
         gdouble page = static_cast<gdouble>(scaleValue) / 10.0;
         gint digits = (step > 0.9) ? 0 : 2;
-        _impl->_compUI[i]._adj = GTK_ADJUSTMENT(gtk_adjustment_new(0.0, 0.0, scaleValue, step, page, page));
+        _impl->_compUI[i]._adj = Gtk::Adjustment::create(0.0, 0.0, scaleValue, step, page, page);
 
         // Slider
         _impl->_compUI[i]._slider =
-            Gtk::manage(new Inkscape::UI::Widget::ColorSlider(Glib::wrap(_impl->_compUI[i]._adj, true)));
-#if defined(HAVE_LIBLCMS2)
+            Gtk::manage(new Inkscape::UI::Widget::ColorSlider(_impl->_compUI[i]._adj));
         _impl->_compUI[i]._slider->set_tooltip_text((i < things.size()) ? things[i].tip.c_str() : "");
-#else
-        _impl->_compUI[i]._slider->set_tooltip_text(".");
-#endif // defined(HAVE_LIBLCMS2)
         _impl->_compUI[i]._slider->show();
         _impl->_compUI[i]._slider->set_no_show_all();
 
         attachToGridOrTable(t, _impl->_compUI[i]._slider->gobj(), 1, row, 1, 1, true);
 
-        _impl->_compUI[i]._btn = gtk_spin_button_new(_impl->_compUI[i]._adj, step, digits);
-#if defined(HAVE_LIBLCMS2)
+        auto spinbutton = Gtk::manage(new ScrollProtected<Gtk::SpinButton>(_impl->_compUI[i]._adj, step, digits));
+        _impl->_compUI[i]._btn = GTK_WIDGET(spinbutton->gobj());
         gtk_widget_set_tooltip_text(_impl->_compUI[i]._btn, (i < things.size()) ? things[i].tip.c_str() : "");
-#else
-        gtk_widget_set_tooltip_text(_impl->_compUI[i]._btn, ".");
-#endif // defined(HAVE_LIBLCMS2)
         sp_dialog_defocus_on_enter(_impl->_compUI[i]._btn);
         gtk_label_set_mnemonic_widget(GTK_LABEL(_impl->_compUI[i]._label), _impl->_compUI[i]._btn);
         gtk_widget_show(_impl->_compUI[i]._btn);
@@ -462,8 +437,7 @@ void ColorICCSelector::init()
 
 
         // Signals
-        g_signal_connect(G_OBJECT(_impl->_compUI[i]._adj), "value_changed",
-                         G_CALLBACK(ColorICCSelectorImpl::_adjustmentChanged), _impl);
+        _impl->_compUI[i]._adj->signal_value_changed().connect(sigc::bind(sigc::mem_fun(_impl, &ColorICCSelectorImpl::_adjustmentChanged), _impl->_compUI[i]._adj));
 
         _impl->_compUI[i]._slider->signal_grabbed.connect(sigc::mem_fun(_impl, &ColorICCSelectorImpl::_sliderGrabbed));
         _impl->_compUI[i]._slider->signal_released.connect(
@@ -483,10 +457,10 @@ void ColorICCSelector::init()
     attachToGridOrTable(t, _impl->_label, 0, row, 1, 1);
 
     // Adjustment
-    _impl->_adj = GTK_ADJUSTMENT(gtk_adjustment_new(0.0, 0.0, 100.0, 1.0, 10.0, 10.0));
+    _impl->_adj = Gtk::Adjustment::create(0.0, 0.0, 100.0, 1.0, 10.0, 10.0);
 
     // Slider
-    _impl->_slider = Gtk::manage(new Inkscape::UI::Widget::ColorSlider(Glib::wrap(_impl->_adj, true)));
+    _impl->_slider = Gtk::manage(new Inkscape::UI::Widget::ColorSlider(_impl->_adj));
     _impl->_slider->set_tooltip_text(_("Alpha (opacity)"));
     _impl->_slider->show();
 
@@ -497,7 +471,8 @@ void ColorICCSelector::init()
 
 
     // Spinbutton
-    _impl->_sbtn = gtk_spin_button_new(GTK_ADJUSTMENT(_impl->_adj), 1.0, 0);
+    auto spinbuttonalpha = Gtk::manage(new ScrollProtected<Gtk::SpinButton>(_impl->_adj, 1.0));
+    _impl->_sbtn = GTK_WIDGET(spinbuttonalpha->gobj());
     gtk_widget_set_tooltip_text(_impl->_sbtn, _("Alpha (opacity)"));
     sp_dialog_defocus_on_enter(_impl->_sbtn);
     gtk_label_set_mnemonic_widget(GTK_LABEL(_impl->_label), _impl->_sbtn);
@@ -506,8 +481,7 @@ void ColorICCSelector::init()
     attachToGridOrTable(t, _impl->_sbtn, 2, row, 1, 1, false, true);
 
     // Signals
-    g_signal_connect(G_OBJECT(_impl->_adj), "value_changed", G_CALLBACK(ColorICCSelectorImpl::_adjustmentChanged),
-                     _impl);
+    _impl->_adj->signal_value_changed().connect(sigc::bind(sigc::mem_fun(_impl, &ColorICCSelectorImpl::_adjustmentChanged), _impl->_adj));
 
     _impl->_slider->signal_grabbed.connect(sigc::mem_fun(_impl, &ColorICCSelectorImpl::_sliderGrabbed));
     _impl->_slider->signal_released.connect(sigc::mem_fun(_impl, &ColorICCSelectorImpl::_sliderReleased));
@@ -520,10 +494,9 @@ void ColorICCSelectorImpl::_fixupHit(GtkWidget * /*src*/, gpointer data)
 {
     ColorICCSelectorImpl *self = reinterpret_cast<ColorICCSelectorImpl *>(data);
     gtk_widget_set_sensitive(self->_fixupBtn, FALSE);
-    self->_adjustmentChanged(self->_compUI[0]._adj, self);
+    self->_adjustmentChanged(self->_compUI[0]._adj);
 }
 
-#if defined(HAVE_LIBLCMS2)
 void ColorICCSelectorImpl::_profileSelected(GtkWidget * /*src*/, gpointer data)
 {
     ColorICCSelectorImpl *self = reinterpret_cast<ColorICCSelectorImpl *>(data);
@@ -540,9 +513,7 @@ void ColorICCSelectorImpl::_profileSelected(GtkWidget * /*src*/, gpointer data)
         g_free(name);
     }
 }
-#endif // defined(HAVE_LIBLCMS2)
 
-#if defined(HAVE_LIBLCMS2)
 void ColorICCSelectorImpl::_switchToProfile(gchar const *name)
 {
     bool dirty = false;
@@ -583,9 +554,7 @@ void ColorICCSelectorImpl::_switchToProfile(gchar const *name)
 #ifdef DEBUG_LCMS
                     g_message("got on out [%04x] [%04x] [%04x] [%04x]", post[0], post[1], post[2], post[3]);
 #endif // DEBUG_LCMS
-#if HAVE_LIBLCMS2
                     guint count = cmsChannelsOf(asICColorSpaceSig(newProf->getColorSpace()));
-#endif
 
                     std::vector<colorspace::Component> things =
                         colorspace::getColorSpaceInfo(asICColorSpaceSig(newProf->getColorSpace()));
@@ -642,9 +611,7 @@ void ColorICCSelectorImpl::_switchToProfile(gchar const *name)
 #endif // DEBUG_LCMS
     }
 }
-#endif // defined(HAVE_LIBLCMS2)
 
-#if defined(HAVE_LIBLCMS2)
 struct _cmp {
   bool operator()(const SPObject * const & a, const SPObject * const & b)
   {
@@ -680,7 +647,7 @@ void ColorICCSelectorImpl::_profilesChanged(std::string const &name)
     int index = 1;
     std::vector<SPObject *> current = SP_ACTIVE_DOCUMENT->getResourceList("iccprofile");
 
-    std::set<Inkscape::ColorProfile *, Inkscape::ColorProfile::pointerComparator> _current;
+    std::set<Inkscape::ColorProfile *> _current;
     std::transform(current.begin(),
                    current.end(),
                    std::inserter(_current, _current.begin()),
@@ -702,9 +669,6 @@ void ColorICCSelectorImpl::_profilesChanged(std::string const &name)
 
     g_signal_handler_unblock(G_OBJECT(_profileSel), _profChangedID);
 }
-#else
-void ColorICCSelectorImpl::_profilesChanged(std::string const & /*name*/) {}
-#endif // defined(HAVE_LIBLCMS2)
 
 void ColorICCSelector::on_show()
 {
@@ -732,7 +696,6 @@ void ColorICCSelector::_colorChanged()
     _impl->_profilesChanged((_impl->_color.color().icc) ? _impl->_color.color().icc->colorProfile : std::string(""));
     ColorScales::setScaled(_impl->_adj, _impl->_color.alpha());
 
-#if defined(HAVE_LIBLCMS2)
     _impl->_setProfile(_impl->_color.color().icc);
     _impl->_fixupNeeded = 0;
     gtk_widget_set_sensitive(_impl->_fixupBtn, FALSE);
@@ -769,9 +732,6 @@ void ColorICCSelector::_colorChanged()
             }
         }
     }
-#else
-//(void)color;
-#endif // defined(HAVE_LIBLCMS2)
     _impl->_updateSliders(-1);
 
 
@@ -781,7 +741,6 @@ void ColorICCSelector::_colorChanged()
 #endif // DEBUG_LCMS
 }
 
-#if defined(HAVE_LIBLCMS2)
 void ColorICCSelectorImpl::_setProfile(SVGICCColor *profile)
 {
 #ifdef DEBUG_LCMS
@@ -808,9 +767,7 @@ void ColorICCSelectorImpl::_setProfile(SVGICCColor *profile)
     if (profile) {
         _prof = SP_ACTIVE_DOCUMENT->getProfileManager()->find(profile->colorProfile.c_str());
         if (_prof && (asICColorProfileClassSig(_prof->getProfileClass()) != cmsSigNamedColorClass)) {
-#if HAVE_LIBLCMS2
             _profChannelCount = cmsChannelsOf(asICColorSpaceSig(_prof->getColorSpace()));
-#endif
 
             if (profChanged) {
                 std::vector<colorspace::Component> things =
@@ -864,11 +821,9 @@ void ColorICCSelectorImpl::_setProfile(SVGICCColor *profile)
     g_message("\\_________  %p::_setProfile()", this);
 #endif // DEBUG_LCMS
 }
-#endif // defined(HAVE_LIBLCMS2)
 
 void ColorICCSelectorImpl::_updateSliders(gint ignore)
 {
-#if defined(HAVE_LIBLCMS2)
     if (_color.color().icc) {
         for (guint i = 0; i < _profChannelCount; i++) {
             gdouble val = 0.0;
@@ -880,7 +835,7 @@ void ColorICCSelectorImpl::_updateSliders(gint ignore)
                     val = _color.color().icc->colors[i] / static_cast<gdouble>(_compUI[i]._component.scale);
                 }
             }
-            gtk_adjustment_set_value(_compUI[i]._adj, val);
+            _compUI[i]._adj->set_value(val);
         }
 
         if (_prof) {
@@ -918,9 +873,6 @@ void ColorICCSelectorImpl::_updateSliders(gint ignore)
             }
         }
     }
-#else
-    (void)ignore;
-#endif // defined(HAVE_LIBLCMS2)
 
     guint32 start = _color.color().toRGBA32(0x00);
     guint32 mid = _color.color().toRGBA32(0x7f);
@@ -930,13 +882,13 @@ void ColorICCSelectorImpl::_updateSliders(gint ignore)
 }
 
 
-void ColorICCSelectorImpl::_adjustmentChanged(GtkAdjustment *adjustment, ColorICCSelectorImpl *cs)
+void ColorICCSelectorImpl::_adjustmentChanged(Glib::RefPtr<Gtk::Adjustment> &adjustment)
 {
 #ifdef DEBUG_LCMS
-    g_message("/^^^^^^^^^  %p::_adjustmentChanged()", cs);
+    g_message("/^^^^^^^^^  %p::_adjustmentChanged()", this);
 #endif // DEBUG_LCMS
 
-    ColorICCSelector *iccSelector = cs->_owner;
+    ColorICCSelector *iccSelector = _owner;
     if (iccSelector->_impl->_updating) {
         return;
     }
@@ -953,7 +905,6 @@ void ColorICCSelectorImpl::_adjustmentChanged(GtkAdjustment *adjustment, ColorIC
 #endif // DEBUG_LCMS
     }
     else {
-#if defined(HAVE_LIBLCMS2)
         for (size_t i = 0; i < iccSelector->_impl->_compUI.size(); i++) {
             if (iccSelector->_impl->_compUI[i]._adj == adjustment) {
                 match = i;
@@ -1003,7 +954,6 @@ void ColorICCSelectorImpl::_adjustmentChanged(GtkAdjustment *adjustment, ColorIC
                 newColor.icc->colors.push_back(val);
             }
         }
-#endif // defined(HAVE_LIBLCMS2)
     }
     iccSelector->_impl->_color.setColorAlpha(newColor, scaled);
     // iccSelector->_updateInternals( newColor, scaled, iccSelector->_impl->_dragging );

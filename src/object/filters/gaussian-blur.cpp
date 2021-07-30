@@ -38,7 +38,7 @@ SPGaussianBlur::~SPGaussianBlur() = default;
 void SPGaussianBlur::build(SPDocument *document, Inkscape::XML::Node *repr) {
 	SPFilterPrimitive::build(document, repr);
 
-    this->readAttr( "stdDeviation" );
+    this->readAttr(SPAttr::STDDEVIATION);
 }
 
 /**
@@ -51,9 +51,9 @@ void SPGaussianBlur::release() {
 /**
  * Sets a specific value in the SPGaussianBlur.
  */
-void SPGaussianBlur::set(SPAttributeEnum key, gchar const *value) {
+void SPGaussianBlur::set(SPAttr key, gchar const *value) {
     switch(key) {
-        case SP_ATTR_STDDEVIATION:
+        case SPAttr::STDDEVIATION:
             this->stdDeviation.set(value);
             this->parent->requestModified(SP_OBJECT_MODIFIED_FLAG);
             break;
@@ -68,7 +68,7 @@ void SPGaussianBlur::set(SPAttributeEnum key, gchar const *value) {
  */
 void SPGaussianBlur::update(SPCtx *ctx, guint flags) {
     if (flags & SP_OBJECT_MODIFIED_FLAG) {
-        this->readAttr( "stdDeviation" );
+        this->readAttr(SPAttr::STDDEVIATION);
     }
 
     SPFilterPrimitive::update(ctx, flags);
@@ -118,6 +118,24 @@ void SPGaussianBlur::build_renderer(Inkscape::Filters::Filter* filter) {
             nr_blur->set_deviation((double) num);
         }
     }
+}
+
+/* Calculate the region taken up by gaussian blur
+ *
+ * @param region The original shape's region or previous primitive's region output.
+ */
+Geom::Rect SPGaussianBlur::calculate_region(Geom::Rect region)
+{
+    double x = this->stdDeviation.getNumber();
+    double y = this->stdDeviation.getOptNumber();
+    if (y == -1.0)
+        y = x;
+    // If not within the default 10% margin (see
+    // http://www.w3.org/TR/SVG11/filters.html#FilterEffectsRegion), specify margins
+    // The 2.4 is an empirical coefficient: at that distance the cutoff is practically invisible
+    // (the opacity at 2.4 * radius is about 3e-3)
+    region.expandBy(2.4 * x, 2.4 * y);
+    return region;
 }
 
 /*

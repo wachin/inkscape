@@ -12,12 +12,12 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
+// Declared in shape-editor.cpp.
+
 #include <glibmm/i18n.h>
 
 #include "preferences.h"
 #include "desktop.h"
-#include "knotholder.h"
-#include "knot-holder-entity.h"
 #include "style.h"
 
 #include "live_effects/effect.h"
@@ -35,6 +35,9 @@
 #include "object/sp-text.h"
 #include "object/sp-textpath.h"
 #include "object/sp-tspan.h"
+
+#include "ui/knot/knot-holder.h"
+#include "ui/knot/knot-holder-entity.h"
 
 class RectKnotHolder : public KnotHolder {
 public:
@@ -556,29 +559,24 @@ RectKnotHolder::RectKnotHolder(SPDesktop *desktop, SPItem *item, SPKnotHolderRel
     RectKnotHolderEntityXY *entity_xy = new RectKnotHolderEntityXY();
     RectKnotHolderEntityCenter *entity_center = new RectKnotHolderEntityCenter();
 
-    entity_rx->create(desktop, item, this, Inkscape::CTRL_TYPE_ROTATE,
+    entity_rx->create(desktop, item, this, Inkscape::CANVAS_ITEM_CTRL_TYPE_ROTATE, "Rect:rx",
                       _("Adjust the <b>horizontal rounding</b> radius; with <b>Ctrl</b> "
-                        "to make the vertical radius the same"),
-                      SP_KNOT_SHAPE_CIRCLE, SP_KNOT_MODE_XOR);
+                        "to make the vertical radius the same"));
 
-    entity_ry->create(desktop, item, this, Inkscape::CTRL_TYPE_ROTATE,
+    entity_ry->create(desktop, item, this, Inkscape::CANVAS_ITEM_CTRL_TYPE_ROTATE, "Rect:ry",
                       _("Adjust the <b>vertical rounding</b> radius; with <b>Ctrl</b> "
-                        "to make the horizontal radius the same"),
-                      SP_KNOT_SHAPE_CIRCLE, SP_KNOT_MODE_XOR);
+                        "to make the horizontal radius the same"));
 
-    entity_wh->create(desktop, item, this, Inkscape::CTRL_TYPE_SIZER,
+    entity_wh->create(desktop, item, this, Inkscape::CANVAS_ITEM_CTRL_TYPE_SIZER, "Rect:wh",
                       _("Adjust the <b>width and height</b> of the rectangle; with <b>Ctrl</b> "
-                        "to lock ratio or stretch in one dimension only"),
-                      SP_KNOT_SHAPE_SQUARE, SP_KNOT_MODE_XOR);
+                        "to lock ratio or stretch in one dimension only"));
 
-    entity_xy->create(desktop, item, this, Inkscape::CTRL_TYPE_SIZER,
+    entity_xy->create(desktop, item, this, Inkscape::CANVAS_ITEM_CTRL_TYPE_SIZER, "Rect:xy",
                       _("Adjust the <b>width and height</b> of the rectangle; with <b>Ctrl</b> "
-                        "to lock ratio or stretch in one dimension only"),
-                      SP_KNOT_SHAPE_SQUARE, SP_KNOT_MODE_XOR);
+                        "to lock ratio or stretch in one dimension only"));
 
-    entity_center->create(desktop, item, this, Inkscape::CTRL_TYPE_POINT,
-                          _("Drag to move the rectangle"),
-                          SP_KNOT_SHAPE_CROSS);
+    entity_center->create(desktop, item, this, Inkscape::CANVAS_ITEM_CTRL_TYPE_POINT, "Rect:center",
+                          _("Drag to move the rectangle"));
 
     entity.push_back(entity_rx);
     entity.push_back(entity_ry);
@@ -606,7 +604,7 @@ Box3DKnotHolderEntity::knot_get_generic(SPItem *item, unsigned int knot_id) cons
 {
     SPBox3D *box = dynamic_cast<SPBox3D *>(item);
     if (box) {
-        return box3d_get_corner_screen(box, knot_id);
+        return box->get_corner_screen(knot_id);
     } else {
         return Geom::Point(); // TODO investigate proper fallback
     }
@@ -629,9 +627,9 @@ Box3DKnotHolderEntity::knot_set_generic(SPItem *item, unsigned int knot_id, Geom
         movement = Box3D::Z;
     }
 
-    box3d_set_corner (box, knot_id, s * i2dt, movement, (state & GDK_CONTROL_MASK));
-    box3d_set_z_orders(box);
-    box3d_position_set(box);
+    box->set_corner (knot_id, s * i2dt, movement, (state & GDK_CONTROL_MASK));
+    box->set_z_orders();
+    box->position_set();
 }
 
 class Box3DKnotHolderEntity0 : public Box3DKnotHolderEntity {
@@ -750,7 +748,7 @@ Box3DKnotHolderEntityCenter::knot_get() const
 {
     SPBox3D *box = dynamic_cast<SPBox3D *>(item);
     if (box) {
-        return box3d_get_center_screen(box);
+        return box->get_center_screen();
     } else {
         return Geom::Point(); // TODO investigate proper fallback
     }
@@ -813,11 +811,11 @@ Box3DKnotHolderEntityCenter::knot_set(Geom::Point const &new_pos, Geom::Point co
     g_assert(box != nullptr);
     Geom::Affine const i2dt (item->i2dt_affine ());
 
-    box3d_set_center(box, s * i2dt, origin * i2dt, !(state & GDK_SHIFT_MASK) ? Box3D::XY : Box3D::Z,
-                      state & GDK_CONTROL_MASK);
+    box->set_center(s * i2dt, origin * i2dt, !(state & GDK_SHIFT_MASK) ? Box3D::XY : Box3D::Z,
+                    state & GDK_CONTROL_MASK);
 
-    box3d_set_z_orders(box);
-    box3d_position_set(box);
+    box->set_z_orders();
+    box->position_set();
 }
 
 Box3DKnotHolder::Box3DKnotHolder(SPDesktop *desktop, SPItem *item, SPKnotHolderReleasedFunc relhandler) :
@@ -833,41 +831,40 @@ Box3DKnotHolder::Box3DKnotHolder(SPDesktop *desktop, SPItem *item, SPKnotHolderR
     Box3DKnotHolderEntity7 *entity_corner7 = new Box3DKnotHolderEntity7();
     Box3DKnotHolderEntityCenter *entity_center = new Box3DKnotHolderEntityCenter();
 
-    entity_corner0->create(desktop, item, this, Inkscape::CTRL_TYPE_SHAPER,
+    entity_corner0->create(desktop, item, this, Inkscape::CANVAS_ITEM_CTRL_TYPE_SHAPER, "Box3D:corner0",
                            _("Resize box in X/Y direction; with <b>Shift</b> along the Z axis; "
                              "with <b>Ctrl</b> to constrain to the directions of edges or diagonals"));
 
-    entity_corner1->create(desktop, item, this, Inkscape::CTRL_TYPE_SHAPER,
+    entity_corner1->create(desktop, item, this, Inkscape::CANVAS_ITEM_CTRL_TYPE_SHAPER, "Box3D:corner1",
                            _("Resize box in X/Y direction; with <b>Shift</b> along the Z axis; "
                              "with <b>Ctrl</b> to constrain to the directions of edges or diagonals"));
 
-    entity_corner2->create(desktop, item, this, Inkscape::CTRL_TYPE_SHAPER,
+    entity_corner2->create(desktop, item, this, Inkscape::CANVAS_ITEM_CTRL_TYPE_SHAPER, "Box3D:corner2",
                            _("Resize box in X/Y direction; with <b>Shift</b> along the Z axis; "
                              "with <b>Ctrl</b> to constrain to the directions of edges or diagonals"));
 
-    entity_corner3->create(desktop, item, this, Inkscape::CTRL_TYPE_SHAPER,
+    entity_corner3->create(desktop, item, this, Inkscape::CANVAS_ITEM_CTRL_TYPE_SHAPER, "Box3D:corner3",
                            _("Resize box in X/Y direction; with <b>Shift</b> along the Z axis; "
                              "with <b>Ctrl</b> to constrain to the directions of edges or diagonals"));
 
-    entity_corner4->create(desktop, item, this, Inkscape::CTRL_TYPE_SHAPER,
+    entity_corner4->create(desktop, item, this, Inkscape::CANVAS_ITEM_CTRL_TYPE_SHAPER, "Box3D:corner4",
                      _("Resize box along the Z axis; with <b>Shift</b> in X/Y direction; "
                        "with <b>Ctrl</b> to constrain to the directions of edges or diagonals"));
 
-    entity_corner5->create(desktop, item, this, Inkscape::CTRL_TYPE_SHAPER,
+    entity_corner5->create(desktop, item, this, Inkscape::CANVAS_ITEM_CTRL_TYPE_SHAPER, "Box3D:corner5",
                      _("Resize box along the Z axis; with <b>Shift</b> in X/Y direction; "
                        "with <b>Ctrl</b> to constrain to the directions of edges or diagonals"));
 
-    entity_corner6->create(desktop, item, this, Inkscape::CTRL_TYPE_SHAPER,
+    entity_corner6->create(desktop, item, this, Inkscape::CANVAS_ITEM_CTRL_TYPE_SHAPER, "Box3D:corner6",
                      _("Resize box along the Z axis; with <b>Shift</b> in X/Y direction; "
                        "with <b>Ctrl</b> to constrain to the directions of edges or diagonals"));
 
-    entity_corner7->create(desktop, item, this, Inkscape::CTRL_TYPE_SHAPER,
+    entity_corner7->create(desktop, item, this, Inkscape::CANVAS_ITEM_CTRL_TYPE_SHAPER, "Box3D:corner7",
                      _("Resize box along the Z axis; with <b>Shift</b> in X/Y direction; "
                        "with <b>Ctrl</b> to constrain to the directions of edges or diagonals"));
 
-    entity_center->create(desktop, item, this, Inkscape::CTRL_TYPE_POINT,
-                          _("Move the box in perspective"),
-                          SP_KNOT_SHAPE_CROSS);
+    entity_center->create(desktop, item, this, Inkscape::CANVAS_ITEM_CTRL_TYPE_POINT, "Box3D:center",
+                          _("Move the box in perspective"));
 
     entity.push_back(entity_corner0);
     entity.push_back(entity_corner1);
@@ -1160,29 +1157,24 @@ ArcKnotHolder::ArcKnotHolder(SPDesktop *desktop, SPItem *item, SPKnotHolderRelea
     ArcKnotHolderEntityEnd *entity_end = new ArcKnotHolderEntityEnd();
     ArcKnotHolderEntityCenter *entity_center = new ArcKnotHolderEntityCenter();
 
-    entity_rx->create(desktop, item, this, Inkscape::CTRL_TYPE_SIZER,
-                      _("Adjust ellipse <b>width</b>, with <b>Ctrl</b> to make circle"),
-                      SP_KNOT_SHAPE_SQUARE, SP_KNOT_MODE_XOR);
+    entity_rx->create(desktop, item, this, Inkscape::CANVAS_ITEM_CTRL_TYPE_SIZER, "Arc:rx",
+                      _("Adjust ellipse <b>width</b>, with <b>Ctrl</b> to make circle"));
 
-    entity_ry->create(desktop, item, this, Inkscape::CTRL_TYPE_SIZER,
-                      _("Adjust ellipse <b>height</b>, with <b>Ctrl</b> to make circle"),
-                      SP_KNOT_SHAPE_SQUARE, SP_KNOT_MODE_XOR);
+    entity_ry->create(desktop, item, this, Inkscape::CANVAS_ITEM_CTRL_TYPE_SIZER, "Arc:ry",
+                      _("Adjust ellipse <b>height</b>, with <b>Ctrl</b> to make circle"));
 
-    entity_start->create(desktop, item, this, Inkscape::CTRL_TYPE_ROTATE,
+    entity_start->create(desktop, item, this, Inkscape::CANVAS_ITEM_CTRL_TYPE_ROTATE, "Arc:start",
                          _("Position the <b>start point</b> of the arc or segment; with <b>Shift</b> to move "
                            "with <b>end point</b>; with <b>Ctrl</b> to snap angle; drag <b>inside</b> the "
-                           "ellipse for arc, <b>outside</b> for segment"),
-                         SP_KNOT_SHAPE_CIRCLE, SP_KNOT_MODE_XOR);
+                           "ellipse for arc, <b>outside</b> for segment"));
 
-    entity_end->create(desktop, item, this, Inkscape::CTRL_TYPE_ROTATE,
+    entity_end->create(desktop, item, this, Inkscape::CANVAS_ITEM_CTRL_TYPE_ROTATE, "Arc:end",
                        _("Position the <b>end point</b> of the arc or segment; with <b>Shift</b> to move "
                          "with <b>start point</b>; with <b>Ctrl</b> to snap angle; drag <b>inside</b> the "
-                         "ellipse for arc, <b>outside</b> for segment"),
-                       SP_KNOT_SHAPE_CIRCLE, SP_KNOT_MODE_XOR);
+                         "ellipse for arc, <b>outside</b> for segment"));
 
-    entity_center->create(desktop, item, this, Inkscape::CTRL_TYPE_POINT,
-                          _("Drag to move the ellipse"),
-                          SP_KNOT_SHAPE_CROSS);
+    entity_center->create(desktop, item, this, Inkscape::CANVAS_ITEM_CTRL_TYPE_POINT, "Arc:center",
+                          _("Drag to move the ellipse"));
 
     entity.push_back(entity_rx);
     entity.push_back(entity_ry);
@@ -1358,7 +1350,7 @@ StarKnotHolder::StarKnotHolder(SPDesktop *desktop, SPItem *item, SPKnotHolderRel
     g_assert(item != nullptr);
 
     StarKnotHolderEntity1 *entity1 = new StarKnotHolderEntity1();
-    entity1->create(desktop, item, this, Inkscape::CTRL_TYPE_SHAPER,
+    entity1->create(desktop, item, this, Inkscape::CANVAS_ITEM_CTRL_TYPE_SHAPER, "Star:entity1",
                     _("Adjust the <b>tip radius</b> of the star or polygon; "
                       "with <b>Shift</b> to round; with <b>Alt</b> to randomize"));
 
@@ -1366,16 +1358,15 @@ StarKnotHolder::StarKnotHolder(SPDesktop *desktop, SPItem *item, SPKnotHolderRel
 
     if (star->flatsided == false) {
         StarKnotHolderEntity2 *entity2 = new StarKnotHolderEntity2();
-        entity2->create(desktop, item, this, Inkscape::CTRL_TYPE_SHAPER,
+        entity2->create(desktop, item, this, Inkscape::CANVAS_ITEM_CTRL_TYPE_SHAPER, "Star:entity2",
                         _("Adjust the <b>base radius</b> of the star; with <b>Ctrl</b> to keep star rays "
                           "radial (no skew); with <b>Shift</b> to round; with <b>Alt</b> to randomize"));
         entity.push_back(entity2);
     }
 
     StarKnotHolderEntityCenter *entity_center = new StarKnotHolderEntityCenter();
-    entity_center->create(desktop, item, this, Inkscape::CTRL_TYPE_POINT,
-                          _("Drag to move the star"),
-                          SP_KNOT_SHAPE_CROSS);
+    entity_center->create(desktop, item, this, Inkscape::CANVAS_ITEM_CTRL_TYPE_POINT, "Star:center",
+                          _("Drag to move the star"));
     entity.push_back(entity_center);
 
     add_pattern_knotholder();
@@ -1616,15 +1607,14 @@ SpiralKnotHolder::SpiralKnotHolder(SPDesktop *desktop, SPItem *item, SPKnotHolde
     //
     // So, create entity_inner AFTER entity_center; this ensures that
     // entity_inner gets rendered ON TOP.
-    entity_center->create(desktop, item, this, Inkscape::CTRL_TYPE_POINT,
-                          _("Drag to move the spiral"),
-                          SP_KNOT_SHAPE_CROSS);
+    entity_center->create(desktop, item, this, Inkscape::CANVAS_ITEM_CTRL_TYPE_POINT, "Spiral:center",
+                          _("Drag to move the spiral"));
 
-    entity_inner->create(desktop, item, this, Inkscape::CTRL_TYPE_SHAPER,
+    entity_inner->create(desktop, item, this, Inkscape::CANVAS_ITEM_CTRL_TYPE_SHAPER, "Spiral:inner",
                          _("Roll/unroll the spiral from <b>inside</b>; with <b>Ctrl</b> to snap angle; "
                            "with <b>Alt</b> to converge/diverge"));
 
-    entity_outer->create(desktop, item, this, Inkscape::CTRL_TYPE_SHAPER,
+    entity_outer->create(desktop, item, this, Inkscape::CANVAS_ITEM_CTRL_TYPE_SHAPER, "Spiral:outer",
                          _("Roll/unroll the spiral from <b>outside</b>; with <b>Ctrl</b> to snap angle; "
                            "with <b>Shift</b> to scale/rotate; with <b>Alt</b> to lock radius"));
 
@@ -1676,7 +1666,7 @@ OffsetKnotHolder::OffsetKnotHolder(SPDesktop *desktop, SPItem *item, SPKnotHolde
     KnotHolder(desktop, item, relhandler)
 {
     OffsetKnotHolderEntity *entity_offset = new OffsetKnotHolderEntity();
-    entity_offset->create(desktop, item, this, Inkscape::CTRL_TYPE_SHAPER,
+    entity_offset->create(desktop, item, this, Inkscape::CANVAS_ITEM_CTRL_TYPE_SHAPER, "Offset:entity",
                           _("Adjust the <b>offset distance</b>"));
     entity.push_back(entity_offset);
 
@@ -1854,6 +1844,113 @@ TextKnotHolderEntityInlineSize::knot_click(unsigned int state)
     }
 }
 
+/**
+ * Shape padding editor knot positioned top right corner of first object
+ */
+class TextKnotHolderEntityShapePadding : public KnotHolderEntity {
+public:
+    Geom::Point knot_get() const override;
+    void knot_ungrabbed(Geom::Point const &p, Geom::Point const &origin, guint state) override {};
+    void knot_set(Geom::Point const &p, Geom::Point const &origin, unsigned int state) override;
+};
+
+Geom::Point
+TextKnotHolderEntityShapePadding::knot_get() const
+{
+    SPText *text = dynamic_cast<SPText *>(item);
+    g_assert(text != nullptr);
+    Geom::Point corner;
+    if (text->has_shape_inside()) {
+        auto shape = text->get_first_shape_dependency();
+        Geom::OptRect bounds = shape->geometricBounds();
+        if (bounds) {
+            corner = (*bounds).corner(1);
+            if (text->style->shape_padding.set) {
+                auto padding = text->style->shape_padding.computed;
+                corner *= Geom::Affine(Geom::Translate(-padding, padding));
+            }
+            corner *= shape->transform;
+        }
+    }
+    return corner;
+}
+
+void
+TextKnotHolderEntityShapePadding::knot_set(Geom::Point const &p, Geom::Point const &/*origin*/, unsigned int state)
+{
+    // Text in a shape: rectangle
+    SPText *text = dynamic_cast<SPText *>(item);
+
+    if (text->has_shape_inside()) {
+        auto shape = text->get_first_shape_dependency();
+        Geom::OptRect bounds = shape->geometricBounds();
+        if (bounds) {
+            Geom::Point const point_a = snap_knot_position(p, state);
+            Geom::Point point_b = point_a * shape->transform.inverse();
+            auto padding = (*bounds).corner(1)[Geom::X] - point_b[Geom::X];
+            gchar *pad = g_strdup_printf("%f", padding);
+            text->style->shape_padding.read(pad);
+            g_free(pad);
+
+            text->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG);
+            text->updateRepr();
+        }
+    }
+}
+
+
+/**
+ * Shape margin editor knot positioned top right corner of each object
+ */
+class TextKnotHolderEntityShapeMargin : public KnotHolderEntity {
+public:
+    Geom::Point knot_get() const override;
+    void knot_ungrabbed(Geom::Point const &p, Geom::Point const &origin, guint state) override {};
+    void knot_set(Geom::Point const &p, Geom::Point const &origin, unsigned int state) override;
+    void set_shape(SPShape *shape) { linked_shape = shape; }
+    SPShape *linked_shape;
+};
+
+Geom::Point
+TextKnotHolderEntityShapeMargin::knot_get() const
+{
+    Geom::Point corner;
+    if (linked_shape == nullptr) return corner;
+    
+    Geom::OptRect bounds = linked_shape->geometricBounds();
+    if (bounds) {
+        corner = (*bounds).corner(1);
+        if (linked_shape->style->shape_margin.set) {
+            auto margin = linked_shape->style->shape_margin.computed;
+            corner *= Geom::Affine(Geom::Translate(margin, -margin));
+        }
+        corner *= linked_shape->transform;
+    }
+    return corner;
+}
+
+void
+TextKnotHolderEntityShapeMargin::knot_set(Geom::Point const &p, Geom::Point const &/*origin*/, unsigned int state)
+{
+    g_assert(linked_shape != nullptr);
+
+    Geom::OptRect bounds = linked_shape->geometricBounds();
+    if (bounds) {
+        Geom::Point const point_a = snap_knot_position(p, state);
+        Geom::Point point_b = point_a * linked_shape->transform.inverse();
+        auto margin = (*bounds).corner(1)[Geom::X] - point_b[Geom::X];
+        gchar *pad = g_strdup_printf("%f", -margin);
+        linked_shape->style->shape_margin.read(pad);
+        g_free(pad);
+
+        linked_shape->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG);
+        linked_shape->updateRepr();
+    }
+}
+
+
+
+
 class TextKnotHolderEntityShapeInside : public KnotHolderEntity {
 public:
     Geom::Point knot_get() const override;
@@ -1870,7 +1967,7 @@ TextKnotHolderEntityShapeInside::knot_get() const
     // we have a crash on undo cration so remove assert
     // g_assert(text->style->shape_inside.set);
     Geom::Point p;
-    if (text->style->shape_inside.set) {
+    if (text->has_shape_inside()) {
         Geom::OptRect frame = text->get_frame();
         if (frame) {
             p = (*frame).corner(2);
@@ -1892,14 +1989,12 @@ TextKnotHolderEntityShapeInside::knot_set(Geom::Point const &p, Geom::Point cons
     Geom::Point const s = snap_knot_position(p, state);
 
     Inkscape::XML::Node* rectangle = text->get_first_rectangle();
-    double x = 0.0;
-    double y = 0.0;
-    sp_repr_get_double (rectangle, "x",      &x);
-    sp_repr_get_double (rectangle, "y",      &y);
+    double x = rectangle->getAttributeDouble("x", 0.0);;
+    double y = rectangle->getAttributeDouble("y", 0.0);
     double width  = s[Geom::X] - x;
     double height = s[Geom::Y] - y;
-    sp_repr_set_svg_double (rectangle, "width",  width);
-    sp_repr_set_svg_double (rectangle, "height", height);
+    rectangle->setAttributeSvgDouble("width", width);
+    rectangle->setAttributeSvgDouble("height", height);
     text->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG);
     text->updateRepr();
 }
@@ -1912,24 +2007,45 @@ TextKnotHolder::TextKnotHolder(SPDesktop *desktop, SPItem *item, SPKnotHolderRel
 
     if (text->style->shape_inside.set) {
         // 'shape-inside'
-        TextKnotHolderEntityShapeInside *entity_shapeinside = new TextKnotHolderEntityShapeInside();
 
-        entity_shapeinside->create(desktop, item, this, Inkscape::CTRL_TYPE_SHAPER,
-                                  _("Adjust the <b>rectangular</b> region of the text."),
-                                  SP_KNOT_SHAPE_DIAMOND, SP_KNOT_MODE_XOR);
+        if (text->get_first_rectangle()) {
+            auto entity_shapeinside = new TextKnotHolderEntityShapeInside();
+            entity_shapeinside->create(desktop, item, this, Inkscape::CANVAS_ITEM_CTRL_TYPE_SHAPER, "Text:shapeinside",
+                                       _("Adjust the <b>rectangular</b> region of the text."));
+            entity.push_back(entity_shapeinside);
+        }
 
-        entity.push_back(entity_shapeinside);
+        auto entity_shapepadding = new TextKnotHolderEntityShapePadding();
+        entity_shapepadding->create(desktop, item, this, Inkscape::CANVAS_ITEM_CTRL_TYPE_SIZER, "Text:shapepadding",
+                                    _("Adjust the text <b>shape padding</b>."));
+        entity.push_back(entity_shapepadding);
+
+        // Add knots for shape subtraction margins
+        if (text->style->shape_subtract.set) {
+            for (auto *href : text->style->shape_subtract.hrefs) {
+                auto shape = href->getObject();
+                if (dynamic_cast<SPShape *>(shape)) {
+                    auto entity_shapemargin = new TextKnotHolderEntityShapeMargin();
+                    entity_shapemargin->create(desktop, item, this, Inkscape::CANVAS_ITEM_CTRL_TYPE_SIZER, "Text:shapemargin",
+                                                _("Adjust the shape's <b>text margin</b>."));
+                    entity_shapemargin->set_shape(shape);
+                    entity_shapemargin->update_knot();
+                    entity.push_back(entity_shapemargin);
+                }
+            }
+        }
 
     } else {
         // 'inline-size' or normal text
         TextKnotHolderEntityInlineSize *entity_inlinesize = new TextKnotHolderEntityInlineSize();
 
-        entity_inlinesize->create(desktop, item, this, Inkscape::CTRL_TYPE_SHAPER,
-                                  _("Adjust the <b>inline size</b> (line length) of the text."),
-                                  SP_KNOT_SHAPE_DIAMOND, SP_KNOT_MODE_XOR);
-
+        entity_inlinesize->create(desktop, item, this, Inkscape::CANVAS_ITEM_CTRL_TYPE_SHAPER, "Text:inlinesize",
+                                  _("Adjust the <b>inline size</b> (line length) of the text."));
         entity.push_back(entity_inlinesize);
     }
+
+    add_pattern_knotholder();
+    add_hatch_knotholder();
 }
 
 
@@ -1963,7 +2079,7 @@ FlowtextKnotHolder::FlowtextKnotHolder(SPDesktop *desktop, SPItem *item, SPKnotH
     g_assert(item != nullptr);
 
     FlowtextKnotHolderEntity *entity_flowtext = new FlowtextKnotHolderEntity();
-    entity_flowtext->create(desktop, item, this, Inkscape::CTRL_TYPE_SHAPER,
+    entity_flowtext->create(desktop, item, this, Inkscape::CANVAS_ITEM_CTRL_TYPE_SHAPER, "FlowText:entity",
                             _("Drag to resize the <b>flowed text frame</b>"));
     entity.push_back(entity_flowtext);
 }

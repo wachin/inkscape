@@ -17,7 +17,7 @@ from inkex import (
     Style
 )
 from inkex.tester import TestCase
-from inkex.utils import TemporaryDirectory
+from tempfile import TemporaryDirectory
 from inkex.command import is_inkscape_available
 from inkex.tester.decorators import requires_inkscape
 try:

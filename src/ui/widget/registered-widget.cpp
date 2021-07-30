@@ -25,8 +25,7 @@
 #include "svg/svg-color.h"
 #include "svg/stringstream.h"
 
-#include "widgets/spinbutton-events.h"
-
+#include <glibmm/i18n.h>
 
 namespace Inkscape {
 namespace UI {
@@ -401,10 +400,11 @@ RegisteredColorPicker::on_changed (guint32 rgba)
     Inkscape::XML::Node *local_repr = repr;
     SPDocument *local_doc = doc;
     if (!local_repr) {
-        // no repr specified, use active desktop's namedview's repr
-        SPDesktop *dt = SP_ACTIVE_DESKTOP;
-        if (!dt)
+        SPDesktop *dt = _wr->desktop();
+        if (!dt) {
+            _wr->setUpdating(false);
             return;
+        }
         local_repr = dt->getNamedView()->getRepr();
         local_doc = dt->getDocument();
     }
@@ -417,7 +417,7 @@ RegisteredColorPicker::on_changed (guint32 rgba)
     bool saved = DocumentUndo::getUndoSensitive(local_doc);
     DocumentUndo::setUndoSensitive(local_doc, false);
     local_repr->setAttribute(_ckey, c);
-    sp_repr_set_css_double(local_repr, _akey.c_str(), (rgba & 0xff) / 255.0);
+    local_repr->setAttributeCssDouble(_akey.c_str(), (rgba & 0xff) / 255.0);
     DocumentUndo::setUndoSensitive(local_doc, saved);
 
     local_doc->setModifiedSinceSave();
@@ -485,7 +485,7 @@ RegisteredRadioButtonPair::RegisteredRadioButtonPair (const Glib::ustring& label
         const Glib::ustring& label1, const Glib::ustring& label2,
         const Glib::ustring& tip1, const Glib::ustring& tip2,
         const Glib::ustring& key, Registry& wr, Inkscape::XML::Node* repr_in, SPDocument *doc_in)
-    : RegisteredWidget<Gtk::HBox>(),
+    : RegisteredWidget<Gtk::Box>(),
       _rb1(nullptr),
       _rb2(nullptr)
 {
@@ -493,6 +493,7 @@ RegisteredRadioButtonPair::RegisteredRadioButtonPair (const Glib::ustring& label
 
     setProgrammatically = false;
 
+    set_orientation(Gtk::ORIENTATION_HORIZONTAL);
     add(*Gtk::manage(new Gtk::Label(label)));
     _rb1 = Gtk::manage(new Gtk::RadioButton(label1, true));
     add (*_rb1);
@@ -700,11 +701,11 @@ void RegisteredVector::setPolarCoords(bool polar_coords)
 {
     _polar_coords = polar_coords;
     if (polar_coords) {
-        xwidget.setLabelText("Angle:");
-        ywidget.setLabelText("Distance:");
+        xwidget.setLabelText(_("Angle:"));
+        ywidget.setLabelText(_("Distance:"));
     } else {
-        xwidget.setLabelText("X:");
-        ywidget.setLabelText("Y:");
+        xwidget.setLabelText(_("X:"));
+        ywidget.setLabelText(_("Y:"));
     }
 }
 

@@ -22,8 +22,16 @@
 
 class SPObject;
 
-#define SP_OBJECT(obj) (dynamic_cast<SPObject*>((SPObject*)obj))
-#define SP_IS_OBJECT(obj) (dynamic_cast<const SPObject*>((SPObject*)obj) != NULL)
+#define MAKE_SP_OBJECT_DOWNCAST_FUNCTIONS(func, T)                                                                 \
+    inline T *func(SPObject *obj) { return dynamic_cast<T *>(obj); }                                               \
+    inline T const *func(SPObject const *obj) { return dynamic_cast<T const *>(obj); } \
+    inline T *func(T *derived) = delete;                                               \
+    inline T const *func(T const *derived) = delete;
+
+#define MAKE_SP_OBJECT_TYPECHECK_FUNCTIONS(func, T)                                                       \
+    inline bool func(SPObject const *obj) { return dynamic_cast<T const *>(obj); }
+
+#define SP_IS_OBJECT(obj) (dynamic_cast<const SPObject*>(obj) != nullptr)
 
 /* Async modification flags */
 #define SP_OBJECT_MODIFIED_FLAG (1 << 0)
@@ -33,7 +41,7 @@ class SPObject;
 #define SP_OBJECT_VIEWPORT_MODIFIED_FLAG (1 << 4)
 #define SP_OBJECT_USER_MODIFIED_FLAG_A (1 << 5)
 #define SP_OBJECT_USER_MODIFIED_FLAG_B (1 << 6)
-#define SP_OBJECT_USER_MODIFIED_FLAG_C (1 << 7)
+#define SP_OBJECT_STYLESHEET_MODIFIED_FLAG (1 << 7)
 
 /* Convenience */
 #define SP_OBJECT_FLAGS_ALL 0xff
@@ -62,7 +70,7 @@ class SPObject;
 #include "version.h"
 #include "util/forward-pointer-iterator.h"
 
-enum SPAttributeEnum : unsigned;
+enum class SPAttr;
 
 class SPCSSAttr;
 class SPStyle;
@@ -77,33 +85,6 @@ struct Document;
 namespace Glib {
     class ustring;
 }
-
-enum SPExceptionType {
-    SP_NO_EXCEPTION,
-    SP_INDEX_SIZE_ERR,
-    SP_DOMSTRING_SIZE_ERR,
-    SP_HIERARCHY_REQUEST_ERR,
-    SP_WRONG_DOCUMENT_ERR,
-    SP_INVALID_CHARACTER_ERR,
-    SP_NO_DATA_ALLOWED_ERR,
-    SP_NO_MODIFICATION_ALLOWED_ERR,
-    SP_NOT_FOUND_ERR,
-    SP_NOT_SUPPORTED_ERR,
-    SP_INUSE_ATTRIBUTE_ERR,
-    SP_INVALID_STATE_ERR,
-    SP_SYNTAX_ERR,
-    SP_INVALID_MODIFICATION_ERR,
-    SP_NAMESPACE_ERR,
-    SP_INVALID_ACCESS_ERR
-};
-
-/// An attempt to implement exceptions, unused?
-struct SPException {
-    SPExceptionType code;
-};
-
-#define SP_EXCEPTION_INIT(ex) {(ex)->code = SP_NO_EXCEPTION;}
-#define SP_EXCEPTION_IS_OK(ex) (!(ex) || ((ex)->code == SP_NO_EXCEPTION))
 
 /// Unused
 struct SPCtx {
@@ -208,6 +189,11 @@ public:
     char const* getId() const;
 
     /**
+     * Get the id in a URL format.
+     */
+    std::string getUrl() const;
+
+    /**
      * Returns the XML representation of tree
      */
 //protected:
@@ -241,7 +227,7 @@ public:
      * Represents the style properties, whether from presentation attributes, the <tt>style</tt>
      * attribute, or inherited.
      *
-     * private_set() doesn't handle SP_ATTR_STYLE or any presentation attributes at the
+     * private_set() doesn't handle SPAttr::STYLE or any presentation attributes at the
      * time of writing, so this is probably NULL for all SPObject's that aren't an SPItem.
      *
      * However, this gives rise to the bugs mentioned in sp_object_get_style_property.
@@ -306,6 +292,13 @@ public:
      * in the process, if add_ref is specified.
      */
     std::vector<SPObject*> childList(bool add_ref, Action action = ActionGeneral);
+
+
+    /**
+     * Retrieves a list of ancestors of the object, as an easy to use vector
+     * @param root_to_tip - If set, orders the list from the svg root to the tip.
+     */
+    std::vector<SPObject*> ancestorList(bool root_to_tip);
 
     /**
      * Append repr as child of this object.
@@ -696,7 +689,7 @@ public:
 
     unsigned getPosition();
 
-    char const * getAttribute(char const *name,SPException *ex=nullptr) const;
+    char const * getAttribute(char const *name) const;
 
     void appendChild(Inkscape::XML::Node *child);
 
@@ -705,28 +698,27 @@ public:
     /**
      * Call virtual set() function of object.
      */
-    void setKeyValue(SPAttributeEnum key, char const *value);
+    void setKeyValue(SPAttr key, char const *value);
 
 
     void setAttribute(Inkscape::Util::const_char_ptr key,
-                      Inkscape::Util::const_char_ptr value,
-                      SPException *ex=nullptr);
+                      Inkscape::Util::const_char_ptr value);
 
     void setAttributeOrRemoveIfEmpty(Inkscape::Util::const_char_ptr key,
-                                     Inkscape::Util::const_char_ptr value,
-                                     SPException *ex=nullptr) {
+                                     Inkscape::Util::const_char_ptr value) {
         this->setAttribute(key.data(),
-                          (value.data() == nullptr || value.data()[0]=='\0') ? nullptr : value.data(), ex);
+                          (value.data() == nullptr || value.data()[0]=='\0') ? nullptr : value.data());
     }
 
     /**
      * Read value of key attribute from XML node into object.
      */
     void readAttr(char const *key);
+    void readAttr(SPAttr keyid);
 
-    char const *getTagName(SPException *ex) const;
+    char const *getTagName() const;
 
-    void removeAttribute(char const *key, SPException *ex=nullptr);
+    void removeAttribute(char const *key);
 
     void setCSS(SPCSSAttr *css, char const *attr);
 
@@ -824,7 +816,7 @@ protected:
 
 	virtual void order_changed(Inkscape::XML::Node* child, Inkscape::XML::Node* old_repr, Inkscape::XML::Node* new_repr);
 
-	virtual void set(SPAttributeEnum key, const char* value);
+	virtual void set(SPAttr key, const char* value);
 
 	virtual void update(SPCtx* ctx, unsigned int flags);
 	virtual void modified(unsigned int flags);
@@ -846,7 +838,7 @@ public:
 
     void recursivePrintTree(unsigned level = 0);  // For debugging
     static unsigned indent_level;
-    void objectTrace( std::string, bool in=true, unsigned flags=0 );
+    void objectTrace( std::string const &, bool in=true, unsigned flags=0 );
 };
 
 std::ostream &operator<<(std::ostream &out, const SPObject &o);

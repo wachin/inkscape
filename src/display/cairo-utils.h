@@ -153,12 +153,14 @@ void ink_cairo_set_source_color(cairo_t *ct, SPColor const &color, double opacit
 void ink_cairo_set_source_rgba32(cairo_t *ct, guint32 rgba);
 void ink_cairo_transform(cairo_t *ct, Geom::Affine const &m);
 void ink_cairo_pattern_set_matrix(cairo_pattern_t *cp, Geom::Affine const &m);
+void ink_cairo_set_hairline(cairo_t *ct);
 
 void ink_matrix_to_2geom(Geom::Affine &, cairo_matrix_t const &);
 void ink_matrix_to_cairo(cairo_matrix_t &, Geom::Affine const &);
 cairo_operator_t ink_css_blend_to_cairo_operator(SPBlendMode blend_mode);
 SPBlendMode ink_cairo_operator_to_css_blend(cairo_operator_t cairo_operator);
 cairo_surface_t *ink_cairo_surface_copy(cairo_surface_t *s);
+Cairo::RefPtr<Cairo::ImageSurface> ink_cairo_surface_copy(Cairo::RefPtr<Cairo::ImageSurface> surface);
 cairo_surface_t *ink_cairo_surface_create_identical(cairo_surface_t *s);
 cairo_surface_t *ink_cairo_surface_create_same_size(cairo_surface_t *s, cairo_content_t c);
 cairo_surface_t *ink_cairo_extract_alpha(cairo_surface_t *s);
@@ -167,6 +169,7 @@ void ink_cairo_surface_blit(cairo_surface_t *src, cairo_surface_t *dest);
 int ink_cairo_surface_get_width(cairo_surface_t *surface);
 int ink_cairo_surface_get_height(cairo_surface_t *surface);
 guint32 ink_cairo_surface_average_color(cairo_surface_t *surface);
+guint32 ink_cairo_pattern_get_argb32(cairo_pattern_t *pattern);
 void ink_cairo_surface_average_color(cairo_surface_t *surface, double &r, double &g, double &b, double &a);
 void ink_cairo_surface_average_color_premul(cairo_surface_t *surface, double &r, double &g, double &b, double &a);
 

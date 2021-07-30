@@ -51,7 +51,6 @@
 #include "rdf.h"
 #include "style-internal.h"
 #include "display/cairo-utils.h"
-#include "display/canvas-bpath.h"
 #include "display/curve.h"
 
 #include "extension/system.h"
@@ -174,7 +173,7 @@ static void sp_shape_render_invoke_marker_rendering(SPMarker* marker, Geom::Affi
 
 static void sp_shape_render(SPShape *shape, CairoRenderContext *ctx)
 {
-    if (!shape->_curve) {
+    if (!shape->curve()) {
         return;
     }
 
@@ -225,7 +224,7 @@ static void sp_shape_render(SPShape *shape, CairoRenderContext *ctx)
         }
     }
 
-    Geom::PathVector const & pathv = shape->_curve->get_pathvector();
+    Geom::PathVector const &pathv = shape->curve()->get_pathvector();
     if (pathv.empty()) {
         return;
     }
@@ -569,10 +568,10 @@ static void sp_asbitmap_render(SPItem *item, CairoRenderContext *ctx)
     // Do the export
     SPDocument *document = item->document;
 
-    std::unique_ptr<Inkscape::Pixbuf> pb(
-        sp_generate_internal_bitmap(document, nullptr,
-            bbox->min()[Geom::X], bbox->min()[Geom::Y], bbox->max()[Geom::X], bbox->max()[Geom::Y],
-            width, height, res, res, (guint32) 0xffffff00, item ));
+    std::vector<SPItem*> items;
+    items.push_back(item);
+
+    std::unique_ptr<Inkscape::Pixbuf> pb(sp_generate_internal_bitmap(document, *bbox, res, items, true));
 
     if (pb) {
         //TEST(gdk_pixbuf_save( pb, "bitmap.png", "png", NULL, NULL ));
@@ -588,8 +587,19 @@ static void sp_item_invoke_render(SPItem *item, CairoRenderContext *ctx)
     if (item->isHidden()) {
         return;
     }
+    if (item->style && item->style->filter.set) {
+        // cleanup only; this is not necessary but the filter hides the item anyway
+        SPFilter *filt = item->style->getFilter();
+        if (filt && g_strcmp0(filt->getId(), "selectable_hidder_filter") == 0) {
+            return;
+        }
+    }
 
-    if(ctx->getFilterToBitmap() && (item->style->filter.set != 0)) {
+    // rasterize filtered items as per user setting
+    // however, clipPaths ignore any filters, so do *not* rasterize
+    // TODO: might apply to some degree to masks with filtered elements as well;
+    //       we need to figure out where in the stack it would be safe to rasterize
+    if (ctx->getFilterToBitmap() && item->style->filter.set && !item->isInClipPath()) {
         return sp_asbitmap_render(item, ctx);
     }
 
@@ -693,12 +703,13 @@ void CairoRenderer::renderItem(CairoRenderContext *ctx, SPItem *item)
     ctx->transform(item->transform);
     sp_item_invoke_render(item, ctx);
 
-    if (state->need_layer)
+    if (state->need_layer) {
         if (blend) {
             ctx->popLayer(ink_css_blend_to_cairo_operator(style->mix_blend_mode.value)); // This applies clipping/masking
         } else {
             ctx->popLayer(); // This applies clipping/masking
         }
+    }
     ctx->popState();
 }
 
@@ -707,13 +718,12 @@ void CairoRenderer::renderHatchPath(CairoRenderContext *ctx, SPHatchPath const &
     ctx->setStateForStyle(hatchPath.style);
     ctx->transform(Geom::Translate(hatchPath.offset.computed, 0));
 
-    SPCurve *curve = hatchPath.calculateRenderCurve(key);
+    std::unique_ptr<SPCurve> curve = hatchPath.calculateRenderCurve(key);
     Geom::PathVector const & pathv =curve->get_pathvector();
     if (!pathv.empty()) {
         ctx->renderPathVector(pathv, hatchPath.style, Geom::OptRect());
     }
 
-    curve->unref();
     ctx->popState();
 }
 
@@ -762,7 +772,7 @@ void CairoRenderer::setMetadata(CairoRenderContext *ctx, SPDocument *doc) {
 }
 
 bool
-CairoRenderer::setupDocument(CairoRenderContext *ctx, SPDocument *doc, bool pageBoundingBox, float bleedmargin_px, SPItem *base)
+CairoRenderer::setupDocument(CairoRenderContext *ctx, SPDocument *doc, bool pageBoundingBox, double bleedmargin_px, SPItem *base)
 {
 // PLEASE note when making changes to the boundingbox and transform calculation, corresponding changes should be made to LaTeXTextRenderer::setupDocument !!!
 

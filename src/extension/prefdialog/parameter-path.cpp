@@ -24,13 +24,7 @@
 #include <gtkmm/button.h>
 #include <gtkmm/dialog.h>
 #include <gtkmm/entry.h>
-
-#include "include/gtkmm_version.h"
-#if GTKMM_CHECK_VERSION(3,24,0) // unfortunately GtkFileChooserNative (since gtk 3.20) was not wrapped until gtkmm 3.24
-# include <gtkmm/filechoosernative.h>
-#else
-# include <gtkmm/filechooserdialog.h>
-#endif
+#include <gtkmm/filechoosernative.h>
 
 #include "xml/node.h"
 #include "extension/extension.h"
@@ -49,7 +43,7 @@ ParamPath::ParamPath(Inkscape::XML::Node *xml, Inkscape::Extension::Extension *e
     }
 
     Inkscape::Preferences *prefs = Inkscape::Preferences::get();
-    _value = prefs->getString(pref_name());
+    _value = prefs->getString(pref_name()).raw();
 
     if (_value.empty() && value) {
         _value = value;
@@ -92,7 +86,7 @@ ParamPath::ParamPath(Inkscape::XML::Node *xml, Inkscape::Extension::Extension *e
  *
  * @param  in   The value to set to.
  */
-const std::string& ParamPath::set(const std::string in)
+const std::string& ParamPath::set(const std::string &in)
 {
     _value = in;
 
@@ -143,7 +137,7 @@ public:
  */
 void ParamPathEntry::changed_text()
 {
-    std::string data = this->get_text();
+    auto data = this->get_text();
     _pref->set(data.c_str());
     if (_changeSignal != nullptr) {
         _changeSignal->emit();
@@ -161,7 +155,7 @@ Gtk::Widget *ParamPath::get_widget(sigc::signal<void> *changeSignal)
         return nullptr;
     }
 
-    Gtk::HBox *hbox = Gtk::manage(new Gtk::HBox(false, GUI_PARAM_WIDGETS_SPACING));
+    Gtk::Box *hbox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, GUI_PARAM_WIDGETS_SPACING));
     Gtk::Label *label = Gtk::manage(new Gtk::Label(_text, Gtk::ALIGN_START));
     label->show();
     hbox->pack_start(*label, false, false);
@@ -217,15 +211,7 @@ void ParamPath::on_button_clicked()
     }
 
     // create file chooser dialog
-#if GTKMM_CHECK_VERSION(3,24,0) // unfortunately GtkFileChooserNative (since gtk 3.20) was not wrapped until gtkmm 3.24
-    Glib::RefPtr<Gtk::FileChooserNative> file_chooser =
-        Gtk::FileChooserNative::create(dialog_title + "…", action, _("Select"));
-#else
-    Gtk::FileChooserDialog file_chooser_instance(dialog_title + "…", action);
-    Gtk::FileChooserDialog *file_chooser = &file_chooser_instance;
-    file_chooser->add_button(_("Select"), Gtk::RESPONSE_ACCEPT);
-    file_chooser->add_button(_("Cancel"), Gtk::RESPONSE_CANCEL);
-#endif
+    auto file_chooser = Gtk::FileChooserNative::create(dialog_title + "…", action, _("Select"));
     file_chooser->set_select_multiple(_select_multiple);
     file_chooser->set_do_overwrite_confirmation(true);
     file_chooser->set_create_folders(true);

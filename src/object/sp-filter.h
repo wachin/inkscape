@@ -19,11 +19,9 @@
 #include "number-opt-number.h"
 #include "sp-dimensions.h"
 #include "sp-object.h"
+#include "sp-item.h"
 #include "sp-filter-units.h"
 #include "svg/svg-length.h"
-
-#define SP_FILTER(obj) (dynamic_cast<SPFilter*>((SPObject*)obj))
-#define SP_IS_FILTER(obj) (dynamic_cast<const SPFilter*>((SPObject*)obj) != NULL)
 
 #define SP_FILTER_FILTER_UNITS(f) (SP_FILTER(f)->filterUnits)
 #define SP_FILTER_PRIMITIVE_UNITS(f) (SP_FILTER(f)->primitiveUnits)
@@ -58,6 +56,14 @@ public:
     /// Returns slot number for given image name, even if it's unknown.
     int set_image_name(char const *name);
 
+    void update_filter_all_regions();
+    void update_filter_region(SPItem *item);
+    void set_filter_region(double x, double y, double width, double height);
+    Geom::Rect get_automatic_filter_region(SPItem *item);
+
+    // Checks each filter primitive to make sure the object won't cause issues
+    bool valid_for(SPObject const *obj) const;
+
     /** Finds image name based on it's slot number. Returns 0 for unknown slot
      * numbers. */
     char const *name_for_image(int const image) const;
@@ -71,6 +77,8 @@ public:
     unsigned int primitiveUnits_set : 1;
     NumberOptNumber filterRes;
     SPFilterReference *href;
+    bool auto_region;
+
     sigc::connection modified_connection;
 
     guint getRefCount();
@@ -88,12 +96,16 @@ protected:
     void child_added(Inkscape::XML::Node* child, Inkscape::XML::Node* ref) override;
     void remove_child(Inkscape::XML::Node* child) override;
 
-    void set(SPAttributeEnum key, const char* value) override;
+    void set(SPAttr key, const char* value) override;
 
+    void modified(unsigned int flags) override;
     void update(SPCtx* ctx, unsigned int flags) override;
 
     Inkscape::XML::Node* write(Inkscape::XML::Document* doc, Inkscape::XML::Node* repr, unsigned int flags) override;
 };
+
+MAKE_SP_OBJECT_DOWNCAST_FUNCTIONS(SP_FILTER, SPFilter)
+MAKE_SP_OBJECT_TYPECHECK_FUNCTIONS(SP_IS_FILTER, SPFilter)
 
 #endif /* !SP_FILTER_H_SEEN */
 

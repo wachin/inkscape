@@ -41,30 +41,13 @@ SPHatchPath::SPHatchPath()
 SPHatchPath::~SPHatchPath()
 = default;
 
-void SPHatchPath::setCurve(SPCurve *new_curve, bool owner)
-{
-    if (_curve) {
-        _curve = _curve->unref();
-    }
-
-    if (new_curve) {
-        if (owner) {
-            _curve = new_curve->ref();
-        } else {
-            _curve = new_curve->copy();
-        }
-    }
-
-    requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG);
-}
-
 void SPHatchPath::build(SPDocument* doc, Inkscape::XML::Node* repr)
 {
     SPObject::build(doc, repr);
 
-    readAttr("d");
-    readAttr("offset");
-    readAttr( "style" );
+    readAttr(SPAttr::D);
+    readAttr(SPAttr::OFFSET);
+    readAttr(SPAttr::STYLE);
 
     style->fill.setNone();
 }
@@ -79,27 +62,22 @@ void SPHatchPath::release()
     SPObject::release();
 }
 
-void SPHatchPath::set(SPAttributeEnum key, const gchar* value)
+void SPHatchPath::set(SPAttr key, const gchar* value)
 {
     switch (key) {
-    case SP_ATTR_D:
+    case SPAttr::D:
         if (value) {
             Geom::PathVector pv;
             _readHatchPathVector(value, pv, _continuous);
-            SPCurve *curve = new SPCurve(pv);
-
-            if (curve) {
-                setCurve(curve, true);
-                curve->unref();
-            }
+            _curve.reset(new SPCurve(pv));
         } else {
-            setCurve(nullptr, true);
+            _curve.reset(nullptr);
         }
 
         requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG);
         break;
 
-    case SP_ATTR_OFFSET:
+    case SPAttr::OFFSET:
         offset.readOrUnset(value);
         requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG);
         break;
@@ -207,7 +185,7 @@ Geom::Interval SPHatchPath::bounds() const
     return result;
 }
 
-SPCurve *SPHatchPath::calculateRenderCurve(unsigned key) const
+std::unique_ptr<SPCurve> SPHatchPath::calculateRenderCurve(unsigned key) const
 {
     for (const auto & iter : _display) {
         if (iter.key == key) {
@@ -231,20 +209,18 @@ gdouble SPHatchPath::_repeatLength() const
 
 void SPHatchPath::_updateView(View &view)
 {
-    SPCurve *calculated_curve = _calculateRenderCurve(view);
+    auto calculated_curve = _calculateRenderCurve(view);
 
     Geom::Affine offset_transform = Geom::Translate(offset.computed, 0);
     view.arenaitem->setTransform(offset_transform);
     style->fill.setNone();
     view.arenaitem->setStyle(style);
-    view.arenaitem->setPath(calculated_curve);
-
-    calculated_curve->unref();
+    view.arenaitem->setPath(calculated_curve.get());
 }
 
-SPCurve *SPHatchPath::_calculateRenderCurve(View const &view) const
+std::unique_ptr<SPCurve> SPHatchPath::_calculateRenderCurve(View const &view) const
 {
-    SPCurve *calculated_curve = new SPCurve;
+    auto calculated_curve = std::make_unique<SPCurve>();
 
     if (!view.extents) {
         return calculated_curve;
@@ -260,20 +236,18 @@ SPCurve *SPHatchPath::_calculateRenderCurve(View const &view) const
             gdouble initial_y = floor(view.extents->min() / repeatLength) * repeatLength;
             int segment_cnt = ceil((view.extents->extent()) / repeatLength) + 1;
 
-            SPCurve *segment =_curve->copy();
+            auto segment = _curve->copy();
             segment->transform(Geom::Translate(0, initial_y));
 
             Geom::Affine step_transform = Geom::Translate(0, repeatLength);
             for (int i = 0; i < segment_cnt; ++i) {
                 if (_continuous) {
-                    calculated_curve->append_continuous(segment, 0.0625);
+                    calculated_curve->append_continuous(*segment);
                 } else {
-                    calculated_curve->append(segment, false);
+                    calculated_curve->append(*segment);
                 }
                 segment->transform(step_transform);
             }
-
-            segment->unref();
         }
     }
     return calculated_curve;

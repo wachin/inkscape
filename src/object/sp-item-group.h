@@ -17,10 +17,11 @@
 #include <map>
 #include "sp-lpe-item.h"
 
-#define SP_GROUP(obj) (dynamic_cast<SPGroup*>((SPObject*)obj))
-#define SP_IS_GROUP(obj) (dynamic_cast<const SPGroup*>((SPObject*)obj) != NULL)
-
-#define SP_IS_LAYER(obj)         (SP_IS_GROUP(obj) && SP_GROUP(obj)->layerMode() == SPGroup::LAYER)
+// A list of default highlight colours to use when one isn't set.
+const unsigned int default_highlights[8] = {
+    0xad7fa8ff, 0x729fcfff, 0xbabdb6ff, 0xdb2828ff,
+    0x73b92fff, 0xedd400ff, 0xfcaf3eff, 0xbabdb6ff,
+};
 
 namespace Inkscape {
 
@@ -36,7 +37,6 @@ public:
 
     enum LayerMode { GROUP, LAYER, MASK_HELPER };
 
-    bool _expanded;
     bool _insert_bottom;
     LayerMode _layer_mode;
     std::map<unsigned int, LayerMode> _display_modes;
@@ -44,9 +44,6 @@ public:
     LayerMode layerMode() const { return _layer_mode; }
     void setLayerMode(LayerMode mode);
 
-    bool expanded() const { return _expanded; }
-    void setExpanded(bool isexpanded);
-    
     bool insertBottom() const { return _insert_bottom; }
     void setInsertBottom(bool insertbottom);
 
@@ -79,12 +76,13 @@ public:
 
     void update(SPCtx *ctx, unsigned int flags) override;
     void modified(unsigned int flags) override;
-    void set(SPAttributeEnum key, char const* value) override;
+    void set(SPAttr key, char const* value) override;
 
     Inkscape::XML::Node* write(Inkscape::XML::Document *xml_doc, Inkscape::XML::Node *repr, unsigned int flags) override;
 
     Geom::OptRect bbox(Geom::Affine const &transform, SPItem::BBoxType bboxtype) const override;
     void print(SPPrintContext *ctx) override;
+    const char* typeName() const override;
     const char* displayName() const override;
     char *description() const override;
     Inkscape::DrawingItem *show (Inkscape::Drawing &drawing, unsigned int key, unsigned int flags) override;
@@ -93,6 +91,8 @@ public:
     void snappoints(std::vector<Inkscape::SnapCandidatePoint> &p, Inkscape::SnapPreferences const *snapprefs) const override;
 
     void update_patheffect(bool write) override;
+
+    guint32 highlight_color() const override;
 };
 
 
@@ -111,6 +111,15 @@ void sp_item_group_ungroup (SPGroup *group, std::vector<SPItem*> &children, bool
 std::vector<SPItem*> sp_item_group_item_list (SPGroup *group);
 
 SPObject *sp_item_group_get_child_by_name (SPGroup *group, SPObject *ref, const char *name);
+
+MAKE_SP_OBJECT_DOWNCAST_FUNCTIONS(SP_GROUP, SPGroup)
+MAKE_SP_OBJECT_TYPECHECK_FUNCTIONS(SP_IS_GROUP, SPGroup)
+
+inline bool SP_IS_LAYER(SPObject const *obj)
+{
+    auto group = dynamic_cast<SPGroup const *>(obj);
+    return group && group->layerMode() == SPGroup::LAYER;
+}
 
 #endif
 

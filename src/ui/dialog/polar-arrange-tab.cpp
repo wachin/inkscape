@@ -130,6 +130,10 @@ PolarArrangeTab::PolarArrangeTab(ArrangeDialog *parent_)
 	radiusY.set_sensitive(false);
 
 	set_border_width(4);
+
+    parametersTable.show_all();
+    parametersTable.set_no_show_all();
+    parametersTable.hide();
 }
 
 /**
@@ -278,13 +282,11 @@ void PolarArrangeTab::arrange()
 	{
 		if(arrangeOnEllipse)
 		{
-				if(arrangeOnFirstEllipse)
+				if(!arrangeOnFirstEllipse)
 			{
-				// The first selected ellipse is actually the last one in the list
 				if(SP_IS_GENERICELLIPSE(item))
 					referenceEllipse = SP_GENERICELLIPSE(item);
 			} else {
-				// The last selected ellipse is actually the first in list
 				if(SP_IS_GENERICELLIPSE(item) && referenceEllipse == nullptr)
 					referenceEllipse = SP_GENERICELLIPSE(item);
 			}
@@ -361,7 +363,7 @@ void PolarArrangeTab::arrange()
 		}
 	}
 
-    DocumentUndo::done(parent->getDesktop()->getDocument(), SP_VERB_SELECTION_ARRANGE,
+    DocumentUndo::done(parent->getDesktop()->getDocument(), SP_VERB_DIALOG_ALIGN_DISTRIBUTE,
                        _("Arrange on ellipse"));
 }
 

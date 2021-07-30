@@ -13,26 +13,32 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
-#include "display/curve.h"
-#include "live_effects/lpe-knot.h"
-#include "knot-holder-entity.h"
-#include "knotholder.h"
-
 #include <gdk/gdk.h>
+#include <optional>
 
 #include <2geom/sbasis-to-bezier.h>
 #include <2geom/bezier-to-sbasis.h>
 #include <2geom/basic-intersection.h>
-#include "helper/geom.h"
 
-#include "object/sp-shape.h"
-#include "object/sp-path.h"
-#include "style.h"
+#include "lpe-knot.h"
 
 // for change crossing undo
 #include "verbs.h"
 #include "document.h"
 #include "document-undo.h"
+
+#include "style.h"
+
+#include "display/curve.h"
+
+#include "helper/geom.h"
+
+#include "object/sp-path.h"
+#include "object/sp-shape.h"
+
+#include "ui/knot/knot-holder.h"
+#include "ui/knot/knot-holder-entity.h"
+
 
 // TODO due to internal breakage in glibmm headers, this must be last:
 #include <glibmm/i18n.h>
@@ -80,10 +86,10 @@ std::vector<Geom::Interval> complementOf(Geom::Interval I, std::vector<Geom::Int
         Geom::Interval I2 = Geom::Interval(I.max(),max);
 
         for (auto i : domain){
-            boost::optional<Geom::Interval> I1i = intersect(i,I1);
-            if (I1i && !I1i->isSingular()) ret.push_back(I1i.get());
-            boost::optional<Geom::Interval> I2i = intersect(i,I2);
-            if (I2i && !I2i->isSingular()) ret.push_back(I2i.get());
+            std::optional<Geom::Interval> I1i = intersect(i,I1);
+            if (I1i && !I1i->isSingular()) ret.push_back(*I1i);
+            std::optional<Geom::Interval> I2i = intersect(i,I2);
+            if (I2i && !I2i->isSingular()) ret.push_back(*I2i);
         }
     }
     return ret;
@@ -356,7 +362,7 @@ LPEKnot::LPEKnot(LivePathEffectObject *lpeobject)
           _("_In units of stroke width"),
           _("Gap width is given in multiples of stroke width. When unchecked, document units are used."),
           "prop_to_stroke_width", &wr, this, true)
-    , both(_("_Both gaps"), _("Use gap in both intersection elements"), "both", &wr, this, false)
+    , both(_("_Gaps in both"), _("At path intersections, both parts will have a gap"), "both", &wr, this, false)
     , inverse_width(_("_Groups: Inverse"), _("Use other stroke width, useful in groups with different stroke widths"),
                     "inverse_width", &wr, this, false)
     , add_stroke_width("St_roke width", "Add the stroke width to the gap size", "add_stroke_width", &wr, this,
@@ -364,7 +370,7 @@ LPEKnot::LPEKnot(LivePathEffectObject *lpeobject)
     , add_other_stroke_width("_Crossing path stroke width", "Add crossed stroke width to the gap size",
                              "add_other_stroke_width", &wr, this, "inkscape_1.0_and_up", true)
     , switcher_size(_("S_witcher size:"), _("Orientation indicator/switcher size"), "switcher_size", &wr, this, 15)
-    , crossing_points_vector(_("Crossing Signs"), _("Crossings signs"), "crossing_points_vector", &wr, this)
+    , crossing_points_vector(_("Crossing Signs"), _("Crossing signs"), "crossing_points_vector", &wr, this)
     , crossing_points()
     , gpaths()
     , gstroke_widths()
@@ -421,7 +427,7 @@ LPEKnot::doEffect_path (Geom::PathVector const &path_in)
         gint precision = prefs->getInt("/options/svgoutput/numericprecision");
         prefs->setInt("/options/svgoutput/numericprecision", 4); // I think this is enough for minor differences
         for (i0=0; i0<gpaths.size(); i0++){
-            if (!strcmp(sp_svg_write_path(comp), sp_svg_write_path(gpaths[i0])))
+            if (sp_svg_write_path(comp) == sp_svg_write_path(gpaths[i0]))
                 break;
         }
         prefs->setInt("/options/svgoutput/numericprecision", precision);
@@ -547,16 +553,17 @@ LPEKnot::doEffect_path (Geom::PathVector const &path_in)
 //recursively collect gpaths and stroke widths (stolen from "sp-lpe_item.cpp").
 static void
 collectPathsAndWidths (SPLPEItem const *lpeitem, Geom::PathVector &paths, std::vector<double> &stroke_widths){
-    if (SP_IS_GROUP(lpeitem)) {
-    	std::vector<SPItem*> item_list = sp_item_group_item_list(SP_GROUP(lpeitem));
+    auto lpeitem_mutable = const_cast<SPLPEItem *>(lpeitem);
+
+    if (auto group = dynamic_cast<SPGroup *>(lpeitem_mutable)) {
+    	std::vector<SPItem*> item_list = sp_item_group_item_list(group);
         for (auto subitem : item_list) {
             if (SP_IS_LPE_ITEM(subitem)) {
                 collectPathsAndWidths(SP_LPE_ITEM(subitem), paths, stroke_widths);
             }
         }
-    }
-    else if (SP_IS_SHAPE(lpeitem)) {
-        SPCurve * c = SP_SHAPE(lpeitem)->getCurve();
+    } else if (auto shape = dynamic_cast<SPShape const *>(lpeitem)) {
+        SPCurve const *c = shape->curve();
         if (c) {
             Geom::PathVector subpaths = pathv_to_linear_and_cubic_beziers(c->get_pathvector());
             for (const auto & subpath : subpaths){
@@ -565,7 +572,6 @@ collectPathsAndWidths (SPLPEItem const *lpeitem, Geom::PathVector &paths, std::v
                 stroke_widths.push_back(lpeitem->style->stroke_width.computed);
             }
         }
-        c->unref();
     }
 }
 
@@ -577,7 +583,7 @@ LPEKnot::doBeforeEffect (SPLPEItem const* lpeitem)
     original_bbox(lpeitem);
     
     if (SP_IS_PATH(lpeitem)) {
-        supplied_path = SP_PATH(lpeitem)->getCurve(true)->get_pathvector();
+        supplied_path = SP_PATH(lpeitem)->curve()->get_pathvector();
     }
 
     gpaths.clear();
@@ -660,7 +666,7 @@ LPEKnot::addCanvasIndicators(SPLPEItem const */*lpeitem*/, std::vector<Geom::Pat
 void LPEKnot::addKnotHolderEntities(KnotHolder *knotholder, SPItem *item)
 {
     KnotHolderEntity *e = new KnotHolderEntityCrossingSwitcher(this);
-    e->create(nullptr, item, knotholder, Inkscape::CTRL_TYPE_LPE,
+    e->create(nullptr, item, knotholder, Inkscape::CANVAS_ITEM_CTRL_TYPE_LPE, "LPE:CrossingSwitcher",
               _("Drag to select a crossing, click to flip it, Shift + click to change all crossings, Ctrl + click to "
                 "reset and change all crossings"));
     knotholder->add(e);
@@ -692,7 +698,6 @@ KnotHolderEntityCrossingSwitcher::knot_click(guint state)
     unsigned s = lpe->selectedCrossing;
     if (s < lpe->crossing_points.size()){
         if (state & GDK_SHIFT_MASK){
-            int sign = lpe->crossing_points[s].sign;
             for (unsigned p = 0; p < lpe->crossing_points.size(); p++) {
                 lpe->crossing_points[p].sign = ((lpe->crossing_points[p].sign + 2) % 3) - 1;
             }

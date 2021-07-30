@@ -31,12 +31,7 @@
 #include "selection.h"
 #include "verbs.h"
 
-#include "display/sp-canvas-item.h"
-#include "display/sp-canvas.h"
-
 #include "include/macros.h"
-
-#include "ui/pixmaps/cursor-3dbox.xpm"
 
 #include "object/box3d-side.h"
 #include "object/box3d.h"
@@ -45,6 +40,7 @@
 
 #include "ui/shape-editor.h"
 #include "ui/tools/box3d-tool.h"
+#include "ui/widget/canvas.h"  // Forced redraw
 
 #include "xml/node-event-vector.h"
 
@@ -61,7 +57,7 @@ const std::string& Box3dTool::getPrefsPath() {
 const std::string Box3dTool::prefsPath = "/tools/shapes/3dbox";
 
 Box3dTool::Box3dTool()
-    : ToolBase(cursor_3dbox_xpm)
+    : ToolBase("box.svg")
     , _vpdrag(nullptr)
     , box3d(nullptr)
     , ctrl_dragged(false)
@@ -70,7 +66,7 @@ Box3dTool::Box3dTool()
 }
 
 void Box3dTool::finish() {
-    sp_canvas_item_ungrab(SP_CANVAS_ITEM(desktop->acetate));
+    ungrabCanvasEvents();
     this->finishItem();
     this->sel_changed_connection.disconnect();
 
@@ -124,7 +120,7 @@ static void sp_box3d_context_ensure_persp_in_defs(SPDocument *document) {
     }
 
     if (!has_persp) {
-        document->setCurrentPersp3D(persp3d_create_xml_element (document));
+        document->setCurrentPersp3D(Persp3D::create_xml_element (document));
     }
 }
 
@@ -161,7 +157,7 @@ bool Box3dTool::item_handler(SPItem* item, GdkEvent* event) {
 
     switch (event->type) {
     case GDK_BUTTON_PRESS:
-        if ( event->button.button == 1 && !this->space_panning) {
+        if ( event->button.button == 1) {
             Inkscape::setup_for_drag_start(desktop, this, event);
             //ret = TRUE;
         }
@@ -196,7 +192,7 @@ bool Box3dTool::root_handler(GdkEvent* event) {
     gint ret = FALSE;
     switch (event->type) {
     case GDK_BUTTON_PRESS:
-        if ( event->button.button == 1  && !this->space_panning) {
+        if ( event->button.button == 1) {
             Geom::Point const button_w(event->button.x, event->button.y);
             Geom::Point button_dt(desktop->w2d(button_w));
 
@@ -233,18 +229,13 @@ bool Box3dTool::root_handler(GdkEvent* event) {
             this->drag_ptC_proj.normalize();
             this->drag_ptC_proj[Proj::Z] = 0.25;
 
-            sp_canvas_item_grab(SP_CANVAS_ITEM(desktop->acetate),
-                                ( GDK_KEY_PRESS_MASK |
-                                  GDK_BUTTON_RELEASE_MASK       |
-                                  GDK_POINTER_MOTION_MASK | GDK_POINTER_MOTION_HINT_MASK       |
-                                  GDK_BUTTON_PRESS_MASK ),
-                                nullptr, event->button.time);
+            grabCanvasEvents();
             ret = TRUE;
         }
         break;
 
     case GDK_MOTION_NOTIFY:
-        if (dragging && ( event->motion.state & GDK_BUTTON1_MASK )  && !this->space_panning) {
+        if (dragging && ( event->motion.state & GDK_BUTTON1_MASK )) {
             if ( this->within_tolerance
                  && ( abs( (gint) event->motion.x - this->xp ) < this->tolerance )
                  && ( abs( (gint) event->motion.y - this->yp ) < this->tolerance ) ) {
@@ -316,7 +307,7 @@ bool Box3dTool::root_handler(GdkEvent* event) {
     case GDK_BUTTON_RELEASE:
         this->xp = this->yp = 0;
 
-        if (event->button.button == 1 && !this->space_panning) {
+        if (event->button.button == 1) {
             dragging = false;
             sp_event_context_discard_delayed_snap_event(this);
 
@@ -337,7 +328,7 @@ bool Box3dTool::root_handler(GdkEvent* event) {
 
             this->item_to_select = nullptr;
             ret = TRUE;
-            sp_canvas_item_ungrab(SP_CANVAS_ITEM(desktop->acetate));
+            ungrabCanvasEvents();
         }
         break;
 
@@ -353,55 +344,46 @@ bool Box3dTool::root_handler(GdkEvent* event) {
             break;
 
         case GDK_KEY_bracketright:
-            persp3d_rotate_VP (document->getCurrentPersp3D(), Proj::X, 180 / snaps * y_dir, MOD__ALT(event));
+            document->getCurrentPersp3D()->rotate_VP (Proj::X, 180 / snaps * y_dir, MOD__ALT(event));
             DocumentUndo::done(document, SP_VERB_CONTEXT_3DBOX,
                              _("Change perspective (angle of PLs)"));
             ret = true;
             break;
 
         case GDK_KEY_bracketleft:
-            persp3d_rotate_VP (document->getCurrentPersp3D(), Proj::X, -180 / snaps * y_dir, MOD__ALT(event));
+            document->getCurrentPersp3D()->rotate_VP (Proj::X, -180 / snaps * y_dir, MOD__ALT(event));
             DocumentUndo::done(document, SP_VERB_CONTEXT_3DBOX,
                              _("Change perspective (angle of PLs)"));
             ret = true;
             break;
 
         case GDK_KEY_parenright:
-            persp3d_rotate_VP (document->getCurrentPersp3D(), Proj::Y, 180 / snaps * y_dir, MOD__ALT(event));
+            document->getCurrentPersp3D()->rotate_VP (Proj::Y, 180 / snaps * y_dir, MOD__ALT(event));
             DocumentUndo::done(document, SP_VERB_CONTEXT_3DBOX,
                              _("Change perspective (angle of PLs)"));
             ret = true;
             break;
 
         case GDK_KEY_parenleft:
-            persp3d_rotate_VP (document->getCurrentPersp3D(), Proj::Y, -180 / snaps * y_dir, MOD__ALT(event));
+            document->getCurrentPersp3D()->rotate_VP (Proj::Y, -180 / snaps * y_dir, MOD__ALT(event));
             DocumentUndo::done(document, SP_VERB_CONTEXT_3DBOX,
                              _("Change perspective (angle of PLs)"));
             ret = true;
             break;
 
         case GDK_KEY_braceright:
-            persp3d_rotate_VP (document->getCurrentPersp3D(), Proj::Z, 180 / snaps * y_dir, MOD__ALT(event));
+            document->getCurrentPersp3D()->rotate_VP (Proj::Z, 180 / snaps * y_dir, MOD__ALT(event));
             DocumentUndo::done(document, SP_VERB_CONTEXT_3DBOX,
                              _("Change perspective (angle of PLs)"));
             ret = true;
             break;
 
         case GDK_KEY_braceleft:
-            persp3d_rotate_VP (document->getCurrentPersp3D(), Proj::Z, -180 / snaps * y_dir, MOD__ALT(event));
+            document->getCurrentPersp3D()->rotate_VP (Proj::Z, -180 / snaps * y_dir, MOD__ALT(event));
             DocumentUndo::done(document, SP_VERB_CONTEXT_3DBOX,
                              _("Change perspective (angle of PLs)"));
             ret = true;
             break;
-
-        /* FOR DEBUGGING PURPOSES
-        case GDK_O:
-            if (MOD__CTRL(event) && MOD__SHIFT(event)) {
-                Box3D::create_canvas_point(persp3d_get_VP(document()->getCurrentPersp3D(), Proj::W).affine(), 7, 0xff00ff00);
-            }
-            ret = true;
-            break;
-        */
 
         case GDK_KEY_g:
         case GDK_KEY_G:
@@ -415,7 +397,7 @@ bool Box3dTool::root_handler(GdkEvent* event) {
         case GDK_KEY_P:
             if (MOD__SHIFT_ONLY(event)) {
                 if (document->getCurrentPersp3D()) {
-                    persp3d_print_debugging_info (document->getCurrentPersp3D());
+                    document->getCurrentPersp3D()->print_debugging_info();
                 }
                 ret = true;
             }
@@ -428,7 +410,7 @@ bool Box3dTool::root_handler(GdkEvent* event) {
                 ret = TRUE;
             }
             if (MOD__SHIFT_ONLY(event)) {
-                persp3d_toggle_VPs(selection->perspList(), Proj::X);
+                Persp3D::toggle_VPs(selection->perspList(), Proj::X);
                 this->_vpdrag->updateLines(); // FIXME: Shouldn't this be done automatically?
                 ret = true;
             }
@@ -437,7 +419,7 @@ bool Box3dTool::root_handler(GdkEvent* event) {
         case GDK_KEY_y:
         case GDK_KEY_Y:
             if (MOD__SHIFT_ONLY(event)) {
-                persp3d_toggle_VPs(selection->perspList(), Proj::Y);
+                Persp3D::toggle_VPs(selection->perspList(), Proj::Y);
                 this->_vpdrag->updateLines(); // FIXME: Shouldn't this be done automatically?
                 ret = true;
             }
@@ -446,7 +428,7 @@ bool Box3dTool::root_handler(GdkEvent* event) {
         case GDK_KEY_z:
         case GDK_KEY_Z:
             if (MOD__SHIFT_ONLY(event)) {
-                persp3d_toggle_VPs(selection->perspList(), Proj::Z);
+                Persp3D::toggle_VPs(selection->perspList(), Proj::Z);
                 this->_vpdrag->updateLines(); // FIXME: Shouldn't this be done automatically?
                 ret = true;
             }
@@ -459,7 +441,7 @@ bool Box3dTool::root_handler(GdkEvent* event) {
 
         case GDK_KEY_space:
             if (dragging) {
-                sp_canvas_item_ungrab(SP_CANVAS_ITEM(desktop->acetate));
+                ungrabCanvasEvents();
                 dragging = false;
                 sp_event_context_discard_delayed_snap_event(this);
                 if (!this->within_tolerance) {
@@ -522,7 +504,7 @@ void Box3dTool::drag(guint /*state*/) {
             Inkscape::Preferences *prefs = Inkscape::Preferences::get();
 
             Glib::ustring descr = "/desktop/";
-            descr += box3d_side_axes_string(side);
+            descr += side->axes_string();
             descr += "/style";
 
             Glib::ustring cur_style = prefs->getString(descr);    
@@ -535,21 +517,21 @@ void Box3dTool::drag(guint /*state*/) {
             } else {
                 // use default style 
                 Glib::ustring tool_path = Glib::ustring::compose("/tools/shapes/3dbox/%1",
-                        box3d_side_axes_string(side));
+                        side->axes_string());
                 desktop->applyCurrentOrToolStyle (side, tool_path, false);
             }
 
-            side->updateRepr(); // calls box3d_side_write() and updates, e.g., the axes string description
+            side->updateRepr(); // calls Box3DSide::write() and updates, e.g., the axes string description
         }
 
-        box3d_set_z_orders(this->box3d);
+        this->box3d->set_z_orders();
         this->box3d->updateRepr();
 
         // TODO: It would be nice to show the VPs during dragging, but since there is no selection
         //       at this point (only after finishing the box), we must do this "manually"
         /* this._vpdrag->updateDraggers(); */
 
-        desktop->canvas->forceFullRedrawAfterInterruptions(5);
+        forced_redraws_start(5);
     }
 
     g_assert(this->box3d);
@@ -557,13 +539,13 @@ void Box3dTool::drag(guint /*state*/) {
     this->box3d->orig_corner0 = this->drag_origin_proj;
     this->box3d->orig_corner7 = this->drag_ptC_proj;
 
-    box3d_check_for_swapped_coords(this->box3d);
+    this->box3d->check_for_swapped_coords();
 
-    /* we need to call this from here (instead of from box3d_position_set(), for example)
+    /* we need to call this from here (instead of from SPBox3D::position_set(), for example)
        because z-order setting must not interfere with display updates during undo/redo */
-    box3d_set_z_orders (this->box3d);
+    this->box3d->set_z_orders ();
 
-    box3d_position_set(this->box3d);
+    this->box3d->position_set();
 
     // status text
     this->message_context->setF(Inkscape::NORMAL_MESSAGE, "%s", _("<b>3D Box</b>; with <b>Shift</b> to extrude along the Z axis"));
@@ -586,9 +568,9 @@ void Box3dTool::finishItem() {
 
         this->box3d->updateRepr();
 
-        box3d_relabel_corners(this->box3d);
+        this->box3d->relabel_corners();
 
-        desktop->canvas->endForcedFullRedraws();
+        forced_redraws_stop();
 
         desktop->getSelection()->set(this->box3d);
         DocumentUndo::done(desktop->getDocument(), SP_VERB_CONTEXT_3DBOX,

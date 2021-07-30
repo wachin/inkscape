@@ -16,9 +16,6 @@
 
 #include "sp-item-group.h"
 
-#define SP_ANCHOR(obj) (dynamic_cast<SPAnchor*>((SPObject*)obj))
-#define SP_IS_ANCHOR(obj) (dynamic_cast<const SPAnchor*>((SPObject*)obj) != NULL)
-
 class SPAnchor : public SPGroup {
 public:
 	SPAnchor();
@@ -31,13 +28,16 @@ public:
 
 	void build(SPDocument *document, Inkscape::XML::Node *repr) override;
 	void release() override;
-	void set(SPAttributeEnum key, char const* value) override;
+	void set(SPAttr key, char const* value) override;
         virtual void updatePageAnchor();
 	Inkscape::XML::Node* write(Inkscape::XML::Document *xml_doc, Inkscape::XML::Node *repr, unsigned int flags) override;
 
-    const char* displayName() const override;
+        const char* typeName() const override;
+        const char* displayName() const override;
 	char* description() const override;
 	int event(SPEvent *event) override;
 };
+
+MAKE_SP_OBJECT_TYPECHECK_FUNCTIONS(SP_IS_ANCHOR, SPAnchor)
 
 #endif

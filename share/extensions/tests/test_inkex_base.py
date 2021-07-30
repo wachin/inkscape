@@ -7,6 +7,7 @@ import sys
 
 from io import BytesIO
 
+from inkex import AbortExtension
 from inkex.base import InkscapeExtension, SvgThroughMixin
 from inkex.tester import TestCase
 
@@ -82,19 +83,39 @@ class InkscapeExtensionTest(TestCase):
         self.assertEqual(options.input_file, self.empty_svg)
         self.assertEqual(options.output, 'foo.txt')
 
+    def test_get_resource(self):
+        """We can get a resource path, based on where the extension is located"""
+        ext = ModExtension()
+        self.assertRaises(AbortExtension, ext.get_resource, 'sir-not-apearing.py')
+
+        # Test relative filename, which fails with AbortExtension if not found.
+        ret = ext.get_resource(__file__)
+        # Test absolute filename, which we already have, so just feed it back.
+        self.assertEqual(ext.get_resource(ret), ret)
+
     def test_svg_path(self):
         """Can get the svg file location"""
         output = os.path.join(self.tempdir, 'output.tmp')
         ext = ModExtension()
-        ext.run(['--output', output, self.empty_svg])
+        os.environ['DOCUMENT_PATH'] = self.empty_svg
         self.assertEqual(ext.svg_path(), os.path.join(self.datadir(), 'svg'))
         self.assertEqual(ext.absolute_href('/foo'), '/foo')
         self.assertEqual(ext.absolute_href('./foo'), os.path.join(self.datadir(), 'svg', 'foo'))
         self.assertEqual(ext.absolute_href('~/foo'), os.path.realpath(os.path.expanduser('~/foo')))
-        ext.options.input_file = None
-        self.assertEqual(ext.absolute_href('./foo'), os.path.realpath(os.path.expanduser('~/foo')))
+
+    def test_svg_no_path(self):
         tmp_foo = os.path.realpath('/tmp/foo')
+        os.environ['DOCUMENT_PATH'] = ''
+        ext = ModExtension()
+        # Default results in home dir
+        self.assertEqual(ext.absolute_href('./foo'), os.path.realpath(os.path.expanduser('~/foo')))
+        # Or override the default
         self.assertEqual(ext.absolute_href('./foo', '/tmp/'), tmp_foo)
+        # But we can ask for errors too, this one for "document not saved"
+        self.assertRaises(AbortExtension, ext.absolute_href, './foo', default=None)
+        # This covers inkscape old versions
+        del os.environ['DOCUMENT_PATH']
+        self.assertRaises(AbortExtension, ext.absolute_href, './foo', default=None)
 
 
 class SvgInputOutputTest(TestCase):

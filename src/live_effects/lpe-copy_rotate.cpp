@@ -17,6 +17,7 @@
 #include "helper/geom.h"
 #include "live_effects/lpeobject.h"
 #include "object/sp-text.h"
+#include "path/path-boolop.h"
 #include "path-chemistry.h"
 #include "style.h"
 #include "svg/path-string.h"
@@ -28,7 +29,6 @@
 #include <gdk/gdk.h>
 #include <gtkmm.h>
 
-#include "splivarot.h"
 #include "object/sp-path.h"
 #include "object/sp-shape.h"
 
@@ -94,11 +94,11 @@ LPECopyRotate::LPECopyRotate(LivePathEffectObject *lpeobject) :
     registerParameter(&mirror_copies);
     registerParameter(&split_items);
 
-    gap.param_set_range(-99999.0, 99999.0);
+    gap.param_set_range(std::numeric_limits<double>::lowest(), std::numeric_limits<double>::max());
     gap.param_set_increments(0.01, 0.01);
     gap.param_set_digits(5);
-    num_copies.param_set_range(1, 999999);
-    num_copies.param_make_integer(true);
+    num_copies.param_set_range(1, std::numeric_limits<gint>::max());
+    num_copies.param_make_integer();
     apply_to_clippath_and_mask = true;
     previous_num_copies = num_copies;
     previous_origin = Geom::Point(0,0);
@@ -111,7 +111,7 @@ LPECopyRotate::~LPECopyRotate()
 = default;
 
 void
-LPECopyRotate::doAfterEffect (SPLPEItem const* lpeitem)
+LPECopyRotate::doAfterEffect (SPLPEItem const* lpeitem, SPCurve *curve)
 {
     if (split_items) {
         SPDocument *document = getSPDoc();
@@ -190,9 +190,9 @@ void LPECopyRotate::cloneStyle(SPObject *orig, SPObject *dest)
 {
     dest->getRepr()->setAttribute("style", orig->getRepr()->attribute("style"));
     for (auto iter : orig->style->properties()) {
-        if (iter->style_src != SP_STYLE_SRC_UNSET) {
+        if (iter->style_src != SPStyleSrc::UNSET) {
             auto key = iter->id();
-            if (key != SP_PROP_FONT && key != SP_ATTR_D && key != SP_PROP_MARKER) {
+            if (key != SPAttr::FONT && key != SPAttr::D && key != SPAttr::MARKER) {
                 const gchar *attr = orig->getRepr()->attribute(iter->name().c_str());
                 if (attr) {
                     dest->getRepr()->setAttribute(iter->name(), attr);
@@ -238,9 +238,9 @@ LPECopyRotate::cloneD(SPObject *orig, SPObject *dest, Geom::Affine transform, bo
     SPShape * shape =  SP_SHAPE(orig);
     SPPath * path =  SP_PATH(dest);
     if (shape) {
-        SPCurve *c = shape->getCurve();
+        SPCurve const *c = shape->curve();
         if (c) {
-            gchar *str = sp_svg_write_path(c->get_pathvector());
+            auto str = sp_svg_write_path(c->get_pathvector());
             if (shape && !path) {   
                 const char * id = dest->getRepr()->attribute("id");
                 const char * style = dest->getRepr()->attribute("style");
@@ -253,8 +253,6 @@ LPECopyRotate::cloneD(SPObject *orig, SPObject *dest, Geom::Affine transform, bo
                 path =  SP_PATH(dest);
             }
             path->getRepr()->setAttribute("d", str);
-            g_free(str);
-            c->unref();
         } else {
             path->getRepr()->removeAttribute("d");
         }
@@ -314,12 +312,11 @@ LPECopyRotate::toItem(Geom::Affine transform, size_t i, bool reset)
         phantom->setAttribute("id", elemref_id);
         reset = true;
         elemref = container->appendChildRepr(phantom);
+        elemref->parent->reorder(elemref, sp_lpe_item);
         Inkscape::GC::release(phantom);
     }
-    cloneD(SP_OBJECT(sp_lpe_item), elemref, transform, reset);
-    gchar *str = sp_svg_transform_write(transform);
-    elemref->getRepr()->setAttribute("transform" , str);
-    g_free(str);
+    cloneD(sp_lpe_item, elemref, transform, reset);
+    elemref->getRepr()->setAttributeOrRemoveIfEmpty("transform", sp_svg_transform_write(transform));
     SP_ITEM(elemref)->setHidden(false);
     if (elemref->parent != container) {
         Inkscape::XML::Node *copy = phantom->duplicate(xml_doc);
@@ -333,14 +330,14 @@ LPECopyRotate::toItem(Geom::Affine transform, size_t i, bool reset)
 void
 LPECopyRotate::resetStyles(){
     reset = true;
-    doAfterEffect(sp_lpe_item);
+    doAfterEffect(sp_lpe_item, nullptr);
 }
 
 Gtk::Widget * LPECopyRotate::newWidget()
 {
     // use manage here, because after deletion of Effect object, others might
     // still be pointing to this widget.
-    Gtk::VBox *vbox = Gtk::manage(new Gtk::VBox(Effect::newWidget()));
+    Gtk::Box *vbox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL));
 
     vbox->set_border_width(5);
     vbox->set_homogeneous(false);
@@ -364,7 +361,7 @@ Gtk::Widget * LPECopyRotate::newWidget()
 
         ++it;
     }
-    Gtk::HBox * hbox = Gtk::manage(new Gtk::HBox(false,0));
+    Gtk::Box * hbox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL,0));
     Gtk::Button * reset_button = Gtk::manage(new Gtk::Button(Glib::ustring(_("Reset styles"))));
     reset_button->signal_clicked().connect(sigc::mem_fun (*this,&LPECopyRotate::resetStyles));
     reset_button->set_size_request(110, 20);
@@ -670,13 +667,20 @@ LPECopyRotate::doOnVisibilityToggled(SPLPEItem const* /*lpeitem*/)
 void 
 LPECopyRotate::doOnRemove (SPLPEItem const* lpeitem)
 {
-    //set "keep paths" hook on sp-lpe-item.cpp
-    if (keep_paths) {
-        processObjects(LPE_TO_OBJECTS);
-        items.clear();
-        return;
+    std::vector<SPLPEItem *> lpeitems = getCurrrentLPEItems();
+    if (lpeitems.size() == 1) {
+        sp_lpe_item = lpeitems[0];
+        if (!sp_lpe_item->path_effects_enabled) {
+            return;
+        }
+        //set "keep paths" hook on sp-lpe-item.cpp
+        if (keep_paths) {
+            processObjects(LPE_TO_OBJECTS);
+            items.clear();
+            return;
+        }
+        processObjects(LPE_ERASE);
     }
-    processObjects(LPE_ERASE);
 }
 
 } //namespace LivePathEffect

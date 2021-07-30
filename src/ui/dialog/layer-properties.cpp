@@ -30,6 +30,7 @@
 #include "ui/icon-names.h"
 #include "ui/widget/imagetoggler.h"
 #include "ui/tools/tool-base.h"
+#include "object/sp-root.h"
 
 namespace Inkscape {
 namespace UI {
@@ -118,9 +119,6 @@ LayerPropertiesDialog::_apply()
     g_assert(_strategy != nullptr);
 
     _strategy->perform(*this);
-    DocumentUndo::done(SP_ACTIVE_DESKTOP->getDocument(), SP_VERB_NONE,
-                       _("Add layer"));
-
     _close();
 }
 
@@ -222,7 +220,7 @@ LayerPropertiesDialog::_setup_layers_controls() {
     if ( root ) {
         SPObject* target = _desktop->currentLayer();
         _store->clear();
-        _addLayer( document, SP_OBJECT(root), nullptr, target, 0 );
+        _addLayer( document, root, nullptr, target, 0 );
     }
 
     _layout_table.remove(_layer_name_entry);
@@ -232,6 +230,8 @@ LayerPropertiesDialog::_setup_layers_controls() {
     _scroller.set_valign(Gtk::ALIGN_FILL);
     _scroller.set_hexpand();
     _scroller.set_vexpand();
+    _scroller.set_propagate_natural_width(true);
+    _scroller.set_propagate_natural_height(true);
     _layout_table.attach(_scroller, 0, 1, 2, 1);
 
     show_all_children();
@@ -333,8 +333,7 @@ void LayerPropertiesDialog::Rename::perform(LayerPropertiesDialog &dialog) {
                                          (gchar *)name.c_str(),
                                          FALSE
     );
-    DocumentUndo::done(desktop->getDocument(), SP_VERB_NONE, 
-                       _("Rename layer"));
+    DocumentUndo::done(desktop->getDocument(), SP_VERB_LAYER_RENAME, _("Rename layer"));
     // TRANSLATORS: This means "The layer has been renamed"
     desktop->messageStack()->flash(Inkscape::NORMAL_MESSAGE, _("Renamed layer"));
 }
@@ -370,6 +369,7 @@ void LayerPropertiesDialog::Create::perform(LayerPropertiesDialog &dialog) {
     }
     desktop->getSelection()->clear();
     desktop->setCurrentLayer(new_layer);
+    DocumentUndo::done(desktop->getDocument(), SP_VERB_LAYER_NEW, _("Add layer"));
     desktop->messageStack()->flash(Inkscape::NORMAL_MESSAGE, _("New layer created."));
 }
 

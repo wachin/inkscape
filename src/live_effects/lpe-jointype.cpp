@@ -9,6 +9,7 @@
  */
 
 #include "live_effects/parameter/enum.h"
+#include "live_effects/fill-conversion.h"
 #include "helper/geom-pathstroke.h"
 
 #include "desktop-style.h"
@@ -33,6 +34,7 @@ namespace Inkscape {
 namespace LivePathEffect {
 
 static const Util::EnumData<unsigned> JoinTypeData[] = {
+    // clang-format off
     {JOIN_BEVEL,       N_("Beveled"),    "bevel"},
     {JOIN_ROUND,       N_("Rounded"),    "round"},
     {JOIN_MITER,       N_("Miter"),      "miter"},
@@ -41,6 +43,7 @@ static const Util::EnumData<unsigned> JoinTypeData[] = {
     {JOIN_EXTRAPOLATE1, N_("Extrapolated arc Alt1"), "extrp_arc1"},
     {JOIN_EXTRAPOLATE2, N_("Extrapolated arc Alt2"), "extrp_arc2"},
     {JOIN_EXTRAPOLATE3, N_("Extrapolated arc Alt3"), "extrp_arc3"},
+    // clang-format on
 };
 
 static const Util::EnumData<unsigned> CapTypeData[] = {
@@ -83,49 +86,31 @@ LPEJoinType::LPEJoinType(LivePathEffectObject *lpeobject) :
 LPEJoinType::~LPEJoinType()
 = default;
 
-//from LPEPowerStroke -- sets fill if stroke color because we will
-//be converting to a fill to make the new join.
-
 void LPEJoinType::doOnApply(SPLPEItem const* lpeitem)
 {
-    if (SP_IS_SHAPE(lpeitem)) {
-        Inkscape::Preferences *prefs = Inkscape::Preferences::get();
-        SPLPEItem* item = const_cast<SPLPEItem*>(lpeitem);
-        double width = (lpeitem && lpeitem->style) ? lpeitem->style->stroke_width.computed : 1.;
-
-        SPCSSAttr *css = sp_repr_css_attr_new ();
-        if (lpeitem->style->stroke.isPaintserver()) {
-            SPPaintServer * server = lpeitem->style->getStrokePaintServer();
-            if (server) {
-                Glib::ustring str;
-                str += "url(#";
-                str += server->getId();
-                str += ")";
-                sp_repr_css_set_property (css, "fill", str.c_str());
-            }
-        } else if (lpeitem->style->stroke.isColor()) {
-            gchar c[64];
-            sp_svg_write_color (c, sizeof(c), lpeitem->style->stroke.value.color.toRGBA32(SP_SCALE24_TO_FLOAT(lpeitem->style->stroke_opacity.value)));
-            sp_repr_css_set_property (css, "fill", c);
-        } else {
-            sp_repr_css_set_property (css, "fill", "none");
-        }
-
-        sp_repr_css_set_property(css, "fill-rule", "nonzero");
-        sp_repr_css_set_property(css, "stroke", "none");
-
-        sp_desktop_apply_css_recursive(item, css, true);
-        sp_repr_css_attr_unref (css);
-        Glib::ustring pref_path = (Glib::ustring)"/live_effects/" +
-                                       (Glib::ustring)LPETypeConverter.get_key(effectType()).c_str() +
-                                       (Glib::ustring)"/" + 
-                                       (Glib::ustring)"line_width";
-        bool valid = prefs->getEntry(pref_path).isValid();
-        if(!valid){
-            line_width.param_set_value(width);
-        }
-        line_width.write_to_SVG();
+    if (!SP_IS_SHAPE(lpeitem)) {
+        return;
     }
+
+    Inkscape::Preferences *prefs = Inkscape::Preferences::get();
+    auto lpeitem_mutable = const_cast<SPLPEItem *>(lpeitem);
+    auto item = dynamic_cast<SPShape *>(lpeitem_mutable);
+    double width = (lpeitem && lpeitem->style) ? lpeitem->style->stroke_width.computed : 1.;
+
+    lpe_shape_convert_stroke_and_fill(item);
+
+    Glib::ustring pref_path = (Glib::ustring)"/live_effects/" +
+                                    (Glib::ustring)LPETypeConverter.get_key(effectType()).c_str() +
+                                    (Glib::ustring)"/" + 
+                                    (Glib::ustring)"line_width";
+
+    bool valid = prefs->getEntry(pref_path).isValid();
+
+    if (!valid) {
+        line_width.param_set_value(width);
+    }
+
+    line_width.write_to_SVG();
 }
 
 void LPEJoinType::transform_multiply(Geom::Affine const &postmul, bool /*set*/)
@@ -141,37 +126,14 @@ void LPEJoinType::transform_multiply(Geom::Affine const &postmul, bool /*set*/)
 
 void LPEJoinType::doOnRemove(SPLPEItem const* lpeitem)
 {
-    if (SP_IS_SHAPE(lpeitem)) {
-        SPLPEItem *item = const_cast<SPLPEItem*>(lpeitem);
+    auto lpeitem_mutable = const_cast<SPLPEItem *>(lpeitem);
+    auto shape = dynamic_cast<SPShape *>(lpeitem_mutable);
 
-        SPCSSAttr *css = sp_repr_css_attr_new ();
-        if (lpeitem->style->fill.isPaintserver()) {
-            SPPaintServer * server = lpeitem->style->getFillPaintServer();
-            if (server) {
-                Glib::ustring str;
-                str += "url(#";
-                str += server->getId();
-                str += ")";
-                sp_repr_css_set_property (css, "stroke", str.c_str());
-            }
-        } else if (lpeitem->style->fill.isColor()) {
-            gchar c[64];
-            sp_svg_write_color (c, sizeof(c), lpeitem->style->fill.value.color.toRGBA32(SP_SCALE24_TO_FLOAT(lpeitem->style->fill_opacity.value)));
-            sp_repr_css_set_property (css, "stroke", c);
-        } else {
-            sp_repr_css_set_property (css, "stroke", "none");
-        }
-
-        Inkscape::CSSOStringStream os;
-        os << fabs(line_width);
-        sp_repr_css_set_property (css, "stroke-width", os.str().c_str());
-
-        sp_repr_css_set_property(css, "fill", "none");
-
-        sp_desktop_apply_css_recursive(item, css, true);
-        sp_repr_css_attr_unref (css);
-        item->updateRepr();
+    if (!shape) {
+        return;
     }
+
+    lpe_shape_revert_stroke_and_fill(shape, line_width);
 }
 
 Geom::PathVector LPEJoinType::doEffect_path(Geom::PathVector const & path_in)

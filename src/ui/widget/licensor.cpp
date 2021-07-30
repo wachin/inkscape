@@ -59,10 +59,11 @@ LicenseItem::LicenseItem (struct rdf_license_t const* license, EntityEntry* enti
 /// \pre it is assumed that the license URI entry is a Gtk::Entry
 void LicenseItem::on_toggled()
 {
-    if (_wr.isUpdating()) return;
+    if (_wr.isUpdating() || !_wr.desktop())
+        return;
 
     _wr.setUpdating (true);
-    SPDocument *doc = SP_ACTIVE_DOCUMENT;
+    SPDocument *doc = _wr.desktop()->getDocument();
     rdf_set_license (doc, _lic->details ? _lic : nullptr);
     if (doc->isSensitive()) {
         DocumentUndo::done(doc, SP_VERB_NONE, _("Document license updated"));
@@ -75,7 +76,7 @@ void LicenseItem::on_toggled()
 //---------------------------------------------------
 
 Licensor::Licensor()
-: Gtk::VBox(false,4),
+: Gtk::Box(Gtk::ORIENTATION_VERTICAL, 4),
   _eentry (nullptr)
 {
 }
@@ -111,7 +112,7 @@ void Licensor::init (Registry& wr)
     pd->set_active();
     wr.setUpdating (false);
 
-    Gtk::HBox *box = Gtk::manage (new Gtk::HBox);
+    Gtk::Box *box = Gtk::manage (new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL));
     pack_start (*box, true, true, 0);
 
     box->pack_start (_eentry->_label, false, false, 5);

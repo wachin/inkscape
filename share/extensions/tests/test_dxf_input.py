@@ -15,6 +15,18 @@ class TestDxfInputBasic(ComparisonMixin, TestCase):
         """Remove the full pathnames"""
         if is_saving is True:
             return data
-        data = super(TestDxfInputBasic, self)._apply_compare_filters(data)
+        data = super()._apply_compare_filters(data)
         return data.replace((self.datadir() + '/').encode('utf-8'), b'')
+    
+class TestDxfInputTextHeight(ComparisonMixin, TestCase):
+    compare_file = ['io/CADTextHeight.dxf']
+    compare_filters = [CompareNumericFuzzy()]
+    comparisons = [(), ('--textscale=1.411',)]
+    effect_class = DxfInput
 
+    def _apply_compare_filters(self, data, is_saving=None):
+        """Remove the full pathnames"""
+        if is_saving is True:
+            return data
+        data = super()._apply_compare_filters(data)
+        return data.replace((self.datadir() + '/').encode('utf-8'), b'')

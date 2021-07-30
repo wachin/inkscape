@@ -10,19 +10,19 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
-//#include "display/cairo-utils.h"
-//#include "display/canvas-bpath.h" // for SPWindRule (WTF!)
-#include "display/drawing.h"
+#include "2geom/pathvector.h"
+
+#include "style.h"
+
+#include "display/cairo-utils.h"
 #include "display/drawing-context.h"
 #include "display/drawing-surface.h"
 #include "display/drawing-text.h"
-#include "helper/geom.h"
-#include "libnrtype/font-instance.h"
-#include "style.h"
-#include "2geom/pathvector.h"
+#include "display/drawing.h"
 
-#include "display/cairo-utils.h"
-#include "display/canvas-bpath.h"
+#include "helper/geom.h"
+
+#include "libnrtype/font-instance.h"
 
 namespace Inkscape {
 
@@ -275,20 +275,26 @@ DrawingText::_updateItem(Geom::IntRect const &area, UpdateContext const &ctx, un
 void DrawingText::decorateStyle(DrawingContext &dc, double vextent, double xphase, Geom::Point const &p1, Geom::Point const &p2, double thickness)
 {
     double wave[16]={
+        // clang-format off
         0.000000,  0.382499,  0.706825,  0.923651,   1.000000,  0.923651,  0.706825,  0.382499,
         0.000000, -0.382499, -0.706825, -0.923651,  -1.000000, -0.923651, -0.706825, -0.382499,
+        // clang-format on
     };
     int dashes[16]={
+        // clang-format off
         8,   7,   6,   5,
         4,   3,   2,   1,
         -8, -7,  -6,  -5,
         -4, -3,  -2,  -1
+        // clang-format on
     };
     int dots[16]={
+        // clang-format off
         4,     3,   2,   1,
         -4,   -3,  -2,  -1,
         4,     3,   2,   1,
         -4,   -3,  -2,  -1
+        // clang-format on
     };
     double   step = vextent/32.0;
     unsigned i  = 15 & (unsigned) round(xphase/step);  // xphase is >= 0.0
@@ -644,13 +650,13 @@ unsigned DrawingText::_renderItem(DrawingContext &dc, Geom::IntRect const &/*are
             if (has_stroke) {
                 _nrstyle.applyStroke(dc);
 
-                // If the draw mode is set to visible hairlines, don't let anything get smaller
-                // than half a pixel.
-                if (_drawing.visibleHairlines()) {
-                    double half_pixel_size = 0.5, trash = 0.5;
-                    dc.device_to_user_distance(half_pixel_size, trash);
-                    if (_nrstyle.stroke_width < half_pixel_size) {
-                        dc.setLineWidth(half_pixel_size);
+                // If the stroke is a hairline, set it to exactly 1px on screen.
+                // If visible hairline mode is on, make sure the line is at least 1px.
+                if (_drawing.visibleHairlines() || _style->stroke_extensions.hairline) {
+                    double pixel_size_x = 1.0, pixel_size_y = 1.0;
+                    dc.device_to_user_distance(pixel_size_x, pixel_size_y);
+                    if (_style->stroke_extensions.hairline || _nrstyle.stroke_width < std::min(pixel_size_x, pixel_size_y)) {
+                       dc.setHairline();
                     }
                 }
 

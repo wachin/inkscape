@@ -18,9 +18,9 @@ message("Binary Dir: ${CMAKE_CURRENT_BINARY_DIR}")
 # -----------------------------------------------------------------------------
 # CMake Configuration
 # -----------------------------------------------------------------------------
-set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-# set(CMAKE_CXX_EXTENSIONS OFF) # enforces -std=c++11 instead of -std=gnu++11
+# set(CMAKE_CXX_EXTENSIONS OFF) # enforces -std=c++17 instead of -std=gnu++17
                                 # TODO: build currently fails with it as we actually depend on GNU compiler extensions...
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/CMakeScripts/Modules")
@@ -30,19 +30,20 @@ set(CMAKE_BUILD_TYPE_INIT "Release")
 
 include(CMakeScripts/HelperFunctions.cmake)
 include(CMakeScripts/ConfigEnv.cmake)
-include(GNUInstallDirs) # for the CMAKE_INSTALL_LIBDIR variable
 
 project(inkscape)
 set(CMAKE_INSTALL_DEFAULT_COMPONENT_NAME inkscape) # needs to be before any install() commands
 
+include(GNUInstallDirs) # for the CMAKE_INSTALL_LIBDIR variable
 include(CMakeScripts/ConfigPaths.cmake)
 
 set(PROJECT_NAME inkscape)
 
+# see https://gitlab.com/inkscape/inkscape/-/issues/551 for versioning suffixes
 set(INKSCAPE_VERSION_MAJOR  1)
-set(INKSCAPE_VERSION_MINOR  0)
-set(INKSCAPE_VERSION_PATCH  2)
-set(INKSCAPE_VERSION_SUFFIX "")
+set(INKSCAPE_VERSION_MINOR  2)
+set(INKSCAPE_VERSION_PATCH  0)
+set(INKSCAPE_VERSION_SUFFIX "-dev")
 
 set(INKSCAPE_VERSION ${INKSCAPE_VERSION_MAJOR}.${INKSCAPE_VERSION_MINOR})
 if(INKSCAPE_VERSION_PATCH)
@@ -54,13 +55,10 @@ endif()
 
 set(CMAKE_INCLUDE_CURRENT_DIR TRUE)
 
-set(INKSCAPE_INSTALL_LIBDIR "${CMAKE_INSTALL_LIBDIR}/inkscape"
-    CACHE STRING "Install directory for the inkscape shared libraries")
-
 file(RELATIVE_PATH
     INKSCAPE_INSTALL_LIBDIR_RELATIVE_TO_BINDIR
-    ${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_BINDIR}
-    ${CMAKE_INSTALL_PREFIX}/${INKSCAPE_INSTALL_LIBDIR})
+    "${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_BINDIR}"
+    "${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}/inkscape")
 
 if(APPLE)
     SET(CMAKE_MACOSX_RPATH TRUE)
@@ -81,7 +79,7 @@ endif()
 
 # Define a very strict set of build flags that will prevent any use of deprecated symbols.
 # This will almost certainly cause compilation failure and is intended only for developer use.
-set(CMAKE_CXX_FLAGS_STRICT "${CMAKE_CXX_FLAGS_DEBUG} -Werror=deprecated-declarations -DGTK_DISABLE_DEPRECATED -DGDK_DISABLE_DEPRECATED -DGTKMM_DISABLE_DEPRECATED -DGDKMM_DISABLE_DEPRECATED"
+set(CMAKE_CXX_FLAGS_STRICT "${CMAKE_CXX_FLAGS_DEBUG} -Werror=deprecated-declarations -DGTK_DISABLE_DEPRECATED -DGDK_DISABLE_DEPRECATED -DGTKMM_DISABLE_DEPRECATED -DGDKMM_DISABLE_DEPRECATED -DGLIBMM_DISABLE_DEPRECATED"
 	CACHE STRING
 	"Flags used by C++ compiler during Strict builds"
 	FORCE)
@@ -107,13 +105,13 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_LIBDIR} C
 # -----------------------------------------------------------------------------
 # Options
 # -----------------------------------------------------------------------------
+option(WITH_GNU_READLINE "Compile with GNU Readline support (shell mode)" ON)
 option(WITH_DBUS "Compile with support for DBus interface" OFF)
 option(ENABLE_LCMS "Compile with LCMS support" ON)
 option(WITH_SVG2 "Compile with support for new SVG2 features" ON)
 option(WITH_LPETOOL "Compile with LPE Tool" OFF)
 option(LPE_ENABLE_TEST_EFFECTS "Compile with test experimental LPEs enabled" OFF)
 option(WITH_OPENMP "Compile with OpenMP support" ON)
-
 option(WITH_PROFILING "Turn on profiling" OFF) # Set to true if compiler/linker should enable profiling
 option(BUILD_SHARED_LIBS "Compile libraries as shared and not static" ON)
 
@@ -124,9 +122,11 @@ option(WITH_GRAPHICS_MAGICK "Compile with support of GraphicsMagick for raster e
 option(WITH_LIBCDR "Compile with support of libcdr for CorelDRAW Diagrams" ON)
 option(WITH_LIBVISIO "Compile with support of libvisio for Microsoft Visio Diagrams" ON)
 option(WITH_LIBWPG "Compile with support of libwpg for WordPerfect Graphics" ON)
+option(WITH_GSPELL "Compile with support of gspell" ON)
 option(WITH_NLS "Compile with Native Language Support (using gettext)" ON)
 option(WITH_JEMALLOC "Compile with JEMALLOC support" OFF)
 option(WITH_ASAN "Compile with Clang's AddressSanitizer (for debugging purposes)" OFF)
+option(WITH_INTERNAL_2GEOM "Prefer internal copy of lib2geom" OFF)
 
 option(WITH_FUZZ "Compile for fuzzing purpose (use 'make fuzz' only)" OFF)
 mark_as_advanced(WITH_FUZZ)
@@ -179,7 +179,7 @@ add_custom_target(check-license-headers WORKING_DIRECTORY ${CMAKE_SOURCE_DIR} CO
 if(BUILD_TESTING OR NOT DEFINED BUILD_TESTING)
     find_package(GTest)
     if(GTEST_FOUND)
-        set(DART_TESTING_TIMEOUT 60 CACHE STRING "Test timeout") # if running for > 60 s something must be wrong)
+        set(DART_TESTING_TIMEOUT 180 CACHE STRING "Test timeout") # if running for > 180 s something must be wrong)
         include(CTest)
         add_subdirectory(testfiles EXCLUDE_FROM_ALL)
     else()
@@ -274,8 +274,9 @@ endif()
 message("ENABLE_LCMS:             ${ENABLE_LCMS}")
 message("ENABLE_POPPLER:          ${ENABLE_POPPLER}")
 message("ENABLE_POPPLER_CAIRO:    ${ENABLE_POPPLER_CAIRO}")
+message("WITH_GNU_READLINE:       ${WITH_GNU_READLINE}")
 message("WITH_DBUS:               ${WITH_DBUS}")
-message("WITH_GTKSPELL:           ${WITH_GTKSPELL}")
+message("WITH_GSPELL:             ${WITH_GSPELL}")
 message("WITH_IMAGE_MAGICK:       ${WITH_IMAGE_MAGICK}")
 message("WITH_GRAPHICS_MAGICK:    ${WITH_GRAPHICS_MAGICK}")
 message("WITH_LIBCDR:             ${WITH_LIBCDR}")
@@ -284,6 +285,7 @@ message("WITH_LIBWPG:             ${WITH_LIBWPG}")
 message("WITH_NLS:                ${WITH_NLS}")
 message("WITH_OPENMP:             ${WITH_OPENMP}")
 message("WITH_JEMALLOC:           ${WITH_JEMALLOC}")
+message("WITH_INTERNAL_2GEOM:     ${WITH_INTERNAL_2GEOM}")
 
 message("WITH_PROFILING:          ${WITH_PROFILING}")
 message("BUILD_TESTING:           ${BUILD_TESTING}")

@@ -74,8 +74,8 @@ Geom::PathVector sp_get_recursive_pathvector(SPLPEItem *item, Geom::PathVector r
         }
     }
     SPShape *shape = dynamic_cast<SPShape *>(item);
-    if (shape && shape->getCurve()) {
-        for (auto path : shape->getCurve(true)->get_pathvector()) {
+    if (shape && shape->curve()) {
+        for (auto path : shape->curve()->get_pathvector()) {
             if (!path.empty()) {
                 bool pathdir = Geom::path_direction(path);
                 if (pathdir == dir && inverse) {
@@ -154,8 +154,7 @@ void LPEPowerClip::add()
                     Glib::ustring uri = Glib::ustring("url(#") + newclip + Glib::ustring(")");
                     parent = clip_path->getRepr()->duplicate(xml_doc);
                     parent->setAttribute("id", newclip);
-                    Inkscape::XML::Node *defs = clip_path->getRepr()->parent();
-                    clip_path = SP_OBJECT(document->getDefs()->appendChildRepr(parent));
+                    clip_path = document->getDefs()->appendChildRepr(parent);
                     Inkscape::GC::release(parent);
                     sp_lpe_item->setAttribute("clip-path", uri);
                     SPLPEItem *childitemdel = dynamic_cast<SPLPEItem *>(clip_path->childList(true).back());
@@ -178,9 +177,7 @@ void LPEPowerClip::add()
             }        
             elemref->setAttribute("class", "powerclip");
             elemref->setAttribute("id", getId());
-            gchar *str = sp_svg_write_path(getClipPathvector());
-            elemref->setAttribute("d", str);
-            g_free(str);
+            elemref->setAttribute("d", sp_svg_write_path(getClipPathvector()));
         } else {
             sp_lpe_item->removeCurrentPathEffect(false);
         }
@@ -199,9 +196,7 @@ void LPEPowerClip::upd()
     }
     SPObject *elemref = document->getObjectById(getId().c_str());
     if (elemref && sp_lpe_item) {
-        gchar *str = sp_svg_write_path(getClipPathvector());
-        elemref->setAttribute("d", str);
-        g_free(str);
+        elemref->setAttribute("d", sp_svg_write_path(getClipPathvector()));
         elemref->updateRepr(SP_OBJECT_WRITE_NO_CHILDREN | SP_OBJECT_WRITE_EXT);
     } else {
         add();
@@ -305,7 +300,7 @@ void sp_inverse_powerclip(Inkscape::Selection *sel) {
         for(auto i = boost::rbegin(selList); i != boost::rend(selList); ++i) {
             SPLPEItem* lpeitem = dynamic_cast<SPLPEItem*>(*i);
             if (lpeitem) {
-                SPClipPath *clip_path = SP_ITEM(lpeitem)->getClipObject();
+                SPClipPath *clip_path = lpeitem->getClipObject();
                 if(clip_path) {
                     std::vector<SPObject*> clip_path_list = clip_path->childList(true);
                     for (auto iter : clip_path_list) {

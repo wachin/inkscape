@@ -45,6 +45,7 @@
 
 #include "sp-title.h"
 #include "sp-desc.h"
+#include "sp-rect.h"
 #include "sp-text.h"
 
 #include "sp-shape.h"
@@ -74,32 +75,32 @@ SPText::~SPText()
 };
 
 void SPText::build(SPDocument *doc, Inkscape::XML::Node *repr) {
-    this->readAttr( "x" );
-    this->readAttr( "y" );
-    this->readAttr( "dx" );
-    this->readAttr( "dy" );
-    this->readAttr( "rotate" );
+    this->readAttr(SPAttr::X);
+    this->readAttr(SPAttr::Y);
+    this->readAttr(SPAttr::DX);
+    this->readAttr(SPAttr::DY);
+    this->readAttr(SPAttr::ROTATE);
 
     // textLength and friends
-    this->readAttr( "textLength" );
-    this->readAttr( "lengthAdjust" );
+    this->readAttr(SPAttr::TEXTLENGTH);
+    this->readAttr(SPAttr::LENGTHADJUST);
     SPItem::build(doc, repr);
     css = nullptr;
-    this->readAttr( "sodipodi:linespacing" );    // has to happen after the styles are read
+    this->readAttr(SPAttr::SODIPODI_LINESPACING);    // has to happen after the styles are read
 }
 
 void SPText::release() {
     SPItem::release();
 }
 
-void SPText::set(SPAttributeEnum key, const gchar* value) {
+void SPText::set(SPAttr key, const gchar* value) {
     //std::cout << "SPText::set: " << sp_attribute_name( key ) << ": " << (value?value:"Null") << std::endl;
 
     if (this->attributes.readSingleAttribute(key, value, style, &viewport)) {
         this->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG);
     } else {
         switch (key) {
-            case SP_ATTR_SODIPODI_LINESPACING:
+            case SPAttr::SODIPODI_LINESPACING:
                 // convert deprecated tag to css... but only if 'line-height' missing.
                 if (value && !this->style->line_height.set) {
                     this->style->line_height.set = TRUE;
@@ -285,7 +286,6 @@ Inkscape::XML::Node *SPText::write(Inkscape::XML::Document *xml_doc, Inkscape::X
     }
 
     this->attributes.writeTo(repr);
-    this->rebuildLayout();  // copied from update(), see LP Bug 1339305
 
     SPItem::write(xml_doc, repr, flags);
 
@@ -294,7 +294,7 @@ Inkscape::XML::Node *SPText::write(Inkscape::XML::Document *xml_doc, Inkscape::X
 
 
 Geom::OptRect SPText::bbox(Geom::Affine const &transform, SPItem::BBoxType type) const {
-    Geom::OptRect bbox = SP_TEXT(this)->layout.bounds(transform);
+    Geom::OptRect bbox = this->layout.bounds(transform);
 
     // FIXME this code is incorrect
     if (bbox && type == SPItem::VISUAL_BBOX && !this->style->stroke.isNone()) {
@@ -324,6 +324,12 @@ void SPText::hide(unsigned int key) {
             this->_clearFlow(g);
         }
     }
+}
+
+const char* SPText::typeName() const {
+    if (has_inline_size() || has_shape_inside())
+        return "text-flow";
+    return "text";
 }
 
 const char* SPText::displayName() const {
@@ -368,7 +374,7 @@ void SPText::snappoints(std::vector<Inkscape::SnapCandidatePoint> &p, Inkscape::
         Inkscape::Text::Layout const *layout = te_get_layout(this);
 
         if (layout != nullptr && layout->outputExists()) {
-            boost::optional<Geom::Point> pt = layout->baselineAnchorPoint();
+            std::optional<Geom::Point> pt = layout->baselineAnchorPoint();
 
             if (pt) {
                 p.emplace_back((*pt) * this->i2dt_affine(), Inkscape::SNAPSOURCE_TEXT_ANCHOR, Inkscape::SNAPTARGET_TEXT_ANCHOR);
@@ -404,8 +410,7 @@ Geom::Affine SPText::set_transform(Geom::Affine const &xform) {
     // See if 'shape-inside' has rectangle
     Inkscape::Preferences *prefs = Inkscape::Preferences::get();
     if (prefs->getBool("/tools/text/use_svg2", true)) {
-        Inkscape::XML::Node* rectangle = get_first_rectangle();
-        if (rectangle) {
+        if (style->shape_inside.set) {
             return xform;
         }
     }
@@ -513,20 +518,20 @@ void SPText::_buildLayoutInit()
             // Find union of all exclusion shapes
             Shape *exclusion_shape = nullptr;
             if(style->shape_subtract.set) {
-                exclusion_shape = _buildExclusionShape();
+                exclusion_shape = getExclusionShape();
             }
 
             // Find inside shape curves
-            for (auto shape_id : style->shape_inside.shape_ids) {
+            for (auto *href : style->shape_inside.hrefs) {
+                auto shape = href->getObject();
 
-                    SPShape *shape = dynamic_cast<SPShape *>(document->getObjectById( shape_id ));
                     if ( shape ) {
 
                         // This code adapted from sp-flowregion.cpp: GetDest()
-                        if (!(shape->_curve)) {
+                        if (!shape->curve()) {
                             shape->set_shape();
                         }
-                        SPCurve *curve = shape->getCurve();
+                        SPCurve const *curve = shape->curve();
 
                         if ( curve ) {
                             Path *temp = new Path;
@@ -765,20 +770,20 @@ unsigned SPText::_buildLayoutInput(SPObject *object, Inkscape::Text::Layout::Opt
     return length;
 }
 
-Shape* SPText::_buildExclusionShape() const
+Shape* SPText::getExclusionShape() const
 {
     std::unique_ptr<Shape> result(new Shape()); // Union of all exclusion shapes
     std::unique_ptr<Shape> shape_temp(new Shape());
 
-    for(auto shape_id : style->shape_subtract.shape_ids) {
+    for (auto *href : style->shape_subtract.hrefs) {
+        auto shape = href->getObject();
 
-            SPShape *shape = dynamic_cast<SPShape *>(document->getObjectById( shape_id ));
             if ( shape ) {
                 // This code adapted from sp-flowregion.cpp: GetDest()
-                if (!(shape->_curve)) {
+                if (!shape->curve()) {
                     shape->set_shape();
                 }
-                SPCurve *curve = shape->getCurve();
+                SPCurve const *curve = shape->curve();
 
                 if ( curve ) {
                     Path *temp = new Path;
@@ -850,6 +855,10 @@ SPText::_getFirstYLength()
     return y;
 }
 
+std::unique_ptr<SPCurve> SPText::getNormalizedBpath() const
+{
+    return layout.convertToCurves();
+}
 
 void SPText::rebuildLayout()
 {
@@ -1038,7 +1047,6 @@ void SPText::sodipodi_to_newline() {
 
     // tspans with sodipodi:role="line" are only direct children of a <text> element.
     for (auto child : childList(false)) {
-
         auto tspan = dynamic_cast<SPTSpan *>(child);  // Could have <desc> or <title>.
         if (tspan && tspan->role == SP_TSPAN_ROLE_LINE) {
 
@@ -1047,12 +1055,13 @@ void SPText::sodipodi_to_newline() {
             tspan->updateRepr();
 
             // Insert '/n' if not last line.
-            // This may screw up dx, dy, rotate but... SVG 2 text cannot have these values.
+            // This may screw up dx, dy, rotate attribute counting but... SVG 2 text cannot have these values.
             if (tspan != lastChild()) {
+                tspan->style->white_space.computed = SP_CSS_WHITE_SPACE_PRE; // Set so '\n' is not immediately stripped out before CSS recascaded!
                 auto last_child = tspan->lastChild();
                 auto last_string = dynamic_cast<SPString *>(last_child);
                 if (last_string) {
-                    // Add '/n' to string.
+                    // Add '\n' to string.
                     last_string->string += "\n";
                     last_string->updateRepr();
                 } else {
@@ -1121,15 +1130,11 @@ Geom::OptRect SPText::get_frame()
         Inkscape::XML::Node* rectangle = get_first_rectangle();
 
         if (rectangle) {
-            double x = 0.0;
-            double y = 0.0;
-            double width = 0.0;
-            double height = 0.0;
-            sp_repr_get_double (rectangle, "x",      &x);
-            sp_repr_get_double (rectangle, "y",      &y);
-            sp_repr_get_double (rectangle, "width",  &width);
-            sp_repr_get_double (rectangle, "height", &height);
-            frame = Geom::Rect::from_xywh( x, y, width, height);
+            double x = rectangle->getAttributeDouble("x", 0.0);
+            double y = rectangle->getAttributeDouble("y", 0.0);
+            double width = rectangle->getAttributeDouble("width", 0.0);
+            double height = rectangle->getAttributeDouble("height", 0.0);
+            frame = Geom::Rect::from_xywh(x, y, width, height);
             opt_frame = frame;
         }
     }
@@ -1140,35 +1145,39 @@ Geom::OptRect SPText::get_frame()
 // Find the node of the first rectangle (if it exists) in 'shape-inside'.
 Inkscape::XML::Node* SPText::get_first_rectangle()
 {
-    Inkscape::XML::Node* first_rectangle = nullptr;
-
-    Inkscape::XML::Node *our_ref = getRepr();
-
     if (style->shape_inside.set) {
 
-        std::vector<Glib::ustring> shapes = get_shapes();
-
-        for (auto shape: shapes) {
-
-            Inkscape::XML::Node *item =
-                sp_repr_lookup_descendant (our_ref->root(), "id", shape.c_str());
-
-            if (item && strncmp("svg:rect", item->name(), 8) == 0) {
+        for (auto *href : style->shape_inside.hrefs) {
+            auto *shape = href->getObject();
+            if (dynamic_cast<SPRect*>(shape)) {
+                auto *item = shape->getRepr();
+                g_return_val_if_fail(item, nullptr);
+                assert(strncmp("svg:rect", item->name(), 8) == 0);
                 return item;
-                break;
             }
         }
     }
 
-    return first_rectangle;
+    return nullptr;
 }
 
-// Get a list of shape in 'shape-inside' as a vector of strings.
-std::vector<Glib::ustring> SPText::get_shapes() const
+/**
+ * Get the first shape reference which affects the position and layout of
+ * this text item. This can be either a shape-inside or a textPath referenced
+ * shape. If this text does not depend on any other shape, then return NULL.
+ */
+SPItem *SPText::get_first_shape_dependency()
 {
-    return style->shape_inside.shape_ids;
-}
+    if (style->shape_inside.set) {
+        for (auto *href : style->shape_inside.hrefs) {
+            return href->getObject();
+        }
+    } else if (auto textpath = dynamic_cast<SPTextPath *>(firstChild())) {
+        return sp_textpath_get_path_item(textpath);
+    }
 
+    return nullptr;
+}
 
 SPItem *create_text_with_inline_size (SPDesktop *desktop, Geom::Point p0, Geom::Point p1)
 {
@@ -1189,8 +1198,8 @@ SPItem *create_text_with_inline_size (SPDesktop *desktop, Geom::Point p0, Geom::
     p0 *= SP_ITEM(desktop->currentLayer())->i2doc_affine().inverse();
     p1 *= SP_ITEM(desktop->currentLayer())->i2doc_affine().inverse();
 
-    sp_repr_set_svg_double( text_repr, "x", p0[Geom::X]);
-    sp_repr_set_svg_double( text_repr, "y", p0[Geom::Y]);
+    text_repr->setAttributeSvgDouble("x", p0[Geom::X]);
+    text_repr->setAttributeSvgDouble("y", p0[Geom::Y]);
 
     double inline_size = p1[Geom::X] - p0[Geom::X];
 
@@ -1216,10 +1225,13 @@ SPItem *create_text_with_inline_size (SPDesktop *desktop, Geom::Point p0, Geom::
 SPItem *create_text_with_rectangle (SPDesktop *desktop, Geom::Point p0, Geom::Point p1)
 {
     SPDocument *doc = desktop->getDocument();
+    auto const parent = dynamic_cast<SPItem *>(desktop->currentLayer());
+    assert(parent);
 
     Inkscape::XML::Document *xml_doc = doc->getReprDoc();
     Inkscape::XML::Node *text_repr = xml_doc->createElement("svg:text");
     text_repr->setAttribute("xml:space", "preserve"); // we preserve spaces in the text objects we create
+    text_repr->setAttributeOrRemoveIfEmpty("transform", sp_svg_transform_write(parent->i2doc_affine().inverse()));
 
     SPText *text_object = dynamic_cast<SPText *>(desktop->currentLayer()->appendChildRepr(text_repr));
     g_assert(text_object != nullptr);
@@ -1228,16 +1240,12 @@ SPItem *create_text_with_rectangle (SPDesktop *desktop, Geom::Point p0, Geom::Po
     p0 *= desktop->dt2doc();
     p1 *= desktop->dt2doc();
 
-    // Pixels to user units
-    p0 *= SP_ITEM(desktop->currentLayer())->i2doc_affine().inverse();
-    p1 *= SP_ITEM(desktop->currentLayer())->i2doc_affine().inverse();
-
     // Create rectangle
     Inkscape::XML::Node *rect_repr = xml_doc->createElement("svg:rect");
-    sp_repr_set_svg_double( rect_repr, "x", p0[Geom::X]);
-    sp_repr_set_svg_double( rect_repr, "y", p0[Geom::Y]);
-    sp_repr_set_svg_double( rect_repr, "width",  abs(p1[Geom::X]-p0[Geom::X]));
-    sp_repr_set_svg_double( rect_repr, "height", abs(p1[Geom::Y]-p0[Geom::Y]));
+    rect_repr->setAttributeSvgDouble("x", p0[Geom::X]);
+    rect_repr->setAttributeSvgDouble("y", p0[Geom::Y]);
+    rect_repr->setAttributeSvgDouble("width", abs(p1[Geom::X]-p0[Geom::X]));
+    rect_repr->setAttributeSvgDouble("height", abs(p1[Geom::Y]-p0[Geom::Y]));
 
     // Find defs, if does not exist, create.
     Inkscape::XML::Node *defs_repr = sp_repr_lookup_name (xml_doc->root(), "svg:defs");
@@ -1253,12 +1261,6 @@ SPItem *create_text_with_rectangle (SPDesktop *desktop, Geom::Point p0, Geom::Po
     // Apply desktop style (do before adding "shape-inside").
     sp_desktop_apply_style_tool(desktop, text_repr, "/tools/text", true);
     SPCSSAttr *css = sp_repr_css_attr(text_repr, "style" );
-    Geom::Affine const local(text_object->i2doc_affine());
-    double const ex(local.descrim());
-    if ( (ex != 0.0) && (ex != 1.0) ) {
-        sp_css_attr_scale(css, 1/ex);
-    }
-
     sp_repr_css_set_property (css, "white-space", "pre");  // Respect new lines.
 
     // Link rectangle to text
@@ -1296,16 +1298,16 @@ SPItem *create_text_with_rectangle (SPDesktop *desktop, Geom::Point p0, Geom::Po
 // Not used.
 // void TextTagAttributes::readFrom(Inkscape::XML::Node const *node)
 // {
-//     readSingleAttribute(SP_ATTR_X, node->attribute("x"));
-//     readSingleAttribute(SP_ATTR_Y, node->attribute("y"));
-//     readSingleAttribute(SP_ATTR_DX, node->attribute("dx"));
-//     readSingleAttribute(SP_ATTR_DY, node->attribute("dy"));
-//     readSingleAttribute(SP_ATTR_ROTATE, node->attribute("rotate"));
-//     readSingleAttribute(SP_ATTR_TEXTLENGTH, node->attribute("textLength"));
-//     readSingleAttribute(SP_ATTR_LENGTHADJUST, node->attribute("lengthAdjust"));
+//     readSingleAttribute(SPAttr::X, node->attribute("x"));
+//     readSingleAttribute(SPAttr::Y, node->attribute("y"));
+//     readSingleAttribute(SPAttr::DX, node->attribute("dx"));
+//     readSingleAttribute(SPAttr::DY, node->attribute("dy"));
+//     readSingleAttribute(SPAttr::ROTATE, node->attribute("rotate"));
+//     readSingleAttribute(SPAttr::TEXTLENGTH, node->attribute("textLength"));
+//     readSingleAttribute(SPAttr::LENGTHADJUST, node->attribute("lengthAdjust"));
 // }
 
-bool TextTagAttributes::readSingleAttribute(unsigned key, gchar const *value, SPStyle const *style, Geom::Rect const *viewport)
+bool TextTagAttributes::readSingleAttribute(SPAttr key, gchar const *value, SPStyle const *style, Geom::Rect const *viewport)
 {
     // std::cout << "TextTagAttributes::readSingleAttribute: key: " << key
     //           << "  value: " << (value?value:"Null") << std::endl;
@@ -1313,16 +1315,16 @@ bool TextTagAttributes::readSingleAttribute(unsigned key, gchar const *value, SP
     bool update_x = false;
     bool update_y = false;
     switch (key) {
-        case SP_ATTR_X:      attr_vector = &attributes.x;  update_x = true; break;
-        case SP_ATTR_Y:      attr_vector = &attributes.y;  update_y = true; break;
-        case SP_ATTR_DX:     attr_vector = &attributes.dx; update_x = true; break;
-        case SP_ATTR_DY:     attr_vector = &attributes.dy; update_y = true; break;
-        case SP_ATTR_ROTATE: attr_vector = &attributes.rotate; break;
-        case SP_ATTR_TEXTLENGTH:
+        case SPAttr::X:      attr_vector = &attributes.x;  update_x = true; break;
+        case SPAttr::Y:      attr_vector = &attributes.y;  update_y = true; break;
+        case SPAttr::DX:     attr_vector = &attributes.dx; update_x = true; break;
+        case SPAttr::DY:     attr_vector = &attributes.dy; update_y = true; break;
+        case SPAttr::ROTATE: attr_vector = &attributes.rotate; break;
+        case SPAttr::TEXTLENGTH:
             attributes.textLength.readOrUnset(value);
             return true;
             break;
-        case SP_ATTR_LENGTHADJUST:
+        case SPAttr::LENGTHADJUST:
             attributes.lengthAdjust = (value && !strcmp(value, "spacingAndGlyphs")?
                                         Inkscape::Text::Layout::LENGTHADJUST_SPACINGANDGLYPHS :
                                         Inkscape::Text::Layout::LENGTHADJUST_SPACING); // default is "spacing"

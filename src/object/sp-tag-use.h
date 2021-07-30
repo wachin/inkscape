@@ -32,13 +32,14 @@ class SPTagUse : public SPObject {
 public:
     // item built from the original's repr (the visible clone)
     // relative to the SPUse itself, it is treated as a child, similar to a grouped item relative to its group
+    SPObject *child;
     gchar *href;
 public:
     SPTagUse();
     ~SPTagUse() override;
     
     void build(SPDocument *doc, Inkscape::XML::Node *repr) override;
-    void set(SPAttributeEnum key, gchar const *value) override;
+    void set(SPAttr key, gchar const *value) override;
     Inkscape::XML::Node* write(Inkscape::XML::Document* doc, Inkscape::XML::Node* repr, guint flags) override;
     void release() override;
     
@@ -46,6 +47,7 @@ public:
     
     //virtual SPItem* unlink();
     virtual SPItem* get_original();
+    virtual SPItem* root();
 
     // the reference to the original object
     SPTagUseReference *ref;

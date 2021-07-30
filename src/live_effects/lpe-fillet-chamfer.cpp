@@ -9,19 +9,21 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
-#include "live_effects/lpe-fillet-chamfer.h"
-
-#include "helper/geom.h"
-#include "helper/geom-curves.h"
-#include "helper/geom-satellite.h"
-
-#include "display/curve.h"
-#include "knotholder.h"
-#include "ui/tools/tool-base.h"
 #include <2geom/elliptical-arc.h>
 #include <boost/optional.hpp>
 
+#include "lpe-fillet-chamfer.h"
+
+#include "display/curve.h"
+
+#include "helper/geom-curves.h"
+#include "helper/geom-satellite.h"
+#include "helper/geom.h"
+
 #include "object/sp-shape.h"
+
+#include "ui/knot/knot-holder.h"
+#include "ui/tools/tool-base.h"
 
 // TODO due to internal breakage in glibmm headers, this must be last:
 #include <glibmm/i18n.h>
@@ -38,12 +40,12 @@ static const Util::EnumDataConverter<Filletmethod> FMConverter(FilletmethodData,
 
 LPEFilletChamfer::LPEFilletChamfer(LivePathEffectObject *lpeobject)
     : Effect(lpeobject),
-      unit(_("Unit"), _("Unit"), "unit", &wr, this, "px"),
+      unit(_("Unit:"), _("Unit"), "unit", &wr, this, "px"),
       satellites_param("Satellites_param", "Satellites_param",
                        "satellites_param", &wr, this),
-      method(_("Method:"), _("Methods to calculate the fillet or chamfer"),
+      method(_("Method:"), _("Method to calculate the fillet or chamfer"),
              "method", FMConverter, &wr, this, FM_AUTO),
-      mode(_("Mode:"), _("Mode, fillet or chamfer"),
+      mode(_("Mode:"), _("Mode, e.g. fillet or chamfer"),
              "mode", &wr, this, "F", true),
       radius(_("Radius:"), _("Radius, in unit or %"), "radius", &wr,
              this, 0.0),
@@ -77,13 +79,13 @@ LPEFilletChamfer::LPEFilletChamfer(LivePathEffectObject *lpeobject)
     registerParameter(&only_selected);
     registerParameter(&hide_knots);
 
-    radius.param_set_range(0.0, Geom::infinity());
+    radius.param_set_range(0.0, std::numeric_limits<double>::max());
     radius.param_set_increments(1, 1);
     radius.param_set_digits(4);
     radius.param_set_undo(false);
-    chamfer_steps.param_set_range(1, 999);
+    chamfer_steps.param_set_range(1, std::numeric_limits<gint>::max());
     chamfer_steps.param_set_increments(1, 1);
-    chamfer_steps.param_set_digits(0);
+    chamfer_steps.param_make_integer();
     _provides_knotholder_entities = true;
     helperpath = false;
     previous_unit = Glib::ustring("");
@@ -94,7 +96,7 @@ void LPEFilletChamfer::doOnApply(SPLPEItem const *lpeItem)
     SPLPEItem *splpeitem = const_cast<SPLPEItem *>(lpeItem);
     SPShape *shape = dynamic_cast<SPShape *>(splpeitem);
     if (shape) {
-        Geom::PathVector const pathv = pathv_to_linear_and_cubic_beziers(shape->getCurve(true)->get_pathvector());
+        Geom::PathVector const pathv = pathv_to_linear_and_cubic_beziers(shape->curve()->get_pathvector());
         Satellites satellites;
         double power = radius;
         if (!flexible) {
@@ -179,7 +181,7 @@ Gtk::Widget *LPEFilletChamfer::newWidget()
 {
     // use manage here, because after deletion of Effect object, others might
     // still be pointing to this widget.
-    Gtk::VBox *vbox = Gtk::manage(new Gtk::VBox(Effect::newWidget()));
+    Gtk::Box *vbox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL));
 
     vbox->set_border_width(5);
     vbox->set_homogeneous(false);
@@ -196,7 +198,7 @@ Gtk::Widget *LPEFilletChamfer::newWidget()
                     sigc::mem_fun(*this, &LPEFilletChamfer::updateAmount));
                 widg = widg_registered;
                 if (widg) {
-                    Gtk::HBox *scalar_parameter = dynamic_cast<Gtk::HBox *>(widg);
+                    Gtk::Box *scalar_parameter = dynamic_cast<Gtk::Box *>(widg);
                     std::vector<Gtk::Widget *> childList = scalar_parameter->get_children();
                     Gtk::Entry *entry_widget = dynamic_cast<Gtk::Entry *>(childList[1]);
                     entry_widget->set_width_chars(6);
@@ -208,7 +210,7 @@ Gtk::Widget *LPEFilletChamfer::newWidget()
                     sigc::mem_fun(*this, &LPEFilletChamfer::updateChamferSteps));
                 widg = widg_registered;
                 if (widg) {
-                    Gtk::HBox *scalar_parameter = dynamic_cast<Gtk::HBox *>(widg);
+                    Gtk::Box *scalar_parameter = dynamic_cast<Gtk::Box *>(widg);
                     std::vector<Gtk::Widget *> childList = scalar_parameter->get_children();
                     Gtk::Entry *entry_widget = dynamic_cast<Gtk::Entry *>(childList[1]);
                     entry_widget->set_width_chars(3);
@@ -230,7 +232,7 @@ Gtk::Widget *LPEFilletChamfer::newWidget()
         ++it;
     }
 
-    Gtk::HBox *fillet_container = Gtk::manage(new Gtk::HBox(true, 0));
+    Gtk::Box *fillet_container = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 0));
     Gtk::Button *fillet =  Gtk::manage(new Gtk::Button(Glib::ustring(_("Fillet"))));
     fillet->signal_clicked()
     .connect(sigc::bind<SatelliteType>(sigc::mem_fun(*this, &LPEFilletChamfer::updateSatelliteType),FILLET));
@@ -241,7 +243,7 @@ Gtk::Widget *LPEFilletChamfer::newWidget()
     .connect(sigc::bind<SatelliteType>(sigc::mem_fun(*this, &LPEFilletChamfer::updateSatelliteType),INVERSE_FILLET));
     fillet_container->pack_start(*inverse_fillet, true, true, 2);
 
-    Gtk::HBox *chamfer_container = Gtk::manage(new Gtk::HBox(true, 0));
+    Gtk::Box *chamfer_container = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 0));
     Gtk::Button *chamfer = Gtk::manage(new Gtk::Button(Glib::ustring(_("Chamfer"))));
     chamfer->signal_clicked()
     .connect(sigc::bind<SatelliteType>(sigc::mem_fun(*this, &LPEFilletChamfer::updateSatelliteType),CHAMFER));
@@ -299,19 +301,27 @@ void LPEFilletChamfer::updateSatelliteType(SatelliteType satellitetype)
 }
 
 void LPEFilletChamfer::setSelected(PathVectorSatellites *_pathvector_satellites){
-    Geom::PathVector const pathv = _pathvector_satellites->getPathVector();
-    Satellites satellites = _pathvector_satellites->getSatellites();
-    for (size_t i = 0; i < satellites.size(); ++i) {
-        for (size_t j = 0; j < satellites[i].size(); ++j) {
-            Geom::Curve const &curve_in = pathv[i][j];
-            if (only_selected && isNodePointSelected(curve_in.initialPoint()) ){
-                satellites[i][j].setSelected(true);
-            } else {
-                satellites[i][j].setSelected(false);
+    std::vector<SPLPEItem *> lpeitems = getCurrrentLPEItems();
+    if (lpeitems.size() == 1) {
+        sp_lpe_item = lpeitems[0];
+        if (!_pathvector_satellites) {
+            sp_lpe_item_update_patheffect(sp_lpe_item, false, false);
+        } else {
+            Geom::PathVector const pathv = _pathvector_satellites->getPathVector();
+            Satellites satellites = _pathvector_satellites->getSatellites();
+            for (size_t i = 0; i < satellites.size(); ++i) {
+                for (size_t j = 0; j < satellites[i].size(); ++j) {
+                    Geom::Curve const &curve_in = pathv[i][j];
+                    if (only_selected && isNodePointSelected(curve_in.initialPoint()) ){
+                        satellites[i][j].setSelected(true);
+                    } else {
+                        satellites[i][j].setSelected(false);
+                    }
+                }
             }
+            _pathvector_satellites->setSatellites(satellites);
         }
     }
-    _pathvector_satellites->setSatellites(satellites);
 }
 
 void LPEFilletChamfer::doBeforeEffect(SPLPEItem const *lpeItem)
@@ -390,7 +400,6 @@ void LPEFilletChamfer::doBeforeEffect(SPLPEItem const *lpeItem)
                 _pathvector_satellites->recalculateForNewPathVector(pathvres, satellite);
                 satellites = _pathvector_satellites->getSatellites();
                 write = true;
-                SPDesktop *desktop = SP_ACTIVE_DESKTOP;
             }
         }
         
@@ -622,7 +631,7 @@ LPEFilletChamfer::doEffect_path(Geom::PathVector const &path_in)
                         path_chamfer.start(tmp_path.finalPoint());
                         if (eliptical) {
                             ccw_toggle = ccw_toggle ? false : true;
-                            path_chamfer.appendNew<Geom::EllipticalArc>(rx, ry, arc_angle, 0, ccw_toggle, end_arc_point);
+                            path_chamfer.appendNew<Geom::EllipticalArc>(rx, ry, arc_angle, false, ccw_toggle, end_arc_point);
                         } else {
                             path_chamfer.appendNew<Geom::CubicBezier>(handle_1, handle_2, end_arc_point);
                         }
@@ -634,7 +643,7 @@ LPEFilletChamfer::doEffect_path(Geom::PathVector const &path_in)
                         Geom::Path path_chamfer;
                         path_chamfer.start(tmp_path.finalPoint());
                         if (eliptical) {
-                            path_chamfer.appendNew<Geom::EllipticalArc>(rx, ry, arc_angle, 0, ccw_toggle, end_arc_point);
+                            path_chamfer.appendNew<Geom::EllipticalArc>(rx, ry, arc_angle, false, ccw_toggle, end_arc_point);
                         } else {
                             path_chamfer.appendNew<Geom::CubicBezier>(inverse_handle_1, inverse_handle_2, end_arc_point);
                         }
@@ -644,7 +653,12 @@ LPEFilletChamfer::doEffect_path(Geom::PathVector const &path_in)
                 case INVERSE_FILLET:
                     {
                         if (eliptical) {
-                            tmp_path.appendNew<Geom::EllipticalArc>(rx, ry, arc_angle, 0, ccw_toggle, end_arc_point);
+                            bool side = false;
+                            if (helperpath && !getSPDoc()->is_yaxisdown()) {
+                                side = true;
+                                ccw_toggle = ccw_toggle ? false : true;
+                            }
+                            tmp_path.appendNew<Geom::EllipticalArc>(rx, ry, arc_angle, side, ccw_toggle, end_arc_point);
                         } else {
                             tmp_path.appendNew<Geom::CubicBezier>(inverse_handle_1, inverse_handle_2, end_arc_point);
                         }
@@ -653,8 +667,13 @@ LPEFilletChamfer::doEffect_path(Geom::PathVector const &path_in)
                 default: //fillet
                     {
                         if (eliptical) {
-                            ccw_toggle = ccw_toggle ? false : true;
-                            tmp_path.appendNew<Geom::EllipticalArc>(rx, ry, arc_angle, 0, ccw_toggle, end_arc_point);
+                            bool side = false;
+                            if (helperpath && !getSPDoc()->is_yaxisdown()) {
+                                side = true;
+                            } else {
+                                ccw_toggle = ccw_toggle ? false : true;
+                            }
+                            tmp_path.appendNew<Geom::EllipticalArc>(rx, ry, arc_angle, side, ccw_toggle, end_arc_point);
                         } else {
                             tmp_path.appendNew<Geom::CubicBezier>(handle_1, handle_2, end_arc_point);
                         }

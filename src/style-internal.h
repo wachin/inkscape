@@ -45,11 +45,12 @@ static const unsigned SP_STYLE_FLAG_IFSET  (1 << 0);
 static const unsigned SP_STYLE_FLAG_IFDIFF (1 << 1);
 static const unsigned SP_STYLE_FLAG_IFSRC  (1 << 3); // If source matches
 
-enum SPStyleSrc {
-    SP_STYLE_SRC_UNSET,
-    SP_STYLE_SRC_ATTRIBUTE,   // fill="red"
-    SP_STYLE_SRC_STYLE_PROP,  // style="fill:red"
-    SP_STYLE_SRC_STYLE_SHEET, // .red { fill:red; }
+enum class SPStyleSrc : unsigned char
+{
+    UNSET,
+    ATTRIBUTE,   // fill="red"
+    STYLE_PROP,  // style="fill:red"
+    STYLE_SHEET, // .red { fill:red; }
 };
 
 /* General comments:
@@ -133,7 +134,7 @@ public:
           set(false),
           inherit(false),
           important(false),
-          style_src(SP_STYLE_SRC_STYLE_PROP), // Default to property, see bug 1662285.
+          style_src(SPStyleSrc::STYLE_PROP), // Default to property, see bug 1662285.
           style(nullptr)
     {}
 
@@ -141,47 +142,51 @@ public:
     = default;
 
     virtual void read( gchar const *str ) = 0;
-    virtual void readIfUnset(gchar const *str, SPStyleSrc source = SP_STYLE_SRC_STYLE_PROP);
+    void readIfUnset(gchar const *str, SPStyleSrc source = SPStyleSrc::STYLE_PROP);
 
-    Glib::ustring important_str() const {
-        return Glib::ustring(important ? " !important" : "");
-    }
+protected:
+    char const *important_str() const { return important ? " !important" : ""; }
 
-    virtual void readAttribute( Inkscape::XML::Node *repr ) {
-        readIfUnset(repr->attribute(name().c_str()), SP_STYLE_SRC_ATTRIBUTE);
+public:
+    void readAttribute(Inkscape::XML::Node *repr)
+    {
+        readIfUnset(repr->attribute(name().c_str()), SPStyleSrc::ATTRIBUTE);
     }
 
     virtual const Glib::ustring get_value() const = 0;
-    virtual bool shall_write( guint const flags = SP_STYLE_FLAG_IFSET,
-                               SPStyleSrc const &style_src_req = SP_STYLE_SRC_STYLE_PROP,
-                               SPIBase const *const base = nullptr ) const;
+    bool shall_write( guint const flags = SP_STYLE_FLAG_IFSET,
+                      SPStyleSrc const &style_src_req = SPStyleSrc::STYLE_PROP,
+                      SPIBase const *const base = nullptr ) const;
     virtual const Glib::ustring write( guint const flags = SP_STYLE_FLAG_IFSET,
-                                       SPStyleSrc const &style_src_req = SP_STYLE_SRC_STYLE_PROP,
+                                       SPStyleSrc const &style_src_req = SPStyleSrc::STYLE_PROP,
                                        SPIBase const *const base = nullptr ) const;
     virtual void clear() {
         set = false, inherit = false, important = false;
+        // Attr::D is a special case where the best default for it is actually ATTRIBUTE
+        // and not STYLE_PROP, this exception allows us to not have to refactor more.
+        if (id() != SPAttr::D) {
+            style_src = SPStyleSrc::STYLE_PROP;
+        }
     }
 
     virtual void cascade( const SPIBase* const parent ) = 0;
     virtual void merge(   const SPIBase* const parent ) = 0;
 
-    virtual void setStylePointer( SPStyle *style_in  ) {
-        style = style_in;
-    }
+    void setStylePointer(SPStyle *style_in) { style = style_in; }
 
     // Explicit assignment operator required due to templates.
     SPIBase& operator=(const SPIBase& rhs) = default;
 
     // Check apples being compared to apples
-    virtual bool operator==(const SPIBase& rhs) {
+    virtual bool operator==(const SPIBase& rhs) const {
         return id() == rhs.id();
     }
 
-    virtual bool operator!=(const SPIBase& rhs) {
+    bool operator!=(const SPIBase& rhs) const {
         return !(*this == rhs);
     }
 
-    virtual SPAttributeEnum id() const { return SP_ATTR_INVALID; }
+    virtual SPAttr id() const { return SPAttr::INVALID; }
     Glib::ustring const &name() const;
 
   // To do: make private
@@ -190,10 +195,9 @@ public:
     bool set : 1;         // Property has been explicitly set (vs. inherited).
     bool inherit : 1;     // Property value set to 'inherit'.
     bool important : 1;   // Property rule 'important' has been explicitly set.
-    SPStyleSrc style_src : 2; // Source (attribute, style attribute, style-sheet).
+    SPStyleSrc style_src; // Source (attribute, style attribute, style-sheet).
 
-  // To do: make private after g_asserts removed
-public:
+protected:
     SPStyle* style;       // Used by SPIPaint, SPIFilter... to find values of other properties
 };
 
@@ -201,7 +205,7 @@ public:
 /**
  * Decorator which overrides SPIBase::id()
  */
-template <SPAttributeEnum Id, class Base>
+template <SPAttr Id, class Base>
 class TypedSPI : public Base {
   public:
     using Base::Base;
@@ -209,8 +213,8 @@ class TypedSPI : public Base {
     /**
      * Get the attribute enum
      */
-    SPAttributeEnum id() const override { return Id; }
-    static SPAttributeEnum static_id() { return Id; }
+    SPAttr id() const override { return Id; }
+    static SPAttr static_id() { return Id; }
 
     /**
      * Upcast to the base class
@@ -243,10 +247,7 @@ public:
 
     SPIFloat& operator=(const SPIFloat& rhs) = default;
 
-    bool operator==(const SPIBase& rhs) override;
-    bool operator!=(const SPIBase& rhs) override {
-        return !(*this == rhs);
-    }
+    bool operator==(const SPIBase& rhs) const override;
 
   // To do: make private
 public:
@@ -313,10 +314,7 @@ public:
 
     SPIScale24& operator=(const SPIScale24& rhs) = default;
 
-    bool operator==(const SPIBase& rhs) override;
-    bool operator!=(const SPIBase& rhs) override {
-        return !(*this == rhs);
-    }
+    bool operator==(const SPIBase& rhs) const override;
 
 
   // To do: make private
@@ -369,10 +367,7 @@ public:
 
     SPILength& operator=(const SPILength& rhs) = default;
 
-    bool operator==(const SPIBase& rhs) override;
-    bool operator!=(const SPIBase& rhs) override {
-        return !(*this == rhs);
-    }
+    bool operator==(const SPIBase& rhs) const override;
     void setDouble(double v);
     virtual const Glib::ustring toString(bool wname = false) const;
 
@@ -413,10 +408,7 @@ public:
 
     SPILengthOrNormal& operator=(const SPILengthOrNormal& rhs) = default;
 
-    bool operator==(const SPIBase& rhs) override;
-    bool operator!=(const SPIBase& rhs) override {
-        return !(*this == rhs);
-    }
+    bool operator==(const SPIBase& rhs) const override;
 
   // To do: make private
 public:
@@ -455,17 +447,13 @@ public:
         return *this;
     }
 
-    bool operator==(const SPIBase& rhs) override;
-    bool operator!=(const SPIBase& rhs) override {
-        return !(*this == rhs);
-    }
+    bool operator==(const SPIBase& rhs) const override;
 
     virtual const Glib::ustring toString() const;
 
   // To do: make private
 public:
     bool normal : 1;
-    bool inherit : 1;
     std::map<Glib::ustring, float> axes;
 };
 
@@ -507,10 +495,7 @@ public:
         return *this;
     }
 
-    bool operator==(const SPIBase& rhs) override;
-    bool operator!=(const SPIBase& rhs) override {
-        return !(*this == rhs);
-    }
+    bool operator==(const SPIBase& rhs) const override;
 
   // To do: make private
 public:
@@ -641,10 +626,7 @@ public:
         return *this;
     }
 
-    bool operator==(const SPIBase& rhs) override;
-    bool operator!=(const SPIBase& rhs) override {
-        return !(*this == rhs);
-    }
+    bool operator==(const SPIBase& rhs) const override;
 
     //! Get value if set, or inherited value, or default value (may be NULL)
     char const *value() const;
@@ -670,10 +652,7 @@ public:
     void clear() override;
 
 public:
-    // TODO eliminate shape_ids, because shape_ids[0] == hrefs[0]->getObject()->getId()
-    std::vector<Glib::ustring> shape_ids;
     std::vector<SPShapeReference *> hrefs;
-    //std::vector<std::unique_ptr<SPShapeReference> > hrefs;
 };
 
 /// Color type internal to SPStyle, FIXME Add string value to store SVG named color.
@@ -708,10 +687,7 @@ public:
         return *this;
     }
 
-    bool operator==(const SPIBase& rhs) override;
-    bool operator!=(const SPIBase& rhs) override {
-        return !(*this == rhs);
-    }
+    bool operator==(const SPIBase& rhs) const override;
 
     void setColor( float r, float g, float b ) {
         value.color.set( r, g, b );
@@ -757,6 +733,7 @@ public:
           colorSet(false),
           noneSet(false) {
         value.href = nullptr;
+        tag = nullptr;
         clear();
     }
 
@@ -779,10 +756,7 @@ public:
         return *this;
     }
 
-    bool operator==(const SPIBase& rhs) override;
-    bool operator!=(const SPIBase& rhs) override {
-        return !(*this == rhs);
-    }
+    bool operator==(const SPIBase& rhs) const override;
 
     bool isSameType( SPIPaint const & other ) const {
         return (isPaintserver() == other.isPaintserver()) && (colorSet == other.colorSet) && (paintOrigin == other.paintOrigin);
@@ -818,6 +792,9 @@ public:
 
     void setNone() {noneSet = true; colorSet=false;}
 
+    void setTag(SPObject* tag) { this->tag = tag; }
+    SPObject* getTag() { return tag; }
+
   // To do: make private
 public:
     SPPaintOrigin paintOrigin : 2;
@@ -827,6 +804,7 @@ public:
          SPPaintServerReference *href;
          SPColor color;
     } value;
+    SPObject* tag;
 };
 
 
@@ -888,10 +866,7 @@ public:
         return *this;
     }
 
-    bool operator==(const SPIBase& rhs) override;
-    bool operator!=(const SPIBase& rhs) override {
-        return !(*this == rhs);
-    }
+    bool operator==(const SPIBase& rhs) const override;
 
 
   // To do: make private
@@ -924,10 +899,7 @@ public:
 
     SPIDashArray& operator=(const SPIDashArray& rhs) = default;
 
-    bool operator==(const SPIBase& rhs) override;
-    bool operator!=(const SPIBase& rhs) override {
-        return !(*this == rhs);
-    }
+    bool operator==(const SPIBase& rhs) const override;
 
   // To do: make private, change double to SVGLength
 public:
@@ -952,10 +924,7 @@ public:
 
     SPIFilter& operator=(const SPIFilter& rhs) = default;
 
-    bool operator==(const SPIBase& rhs) override;
-    bool operator!=(const SPIBase& rhs) override {
-        return !(*this == rhs);
-    }
+    bool operator==(const SPIBase& rhs) const override;
 
   // To do: make private
 public:
@@ -995,10 +964,7 @@ public:
 
     SPIFontSize& operator=(const SPIFontSize& rhs) = default;
 
-    bool operator==(const SPIBase& rhs) override;
-    bool operator!=(const SPIBase& rhs) override {
-        return !(*this == rhs);
-    }
+    bool operator==(const SPIBase& rhs) const override;
 
 public:
     static float const font_size_default;
@@ -1041,10 +1007,7 @@ public:
 
     SPIFont& operator=(const SPIFont& rhs) = default;
 
-    bool operator==(const SPIBase& rhs) override;
-    bool operator!=(const SPIBase& rhs) override {
-        return !(*this == rhs);
-    }
+    bool operator==(const SPIBase& rhs) const override;
 };
 
 
@@ -1081,10 +1044,7 @@ public:
     SPIBaselineShift& operator=(const SPIBaselineShift& rhs) = default;
 
     // This is not used but we have it for completeness, it has not been tested.
-    bool operator==(const SPIBase& rhs) override;
-    bool operator!=(const SPIBase& rhs) override {
-        return !(*this == rhs);
-    }
+    bool operator==(const SPIBase& rhs) const override;
 
     bool isZero() const;
 
@@ -1125,10 +1085,7 @@ public:
 
     SPITextDecorationLine& operator=(const SPITextDecorationLine& rhs) = default;
 
-    bool operator==(const SPIBase& rhs) override;
-    bool operator!=(const SPIBase& rhs) override {
-        return !(*this == rhs);
-    }
+    bool operator==(const SPIBase& rhs) const override;
 
   // To do: make private
 public:
@@ -1163,10 +1120,7 @@ public:
 
     SPITextDecorationStyle& operator=(const SPITextDecorationStyle& rhs) = default;
 
-    bool operator==(const SPIBase& rhs) override;
-    bool operator!=(const SPIBase& rhs) override {
-        return !(*this == rhs);
-    }
+    bool operator==(const SPIBase& rhs) const override;
 
   // To do: make private
 public:
@@ -1198,7 +1152,7 @@ public:
     void read( gchar const *str ) override;
     const Glib::ustring get_value() const override;
     const Glib::ustring write( guint const flags = SP_STYLE_FLAG_IFSET,
-                                       SPStyleSrc const &style_src_req = SP_STYLE_SRC_STYLE_PROP,
+                                       SPStyleSrc const &style_src_req = SPStyleSrc::STYLE_PROP,
                                        SPIBase const *const base = nullptr ) const override;
     void clear() override {
         SPIBase::clear();
@@ -1214,10 +1168,7 @@ public:
     }
 
     // Use CSS2 value
-    bool operator==(const SPIBase& rhs) override;
-    bool operator!=(const SPIBase& rhs) override {
-        return !(*this == rhs);
-    }
+    bool operator==(const SPIBase& rhs) const override;
 
 public:
     SPStyle* style_td = nullptr;   // Style to be used for drawing CSS2 text decorations
@@ -1268,10 +1219,7 @@ public:
 
     SPIVectorEffect& operator=(const SPIVectorEffect& rhs) = default;
 
-    bool operator==(const SPIBase& rhs) override;
-    bool operator!=(const SPIBase& rhs) override {
-        return !(*this == rhs);
-    }
+    bool operator==(const SPIBase& rhs) const override;
 
   // To do: make private
 public:
@@ -1279,6 +1227,36 @@ public:
     bool size   : 1;
     bool rotate : 1;
     bool fixed  : 1;
+};
+
+/// Custom stroke properties. Only used for -inkscape-stroke: hairline.
+class SPIStrokeExtensions : public SPIBase
+{
+
+public:
+    SPIStrokeExtensions()
+        : hairline(false)
+    {}
+
+    ~SPIStrokeExtensions() override = default;
+    void read( gchar const *str ) override;
+    const Glib::ustring get_value() const override;
+    void clear() override {
+        SPIBase::clear();
+        hairline = false;
+    }
+
+    // Does not inherit
+    void cascade( const SPIBase* const parent ) override {};
+    void merge(   const SPIBase* const parent ) override {};
+
+    SPIStrokeExtensions& operator=(const SPIStrokeExtensions& rhs) = default;
+
+    bool operator==(const SPIBase& rhs) const override;
+
+  // To do: make private
+public:
+    bool hairline : 1;
 };
 
 #endif // SEEN_SP_STYLE_INTERNAL_H

@@ -29,7 +29,6 @@
 #include "inkscape.h"
 #include "message-context.h"
 #include "message-stack.h"
-#include "shortcuts.h"
 #include "verbs.h"
 
 #include "object/sp-root.h"
@@ -42,31 +41,38 @@
 
 #include "widgets/sp-xmlview-tree.h"
 
+namespace {
+/**
+ * Set the orientation of `paned` to vertical or horizontal, and make the first child resizable
+ * if vertical, and the second child resizable if horizontal.
+ * @pre `paned` has two children
+ */
+void paned_set_vertical(Gtk::Paned &paned, bool vertical)
+{
+    paned.child_property_resize(*paned.get_child1()) = vertical;
+    assert(paned.child_property_resize(*paned.get_child2()));
+    paned.set_orientation(vertical ? Gtk::ORIENTATION_VERTICAL : Gtk::ORIENTATION_HORIZONTAL);
+}
+} // namespace
+
 namespace Inkscape {
 namespace UI {
 namespace Dialog {
 
 XmlTree::XmlTree()
-    : UI::Widget::Panel("/dialogs/xml/", SP_VERB_DIALOG_XML_EDITOR)
+    : DialogBase("/dialogs/xml/", "XMLEditor")
     , blocked(0)
     , _message_stack(nullptr)
     , _message_context(nullptr)
-    , current_desktop(nullptr)
-    , current_document(nullptr)
     , selected_attr(0)
     , selected_repr(nullptr)
     , tree(nullptr)
     , status("")
     , new_window(nullptr)
     , _updating(false)
+    , node_box(Gtk::ORIENTATION_VERTICAL)
+    , status_box(Gtk::ORIENTATION_HORIZONTAL)
 {
-
-    SPDesktop *desktop = SP_ACTIVE_DESKTOP;
-    if (!desktop) {
-        return;
-    }
-
-    Gtk::Box *root = _getContents();
     Gtk::Box *contents = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL));
     status.set_halign(Gtk::ALIGN_START);
     status.set_valign(Gtk::ALIGN_CENTER);
@@ -162,6 +168,7 @@ XmlTree::XmlTree()
     node_box.pack_start(tree_toolbar, FALSE, TRUE, 0);
 
     Gtk::ScrolledWindow *tree_scroller = new Gtk::ScrolledWindow();
+    tree_scroller->set_overlay_scrolling(false);
     tree_scroller->set_policy( Gtk::POLICY_AUTOMATIC, Gtk::POLICY_AUTOMATIC );
     tree_scroller->set_shadow_type(Gtk::SHADOW_IN);
     tree_scroller->add(*Gtk::manage(Glib::wrap(GTK_WIDGET(tree))));
@@ -173,8 +180,6 @@ XmlTree::XmlTree()
     bool attrtoggler = prefs->getBool("/dialogs/xml/attrtoggler", true);
     bool dir = prefs->getBool("/dialogs/xml/vertical", true);
     attributes = new AttrDialog();
-    _paned.set_orientation(dir ? Gtk::ORIENTATION_VERTICAL : Gtk::ORIENTATION_HORIZONTAL);
-    _paned.check_resize();
     _paned.set_wide_handle(true);
     _paned.pack1(node_box, false, false);
     /* attributes */
@@ -203,6 +208,7 @@ XmlTree::XmlTree()
     actionsbox->pack_end(*_horizontal, false, false, 0);
     actionsbox->pack_end(*_vertical, false, false, 0);
     _paned.pack2(*attributes, true, false);
+    paned_set_vertical(_paned, dir);
     contents->pack_start(*actionsbox, false, false, 0);
     /* Signal handlers */
     GtkTreeSelection *selection = gtk_tree_view_get_selection (GTK_TREE_VIEW(tree));
@@ -218,8 +224,6 @@ XmlTree::XmlTree()
     raise_node_button.signal_clicked().connect(sigc::mem_fun(*this, &XmlTree::cmd_raise_node));
     lower_node_button.signal_clicked().connect(sigc::mem_fun(*this, &XmlTree::cmd_lower_node));
 
-    desktopChangeConn = deskTrack.connectDesktopChanged( sigc::mem_fun(*this, &XmlTree::set_tree_desktop) );
-    deskTrack.connect(GTK_WIDGET(gobj()));
     set_name("XMLAndAttributesDialog");
     set_spacing(0);
     set_size_request(320, 260);
@@ -230,10 +234,7 @@ XmlTree::XmlTree()
     _paned.property_position().signal_changed().connect(sigc::mem_fun(*this, &XmlTree::_resized));
 
     tree_reset_context();
-    root->pack_start(*Gtk::manage(contents), true, true);
-    g_assert(desktop != nullptr);
-    set_tree_desktop(desktop);
-
+    pack_start(*Gtk::manage(contents), true, true);
 }
 
 void XmlTree::_resized()
@@ -248,8 +249,7 @@ void XmlTree::_toggleDirection(Gtk::RadioButton *vertical)
     Inkscape::Preferences *prefs = Inkscape::Preferences::get();
     bool dir = vertical->get_active();
     prefs->setBool("/dialogs/xml/vertical", dir);
-    _paned.set_orientation(dir ? Gtk::ORIENTATION_VERTICAL : Gtk::ORIENTATION_HORIZONTAL);
-    _paned.check_resize();
+    paned_set_vertical(_paned, dir);
     prefs->setInt("/dialogs/xml/panedpos", _paned.property_position());
 }
 
@@ -265,33 +265,10 @@ void XmlTree::_attrtoggler()
     }
 }
 
-void XmlTree::present()
-{
-    set_tree_select(get_dt_select());
-
-    UI::Widget::Panel::present();
-
-    if (!_attrswitch.property_active()) {
-        attributes->hide();
-    }
-}
-
 XmlTree::~XmlTree ()
 {
-    set_tree_desktop(nullptr);
-    if (current_desktop) {
-        current_desktop->getDocument()->setXMLDialogSelectedObject(nullptr);
-    }
+    unsetDocument();
     _message_changed_connection.disconnect();
-    _message_context = nullptr;
-    _message_stack = nullptr;
-    _message_changed_connection.~connection();
-}
-
-void XmlTree::setDesktop(SPDesktop *desktop)
-{
-    Panel::setDesktop(desktop);
-    deskTrack.setBase(desktop);
 }
 
 /**
@@ -303,51 +280,39 @@ void XmlTree::tree_reset_context()
                           _("<b>Click</b> to select nodes, <b>drag</b> to rearrange."));
 }
 
-
-void XmlTree::set_tree_desktop(SPDesktop *desktop)
+void XmlTree::unsetDocument()
 {
-    if ( desktop == current_desktop ) {
-        return;
+    document_uri_set_connection.disconnect();
+    if (deferred_on_tree_select_row_id != 0) {
+        g_source_destroy(g_main_context_find_source_by_id(nullptr, deferred_on_tree_select_row_id));
+        deferred_on_tree_select_row_id = 0;
     }
+}
 
-    if (current_desktop) {
-        sel_changed_connection.disconnect();
-        document_replaced_connection.disconnect();
-    }
-    current_desktop = desktop;
-    if (desktop) {
-        sel_changed_connection = desktop->getSelection()->connectChanged(sigc::hide(sigc::mem_fun(this, &XmlTree::on_desktop_selection_changed)));
-        document_replaced_connection = desktop->connectDocumentReplaced(sigc::mem_fun(this, &XmlTree::on_document_replaced));
-
-        set_tree_document(desktop->getDocument());
-    } else {
-        set_tree_document(nullptr);
-    }
-
-} // end of set_tree_desktop()
-
-
-void XmlTree::set_tree_document(SPDocument *document)
+void XmlTree::documentReplaced()
 {
-    if (document == current_document) {
-        return;
-    }
+    unsetDocument();
+    if (auto document = getDocument()) {
+        // TODO: Why is this a document property?
+        document->setXMLDialogSelectedObject(nullptr);
 
-    if (current_document) {
-        document_uri_set_connection.disconnect();
-    }
-    current_document = document;
-    if (current_document) {
-
-        document_uri_set_connection = current_document->connectURISet(sigc::bind(sigc::ptr_fun(&on_document_uri_set), current_document));
-        on_document_uri_set( current_document->getDocumentURI(), current_document );
-        set_tree_repr(current_document->getReprRoot());
+        document_uri_set_connection =
+            document->connectFilenameSet(sigc::bind(sigc::ptr_fun(&on_document_uri_set), document));
+        on_document_uri_set(document->getDocumentFilename(), document);
+        set_tree_repr(document->getReprRoot());
     } else {
         set_tree_repr(nullptr);
     }
 }
 
-
+void XmlTree::selectionChanged(Selection *selection)
+{
+    if (!blocked++) {
+        Inkscape::XML::Node *node = get_dt_select();
+        set_tree_select(node);
+    }
+    blocked--;
+}
 
 void XmlTree::set_tree_repr(Inkscape::XML::Node *repr)
 {
@@ -392,10 +357,12 @@ void XmlTree::set_tree_select(Inkscape::XML::Node *repr)
     if (selected_repr) {
         Inkscape::GC::release(selected_repr);
     }
-
     selected_repr = repr;
-    if (current_desktop) {
-        current_desktop->getDocument()->setXMLDialogSelectedObject(nullptr);
+    if (selected_repr) {
+        Inkscape::GC::anchor(selected_repr);
+    }
+    if (auto document = getDocument()) {
+        document->setXMLDialogSelectedObject(nullptr);
     }
     if (repr) {
         GtkTreeIter node;
@@ -432,9 +399,9 @@ void XmlTree::set_tree_select(Inkscape::XML::Node *repr)
 void XmlTree::propagate_tree_select(Inkscape::XML::Node *repr)
 {
     if (repr &&
-       (repr->type() == Inkscape::XML::ELEMENT_NODE ||
-        repr->type() == Inkscape::XML::TEXT_NODE ||
-        repr->type() == Inkscape::XML::COMMENT_NODE))
+       (repr->type() == Inkscape::XML::NodeType::ELEMENT_NODE ||
+        repr->type() == Inkscape::XML::NodeType::TEXT_NODE ||
+        repr->type() == Inkscape::XML::NodeType::COMMENT_NODE))
     {
         attributes->setRepr(repr);
     } else {
@@ -445,58 +412,65 @@ void XmlTree::propagate_tree_select(Inkscape::XML::Node *repr)
 
 Inkscape::XML::Node *XmlTree::get_dt_select()
 {
-    if (!current_desktop) {
-        return nullptr;
+    if (auto selection = getSelection()) {
+        return selection->singleRepr();
     }
-    return current_desktop->getSelection()->singleRepr();
+    return nullptr;
 }
 
 
+/**
+ * Like SPDesktop::isLayer(), but ignores SPGroup::effectiveLayerMode().
+ */
+static bool isRealLayer(SPObject const *object)
+{
+    auto group = dynamic_cast<SPGroup const *>(object);
+    return group && group->layerMode() == SPGroup::LAYER;
+}
 
 void XmlTree::set_dt_select(Inkscape::XML::Node *repr)
 {
-    if (!current_desktop) {
+    auto document = getDocument();
+    if (!document)
         return;
-    }
-
-    Inkscape::Selection *selection = current_desktop->getSelection();
 
     SPObject *object;
     if (repr) {
-        while ( ( repr->type() != Inkscape::XML::ELEMENT_NODE )
+        while ( ( repr->type() != Inkscape::XML::NodeType::ELEMENT_NODE )
                 && repr->parent() )
         {
             repr = repr->parent();
         } // end of while loop
 
-        object = current_desktop->getDocument()->getObjectByRepr(repr);
+        object = document->getObjectByRepr(repr);
     } else {
         object = nullptr;
     }
 
     blocked++;
-    if ( object && in_dt_coordsys(*object)
-         && !(SP_IS_STRING(object) ||
-                current_desktop->isLayer(object) ||
-                SP_IS_ROOT(object)     ) )
-    {
-            /* We cannot set selection to root or string - they are not items and selection is not
-             * equipped to deal with them */
-            selection->set(SP_ITEM(object));
+
+    if (!object || !in_dt_coordsys(*object)) {
+        // object not on canvas
+    } else if (isRealLayer(object)) {
+        getDesktop()->setCurrentLayer(object);
+    } else {
+        if (SP_IS_GROUP(object->parent)) {
+            getDesktop()->setCurrentLayer(object->parent);
+        }
+
+        getSelection()->set(SP_ITEM(object));
     }
 
-    current_desktop->getDocument()->setXMLDialogSelectedObject(object);
-
+    document->setXMLDialogSelectedObject(object);
     blocked--;
-
-} // end of set_dt_select()
+}
 
 
 void XmlTree::on_tree_select_row(GtkTreeSelection *selection, gpointer data)
 {
     XmlTree *self = static_cast<XmlTree *>(data);
 
-    if (self->blocked) {
+    if (self->blocked || !self->getDesktop()) {
         return;
     }
 
@@ -558,17 +532,10 @@ void XmlTree::after_tree_move(SPXMLViewTree * /*tree*/, gpointer value, gpointer
     guint val = GPOINTER_TO_UINT(value);
 
     if (val) {
-        DocumentUndo::done(self->current_document, SP_VERB_DIALOG_XML_EDITOR,
+        DocumentUndo::done(self->getDocument(), SP_VERB_DIALOG_XML_EDITOR,
                            Q_("Undo History / XML dialog|Drag XML subtree"));
     } else {
-        //DocumentUndo::cancel(self->current_document);
-        /*
-         * There was a problem with drag & drop,
-         * data is probably not synchronized, so reload the tree
-         */
-        SPDocument *document = self->current_document;
-        self->set_tree_document(nullptr);
-        self->set_tree_document(document);
+        DocumentUndo::cancel(self->getDocument());
     }
 }
 
@@ -593,7 +560,7 @@ void XmlTree::on_tree_select_row_enable(GtkTreeIter *node)
     xml_node_delete_button.set_sensitive(xml_tree_node_mutable(node));
 
     //on_tree_select_row_enable_if_element
-    if (repr->type() == Inkscape::XML::ELEMENT_NODE) {
+    if (repr->type() == Inkscape::XML::NodeType::ELEMENT_NODE) {
         xml_element_new_button.set_sensitive(true);
         xml_text_new_button.set_sensitive(true);
 
@@ -630,7 +597,7 @@ void XmlTree::on_tree_select_row_enable(GtkTreeIter *node)
                   prev && prev->next() != repr ;
                   prev = prev->next() ){};
 
-            if (prev && (prev->type() == Inkscape::XML::ELEMENT_NODE)) {
+            if (prev && (prev->type() == Inkscape::XML::NodeType::ELEMENT_NODE)) {
                 indentable = TRUE;
             }
         }
@@ -708,33 +675,10 @@ void XmlTree::onCreateNameChanged()
     create_button->set_sensitive(!text.empty());
 }
 
-void XmlTree::on_desktop_selection_changed()
-{
-    if (!blocked++) {
-        Inkscape::XML::Node *node = get_dt_select();
-        set_tree_select(node);
-    }
-    blocked--;
-}
-
-void XmlTree::on_document_replaced(SPDesktop *dt, SPDocument *doc)
-{
-    if (current_desktop)
-        sel_changed_connection.disconnect();
-
-    sel_changed_connection = dt->getSelection()->connectChanged(sigc::hide(sigc::mem_fun(this, &XmlTree::on_desktop_selection_changed)));
-    set_tree_document(doc);
-}
-
 void XmlTree::on_document_uri_set(gchar const * /*uri*/, SPDocument * /*document*/)
 {
 /*
  * Seems to be no way to set the title on a docked dialog
-    gchar title[500];
-    sp_ui_dialog_title_string(Inkscape::Verb::get(SP_VERB_DIALOG_XML_EDITOR), title);
-    gchar *t = g_strdup_printf("%s: %s", document->getName(), title);
-    //gtk_window_set_title(GTK_WINDOW(dlg), t);
-    g_free(t);
 */
 }
 
@@ -754,6 +698,10 @@ gboolean XmlTree::quit_on_esc (GtkWidget *w, GdkEventKey *event, GObject */*tbl*
 
 void XmlTree::cmd_new_element_node()
 {
+    auto document = getDocument();
+    if (!document)
+        return;
+
     Gtk::Dialog dialog;
     Gtk::Entry entry;
 
@@ -766,7 +714,7 @@ void XmlTree::cmd_new_element_node()
     if (result == Gtk::RESPONSE_OK) {
         Glib::ustring new_name = entry.get_text();
         if (!new_name.empty()) {
-            Inkscape::XML::Document *xml_doc = current_document->getReprDoc();
+            Inkscape::XML::Document *xml_doc = document->getReprDoc();
             Inkscape::XML::Node *new_repr;
             new_repr = xml_doc->createElement(new_name.c_str());
             Inkscape::GC::release(new_repr);
@@ -774,7 +722,7 @@ void XmlTree::cmd_new_element_node()
             set_tree_select(new_repr);
             set_dt_select(new_repr);
 
-            DocumentUndo::done(current_document, SP_VERB_DIALOG_XML_EDITOR,
+            DocumentUndo::done(document, SP_VERB_DIALOG_XML_EDITOR,
                                Q_("Undo History / XML dialog|Create new element node"));
         }
     }
@@ -783,13 +731,17 @@ void XmlTree::cmd_new_element_node()
 
 void XmlTree::cmd_new_text_node()
 {
+    auto document = getDocument();
+    if (!document)
+        return;
+
     g_assert(selected_repr != nullptr);
 
-    Inkscape::XML::Document *xml_doc = current_document->getReprDoc();
+    Inkscape::XML::Document *xml_doc = document->getReprDoc();
     Inkscape::XML::Node *text = xml_doc->createTextNode("");
     selected_repr->appendChild(text);
 
-    DocumentUndo::done(current_document, SP_VERB_DIALOG_XML_EDITOR,
+    DocumentUndo::done(document, SP_VERB_DIALOG_XML_EDITOR,
                        Q_("Undo History / XML dialog|Create new text node"));
 
     set_tree_select(text);
@@ -798,13 +750,17 @@ void XmlTree::cmd_new_text_node()
 
 void XmlTree::cmd_duplicate_node()
 {
+    auto document = getDocument();
+    if (!document)
+        return;
+
     g_assert(selected_repr != nullptr);
 
     Inkscape::XML::Node *parent = selected_repr->parent();
     Inkscape::XML::Node *dup = selected_repr->duplicate(parent->document());
     parent->addChild(dup, selected_repr);
 
-    DocumentUndo::done(current_document, SP_VERB_DIALOG_XML_EDITOR, Q_("Undo History / XML dialog|Duplicate node"));
+    DocumentUndo::done(document, SP_VERB_DIALOG_XML_EDITOR, Q_("Undo History / XML dialog|Duplicate node"));
 
     GtkTreeIter node;
 
@@ -816,28 +772,35 @@ void XmlTree::cmd_duplicate_node()
 
 void XmlTree::cmd_delete_node()
 {
+    auto document = getDocument();
+    if (!document)
+        return;
+
     g_assert(selected_repr != nullptr);
 
-    current_document->setXMLDialogSelectedObject(nullptr);
+    document->setXMLDialogSelectedObject(nullptr);
 
     Inkscape::XML::Node *parent = selected_repr->parent();
 
     sp_repr_unparent(selected_repr);
 
     if (parent) {
-        auto parentobject = current_document->getObjectByRepr(parent);
+        auto parentobject = document->getObjectByRepr(parent);
         if (parentobject) {
             parentobject->requestDisplayUpdate(SP_OBJECT_CHILD_MODIFIED_FLAG);
         }
     }
 
-    DocumentUndo::done(current_document, SP_VERB_DIALOG_XML_EDITOR, Q_("Undo History / XML dialog|Delete node"));
+    DocumentUndo::done(document, SP_VERB_DIALOG_XML_EDITOR, Q_("Undo History / XML dialog|Delete node"));
 }
 
 void XmlTree::cmd_raise_node()
 {
-    g_assert(selected_repr != nullptr);
+    auto document = getDocument();
+    if (!document)
+        return;
 
+    g_assert(selected_repr != nullptr);
 
     Inkscape::XML::Node *parent = selected_repr->parent();
     g_return_if_fail(parent != nullptr);
@@ -852,7 +815,7 @@ void XmlTree::cmd_raise_node()
 
     parent->changeOrder(selected_repr, ref);
 
-    DocumentUndo::done(current_document, SP_VERB_DIALOG_XML_EDITOR, Q_("Undo History / XML dialog|Raise node"));
+    DocumentUndo::done(document, SP_VERB_DIALOG_XML_EDITOR, Q_("Undo History / XML dialog|Raise node"));
 
     set_tree_select(selected_repr);
     set_dt_select(selected_repr);
@@ -862,6 +825,10 @@ void XmlTree::cmd_raise_node()
 
 void XmlTree::cmd_lower_node()
 {
+    auto document = getDocument();
+    if (!document)
+        return;
+
     g_assert(selected_repr != nullptr);
 
     g_return_if_fail(selected_repr->next() != nullptr);
@@ -869,7 +836,7 @@ void XmlTree::cmd_lower_node()
 
     parent->changeOrder(selected_repr, selected_repr->next());
 
-    DocumentUndo::done(current_document, SP_VERB_DIALOG_XML_EDITOR, Q_("Undo History / XML dialog|Lower node"));
+    DocumentUndo::done(document, SP_VERB_DIALOG_XML_EDITOR, Q_("Undo History / XML dialog|Lower node"));
 
     set_tree_select(selected_repr);
     set_dt_select(selected_repr);
@@ -877,6 +844,10 @@ void XmlTree::cmd_lower_node()
 
 void XmlTree::cmd_indent_node()
 {
+    auto document = getDocument();
+    if (!document)
+        return;
+
     Inkscape::XML::Node *repr = selected_repr;
     g_assert(repr != nullptr);
 
@@ -889,7 +860,7 @@ void XmlTree::cmd_indent_node()
         prev = prev->next();
     }
     g_return_if_fail(prev != nullptr);
-    g_return_if_fail(prev->type() == Inkscape::XML::ELEMENT_NODE);
+    g_return_if_fail(prev->type() == Inkscape::XML::NodeType::ELEMENT_NODE);
 
     Inkscape::XML::Node* ref = nullptr;
     if (prev->firstChild()) {
@@ -899,7 +870,7 @@ void XmlTree::cmd_indent_node()
     parent->removeChild(repr);
     prev->addChild(repr, ref);
 
-    DocumentUndo::done(current_document, SP_VERB_DIALOG_XML_EDITOR, Q_("Undo History / XML dialog|Indent node"));
+    DocumentUndo::done(document, SP_VERB_DIALOG_XML_EDITOR, Q_("Undo History / XML dialog|Indent node"));
     set_tree_select(repr);
     set_dt_select(repr);
 
@@ -909,6 +880,10 @@ void XmlTree::cmd_indent_node()
 
 void XmlTree::cmd_unindent_node()
 {
+    auto document = getDocument();
+    if (!document)
+        return;
+
     Inkscape::XML::Node *repr = selected_repr;
     g_assert(repr != nullptr);
 
@@ -920,7 +895,7 @@ void XmlTree::cmd_unindent_node()
     parent->removeChild(repr);
     grandparent->addChild(repr, parent);
 
-    DocumentUndo::done(current_document, SP_VERB_DIALOG_XML_EDITOR, Q_("Undo History / XML dialog|Unindent node"));
+    DocumentUndo::done(document, SP_VERB_DIALOG_XML_EDITOR, Q_("Undo History / XML dialog|Unindent node"));
 
     set_tree_select(repr);
     set_dt_select(repr);
@@ -936,20 +911,20 @@ bool XmlTree::in_dt_coordsys(SPObject const &item)
 {
     /* Definition based on sp_item_i2doc_affine. */
     SPObject const *child = &item;
-    g_return_val_if_fail(child != nullptr, false);
-    for(;;) {
-        if (!SP_IS_ITEM(child)) {
-            return false;
-        }
+    while (SP_IS_ITEM(child)) {
         SPObject const * const parent = child->parent;
         if (parent == nullptr) {
-            break;
+            g_assert(SP_IS_ROOT(child));
+            if (child == &item) {
+                // item is root
+                return false;
+            }
+            return true;
         }
         child = parent;
     }
-    g_assert(SP_IS_ROOT(child));
-    /* Relevance: Otherwise, I'm not sure whether to return true or false. */
-    return true;
+    g_assert(!SP_IS_ROOT(child));
+    return false;
 }
 
 }

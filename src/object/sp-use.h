@@ -50,13 +50,14 @@ public:
 
 	void build(SPDocument* doc, Inkscape::XML::Node* repr) override;
 	void release() override;
-	void set(SPAttributeEnum key, char const *value) override;
+	void set(SPAttr key, char const *value) override;
 	Inkscape::XML::Node* write(Inkscape::XML::Document *xml_doc, Inkscape::XML::Node *repr, unsigned int flags) override;
 	void update(SPCtx* ctx, unsigned int flags) override;
 	void modified(unsigned int flags) override;
 
 	Geom::OptRect bbox(Geom::Affine const &transform, SPItem::BBoxType bboxtype) const override;
-    const char* displayName() const override;
+        const char* typeName() const override;
+        const char* displayName() const override;
 	char* description() const override;
 	void print(SPPrintContext *ctx) override;
 	Inkscape::DrawingItem* show(Inkscape::Drawing &drawing, unsigned int key, unsigned int flags) override;

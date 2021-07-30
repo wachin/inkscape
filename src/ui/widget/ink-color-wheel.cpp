@@ -66,7 +66,6 @@ guint32 hsv_to_rgb(double h, double s, double v) {
     double b = v;
 
     if (s != 0.0) {
-        double c = s * v;
         if (h == 1.0) h = 0.0;
         h *= 6.0;
 
@@ -108,7 +107,7 @@ ColorWheel::ColorWheel()
     , _saturation(1.0)
     , _value(1.0)
     , _ring_width(0.2)
-    , _mode(DRAG_NONE)
+    , _mode(DragMode::NONE)
     , _focus_on_ring(true)
 {
     set_name("ColorWheel");
@@ -163,7 +162,18 @@ ColorWheel::get_rgb()
     return hsv_to_rgb(_hue, _saturation, _value);
 }
 
-/* Pad triangle vertically if necessary */
+/**
+  * Paints padding for an edge of the triangle,
+  * using the (vertically) closest point.
+  *
+  * @param p0 A corner of the triangle. Not the same corner as p1
+  * @param p1 A corner of the triangle. Not the same corner as p0
+  * @param padding The height of the padding
+  * @param pad_upwards True if padding is above the line
+  * @param buffer Array that the triangle is painted to
+  * @param height Height of buffer
+  * @param stride Stride of buffer
+*/
 void
 draw_vertical_padding(color_point p0, color_point p1, int padding, bool pad_upwards,
                       guint32 *buffer, int height, int stride);
@@ -188,8 +198,8 @@ ColorWheel::on_draw(const::Cairo::RefPtr<::Cairo::Context>& cr) {
     guint32* buffer_ring = g_new (guint32, height * stride / 4);
     double r_max = std::min( width, height)/2.0 - 2 * (focus_line_width + focus_padding);
     double r_min = r_max * (1.0 - _ring_width);
-    double r2_max = (r_max+1) * (r_max+1); // Must expand a bit to avoid edge effects.
-    double r2_min = (r_min-1) * (r_min-1); // Must shrink a bit to avoid edge effects.
+    double r2_max = (r_max+2) * (r_max+2); // Must expand a bit to avoid edge effects.
+    double r2_min = (r_min-2) * (r_min-2); // Must shrink a bit to avoid edge effects.
 
     for (int i = 0; i < height; ++i) {
         guint32* p = buffer_ring + i * width;
@@ -382,7 +392,7 @@ void
 draw_vertical_padding(color_point p0, color_point p1, int padding, bool pad_upwards,
                       guint32 *buffer, int height, int stride)
 {
-    // skip if horizontal padding is more accurate
+    // skip if horizontal padding is more accurate, e.g. if the edge is vertical
     double gradient = (p1.y - p0.y) / (p1.x - p0.x);
     if (std::abs(gradient) > 1.0) {
         return;
@@ -394,6 +404,7 @@ draw_vertical_padding(color_point p0, color_point p1, int padding, bool pad_upwa
     double min_x = std::min(p0.x, p1.x);
     double max_x = std::max(p0.x, p1.x);
 
+    // go through every point on the line
     for (int y = min_y; y <= max_y; ++y) {
         double start_x = lerp(p0, p1, p0.y, p1.y, clamp(y, min_y, max_y)).x;
         double end_x = lerp(p0, p1, p0.y, p1.y, clamp(y + 1, min_y, max_y)).x;
@@ -404,7 +415,9 @@ draw_vertical_padding(color_point p0, color_point p1, int padding, bool pad_upwa
         guint32 *p = buffer + y * stride;
         p += static_cast<int>(start_x);
         for (int x = start_x; x <= end_x; ++x) {
+            // get the color at this point on the line
             color_point point = lerp(p0, p1, p0.x, p1.x, clamp(x, min_x, max_x));
+            // paint the padding vertically above or below this point
             for (int offset = 0; offset <= padding; ++offset) {
                 if (pad_upwards && (point.y - offset) >= 0) {
                     *(p - (offset * stride)) = point.get_color();
@@ -559,6 +572,32 @@ ColorWheel::on_focus(Gtk::DirectionType direction)
     return keep_focus;
 }
 
+void
+ColorWheel::update_triangle_color(const double x, const double y)
+{
+    set_from_xy(x, y);
+    _signal_color_changed.emit();
+    queue_draw();
+}
+
+void
+ColorWheel::update_ring_color(const double x, const double y)
+{
+    Gtk::Allocation allocation = get_allocation();
+    const int width = allocation.get_width();
+    const int height = allocation.get_height();
+    double cx = width / 2.0;
+    double cy = height / 2.0;
+    double angle = -atan2(y - cy, x - cx);
+
+    if (angle < 0)
+        angle += 2.0 * M_PI;
+    _hue = angle / (2.0 * M_PI);
+
+    queue_draw();
+    _signal_color_changed.emit();
+}
+
 bool
 ColorWheel::on_button_press_event(GdkEventButton* event)
 {
@@ -567,16 +606,18 @@ ColorWheel::on_button_press_event(GdkEventButton* event)
     double y = event->y;
 
     if (is_in_ring(x, y) ) {
-        _mode = DRAG_H;
+        _mode = DragMode::HUE;
         grab_focus();
         _focus_on_ring = true;
+        update_ring_color(x, y);
         return true;
     }
 
     if (is_in_triangle(x, y)) {
-        _mode = DRAG_SV;
+        _mode = DragMode::SATURATION_VALUE;
         grab_focus();
         _focus_on_ring = false;
+        update_triangle_color(x, y);
         return true;
     }
 
@@ -586,9 +627,10 @@ ColorWheel::on_button_press_event(GdkEventButton* event)
 bool
 ColorWheel::on_button_release_event(GdkEventButton* event)
 {
-    _mode = DRAG_NONE;
+    _mode = DragMode::NONE;
     return true;
 }
+
 
 bool
 ColorWheel::on_motion_notify_event(GdkEventMotion* event)
@@ -596,29 +638,13 @@ ColorWheel::on_motion_notify_event(GdkEventMotion* event)
     double x = event->x;
     double y = event->y;
 
-    Gtk::Allocation allocation = get_allocation();
-    const int width  = allocation.get_width();
-    const int height = allocation.get_height();
-    double cx = width/2.0;
-    double cy = height/2.0;
-    double r = std::min(cx, cy) * (1 - _ring_width);
-
-    if (_mode == DRAG_H) {
-
-        double angle = -atan2(y-cy, x-cx);
-        if (angle < 0) angle += 2.0 * M_PI;
-        _hue = angle / (2.0 * M_PI);
-
-        queue_draw();
-        _signal_color_changed.emit();
+    if (_mode == DragMode::HUE) {
+        update_ring_color(x, y);
         return true;
     }
 
-    if (_mode == DRAG_SV) {
-
-        set_from_xy(x, y);
-        _signal_color_changed.emit();
-        queue_draw();
+    if (_mode == DragMode::SATURATION_VALUE) {
+        update_triangle_color(x, y);
         return true;
     }
 

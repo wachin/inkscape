@@ -44,14 +44,14 @@ void SPFeSpotLight::build(SPDocument *document, Inkscape::XML::Node *repr) {
 	SPObject::build(document, repr);
 
     //Read values of key attributes from XML nodes into object.
-    this->readAttr( "x" );
-    this->readAttr( "y" );
-    this->readAttr( "z" );
-    this->readAttr( "pointsAtX" );
-    this->readAttr( "pointsAtY" );
-    this->readAttr( "pointsAtZ" );
-    this->readAttr( "specularExponent" );
-    this->readAttr( "limitingConeAngle" );
+    this->readAttr(SPAttr::X);
+    this->readAttr(SPAttr::Y);
+    this->readAttr(SPAttr::Z);
+    this->readAttr(SPAttr::POINTSATX);
+    this->readAttr(SPAttr::POINTSATY);
+    this->readAttr(SPAttr::POINTSATZ);
+    this->readAttr(SPAttr::SPECULAREXPONENT);
+    this->readAttr(SPAttr::LIMITINGCONEANGLE);
 
 //is this necessary?
     document->addResource("fespotlight", this);
@@ -72,11 +72,11 @@ void SPFeSpotLight::release() {
 /**
  * Sets a specific value in the SPFeSpotLight.
  */
-void SPFeSpotLight::set(SPAttributeEnum key, gchar const *value) {
+void SPFeSpotLight::set(SPAttr key, gchar const *value) {
     gchar *end_ptr;
 
     switch (key) {
-    case SP_ATTR_X:
+    case SPAttr::X:
         end_ptr = nullptr;
         
         if (value) {
@@ -98,7 +98,7 @@ void SPFeSpotLight::set(SPAttributeEnum key, gchar const *value) {
             this->parent->parent->requestModified(SP_OBJECT_MODIFIED_FLAG);
         }
         break;
-    case SP_ATTR_Y:
+    case SPAttr::Y:
         end_ptr = nullptr;
         
         if (value) {
@@ -120,7 +120,7 @@ void SPFeSpotLight::set(SPAttributeEnum key, gchar const *value) {
             this->parent->parent->requestModified(SP_OBJECT_MODIFIED_FLAG);
         }
         break;
-    case SP_ATTR_Z:
+    case SPAttr::Z:
         end_ptr = nullptr;
         
         if (value) {
@@ -142,7 +142,7 @@ void SPFeSpotLight::set(SPAttributeEnum key, gchar const *value) {
             this->parent->parent->requestModified(SP_OBJECT_MODIFIED_FLAG);
         }
         break;
-    case SP_ATTR_POINTSATX:
+    case SPAttr::POINTSATX:
         end_ptr = nullptr;
         
         if (value) {
@@ -164,7 +164,7 @@ void SPFeSpotLight::set(SPAttributeEnum key, gchar const *value) {
             this->parent->parent->requestModified(SP_OBJECT_MODIFIED_FLAG);
         }
         break;
-    case SP_ATTR_POINTSATY:
+    case SPAttr::POINTSATY:
         end_ptr = nullptr;
         
         if (value) {
@@ -186,7 +186,7 @@ void SPFeSpotLight::set(SPAttributeEnum key, gchar const *value) {
             this->parent->parent->requestModified(SP_OBJECT_MODIFIED_FLAG);
         }
         break;
-    case SP_ATTR_POINTSATZ:
+    case SPAttr::POINTSATZ:
         end_ptr = nullptr;
         
         if (value) {
@@ -208,7 +208,7 @@ void SPFeSpotLight::set(SPAttributeEnum key, gchar const *value) {
             this->parent->parent->requestModified(SP_OBJECT_MODIFIED_FLAG);
         }
         break;
-    case SP_ATTR_SPECULAREXPONENT:
+    case SPAttr::SPECULAREXPONENT:
         end_ptr = nullptr;
         
         if (value) {
@@ -230,7 +230,7 @@ void SPFeSpotLight::set(SPAttributeEnum key, gchar const *value) {
             this->parent->parent->requestModified(SP_OBJECT_MODIFIED_FLAG);
         }
         break;
-    case SP_ATTR_LIMITINGCONEANGLE:
+    case SPAttr::LIMITINGCONEANGLE:
         end_ptr = nullptr;
         
         if (value) {
@@ -265,14 +265,14 @@ void SPFeSpotLight::set(SPAttributeEnum key, gchar const *value) {
 void SPFeSpotLight::update(SPCtx *ctx, guint flags) {
     if (flags & SP_OBJECT_MODIFIED_FLAG) {
         /* do something to trigger redisplay, updates? */
-        this->readAttr( "x" );
-        this->readAttr( "y" );
-        this->readAttr( "z" );
-        this->readAttr( "pointsAtX" );
-        this->readAttr( "pointsAtY" );
-        this->readAttr( "pointsAtZ" );
-        this->readAttr( "specularExponent" );
-        this->readAttr( "limitingConeAngle" );
+        this->readAttr(SPAttr::X);
+        this->readAttr(SPAttr::Y);
+        this->readAttr(SPAttr::Z);
+        this->readAttr(SPAttr::POINTSATX);
+        this->readAttr(SPAttr::POINTSATY);
+        this->readAttr(SPAttr::POINTSATZ);
+        this->readAttr(SPAttr::SPECULAREXPONENT);
+        this->readAttr(SPAttr::LIMITINGCONEANGLE);
     }
 
     SPObject::update(ctx, flags);
@@ -287,21 +287,21 @@ Inkscape::XML::Node* SPFeSpotLight::write(Inkscape::XML::Document *doc, Inkscape
     }
 
     if (this->x_set)
-        sp_repr_set_css_double(repr, "x", this->x);
+        repr->setAttributeCssDouble("x", this->x);
     if (this->y_set)
-        sp_repr_set_css_double(repr, "y", this->y);
+        repr->setAttributeCssDouble("y", this->y);
     if (this->z_set)
-        sp_repr_set_css_double(repr, "z", this->z);
+        repr->setAttributeCssDouble("z", this->z);
     if (this->pointsAtX_set)
-        sp_repr_set_css_double(repr, "pointsAtX", this->pointsAtX);
+        repr->setAttributeCssDouble("pointsAtX", this->pointsAtX);
     if (this->pointsAtY_set)
-        sp_repr_set_css_double(repr, "pointsAtY", this->pointsAtY);
+        repr->setAttributeCssDouble("pointsAtY", this->pointsAtY);
     if (this->pointsAtZ_set)
-        sp_repr_set_css_double(repr, "pointsAtZ", this->pointsAtZ);
+        repr->setAttributeCssDouble("pointsAtZ", this->pointsAtZ);
     if (this->specularExponent_set)
-        sp_repr_set_css_double(repr, "specularExponent", this->specularExponent);
+        repr->setAttributeCssDouble("specularExponent", this->specularExponent);
     if (this->limitingConeAngle_set)
-        sp_repr_set_css_double(repr, "limitingConeAngle", this->limitingConeAngle);
+        repr->setAttributeCssDouble("limitingConeAngle", this->limitingConeAngle);
 
     SPObject::write(doc, repr, flags);
 

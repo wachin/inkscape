@@ -35,7 +35,7 @@ class Window;
 }
 
 // Get the name of the default template uri
-Glib::ustring sp_file_default_template_uri();
+std::string sp_file_default_template_uri();
 
 /*######################
 ## N E W
@@ -166,6 +166,7 @@ void sp_file_convert_text_baseline_spacing(SPDocument *doc);
 void sp_file_convert_font_name(SPDocument *doc);
 void sp_file_convert_dpi(SPDocument *doc);
 void sp_file_fix_empty_lines(SPDocument *doc);
+void sp_file_fix_osb(SPObject *doc);
 enum File_DPI_Fix { FILE_DPI_UNCHANGED = 0, FILE_DPI_VIEWBOX_SCALED, FILE_DPI_DOCUMENT_SCALED };
 extern int sp_file_convert_dpi_method_commandline;
 

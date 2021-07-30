@@ -18,14 +18,13 @@
 
 #include <gtkmm/box.h>
 #include <gtkmm/button.h>
+#include <gtkmm/image.h>
 #include <gtkmm/label.h>
 #include <gtkmm/paned.h>
-#include <gtkmm/image.h>
 #include <gtkmm/togglebutton.h>
 #include <gtkmm/toggletoolbutton.h>
 
-#include "ui/widget/panel.h"
-#include "desktop-tracker.h"
+#include "ui/dialog/dialog-base.h"
 
 class SPObject;
 namespace Glib {
@@ -41,7 +40,7 @@ namespace Dialog {
 /**
  * A panel that displays an icon preview
  */
-class IconPreviewPanel : public UI::Widget::Panel
+class IconPreviewPanel : public DialogBase
 {
 public:
     IconPreviewPanel();
@@ -49,8 +48,9 @@ public:
     ~IconPreviewPanel() override;
 
     static IconPreviewPanel& getInstance();
+    void selectionModified(Selection *selection, guint flags) override;
+    void documentReplaced() override;
 
-    void setDesktop( SPDesktop* desktop ) override;
     void refreshPreview();
     void modeToggled();
 
@@ -58,10 +58,6 @@ private:
     IconPreviewPanel(IconPreviewPanel const &) = delete; // no copy
     IconPreviewPanel &operator=(IconPreviewPanel const &) = delete; // no assign
 
-
-    DesktopTracker deskTrack;
-    SPDesktop *desktop;
-    SPDocument *document;
     Drawing *drawing;
     unsigned int visionkey;
     Glib::Timer *timer;
@@ -69,7 +65,7 @@ private:
     bool pending;
     gdouble minDelay;
 
-    Gtk::VBox       iconBox;
+    Gtk::Box        iconBox;
     Gtk::Paned      splitter;
     Glib::ustring targetId;
     int hot;
@@ -85,11 +81,7 @@ private:
     Gtk::Image** images;
     Glib::ustring** labels;
     Gtk::ToggleToolButton** buttons;
-    sigc::connection desktopChangeConn;
-    sigc::connection docReplacedConn;
     sigc::connection docModConn;
-    sigc::connection selChangedConn;
-
 
     void setDocument( SPDocument *document );
     void on_button_clicked(int which);

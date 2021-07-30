@@ -44,18 +44,19 @@ public:
     ~LPEMirrorSymmetry() override;
     void doOnApply (SPLPEItem const* lpeitem) override;
     void doBeforeEffect (SPLPEItem const* lpeitem) override;
-    void doAfterEffect (SPLPEItem const* lpeitem) override;
+    void doAfterEffect (SPLPEItem const* lpeitem, SPCurve *curve) override;
     Geom::PathVector doEffect_path (Geom::PathVector const & path_in) override;
     void doOnRemove (SPLPEItem const* /*lpeitem*/) override;
     void doOnVisibilityToggled(SPLPEItem const* /*lpeitem*/) override;
     Gtk::Widget * newWidget() override;
     void cloneStyle(SPObject *orig, SPObject *dest);
-    void toMirror(Geom::Affine transform, bool reset);
-    void cloneD(SPObject *orig, SPObject *dest, bool reset);
+    void toMirror(Geom::Affine transform);
+    void cloneD(SPObject *orig, SPObject *dest);
     Inkscape::XML::Node * createPathBase(SPObject *elemref);
     void resetStyles();
     void centerVert();
     void centerHoriz();
+    BoolParam split_items;
 
 protected:
     void addCanvasIndicators(SPLPEItem const *lpeitem, std::vector<Geom::PathVector> &hp_vec) override;
@@ -65,7 +66,7 @@ private:
     BoolParam discard_orig_path;
     BoolParam fuse_paths;
     BoolParam oposite_fuse;
-    BoolParam split_items;
+    BoolParam split_open;
     PointParam start_point;
     PointParam end_point;
     PointParam center_point;

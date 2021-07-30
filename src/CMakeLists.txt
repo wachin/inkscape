@@ -4,6 +4,7 @@
 # -----------------------------------------------------------------------------
 
 set(inkscape_SRC
+  alignment-snapper.cpp
   attribute-rel-css.cpp
   attribute-rel-svg.cpp
   attribute-rel-util.cpp
@@ -21,6 +22,7 @@ set(inkscape_SRC
   desktop-style.cpp
   desktop.cpp
   device-manager.cpp
+  distribution-snapper.cpp
   document-subset.cpp
   document-undo.cpp
   document.cpp
@@ -40,10 +42,7 @@ set(inkscape_SRC
   help.cpp
   id-clash.cpp
   inkscape.cpp
-  knot-holder-entity.cpp
-  knot-ptr.cpp
-  knot.cpp
-  knotholder.cpp
+  inkscape-version-info.cpp
   layer-fns.cpp
   layer-manager.cpp
   layer-model.cpp
@@ -59,7 +58,6 @@ set(inkscape_SRC
   path-prefix.cpp
   perspective-line.cpp
   preferences.cpp
-  prefix.cpp
   print.cpp
   profile-manager.cpp
   proj_pt.cpp
@@ -67,23 +65,18 @@ set(inkscape_SRC
   rdf.cpp
   removeoverlap.cpp
   rubberband.cpp
-  satisfied-guide-cns.cpp
   selcue.cpp
   selection-chemistry.cpp
   selection-describer.cpp
   selection.cpp
   seltrans-handles.cpp
   seltrans.cpp
-  shortcuts.cpp
   snap-preferences.cpp
   snap.cpp
   snapped-curve.cpp
   snapped-line.cpp
   snapped-point.cpp
   snapper.cpp
-  splivarot.cpp
-  sp-cursor.cpp
-  sp-item-notify-moveto.cpp 
   style-internal.cpp
   style.cpp
   text-chemistry.cpp
@@ -97,6 +90,7 @@ set(inkscape_SRC
 
   # -------
   # Headers
+  alignment-snapper.h
   attribute-rel-css.h
   attribute-rel-svg.h
   attribute-rel-util.h
@@ -120,6 +114,7 @@ set(inkscape_SRC
   desktop-style.h
   desktop.h
   device-manager.h
+  distribution-snapper.h
   document-subset.h
   document-undo.h
   document.h
@@ -142,12 +137,8 @@ set(inkscape_SRC
   helper-fns.h
   id-clash.h
   inkscape-version.h
+  inkscape-version-info.h
   inkscape.h
-  knot-enums.h
-  knot-holder-entity.h
-  knot-ptr.h
-  knot.h
-  knotholder.h
   layer-fns.h
   layer-manager.h
   layer-model.h
@@ -167,23 +158,19 @@ set(inkscape_SRC
   perspective-line.h
   preferences-skeleton.h
   preferences.h
-  prefix.h
   print.h
   profile-manager.h
   proj_pt.h
   pure-transform.h
   rdf.h
-  remove-last.h
   removeoverlap.h
   rubberband.h
-  satisfied-guide-cns.h
   selcue.h
   selection-chemistry.h
   selection-describer.h
   selection.h
   seltrans-handles.h
   seltrans.h
-  shortcuts.h
   snap-candidate.h
   snap-enums.h
   snap-preferences.h
@@ -192,11 +179,6 @@ set(inkscape_SRC
   snapped-line.h
   snapped-point.h
   snapper.h
-  sp-cursor.h
-  sp-guide-attachment.h
-  sp-guide-constraint.h
-  sp-item-notify-moveto.h
-  splivarot.h
   streq.h
   strneq.h
   style-enums.h
@@ -222,7 +204,16 @@ set(inkscape_SRC
   inkscape-application.cpp
   actions/actions-extra-data.h
   actions/actions-extra-data.cpp
+
+  actions/actions-canvas-mode.h
+  actions/actions-canvas-mode.cpp
+  actions/actions-canvas-snapping.h
+  actions/actions-canvas-snapping.cpp
+  actions/actions-canvas-transform.h
+  actions/actions-canvas-transform.cpp
   actions/actions-base.h
+  actions/actions-dialogs.cpp
+  actions/actions-dialogs.h
   actions/actions-base.cpp
   actions/actions-file.h
   actions/actions-file.cpp
@@ -230,10 +221,14 @@ set(inkscape_SRC
   actions/actions-helper.cpp
   actions/actions-object.h
   actions/actions-object.cpp
+  actions/actions-object-align.h
+  actions/actions-object-align.cpp
   actions/actions-output.h
   actions/actions-output.cpp
   actions/actions-selection.h
   actions/actions-selection.cpp
+  actions/actions-tools.h
+  actions/actions-tools.cpp
   actions/actions-transform.h
   actions/actions-transform.cpp
   actions/actions-window.h
@@ -281,13 +276,13 @@ add_subdirectory(include)
 add_subdirectory(io)
 add_subdirectory(live_effects)
 add_subdirectory(object)
+add_subdirectory(path)
 add_subdirectory(svg)
 add_subdirectory(trace)
 add_subdirectory(ui)
 add_subdirectory(util)
 add_subdirectory(widgets)
 add_subdirectory(xml)
-add_subdirectory(2geom)
 
 # Directories containing lists files that describe building internal libraries
 add_subdirectory(3rdparty)
@@ -365,7 +360,6 @@ set(INKSCAPE_TARGET_LIBS
         vpsc_LIB
         livarot_LIB
         uemf_LIB
-        2geom_LIB
         depixelize_LIB
         autotrace_LIB
         util_LIB
@@ -375,12 +369,28 @@ set(INKSCAPE_TARGET_LIBS
 # Build everything except main and inkview.c in a shared library.
 add_library(inkscape_base ${inkscape_SRC} ${sp_SRC})
 
+# added so that locally installed inkscape can find lib2geom if it's not installed systemwide
+if(NOT APPLE)
+    set_target_properties(inkscape_base PROPERTIES INSTALL_RPATH "$ORIGIN/..")
+else()
+    set_target_properties(inkscape_base PROPERTIES INSTALL_RPATH "@loader_path/..")
+endif()
+
 if(WITH_DBUS)
     add_dependencies(inkscape_base inkscape_dbus)
 endif()
 
+target_link_libraries(inkscape_base PUBLIC Boost::filesystem)
+
 # Link the inkscape_base library against all external dependencies
-target_link_libraries(inkscape_base PRIVATE ${INKSCAPE_TARGET_LIBS} PUBLIC ${INKSCAPE_LIBS})
+target_link_libraries(inkscape_base
+    PRIVATE
+        ${INKSCAPE_TARGET_LIBS}
+        2Geom::2geom
+    PUBLIC
+        ${INKSCAPE_LIBS}
+  )
+target_include_directories(inkscape_base INTERFACE ${2Geom_INCLUDE_DIRS})
 
 # Link inkscape and inkview against inkscape_base
 target_link_libraries(inkscape inkscape_base)
@@ -398,5 +408,5 @@ if(WIN32)
     install(TARGETS inkscape_com inkview_com)
 endif()
 if(BUILD_SHARED_LIBS)
-    install(TARGETS inkscape_base LIBRARY DESTINATION ${INKSCAPE_INSTALL_LIBDIR})
+    install(TARGETS inkscape_base LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}/inkscape")
 endif()

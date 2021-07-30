@@ -17,9 +17,6 @@
 class SPUsePath;
 class Path;
 
-#define SP_TEXTPATH(obj) (dynamic_cast<SPTextPath*>((SPObject*)obj))
-#define SP_IS_TEXTPATH(obj) (dynamic_cast<const SPTextPath*>((SPObject*)obj) != NULL)
-
 enum TextPathSide {
     SP_TEXT_PATH_SIDE_LEFT,
     SP_TEXT_PATH_SIDE_RIGHT
@@ -40,7 +37,7 @@ public:
 
     void build(SPDocument* doc, Inkscape::XML::Node* repr) override;
     void release() override;
-    void set(SPAttributeEnum key, const char* value) override;
+    void set(SPAttr key, const char* value) override;
     void update(SPCtx* ctx, unsigned int flags) override;
     void modified(unsigned int flags) override;
     Inkscape::XML::Node* write(Inkscape::XML::Document* doc, Inkscape::XML::Node* repr, unsigned int flags) override;
@@ -51,6 +48,8 @@ public:
 SPItem *sp_textpath_get_path_item(SPTextPath *tp);
 void sp_textpath_to_text(SPObject *tp);
 
+MAKE_SP_OBJECT_DOWNCAST_FUNCTIONS(SP_TEXTPATH, SPTextPath)
+MAKE_SP_OBJECT_TYPECHECK_FUNCTIONS(SP_IS_TEXTPATH, SPTextPath)
 
 #endif /* !INKSCAPE_SP_TEXTPATH_H */
 

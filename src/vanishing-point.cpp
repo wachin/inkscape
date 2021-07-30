@@ -24,20 +24,15 @@
 #include "snap.h"
 #include "verbs.h"
 
-#include "display/sp-canvas-item.h"
-#include "display/sp-ctrlline.h"
+#include "display/control/canvas-item-curve.h"
 
 #include "object/sp-namedview.h"
+#include "object/box3d.h"
 
+#include "ui/knot/knot.h"
 #include "ui/shape-editor.h"
 #include "ui/tools/tool-base.h"
 
-using Inkscape::CTLINE_PRIMARY;
-using Inkscape::CTLINE_SECONDARY;
-using Inkscape::CTLINE_TERTIARY;
-using Inkscape::CTRL_TYPE_ANCHOR;
-using Inkscape::ControlManager;
-using Inkscape::CtrlLineType;
 using Inkscape::DocumentUndo;
 
 namespace Box3D {
@@ -52,9 +47,9 @@ namespace Box3D {
 #define MERGE_DIST 0.1
 
 // knot shapes corresponding to GrPointType enum
-SPKnotShapeType vp_knot_shapes[] = {
-    SP_KNOT_SHAPE_SQUARE, // VP_FINITE
-    SP_KNOT_SHAPE_CIRCLE  // VP_INFINITE
+Inkscape::CanvasItemCtrlShape vp_knot_shapes[] = {
+    Inkscape::CANVAS_ITEM_CTRL_SHAPE_SQUARE, // VP_FINITE
+    Inkscape::CANVAS_ITEM_CTRL_SHAPE_CIRCLE  // VP_INFINITE
 };
 
 static void vp_drag_sel_changed(Inkscape::Selection * /*selection*/, gpointer data)
@@ -102,7 +97,7 @@ static void vp_knot_moved_handler(SPKnot *knot, Geom::Point const &ppointer, gui
         /* with Shift; if there is more than one box linked to this VP
            we need to split it and create a new perspective */
         if (dragger->numberOfBoxes() > 1) { // FIXME: Don't do anything if *all* boxes of a VP are selected
-            std::set<VanishingPoint *, less_ptr> sel_vps = dragger->VPsOfSelectedBoxes();
+            std::set<VanishingPoint *> sel_vps = dragger->VPsOfSelectedBoxes();
 
             std::list<SPBox3D *> sel_boxes;
             for (auto sel_vp : sel_vps) {
@@ -111,17 +106,17 @@ static void vp_knot_moved_handler(SPKnot *knot, Geom::Point const &ppointer, gui
                 sel_boxes = sel_vp->selectedBoxes(SP_ACTIVE_DESKTOP->getSelection());
 
                 // we create a new perspective ...
-                Persp3D *new_persp = persp3d_create_xml_element(dragger->parent->document, old_persp->perspective_impl);
+                Persp3D *new_persp = Persp3D::create_xml_element(dragger->parent->document);
 
                 /* ... unlink the boxes from the old one and
                    FIXME: We need to unlink the _un_selected boxes of each VP so that
                           the correct boxes are kept with the VP being moved */
-                std::list<SPBox3D *> bx_lst = persp3d_list_of_boxes(old_persp);
-                for (auto & i : bx_lst) {
-                    if (std::find(sel_boxes.begin(), sel_boxes.end(), i) == sel_boxes.end()) {
+                std::list<SPBox3D *> bx_lst = old_persp->list_of_boxes();
+                for (auto & box : bx_lst) {
+                    if (std::find(sel_boxes.begin(), sel_boxes.end(), box) == sel_boxes.end()) {
                         /* if a box in the VP is unselected, move it to the
                            newly created perspective so that it doesn't get dragged **/
-                        box3d_switch_perspectives(i, old_persp, new_persp);
+                        box->switch_perspectives(old_persp, new_persp);
                     }
                 }
             }
@@ -277,13 +272,10 @@ VPDragger::VPDragger(VPDrag *parent, Geom::Point p, VanishingPoint &vp)
 {
     if (vp.is_finite()) {
         // create the knot
-        this->knot = new SPKnot(SP_ACTIVE_DESKTOP, nullptr);
-        this->knot->setMode(SP_KNOT_MODE_XOR);
+        this->knot = new SPKnot(SP_ACTIVE_DESKTOP, "", Inkscape::CANVAS_ITEM_CTRL_TYPE_ANCHOR, "CanvasItemCtrl:VPDragger");
         this->knot->setFill(VP_KNOT_COLOR_NORMAL, VP_KNOT_COLOR_NORMAL, VP_KNOT_COLOR_NORMAL, VP_KNOT_COLOR_NORMAL);
         this->knot->setStroke(0x000000ff, 0x000000ff, 0x000000ff, 0x000000ff);
         this->knot->updateCtrl();
-        knot->item->ctrlType = CTRL_TYPE_ANCHOR;
-        ControlManager::getManager().track(knot->item);
 
         // move knot to the given point
         this->knot->setPosition(this->point, SP_KNOT_STATE_NORMAL);
@@ -335,7 +327,7 @@ void VPDragger::updateTip()
         else {
             // This won't make sense any more when infinite VPs are not shown on the canvas,
             // but currently we update the status message anyway
-            this->knot->tip = g_strdup_printf(ngettext("<b>Infinite</b> vanishing point shared by <b>%d</b> box",
+            this->knot->tip = g_strdup_printf(ngettext("<b>Infinite</b> vanishing point shared by the box",
                                                        "<b>Infinite</b> vanishing point shared by <b>%d</b> boxes; "
                                                        "drag with <b>Shift</b> to separate selected box(es)",
                                                        num),
@@ -344,14 +336,12 @@ void VPDragger::updateTip()
     }
     else {
         int length = this->vps.size();
-        char *desc1 = g_strdup_printf("Collection of <b>%d</b> vanishing points ", length);
-        char *desc2 = g_strdup_printf(
-            ngettext("shared by <b>%d</b> box; drag with <b>Shift</b> to separate selected box(es)",
-                     "shared by <b>%d</b> boxes; drag with <b>Shift</b> to separate selected box(es)", num),
-            num);
-        this->knot->tip = g_strconcat(desc1, desc2, NULL);
-        g_free(desc1);
-        g_free(desc2);
+        char const *tmpl = ngettext("Collection of <b>%d</b> vanishing points shared by the box; "
+                                    "drag with <b>Shift</b> to separate",
+                                    "Collection of <b>%d</b> vanishing points shared by <b>%d</b> boxes; "
+                                    "drag with <b>Shift</b> to separate",
+                                    num);
+        this->knot->tip = g_strdup_printf(tmpl, length, num);
     }
 }
 
@@ -393,9 +383,9 @@ VanishingPoint *VPDragger::findVPWithBox(SPBox3D *box)
     return nullptr;
 }
 
-std::set<VanishingPoint *, less_ptr> VPDragger::VPsOfSelectedBoxes()
+std::set<VanishingPoint *> VPDragger::VPsOfSelectedBoxes()
 {
-    std::set<VanishingPoint *, less_ptr> sel_vps;
+    std::set<VanishingPoint *> sel_vps;
     VanishingPoint *vp;
     // FIXME: Should we take the selection from the parent VPDrag? I guess it shouldn't make a difference.
     Inkscape::Selection *sel = SP_ACTIVE_DESKTOP->getSelection();
@@ -425,7 +415,7 @@ guint VPDragger::numberOfBoxes()
 bool VPDragger::hasPerspective(const Persp3D *persp)
 {
     for (auto & vp : vps) {
-        if (persp3d_perspectives_coincide(persp, vp.get_perspective())) {
+        if (persp->perspectives_coincide(vp.get_perspective())) {
             return true;
         }
     }
@@ -443,13 +433,13 @@ void VPDragger::mergePerspectives()
                 /* don't merge a perspective with itself */
                 continue;
             }
-            if (persp3d_perspectives_coincide(persp1, persp2)) {
+            if (persp1->perspectives_coincide(persp2)) {
                 /* if perspectives coincide but are not the same, merge them */
-                persp3d_absorb(persp1, persp2);
+                persp1->absorb(persp2);
 
                 this->parent->swap_perspectives_of_VPs(persp2, persp1);
 
-                SP_OBJECT(persp2)->deleteObject(false);
+                persp2->deleteObject(false);
             }
         }
     }
@@ -472,7 +462,7 @@ void VPDragger::updateVPs(Geom::Point const &pt)
 void VPDragger::updateZOrders()
 {
     for (auto & vp : this->vps) {
-        persp3d_update_z_orders(vp.get_perspective());
+        vp.get_perspective()->update_z_orders();
     }
 }
 
@@ -515,10 +505,10 @@ VPDrag::~VPDrag()
     }
     this->draggers.clear();
 
-    for (std::vector<SPCtrlLine *>::const_iterator i = this->lines.begin(); i != this->lines.end(); ++i) {
-        sp_canvas_item_destroy(SP_CANVAS_ITEM(*i));
+    for (auto item_curve : item_curves) {
+        delete item_curve;
     }
-    this->lines.clear();
+    item_curves.clear();
 }
 
 /**
@@ -569,7 +559,7 @@ void VPDrag::updateDraggers()
         if (box) {
             VanishingPoint vp;
             for (int i = 0; i < 3; ++i) {
-                vp.set(box3d_get_perspective(box), Proj::axes[i]);
+                vp.set(box->get_perspective(), Proj::axes[i]);
                 addDragger(vp);
             }
         }
@@ -582,11 +572,11 @@ of a dragger, so that lines are always in sync with the actual perspective
 */
 void VPDrag::updateLines()
 {
-    // delete old lines
-    for (std::vector<SPCtrlLine *>::const_iterator i = this->lines.begin(); i != this->lines.end(); ++i) {
-        sp_canvas_item_destroy(SP_CANVAS_ITEM(*i));
+    // Delete old lines
+    for (auto curve : item_curves) {
+        delete curve;
     }
-    this->lines.clear();
+    item_curves.clear();
 
     // do nothing if perspective lines are currently disabled
     if (this->show_lines == 0)
@@ -652,17 +642,17 @@ void VPDrag::updateBoxDisplays()
 void VPDrag::drawLinesForFace(const SPBox3D *box,
                               Proj::Axis axis) //, guint corner1, guint corner2, guint corner3, guint corner4)
 {
-    CtrlLineType type = CTLINE_PRIMARY;
+    Inkscape::CanvasItemColor type = Inkscape::CANVAS_ITEM_PRIMARY;
     switch (axis) {
         // TODO: Make color selectable by user
         case Proj::X:
-            type = CTLINE_SECONDARY;
+            type = Inkscape::CANVAS_ITEM_SECONDARY;
             break;
         case Proj::Y:
-            type = CTLINE_PRIMARY;
+            type = Inkscape::CANVAS_ITEM_PRIMARY;
             break;
         case Proj::Z:
-            type = CTLINE_TERTIARY;
+            type = Inkscape::CANVAS_ITEM_TERTIARY;;
             break;
         default:
             g_assert_not_reached();
@@ -670,28 +660,28 @@ void VPDrag::drawLinesForFace(const SPBox3D *box,
 
     const size_t NUM_CORNERS = 4;
     Geom::Point corners[NUM_CORNERS];
-    box3d_corners_for_PLs(box, axis, corners[0], corners[1], corners[2], corners[3]);
+    box->corners_for_PLs(axis, corners[0], corners[1], corners[2], corners[3]);
 
-    g_return_if_fail(box3d_get_perspective(box));
-    Proj::Pt2 vp = persp3d_get_VP(box3d_get_perspective(box), axis);
+    g_return_if_fail(box->get_perspective());
+    Proj::Pt2 vp = box->get_perspective()->get_VP(axis);
     if (vp.is_finite()) {
         // draw perspective lines for finite VPs
         Geom::Point pt = vp.affine();
         if (this->front_or_rear_lines & 0x1) {
             // draw 'front' perspective lines
-            this->addLine(corners[0], pt, type);
-            this->addLine(corners[1], pt, type);
+            this->addCurve(corners[0], pt, type);
+            this->addCurve(corners[1], pt, type);
         }
         if (this->front_or_rear_lines & 0x2) {
             // draw 'rear' perspective lines
-            this->addLine(corners[2], pt, type);
-            this->addLine(corners[3], pt, type);
+            this->addCurve(corners[2], pt, type);
+            this->addCurve(corners[3], pt, type);
         }
     }
     else {
         // draw perspective lines for infinite VPs
-        boost::optional<Geom::Point> pts[NUM_CORNERS];
-        Persp3D *persp = box3d_get_perspective(box);
+        std::optional<Geom::Point> pts[NUM_CORNERS];
+        Persp3D *persp = box->get_perspective();
         SPDesktop *desktop = SP_ACTIVE_DESKTOP; // FIXME: Store the desktop in VPDrag
 
         for (size_t i = 0; i < NUM_CORNERS; i++) {
@@ -703,13 +693,13 @@ void VPDrag::drawLinesForFace(const SPBox3D *box,
         }
         if (this->front_or_rear_lines & 0x1) {
             // draw 'front' perspective lines
-            this->addLine(corners[0], *pts[0], type);
-            this->addLine(corners[1], *pts[1], type);
+            this->addCurve(corners[0], *pts[0], type);
+            this->addCurve(corners[1], *pts[1], type);
         }
         if (this->front_or_rear_lines & 0x2) {
             // draw 'rear' perspective lines
-            this->addLine(corners[2], *pts[2], type);
-            this->addLine(corners[3], *pts[3], type);
+            this->addCurve(corners[2], *pts[2], type);
+            this->addCurve(corners[3], *pts[3], type);
         }
     }
 }
@@ -752,11 +742,12 @@ void VPDrag::swap_perspectives_of_VPs(Persp3D *persp2, Persp3D *persp1)
     }
 }
 
-void VPDrag::addLine(Geom::Point const &p1, Geom::Point const &p2, Inkscape::CtrlLineType type)
+void VPDrag::addCurve(Geom::Point const &p1, Geom::Point const &p2, Inkscape::CanvasItemColor color)
 {
-    SPCtrlLine *line = ControlManager::getManager().createControlLine(SP_ACTIVE_DESKTOP->getControls(), p1, p2, type);
-    sp_canvas_item_show(line);
-    this->lines.push_back(line);
+    auto item_curve = new Inkscape::CanvasItemCurve(SP_ACTIVE_DESKTOP->getCanvasControls(), p1, p2);
+    item_curve->set_name("3DBoxCurve");
+    item_curve->set_stroke(color);
+    item_curves.push_back(item_curve);
 }
 
 } // namespace Box3D

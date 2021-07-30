@@ -11,8 +11,9 @@
 #ifndef SEEN_INKSCAPE_LAYER_MANAGER_H
 #define SEEN_INKSCAPE_LAYER_MANAGER_H
 
+#include <memory>
 #include <vector>
-#include <map>
+#include <glibmm/ustring.h>
 
 #include "document-subset.h"
 #include "gc-finalized.h"
@@ -58,7 +59,7 @@ private:
     GC::soft_ptr<SPDesktop> _desktop;
     SPDocument *_document;
 
-    std::vector<LayerWatcher*> _watchers;
+    std::vector<std::unique_ptr<LayerWatcher>> _watchers;
 
     sigc::signal<void, SPObject *>     _layer_changed_signal;
     sigc::signal<void, SPObject *>     _details_changed_signal;

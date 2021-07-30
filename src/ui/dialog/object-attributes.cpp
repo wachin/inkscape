@@ -21,7 +21,6 @@
 #include "object/sp-image.h"
 
 #include "ui/dialog/object-attributes.h"
-#include "ui/dialog/dialog-manager.h"
 
 #include "widgets/sp-attribute-widget.h"
 
@@ -69,41 +68,22 @@ static const SPAttrDesc image_nohref_desc[] = {
     { nullptr, nullptr}
 };
 
-ObjectAttributes::ObjectAttributes () :
-    UI::Widget::Panel("/dialogs/objectattr/", SP_VERB_DIALOG_ATTR),
-    blocked (false),
-    CurrentItem(nullptr),
-    attrTable(Gtk::manage(new SPAttributeTable())),
-    desktop(nullptr),
-    deskTrack(),
-    selectChangedConn(),
-    subselChangedConn(),
-    selectModifiedConn()
+ObjectAttributes::ObjectAttributes()
+    : DialogBase("/dialogs/objectattr/", "ObjectAttributes")
+    , blocked(false)
+    , CurrentItem(nullptr)
+    , attrTable(Gtk::manage(new SPAttributeTable()))
 {
     attrTable->show();
-    widget_setup();
-    
-    desktopChangeConn = deskTrack.connectDesktopChanged( sigc::mem_fun(*this, &ObjectAttributes::setTargetDesktop) );
-    deskTrack.connect(GTK_WIDGET(gobj()));
-}
-
-ObjectAttributes::~ObjectAttributes ()
-{
-    selectModifiedConn.disconnect();
-    subselChangedConn.disconnect();
-    selectChangedConn.disconnect();
-    desktopChangeConn.disconnect();
-    deskTrack.disconnect();
 }
 
 void ObjectAttributes::widget_setup ()
 {
-    if (blocked)
-    {
+    if (blocked || !getDesktop()) {
         return;
     }
-    
-    Inkscape::Selection *selection = SP_ACTIVE_DESKTOP->getSelection();
+
+    Inkscape::Selection *selection = getDesktop()->getSelection();
     SPItem *item = selection->singleItem();
     if (!item)
     {
@@ -113,7 +93,7 @@ void ObjectAttributes::widget_setup ()
         //to close the connections to the previously selected object
         return;
     }
-    
+
     blocked = true;
 
     // CPPIFY
@@ -121,7 +101,7 @@ void ObjectAttributes::widget_setup ()
 //    GObjectClass *klass = G_OBJECT_GET_CLASS(obj); //to deduce the object's type
 //    GType type = G_TYPE_FROM_CLASS(klass);
     const SPAttrDesc *desc;
-    
+
 //    if (type == SP_TYPE_ANCHOR)
     if (SP_IS_ANCHOR(item))
     {
@@ -147,7 +127,7 @@ void ObjectAttributes::widget_setup ()
         set_sensitive (false);
         return;
     }
-    
+
     std::vector<Glib::ustring> labels;
     std::vector<Glib::ustring> attrs;
     if (CurrentItem != item)
@@ -166,33 +146,18 @@ void ObjectAttributes::widget_setup ()
     {
         attrTable->change_object(obj);
     }
-    
+
     set_sensitive (true);
     show_all();
     blocked = false;
 }
 
-void ObjectAttributes::setTargetDesktop(SPDesktop *desktop)
+void ObjectAttributes::selectionChanged(Selection *selection)
 {
-    if (this->desktop != desktop) {
-        if (this->desktop) {
-            selectModifiedConn.disconnect();
-            subselChangedConn.disconnect();
-            selectChangedConn.disconnect();
-        }
-        this->desktop = desktop;
-        if (desktop && desktop->selection) {
-            selectChangedConn = desktop->selection->connectChanged(sigc::hide(sigc::mem_fun(*this, &ObjectAttributes::widget_setup)));
-            subselChangedConn = desktop->connectToolSubselectionChanged(sigc::hide(sigc::mem_fun(*this, &ObjectAttributes::widget_setup)));
-
-            // Must check flags, so can't call widget_setup() directly.
-            selectModifiedConn = desktop->selection->connectModified(sigc::hide<0>(sigc::mem_fun(*this, &ObjectAttributes::selectionModifiedCB)));
-        }
-        widget_setup();
-    }
+    widget_setup();
 }
 
-void ObjectAttributes::selectionModifiedCB( guint flags )
+void ObjectAttributes::selectionModified(Selection *selection, guint flags)
 {
     if (flags & ( SP_OBJECT_MODIFIED_FLAG |
                    SP_OBJECT_PARENT_MODIFIED_FLAG |

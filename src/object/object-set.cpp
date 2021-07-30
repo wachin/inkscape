@@ -10,14 +10,16 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
-#include <sigc++/sigc++.h>
-#include <glib.h>
 #include "object-set.h"
+
+#include <boost/range/adaptor/filtered.hpp>
+#include <boost/range/adaptor/transformed.hpp>
+#include <glib.h>
+#include <sigc++/sigc++.h>
+
 #include "box3d.h"
 #include "persp3d.h"
 #include "preferences.h"
-#include <boost/range/adaptor/filtered.hpp>
-#include <boost/range/adaptor/transformed.hpp>
 
 namespace Inkscape {
 
@@ -39,8 +41,17 @@ bool ObjectSet::add(SPObject* object, bool nosignal) {
 
     _add(object);
     if (!nosignal)
-        _emitSignals();
+        _emitChanged();
     return true;
+}
+
+void ObjectSet::add(XML::Node *repr)
+{
+    if (document() && repr) {
+        SPObject *obj = document()->getObjectByRepr(repr);
+        assert(obj == document()->getObjectById(repr->attribute("id")));
+        add(obj);
+    }
 }
 
 bool ObjectSet::remove(SPObject* object) {
@@ -50,14 +61,14 @@ bool ObjectSet::remove(SPObject* object) {
     // object is the top of subtree
     if (includes(object)) {
         _remove(object);
-        _emitSignals();
+        _emitChanged();
         return true;
     }
 
     // any ancestor of object is in the set
     if (_anyAncestorIsInSet(object)) {
         _removeAncestorsFromSet(object);
-        _emitSignals();
+        _emitChanged();
         return true;
     }
 
@@ -74,7 +85,7 @@ bool ObjectSet::includes(SPObject *object) {
 
 void ObjectSet::clear() {
     _clear();
-    _emitSignals();
+    _emitChanged();
 }
 
 int ObjectSet::size() {
@@ -209,8 +220,8 @@ SPItem *ObjectSet::_sizeistItem(bool sml, CompareSize compare) {
     gdouble max = sml ? 1e18 : 0;
     SPItem *ist = nullptr;
 
-    for (auto i = items.begin(); i != items.end(); ++i) {
-        Geom::OptRect obox = SP_ITEM(*i)->documentPreferredBounds();
+    for (auto *item : items) {
+        Geom::OptRect obox = item->documentPreferredBounds();
         if (!obox || obox.empty()) {
             continue;
         }
@@ -222,7 +233,7 @@ SPItem *ObjectSet::_sizeistItem(bool sml, CompareSize compare) {
         size = sml ? size : size * -1;
         if (size < max) {
             max = size;
-            ist = SP_ITEM(*i);
+            ist = item;
         }
     }
 
@@ -238,29 +249,105 @@ Inkscape::XML::Node *ObjectSet::singleRepr() {
     return obj ? obj->getRepr() : nullptr;
 }
 
+Inkscape::XML::Node *ObjectSet::topRepr() const
+{
+    auto const &nodes = const_cast<ObjectSet *>(this)->xmlNodes();
+
+    if (nodes.empty()) {
+        return nullptr;
+    }
+
+#ifdef __APPLE__
+    // workaround for
+    // static_assert(__is_cpp17_forward_iterator<_ForwardIterator>::value
+    auto const n = std::vector<Inkscape::XML::Node *>(nodes.begin(), nodes.end());
+#else
+    auto const& n = nodes;
+#endif
+
+    return *std::max_element(n.begin(), n.end(), sp_repr_compare_position_bool);
+}
+
 void ObjectSet::set(SPObject *object, bool persist_selection_context) {
     _clear();
     _add(object);
-    if(dynamic_cast<Inkscape::Selection*>(this))
-        return dynamic_cast<Inkscape::Selection*>(this)->_emitChanged(persist_selection_context);
+    _emitChanged(persist_selection_context);
 }
+
+void ObjectSet::set(XML::Node *repr)
+{
+    if (document() && repr) {
+        SPObject *obj = document()->getObjectByRepr(repr);
+        assert(obj == document()->getObjectById(repr->attribute("id")));
+        set(obj);
+    }
+}
+
+int ObjectSet::setBetween(SPObject *obj_a, SPObject *obj_b)
+{
+    auto parent = obj_a->parent;
+    if (!obj_b)
+        obj_b = singleItem();
+
+    if (!obj_a || !obj_b || parent != obj_b->parent) {
+        return 0;
+    } else if (obj_a == obj_b) {
+        set(obj_a);
+        return 1;
+    }
+    clear();
+
+    int count = 0;
+    int min = std::min(obj_a->getPosition(), obj_b->getPosition());
+    int max = std::max(obj_a->getPosition(), obj_b->getPosition());
+    for (int i = min ; i <= max ; i++) {
+        if (auto child = parent->nthChild(i)) {
+            count += add(child);
+        }    
+    }
+    return count;
+}
+
 
 void ObjectSet::setReprList(std::vector<XML::Node*> const &list) {
     if(!document())
         return;
     clear();
     for (auto iter = list.rbegin(); iter != list.rend(); ++iter) {
+#if 0
+        // This can fail when pasting a clone into a new document
+        SPObject *obj = document()->getObjectByRepr(*iter);
+        assert(obj == document()->getObjectById((*iter)->attribute("id")));
+#else
         SPObject *obj = document()->getObjectById((*iter)->attribute("id"));
+#endif
         if (obj) {
             add(obj, true);
         }
     }
-    _emitSignals();
-    if(dynamic_cast<Inkscape::Selection*>(this))
-        return dynamic_cast<Inkscape::Selection*>(this)->_emitChanged();//
+    _emitChanged();
 }
 
-
+void ObjectSet::enforceIds()
+{
+    bool idAssigned = false;
+    auto items = this->items();
+    for (auto *item : items) {
+        if (!item->getId()) {
+            // Selected object does not have an ID, so assign it a unique ID
+            gchar *id = sp_object_get_unique_id(item, nullptr);
+            item->setAttribute("id", id);
+            g_free(id);
+            idAssigned = true;
+        }
+    }
+    if (idAssigned) {
+        SPDocument *document = _desktop->getDocument();
+        if (document) {
+            document->setModifiedSinceSave(true);
+        }
+    }
+}
 
 Geom::OptRect ObjectSet::bounds(SPItem::BBoxType type) const
 {
@@ -273,8 +360,8 @@ Geom::OptRect ObjectSet::geometricBounds() const
     auto items = const_cast<ObjectSet *>(this)->items();
 
     Geom::OptRect bbox;
-    for (auto iter = items.begin(); iter != items.end(); ++iter) {
-        bbox.unionWith(SP_ITEM(*iter)->desktopGeometricBounds());
+    for (auto *item : items) {
+        bbox.unionWith(item->desktopGeometricBounds());
     }
     return bbox;
 }
@@ -284,8 +371,8 @@ Geom::OptRect ObjectSet::visualBounds() const
     auto items = const_cast<ObjectSet *>(this)->items();
 
     Geom::OptRect bbox;
-    for (auto iter = items.begin(); iter != items.end(); ++iter) {
-        bbox.unionWith(SP_ITEM(*iter)->desktopVisualBounds());
+    for (auto *item : items) {
+        bbox.unionWith(item->desktopVisualBounds());
     }
     return bbox;
 }
@@ -305,8 +392,7 @@ Geom::OptRect ObjectSet::documentBounds(SPItem::BBoxType type) const
     auto items = const_cast<ObjectSet *>(this)->items();
     if (items.empty()) return bbox;
 
-    for (auto iter = items.begin(); iter != items.end(); ++iter) {
-        SPItem *item = SP_ITEM(*iter);
+    for (auto *item : items) {
         bbox |= item->documentBounds(type);
     }
 
@@ -315,7 +401,7 @@ Geom::OptRect ObjectSet::documentBounds(SPItem::BBoxType type) const
 
 // If we have a selection of multiple items, then the center of the first item
 // will be returned; this is also the case in SelTrans::centerRequest()
-boost::optional<Geom::Point> ObjectSet::center() const {
+std::optional<Geom::Point> ObjectSet::center() const {
     auto items = const_cast<ObjectSet *>(this)->items();
     if (!items.empty()) {
         SPItem *first = items.back(); // from the first item in selection
@@ -327,14 +413,14 @@ boost::optional<Geom::Point> ObjectSet::center() const {
     if (bbox) {
         return bbox->midpoint();
     } else {
-        return boost::optional<Geom::Point>();
+        return std::optional<Geom::Point>();
     }
 }
 
 std::list<Persp3D *> const ObjectSet::perspList() {
     std::list<Persp3D *> pl;
     for (auto & _3dboxe : _3dboxes) {
-        Persp3D *persp = box3d_get_perspective(_3dboxe);
+        Persp3D *persp = _3dboxe->get_perspective();
         if (std::find(pl.begin(), pl.end(), persp) == pl.end())
             pl.push_back(persp);
     }
@@ -345,7 +431,7 @@ std::list<SPBox3D *> const ObjectSet::box3DList(Persp3D *persp) {
     std::list<SPBox3D *> boxes;
     if (persp) {
         for (auto box : _3dboxes) {
-            if (persp == box3d_get_perspective(box)) {
+            if (persp == box->get_perspective()) {
                 boxes.push_back(box);
             }
         }
@@ -356,7 +442,7 @@ std::list<SPBox3D *> const ObjectSet::box3DList(Persp3D *persp) {
 }
 
 void ObjectSet::_add3DBoxesRecursively(SPObject *obj) {
-    std::list<SPBox3D *> boxes = box3d_extract_boxes(obj);
+    std::list<SPBox3D *> boxes = SPBox3D::extract_boxes(obj);
 
     for (auto box : boxes) {
         _3dboxes.push_back(box);
@@ -364,7 +450,7 @@ void ObjectSet::_add3DBoxesRecursively(SPObject *obj) {
 }
 
 void ObjectSet::_remove3DBoxesRecursively(SPObject *obj) {
-    std::list<SPBox3D *> boxes = box3d_extract_boxes(obj);
+    std::list<SPBox3D *> boxes = SPBox3D::extract_boxes(obj);
 
     for (auto box : boxes) {
         std::list<SPBox3D *>::iterator b = std::find(_3dboxes.begin(), _3dboxes.end(), box);

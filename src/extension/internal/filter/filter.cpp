@@ -75,9 +75,8 @@ Filter::merge_filters( Inkscape::XML::Node * to, Inkscape::XML::Node * from,
     if (from == nullptr) return;
 
     // copy attributes
-    for ( Inkscape::Util::List<Inkscape::XML::AttributeRecord const> iter = from->attributeList() ;
-          iter ; ++iter ) {
-        gchar const * attr = g_quark_to_string(iter->key);
+    for ( const auto & iter : from->attributeList()) {
+        gchar const * attr = g_quark_to_string(iter.key);
         //printf("Attribute List: %s\n", attr);
         if (!strcmp(attr, "id")) continue; // nope, don't copy that one!
         to->setAttribute(attr, from->attribute(attr));
@@ -200,6 +199,7 @@ void Filter::effect(Inkscape::Extension::Effect *module, Inkscape::UI::View::Vie
 void
 Filter::filter_init (gchar const * id, gchar const * name, gchar const * submenu, gchar const * tip, gchar const * filter)
 {
+    // clang-format off
     gchar * xml_str = g_strdup_printf(
         "<inkscape-extension xmlns=\"" INKSCAPE_EXTENSION_URI "\">\n"
         "<name>%s</name>\n"
@@ -213,6 +213,7 @@ Filter::filter_init (gchar const * id, gchar const * name, gchar const * submenu
         "<menu-tip>%s</menu-tip>\n"
         "</effect>\n"
         "</inkscape-extension>\n", name, id, submenu, tip);
+    // clang-format on
     Inkscape::Extension::build_from_mem(xml_str, new Filter(filter));
     g_free(xml_str);
     return;

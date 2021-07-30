@@ -18,11 +18,11 @@
 #define SEEN_UI_DIALOG_TILE_H
 
 #include <gtkmm/box.h>
-#include <gtkmm/notebook.h>
 #include <gtkmm/checkbutton.h>
+#include <gtkmm/notebook.h>
 #include <gtkmm/radiobutton.h>
 
-#include "ui/widget/panel.h"
+#include "ui/dialog/dialog-base.h"
 
 namespace Gtk {
 class Button;
@@ -33,32 +33,37 @@ namespace Inkscape {
 namespace UI {
 namespace Dialog {
 
+class AlignAndDistribute;
 class ArrangeTab;
 class GridArrangeTab;
 class PolarArrangeTab;
 
-class ArrangeDialog : public UI::Widget::Panel {
+class ArrangeDialog : public DialogBase
+{
 private:
-	Gtk::VBox       _arrangeBox;
-	Gtk::Notebook   _notebook;
-
+	Gtk::Box        *_arrangeBox;
+	Gtk::Notebook   *_notebook;
+    AlignAndDistribute* _align_tab;
 	GridArrangeTab  *_gridArrangeTab;
 	PolarArrangeTab *_polarArrangeTab;
+    Gtk::Button     *_arrangeButton;
 
-	Gtk::Button     *_arrangeButton;
+    void selectionChanged(Inkscape::Selection*) override;
 
 public:
-	ArrangeDialog();
-	~ArrangeDialog() override = default;;
+    ArrangeDialog();
+    ~ArrangeDialog() override;
+
+    void desktopReplaced() override;
+
+    void update_arrange_btn();
 
     /**
      * Callback from Apply
      */
-    void _apply() override;
+    void _apply();
 
-    void on_show() override;
-
-	static ArrangeDialog& getInstance() { return *new ArrangeDialog(); }
+    static ArrangeDialog& getInstance() { return *new ArrangeDialog(); }
 };
 
 } //namespace Dialog

@@ -29,10 +29,12 @@ namespace UI {
 
 
 TemplateWidget::TemplateWidget()
-    : _more_info_button(_("More info"))
+    : Gtk::Box(Gtk::ORIENTATION_VERTICAL)
+    , _more_info_button(_("More info"))
     , _short_description_label(" ")
     , _template_name_label(_("no template selected"))
     , _effect_prefs(nullptr)
+    , _preview_box(Gtk::ORIENTATION_HORIZONTAL)
 {
     pack_start(_template_name_label, Gtk::PACK_SHRINK, 10);
     pack_start(_preview_box, Gtk::PACK_SHRINK, 0);
@@ -87,7 +89,8 @@ void TemplateWidget::display(TemplateLoadTab::TemplateData data)
     _short_description_label.set_text(_current_template.short_description);
 
     if (data.preview_name != ""){
-        std::string imagePath = Glib::build_filename(Glib::path_get_dirname(_current_template.path),  _current_template.preview_name);
+        std::string imagePath = Glib::build_filename(Glib::path_get_dirname(_current_template.path),
+                                                     Glib::filename_from_utf8(_current_template.preview_name));
         _preview_image.set(imagePath);
         _preview_image.show();
     }

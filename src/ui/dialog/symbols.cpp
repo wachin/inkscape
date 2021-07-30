@@ -25,7 +25,6 @@
 #include <glibmm/regex.h>
 #include <glibmm/stringutils.h>
 
-#include "desktop.h"
 #include "document.h"
 #include "inkscape.h"
 #include "path-prefix.h"
@@ -46,25 +45,18 @@
 #include "ui/clipboard.h"
 #include "ui/icon-loader.h"
 #include "ui/icon-names.h"
+#include "ui/widget/scrollprotected.h"
 
 #ifdef WITH_LIBVISIO
   #include <libvisio/libvisio.h>
 
-  // TODO: Drop this check when librevenge is widespread.
-  #if WITH_LIBVISIO01
-    #include <librevenge-stream/librevenge-stream.h>
+  #include <librevenge-stream/librevenge-stream.h>
 
-    using librevenge::RVNGFileStream;
-    using librevenge::RVNGString;
-    using librevenge::RVNGStringVector;
-    using librevenge::RVNGPropertyList;
-    using librevenge::RVNGSVGDrawingGenerator;
-  #else
-    #include <libwpd-stream/libwpd-stream.h>
-
-    typedef WPXFileStream             RVNGFileStream;
-    typedef libvisio::VSDStringVector RVNGStringVector;
-  #endif
+  using librevenge::RVNGFileStream;
+  using librevenge::RVNGString;
+  using librevenge::RVNGStringVector;
+  using librevenge::RVNGPropertyList;
+  using librevenge::RVNGSVGDrawingGenerator;
 #endif
 
 
@@ -82,7 +74,7 @@ public:
   Gtk::TreeModelColumn<Glib::ustring>                symbol_title;
   Gtk::TreeModelColumn<Glib::ustring>                symbol_doc_title;
   Gtk::TreeModelColumn< Glib::RefPtr<Gdk::Pixbuf> >  symbol_image;
-  
+
 
   SymbolColumns() {
     add(symbol_id);
@@ -101,48 +93,42 @@ SymbolColumns* SymbolsDialog::getColumns()
 /**
  * Constructor
  */
-SymbolsDialog::SymbolsDialog( gchar const* prefsPath ) :
-  UI::Widget::Panel(prefsPath, SP_VERB_DIALOG_SYMBOLS),
-  store(Gtk::ListStore::create(*getColumns())),
-  all_docs_processed(false),
-  icon_view(nullptr),
-  current_desktop(nullptr),
-  desk_track(),
-  current_document(nullptr),
-  preview_document(nullptr),
-  instanceConns(),
-  CURRENTDOC(_("Current document")),
-  ALLDOCS(_("All symbol sets"))
+SymbolsDialog::SymbolsDialog(gchar const *prefsPath)
+    : DialogBase(prefsPath, "Symbols")
+    , store(Gtk::ListStore::create(*getColumns()))
+    , all_docs_processed(false)
+    , icon_view(nullptr)
+    , preview_document(nullptr)
+    , gtk_connections()
+    , CURRENTDOC(_("Current document"))
+    , ALLDOCS(_("All symbol sets"))
 {
-
-    /********************    Table    *************************/
+  /********************    Table    *************************/
   auto table = new Gtk::Grid();
 
   table->set_margin_start(3);
   table->set_margin_end(3);
   table->set_margin_top(4);
   // panel is a locked Gtk::VBox
-  _getContents()->pack_start(*Gtk::manage(table), Gtk::PACK_EXPAND_WIDGET);
+  pack_start(*Gtk::manage(table), Gtk::PACK_EXPAND_WIDGET);
   guint row = 0;
 
   /******************** Symbol Sets *************************/
   Gtk::Label* label_set = new Gtk::Label(Glib::ustring(_("Symbol set")) + ": ");
   table->attach(*Gtk::manage(label_set),0,row,1,1);
-  symbol_set = new Gtk::ComboBoxText();  // Fill in later
+  symbol_set = new Inkscape::UI::Widget::ScrollProtected<Gtk::ComboBoxText>();  // Fill in later
   symbol_set->append(CURRENTDOC);
   symbol_set->append(ALLDOCS);
   symbol_set->set_active_text(CURRENTDOC);
   symbol_set->set_hexpand();
-  
-  table->attach(*Gtk::manage(symbol_set),1,row,1,1);
-  sigc::connection connSet = symbol_set->signal_changed().connect(
-          sigc::mem_fun(*this, &SymbolsDialog::rebuild));
-  instanceConns.push_back(connSet);
+  gtk_connections.emplace_back(
+      symbol_set->signal_changed().connect(sigc::mem_fun(*this, &SymbolsDialog::rebuild)));
 
+  table->attach(*Gtk::manage(symbol_set),1,row,1,1);
   ++row;
-  
+
   /********************    Separator    *************************/
-  
+
 
   Gtk::Separator* separator = Gtk::manage(new Gtk::Separator());  // Search
   separator->set_margin_top(10);
@@ -152,10 +138,9 @@ SymbolsDialog::SymbolsDialog( gchar const* prefsPath ) :
   ++row;
 
   /********************    Search    *************************/
-  
 
   search = Gtk::manage(new Gtk::SearchEntry());  // Search
-  search->set_tooltip_text(_("Return to start search."));
+  search->set_tooltip_text(_("Press 'Return' to start search."));
   search->signal_key_press_event().connect_notify(  sigc::mem_fun(*this, &SymbolsDialog::beforeSearch));
   search->signal_key_release_event().connect_notify(sigc::mem_fun(*this, &SymbolsDialog::unsensitive));
 
@@ -182,13 +167,10 @@ SymbolsDialog::SymbolsDialog( gchar const* prefsPath ) :
   targets.emplace_back( "application/x-inkscape-paste");
 
   icon_view->enable_model_drag_source (targets, Gdk::BUTTON1_MASK, Gdk::ACTION_COPY);
-  icon_view->signal_drag_data_get().connect(
-          sigc::mem_fun(*this, &SymbolsDialog::iconDragDataGet));
-
-  sigc::connection connIconChanged;
-  connIconChanged = icon_view->signal_selection_changed().connect(
-          sigc::mem_fun(*this, &SymbolsDialog::iconChanged));
-  instanceConns.push_back(connIconChanged);
+  gtk_connections.emplace_back(
+      icon_view->signal_drag_data_get().connect(sigc::mem_fun(*this, &SymbolsDialog::iconDragDataGet)));
+  gtk_connections.emplace_back(
+      icon_view->signal_selection_changed().connect(sigc::mem_fun(*this, &SymbolsDialog::iconChanged)));
 
   scroller = new Gtk::ScrolledWindow();
   scroller->set_policy(Gtk::POLICY_AUTOMATIC, Gtk::POLICY_ALWAYS);
@@ -240,8 +222,8 @@ SymbolsDialog::SymbolsDialog( gchar const* prefsPath ) :
   ++row;
 
   /******************** Progress *******************************/
-  progress = new Gtk::HBox();
-  progress_bar = Gtk::manage(new Gtk::ProgressBar()); 
+  progress = new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL);
+  progress_bar = Gtk::manage(new Gtk::ProgressBar());
   table->attach(*Gtk::manage(progress),0,row, 2, 1);
   progress->pack_start(* progress_bar, Gtk::PACK_EXPAND_WIDGET);
   progress->set_margin_top(15);
@@ -252,7 +234,7 @@ SymbolsDialog::SymbolsDialog( gchar const* prefsPath ) :
   ++row;
 
   /******************** Tools *******************************/
-  tools = new Gtk::HBox();
+  tools = new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL);
 
   //tools->set_layout( Gtk::BUTTONBOX_END );
   scroller->set_hexpand();
@@ -344,43 +326,22 @@ SymbolsDialog::SymbolsDialog( gchar const* prefsPath ) :
 
   sensitive = true;
 
-  current_desktop  = SP_ACTIVE_DESKTOP;
-  current_document = current_desktop->getDocument();
   preview_document = symbolsPreviewDoc(); /* Template to render symbols in */
   preview_document->ensureUpToDate(); /* Necessary? */
   key = SPItem::display_key_new(1);
   renderDrawing.setRoot(preview_document->getRoot()->invoke_show(renderDrawing, key, SP_ITEM_SHOW_DISPLAY ));
 
-  // This might need to be a global variable so setTargetDesktop can modify it
-  SPDefs *defs = current_document->getDefs();
-  sigc::connection defsModifiedConn = defs->connectModified(sigc::mem_fun(*this, &SymbolsDialog::defsModified));
-  instanceConns.push_back(defsModifiedConn);
-
-  sigc::connection selectionChangedConn = current_desktop->selection->connectChanged(
-          sigc::mem_fun(*this, &SymbolsDialog::selectionChanged));
-  instanceConns.push_back(selectionChangedConn);
-
-  sigc::connection documentReplacedConn = current_desktop->connectDocumentReplaced(
-          sigc::mem_fun(*this, &SymbolsDialog::documentReplaced));
-  instanceConns.push_back(documentReplacedConn);
   getSymbolsTitle();
   icons_found = false;
-  
-  addSymbolsInDoc(current_document); /* Defaults to current document */
-  sigc::connection desktopChangeConn =
-    desk_track.connectDesktopChanged( sigc::mem_fun(*this, &SymbolsDialog::setTargetDesktop) );
-  instanceConns.push_back( desktopChangeConn );
-  desk_track.connect(GTK_WIDGET(gobj()));
 }
 
 SymbolsDialog::~SymbolsDialog()
 {
-  for (auto & instanceConn : instanceConns) {
-      instanceConn.disconnect();
+  for (auto &connection : gtk_connections) {
+      connection.disconnect();
   }
+  gtk_connections.clear();
   idleconn.disconnect();
-  instanceConns.clear();
-  desk_track.disconnect();
 }
 
 SymbolsDialog& SymbolsDialog::getInstance()
@@ -448,7 +409,7 @@ void SymbolsDialog::rebuild() {
 }
 void SymbolsDialog::showOverlay() {
   Glib::ustring current = Glib::Markup::escape_text(symbol_set->get_active_text());
-  if (current == ALLDOCS && !l.size()) 
+  if (current == ALLDOCS && !l.size())
   {
     overlay_icon->hide();
     if (!all_docs_processed ) {
@@ -456,9 +417,9 @@ void SymbolsDialog::showOverlay() {
         overlay_title->set_markup(Glib::ustring("<span size=\"large\">") +
                                   Glib::ustring(_("Search in all symbol sets...")) + Glib::ustring("</span>"));
         overlay_desc->set_markup(Glib::ustring("<span size=\"small\">") +
-                                 Glib::ustring(_("First search can be slow.")) + Glib::ustring("</span>"));
+                                 Glib::ustring(_("The first search can be slow.")) + Glib::ustring("</span>"));
     } else if (!icons_found && !search_str.empty()) {
-        overlay_title->set_markup(Glib::ustring("<span size=\"large\">") + Glib::ustring(_("No results found")) +
+        overlay_title->set_markup(Glib::ustring("<span size=\"large\">") + Glib::ustring(_("No symbols found.")) +
                                   Glib::ustring("</span>"));
         overlay_desc->set_markup(Glib::ustring("<span size=\"small\">") +
                                  Glib::ustring(_("Try a different search term.")) + Glib::ustring("</span>"));
@@ -469,20 +430,20 @@ void SymbolsDialog::showOverlay() {
         overlay_desc->set_markup(Glib::ustring("<span size=\"small\">") + Glib::ustring("</span>"));
     }
   } else if (!number_symbols && (current != CURRENTDOC || !search_str.empty())) {
-      overlay_title->set_markup(Glib::ustring("<span size=\"large\">") + Glib::ustring(_("No results found")) +
+      overlay_title->set_markup(Glib::ustring("<span size=\"large\">") + Glib::ustring(_("No symbols found.")) +
                                 Glib::ustring("</span>"));
       overlay_desc->set_markup(Glib::ustring("<span size=\"small\">") +
                                Glib::ustring(_("Try a different search term,\nor switch to a different symbol set.")) +
                                Glib::ustring("</span>"));
   } else if (!number_symbols && current == CURRENTDOC) {
-      overlay_title->set_markup(Glib::ustring("<span size=\"large\">") + Glib::ustring(_("No symbols found")) +
+      overlay_title->set_markup(Glib::ustring("<span size=\"large\">") + Glib::ustring(_("No symbols found.")) +
                                 Glib::ustring("</span>"));
       overlay_desc->set_markup(
           Glib::ustring("<span size=\"small\">") +
           Glib::ustring(_("No symbols in current document.\nChoose a different symbol set\nor add a new symbol.")) +
           Glib::ustring("</span>"));
   } else if (!icons_found && !search_str.empty()) {
-      overlay_title->set_markup(Glib::ustring("<span size=\"large\">") + Glib::ustring(_("No results found")) +
+      overlay_title->set_markup(Glib::ustring("<span size=\"large\">") + Glib::ustring(_("No symbols found.")) +
                                 Glib::ustring("</span>"));
       overlay_desc->set_markup(Glib::ustring("<span size=\"small\">") +
                                Glib::ustring(_("Try a different search term,\nor switch to a different symbol set.")) +
@@ -517,14 +478,17 @@ void SymbolsDialog::hideOverlay() {
 
 void SymbolsDialog::insertSymbol() {
     Inkscape::Verb *verb = Inkscape::Verb::get( SP_VERB_EDIT_SYMBOL );
-    SPAction *action = verb->get_action(Inkscape::ActionContext( (Inkscape::UI::View::View *) current_desktop) );
+    SPAction *action = verb->get_action(Inkscape::ActionContext( (Inkscape::UI::View::View *) getDesktop()) );
     sp_action_perform (action, nullptr);
 }
 
 void SymbolsDialog::revertSymbol() {
-    Inkscape::Verb *verb = Inkscape::Verb::get( SP_VERB_EDIT_UNSYMBOL );
-    SPAction *action = verb->get_action(Inkscape::ActionContext( (Inkscape::UI::View::View *) current_desktop ) );
-    sp_action_perform (action, nullptr);
+    if (auto document = getDocument()) {
+        if (auto symbol = dynamic_cast<SPSymbol*> (document->getObjectById(selectedSymbolId()))) {
+            symbol->unSymbol();
+        }
+        Inkscape::DocumentUndo::done(document, SP_VERB_EDIT_UNSYMBOL, _("Group from symbol"));
+    }
 }
 
 void SymbolsDialog::iconDragDataGet(const Glib::RefPtr<Gdk::DragContext>& /*context*/, Gtk::SelectionData& data, guint /*info*/, guint /*time*/)
@@ -569,11 +533,16 @@ void SymbolsDialog::selectionChanged(Inkscape::Selection *selection) {
   }
 }
 
-void SymbolsDialog::documentReplaced(SPDesktop *desktop, SPDocument *document)
+void SymbolsDialog::documentReplaced()
 {
-  current_desktop  = desktop;
-  current_document = document;
-  rebuild();
+    defs_modified.disconnect();
+    if (auto document = getDocument()) {
+        defs_modified = document->getDefs()->connectModified(sigc::mem_fun(*this, &SymbolsDialog::defsModified));
+        if (!symbol_sets[symbol_set->get_active_text()]) {
+            // Symbol set is from Current document, need to rebuild
+            rebuild();
+        }
+    }
 }
 
 SPDocument* SymbolsDialog::selectedSymbols() {
@@ -589,7 +558,7 @@ SPDocument* SymbolsDialog::selectedSymbols() {
     if( !symbol_document ) {
       // Symbol must be from Current Document (this method of
       // checking should be language independent).
-      symbol_document = current_document;
+      symbol_document = getDocument();
       add_symbol->set_sensitive( true );
       remove_symbol->set_sensitive( true );
     } else {
@@ -655,31 +624,26 @@ void SymbolsDialog::iconChanged() {
     SPObject* symbol = symbol_document->getObjectById(symbol_id);
 
     if( symbol ) {
-      if( symbol_document == current_document ) {
-        // Select the symbol on the canvas so it can be manipulated
-        current_desktop->selection->set( symbol, false );
-      }
       // Find style for use in <use>
       // First look for default style stored in <symbol>
       gchar const* style = symbol->getAttribute("inkscape:symbol-style");
       if( !style ) {
         // If no default style in <symbol>, look in documents.
-        if( symbol_document == current_document ) {
-          style = styleFromUse( symbol_id.c_str(), current_document );
+        if(symbol_document == getDocument()) {
+          style = styleFromUse(symbol_id.c_str(), symbol_document);
         } else {
           style = symbol_document->getReprRoot()->attribute("style");
         }
       }
 
       ClipboardManager *cm = ClipboardManager::get();
-      cm->copySymbol(symbol->getRepr(), style, symbol_document == current_document);
+      cm->copySymbol(symbol->getRepr(), style, symbol_document == getDocument());
     }
   }
 }
 
 #ifdef WITH_LIBVISIO
 
-#if WITH_LIBVISIO01
 // Extend libvisio's native RVNGSVGDrawingGenerator with support for extracting stencil names (to be used as ID/title)
 class REVENGE_API RVNGSVGDrawingGenerator_WithTitle : public RVNGSVGDrawingGenerator {
   public:
@@ -701,7 +665,6 @@ class REVENGE_API RVNGSVGDrawingGenerator_WithTitle : public RVNGSVGDrawingGener
   private:
     RVNGStringVector &_titles;
 };
-#endif
 
 // Read Visio stencil files
 SPDocument* read_vss(Glib::ustring filename, Glib::ustring name ) {
@@ -723,13 +686,9 @@ SPDocument* read_vss(Glib::ustring filename, Glib::ustring name ) {
   }
   RVNGStringVector output;
   RVNGStringVector titles;
-#if WITH_LIBVISIO01
   RVNGSVGDrawingGenerator_WithTitle generator(output, titles, "svg");
 
   if (!libvisio::VisioDocument::parseStencils(&input, &generator)) {
-#else
-  if (!libvisio::VisioDocument::generateSVGStencils(&input, output)) {
-#endif
     return nullptr;
   }
   if (output.empty()) {
@@ -768,11 +727,9 @@ SPDocument* read_vss(Glib::ustring filename, Glib::ustring name ) {
 
     tmpSVGOutput += "    <symbol id=\"" + ss.str() + "\">\n";
 
-#if WITH_LIBVISIO01
     if (titles.size() == output.size() && titles[i] != "") {
       tmpSVGOutput += "      <title>" + Glib::ustring(RVNGString::escapeXML(titles[i].cstr()).cstr()) + "</title>\n";
     }
-#endif
 
     std::istringstream iss( output[i].cstr() );
     std::string line;
@@ -798,7 +755,7 @@ void SymbolsDialog::getSymbolsTitle() {
     using namespace Inkscape::IO::Resource;
     Glib::ustring title;
     number_docs = 0;
-    std::regex matchtitle (".*?<title.*?>(.*?)<(/| /)"); 
+    std::regex matchtitle (".*?<title.*?>(.*?)<(/| /)");
     for(auto &filename: get_filenames(SYMBOLS, {".svg", ".vss"})) {
         if(Glib::str_has_suffix(filename, ".vss")) {
           std::size_t found = filename.find_last_of("/\\");
@@ -832,7 +789,7 @@ void SymbolsDialog::getSymbolsTitle() {
                   ++number_docs;
                   break;
               }
-          } 
+          }
         }
     }
     for(auto const &symbol_document_map : symbol_sets) {
@@ -842,7 +799,7 @@ void SymbolsDialog::getSymbolsTitle() {
 
 /* Hunts preference directories for symbol files */
 std::pair<Glib::ustring, SPDocument*>
-SymbolsDialog::getSymbolsSet(Glib::ustring title) 
+SymbolsDialog::getSymbolsSet(Glib::ustring title)
 {
     SPDocument* symbol_doc = nullptr;
     Glib::ustring current = symbol_set->get_active_text();
@@ -866,7 +823,7 @@ SymbolsDialog::getSymbolsSet(Glib::ustring title)
     using namespace Inkscape::IO::Resource;
     Glib::ustring new_title;
 
-    std::regex matchtitle (".*?<title.*?>(.*?)<(/| /)"); 
+    std::regex matchtitle (".*?<title.*?>(.*?)<(/| /)");
     for(auto &filename: get_filenames(SYMBOLS, {".svg", ".vss"})) {
         if(Glib::str_has_suffix(filename, ".vss")) {
 #ifdef WITH_LIBVISIO
@@ -955,7 +912,7 @@ void SymbolsDialog::symbolsInDocRecursive (SPObject *r, std::map<Glib::ustring, 
   }
 }
 
-std::map<Glib::ustring, std::pair<Glib::ustring, SPSymbol*> > 
+std::map<Glib::ustring, std::pair<Glib::ustring, SPSymbol*> >
 SymbolsDialog::symbolsInDoc( SPDocument* symbol_document, Glib::ustring doc_title)
 {
 
@@ -1007,7 +964,7 @@ gchar const* SymbolsDialog::styleFromUse( gchar const* id, SPDocument* document)
   return style;
 }
 
-void SymbolsDialog::clearSearch() 
+void SymbolsDialog::clearSearch()
 {
   if(search->get_text().empty() && sensitive) {
     enableWidgets(false);
@@ -1025,14 +982,14 @@ void SymbolsDialog::clearSearch()
   }
 }
 
-void SymbolsDialog::enableWidgets(bool enable) 
+void SymbolsDialog::enableWidgets(bool enable)
 {
   symbol_set->set_sensitive(enable);
   search->set_sensitive(enable);
   tools ->set_sensitive(enable);
 }
 
-void SymbolsDialog::beforeSearch(GdkEventKey* evt) 
+void SymbolsDialog::beforeSearch(GdkEventKey* evt)
 {
   sensitive = false;
   search_str = search->get_text().lowercase();
@@ -1060,7 +1017,7 @@ void SymbolsDialog::searchsymbols()
     }
 }
 
-void SymbolsDialog::unsensitive(GdkEventKey* evt) 
+void SymbolsDialog::unsensitive(GdkEventKey* evt)
 {
   sensitive = true;
 }
@@ -1078,13 +1035,15 @@ bool SymbolsDialog::callbackSymbols(){
       if (symbol_title_char) {
         Glib::ustring symbol_title = Glib::ustring(symbol_title_char).lowercase();
         auto pos = symbol_title.rfind(search_str);
-        if (pos != std::string::npos) {
+        auto pos_translated = Glib::ustring(g_dpgettext2(nullptr, "Symbol", symbol_title_char)).lowercase().rfind(search_str);
+        if ((pos != std::string::npos) || (pos_translated != std::string::npos)) {
           found = true;
         }
         if (!found && symbol_desc_char) {
           Glib::ustring symbol_desc = Glib::ustring(symbol_desc_char).lowercase();
           auto pos = symbol_desc.rfind(search_str);
-          if (pos != std::string::npos) {
+          auto pos_translated = Glib::ustring(g_dpgettext2(nullptr, "Symbol", symbol_desc_char)).lowercase().rfind(search_str);
+          if ((pos != std::string::npos) || (pos_translated != std::string::npos)) {
             found = true;
           }
         }
@@ -1100,7 +1059,7 @@ bool SymbolsDialog::callbackSymbols(){
       int modulus = number_symbols > 200 ? 50 : (number_symbols/4);
       g_free(symbol_title_char);
       g_free(symbol_desc_char);
-      if (modulus && counter_symbols % modulus == 0 && !l.empty()) { 
+      if (modulus && counter_symbols % modulus == 0 && !l.empty()) {
         return true;
       }
     }
@@ -1158,7 +1117,7 @@ Glib::ustring SymbolsDialog::ellipsize(Glib::ustring data, size_t limit) {
 }
 
 void SymbolsDialog::addSymbolsInDoc(SPDocument* symbol_document) {
-  
+
   if (!symbol_document) {
     return; //Search all
   }
@@ -1214,13 +1173,13 @@ void SymbolsDialog::addSymbols() {
 void SymbolsDialog::addSymbol( SPObject* symbol, Glib::ustring doc_title)
 {
   gchar const *id = symbol->getRepr()->attribute("id");
-  
+
   if (doc_title.empty()) {
     doc_title = CURRENTDOC;
   } else {
       doc_title = g_dpgettext2(nullptr, "Symbol", doc_title.c_str());
   }
-  
+
   Glib::ustring symbol_title;
   gchar *title = symbol->title(); // From title element
   if (title) {
@@ -1229,7 +1188,7 @@ void SymbolsDialog::addSymbol( SPObject* symbol, Glib::ustring doc_title)
     symbol_title = Glib::ustring::compose("%1 %2 (%3)", _("Symbol without title"), Glib::ustring(id), doc_title);
   }
   g_free(title);
-  
+
   Glib::RefPtr<Gdk::Pixbuf> pixbuf = drawSymbol( symbol );
   if( pixbuf ) {
     Gtk::ListStore::iterator row = store->append();
@@ -1268,9 +1227,9 @@ SymbolsDialog::drawSymbol(SPObject *symbol)
 
   // First look for default style stored in <symbol>
   gchar const* style = repr->attribute("inkscape:symbol-style");
-  if( !style ) {
+  if(!style) {
     // If no default style in <symbol>, look in documents.
-    if( symbol->document == current_document ) {
+    if(symbol->document == getDocument()) {
       gchar const *id = symbol->getRepr()->attribute("id");
       style = styleFromUse( id, symbol->document );
     } else {
@@ -1326,7 +1285,7 @@ SymbolsDialog::drawSymbol(SPObject *symbol)
     if( height == 0.0 ) height = 1.0;
 
     if( fit_symbol->get_active() )
-      scale = psize / ceil(std::max(width, height)); 
+      scale = psize / ceil(std::max(width, height));
     else
       scale = pow( 2.0, scale_factor/2.0 ) * psize / 32.0;
 
@@ -1360,7 +1319,7 @@ SPDocument* SymbolsDialog::symbolsPreviewDoc()
 /*
  * Update image widgets
  */
-Glib::RefPtr<Gdk::Pixbuf> 
+Glib::RefPtr<Gdk::Pixbuf>
 SymbolsDialog::getOverlay(gint width, gint height)
 {
   cairo_surface_t *surface;
@@ -1373,17 +1332,6 @@ SymbolsDialog::getOverlay(gint width, gint height)
   GdkPixbuf* pixbuf = ink_pixbuf_create_from_cairo_surface(surface);
   cairo_destroy (cr);
   return Glib::wrap(pixbuf);
-}
-
-void SymbolsDialog::setTargetDesktop(SPDesktop *desktop)
-{
-  if (this->current_desktop != desktop) {
-    this->current_desktop = desktop;
-    if( !symbol_sets[symbol_set->get_active_text()] ) {
-      // Symbol set is from Current document, update
-      rebuild();
-    }
-  }
 }
 
 } //namespace Dialogs

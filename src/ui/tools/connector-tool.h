@@ -14,6 +14,7 @@
  */
 
 #include <map>
+#include <memory>
 #include <string>
 
 #include <2geom/point.h>
@@ -24,13 +25,13 @@
 class SPItem;
 class SPCurve;
 class SPKnot;
-struct SPCanvasItem;
 
 namespace Avoid {
     class ConnRef;
 }
 
 namespace Inkscape {
+    class CanvasItemBpath;
     class Selection;
 
     namespace XML {
@@ -69,12 +70,12 @@ public:
     unsigned int state : 4;
 
     // Red curve
-    SPCanvasItem *red_bpath;
-    SPCurve *red_curve;
+    Inkscape::CanvasItemBpath *red_bpath;
+    std::unique_ptr<SPCurve> red_curve;
     guint32 red_color;
 
     // Green curve
-    SPCurve *green_curve;
+    std::unique_ptr<SPCurve> green_curve;
 
     // The new connector
     SPItem *newconn;
@@ -102,11 +103,12 @@ public:
     SPKnot *clickedhandle;
 
     SPKnotList knots;
-    SPKnot *endpt_handle[2];
-    guint  endpt_handler_id[2];
+    SPKnot *endpt_handle[2]{};
+    sigc::connection endpt_handler_connection[2];
     gchar *shref;
+    gchar *sub_shref;
     gchar *ehref;
-    SPCanvasItem *c0, *c1, *cl0, *cl1;
+    gchar *sub_ehref;
 
     static std::string const prefsPath;
 
@@ -138,14 +140,14 @@ private:
     void _concatColorsAndFlush();
     void _flushWhite(SPCurve *gc);
 
-    void _activeShapeAddKnot(SPItem* item);
+    void _activeShapeAddKnot(SPItem* item, SPItem* subitem);
     void _setActiveShape(SPItem *item);
-    bool _ptHandleTest(Geom::Point& p, gchar **href);
+    bool _ptHandleTest(Geom::Point& p, gchar **href, gchar **subhref);
 
     void _reroutingFinish(Geom::Point *const p);
 };
 
-void cc_selection_set_avoid(bool const set_ignore);
+void cc_selection_set_avoid(SPDesktop *, bool const set_ignore);
 void cc_create_connection_point(ConnectorTool* cc);
 void cc_remove_connection_point(ConnectorTool* cc);
 bool cc_item_is_connector(SPItem *item);

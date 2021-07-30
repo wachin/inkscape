@@ -18,7 +18,6 @@
 #include "selection.h"
 #include <glib-object.h>
 #include <glib.h>
-#include <gtkmm/cssprovider.h>
 #include <map>
 #include <sigc++/signal.h>
 #include <vector>
@@ -31,6 +30,7 @@ namespace Inkscape {
 
 class Application;
 namespace UI {
+class ThemeContext;
 namespace Tools {
 
 class ToolBase;
@@ -102,18 +102,15 @@ public:
                       const gchar *e_notsp, const gchar *warn);
 
     bool load_menus();
-    bool save_menus();
     Inkscape::XML::Node * get_menus();
     
     Inkscape::UI::Tools::ToolBase * active_event_context();
     SPDocument * active_document();
     SPDesktop * active_desktop();
-    Glib::RefPtr<Gtk::CssProvider> themeprovider;
-    Glib::RefPtr<Gtk::CssProvider> colorizeprovider;
     // Use this function to get selection model etc for a document
     Inkscape::ActionContext action_context_for_document(SPDocument *doc);
     Inkscape::ActionContext active_action_context();
-    
+    Inkscape::UI::ThemeContext *themecontext = nullptr;
     bool sole_desktop_for_document(SPDesktop const &desktop);
     
     // Inkscape desktop stuff
@@ -129,17 +126,11 @@ public:
     SPDesktop * next_desktop ();
     SPDesktop * prev_desktop ();
     
-    void dialogs_hide ();
-    void dialogs_unhide ();
-    void dialogs_toggle ();
-    
     void external_change ();
     void selection_modified (Inkscape::Selection *selection, guint flags);
     void selection_changed (Inkscape::Selection * selection);
     void subselection_changed (SPDesktop *desktop);
     void selection_set (Inkscape::Selection * selection);
-    void readStyleSheets(bool forceupd = false);
-    Glib::ustring get_symbolic_colors();
     void eventcontext_set (Inkscape::UI::Tools::ToolBase * eventcontext);
     
     // Moved document add/remove functions into public inkscape.h as they are used
@@ -175,18 +166,13 @@ public:
     sigc::signal<void, SPDesktop *> signal_activate_desktop;
     // some desktop lost focus
     sigc::signal<void, SPDesktop *> signal_deactivate_desktop;
-    // user change theme
-    sigc::signal<void> signal_change_theme;
+    
     // these are orphaned signals (nothing emits them and nothing connects to them)
     sigc::signal<void, SPDocument *> signal_destroy_document;
     sigc::signal<void, SPColor *, double /*opacity*/> signal_color_set;
     
     // inkscape is quitting
     sigc::signal<void> signal_shut_down;
-    // user pressed F12
-    sigc::signal<void> signal_dialogs_hide;
-    // user pressed F12
-    sigc::signal<void> signal_dialogs_unhide;
     // a document was changed by some external means (undo or XML editor); this
     // may not be reflected by a selection change and thus needs a separate signal
     sigc::signal<void> signal_external_change;
@@ -204,9 +190,6 @@ public:
         return _pdf_page;
     }
 
-    void add_gtk_css();
-    void add_icon_theme();
-
   private:
     static Inkscape::Application * _S_inst;
 
@@ -223,7 +206,6 @@ public:
     std::vector<SPDesktop *> *_desktops = nullptr;
 
     unsigned refCount = 1;
-    bool _dialogs_toggle = true;
     guint _mapalt = GDK_MOD1_MASK;
     guint _trackalt = false;
     static bool _crashIsHappening;

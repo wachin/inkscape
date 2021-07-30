@@ -287,7 +287,7 @@ SvgFont::flip_coordinate_system(SPFont* spfont, Geom::PathVector pathv){
     for(auto& obj: spfont->children) {
         if (dynamic_cast<SPFontFace *>(&obj)) {
             //XML Tree being directly used here while it shouldn't be.
-            sp_repr_get_double(obj.getRepr(), "units_per_em", &units_per_em);
+            units_per_em = obj.getRepr()->getAttributeDouble("units_per_em", units_per_em);
         }
     }
 
@@ -356,7 +356,7 @@ SvgFont::scaled_font_render_glyph (cairo_scaled_font_t  */*scaled_font*/,
             {
                 SPPath *path = dynamic_cast<SPPath *>(&child);
                 if (path) {
-                    pathv = path->_curve->get_pathvector();
+                    pathv = path->curve()->get_pathvector();
                     pathv = flip_coordinate_system(spfont, pathv);
                     render_glyph_path(cr, &pathv);
                 }
@@ -371,7 +371,7 @@ SvgFont::scaled_font_render_glyph (cairo_scaled_font_t  */*scaled_font*/,
                 if (path) {
                     SPShape *shape = dynamic_cast<SPShape *>(item);
                     g_assert(shape != nullptr);
-                    pathv = shape->_curve->get_pathvector();
+                    pathv = shape->curve()->get_pathvector();
                     pathv = flip_coordinate_system(spfont, pathv);
                     this->render_glyph_path(cr, &pathv);
                 }
@@ -413,7 +413,7 @@ double SvgFont::units_per_em() {
     for (auto& obj: font->children) {
         if (dynamic_cast<SPFontFace *>(&obj)) {
             //XML Tree being directly used here while it shouldn't be.
-            sp_repr_get_double(obj.getRepr(), "units-per-em", &units_per_em);
+            units_per_em = obj.getRepr()->getAttributeDouble("units-per-em", units_per_em);
         }
     }
     if (units_per_em <= 0.0) {

@@ -11,3 +11,6 @@ class PrintingMarksBasicTest(ComparisonMixin, InkscapeExtensionTestMixin, TestCa
         CompareWithPathSpace(),
         CompareOrderIndependentStyle(),
     ]
+    compare_file = 'svg/shapes.svg'
+    comparisons = {('--crop_marks', 'True', '--bleed_marks', 'True', '--registration_marks', 'True',
+                    '--star_target', 'True', '--colour_bars', 'True', '--page_info', 'True')}

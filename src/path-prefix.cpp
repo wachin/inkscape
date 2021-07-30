@@ -20,62 +20,82 @@
 #include <mach-o/dyld.h> // for _NSGetExecutablePath
 #endif
 
+#ifdef __NetBSD__
+#include <sys/types.h>
+#include <sys/sysctl.h>
+#endif
+
+#ifdef __FreeBSD__
+#include <sys/param.h>
+#include <sys/types.h>
+#include <sys/sysctl.h>
+#endif
+
+#include <cassert>
 #include <glib.h>
+#include <glibmm.h>
 
 #include "path-prefix.h"
 
 /**
- * Determine the location of the Inkscape data directory (typically the share/ folder
- * from where Inkscape should be loading resources) and append a relative path
+ * Guess the absolute path of the application bundle prefix directory.
+ * The result path is not guaranteed to exist.
  *
- *  - by default use the compile time value of INKSCAPE_DATADIR
- *  - on Windows inkscape_datadir will be relative to the called executable by default
- *    (typically inkscape/share but also handles the case where the executable is in a /bin subfolder)
- *  - if the environment variable INKSCAPE_DATADIR is set it will override all of the above
+ * On Windows, the result should be identical to
+ * g_win32_get_package_installation_directory_of_module(nullptr)
  */
-char *append_inkscape_datadir(const char *relative_path)
+static std::string _get_bundle_prefix_dir()
 {
-    static gchar const *inkscape_datadir;
+    char const *program_dir = get_program_dir();
+    auto prefix = Glib::path_get_dirname(program_dir);
+
+    if (g_str_has_suffix(program_dir, "Contents/MacOS")) {
+        // macOS
+        prefix += "/Resources";
+    } else if (Glib::path_get_basename(program_dir) == "bin") {
+        // Windows, Linux
+    } else if (Glib::path_get_basename(prefix) == "lib") {
+        // AppImage
+        // program_dir=appdir/lib/x86_64-linux-gnu
+        // prefix_dir=appdir/usr
+        prefix = Glib::build_filename(Glib::path_get_dirname(prefix), "usr");
+    }
+
+    return prefix;
+}
+
+/**
+ * Determine the location of the Inkscape data directory (typically the share/ folder
+ * from where Inkscape should be loading resources).
+ *
+ * The data directory is the first of:
+ *
+ * - Environment variable $INKSCAPE_DATADIR if not empty
+ * - If a bundle is detected: "<bundle-prefix>/share"
+ * - Compile time value of INKSCAPE_DATADIR
+ */
+char const *get_inkscape_datadir()
+{
+    static char const *inkscape_datadir = nullptr;
     if (!inkscape_datadir) {
-        gchar *datadir;
-        gchar const *datadir_env = g_getenv("INKSCAPE_DATADIR");
-        if (datadir_env) {
-            datadir = g_strdup(datadir_env);
-        } else {
-#ifdef _WIN32
-            gchar *module_path = g_win32_get_package_installation_directory_of_module(NULL);
-            datadir = g_build_filename(module_path, "share", NULL);
-            g_free(module_path);
-#elif defined(__APPLE__)
-            gchar *program_dir = get_program_dir();
-            if (g_str_has_suffix(program_dir, "Contents/MacOS")) {
-                datadir = g_build_filename(program_dir, "../Resources/share", nullptr);
-            } else {
-                datadir = g_strdup(INKSCAPE_DATADIR);
+        static std::string datadir = Glib::getenv("INKSCAPE_DATADIR");
+
+        if (datadir.empty()) {
+            datadir = Glib::build_filename(_get_bundle_prefix_dir(), "share");
+
+            if (!Glib::file_test(Glib::build_filename(datadir, "inkscape"), Glib::FILE_TEST_IS_DIR)) {
+                datadir = INKSCAPE_DATADIR;
             }
-            g_free(program_dir);
-#else
-            datadir = g_strdup(INKSCAPE_DATADIR);
-#endif
         }
 
+        inkscape_datadir = datadir.c_str();
+
 #if GLIB_CHECK_VERSION(2,58,0)
-        inkscape_datadir = g_canonicalize_filename(datadir, NULL);
-        g_free(datadir);
-#else
-        inkscape_datadir = datadir;
+        inkscape_datadir = g_canonicalize_filename(inkscape_datadir, nullptr);
 #endif
     }
 
-    if (!relative_path) {
-        relative_path = "";
-    }
-
-#if GLIB_CHECK_VERSION(2,58,0)
-    return g_canonicalize_filename(relative_path, inkscape_datadir);
-#else
-    return g_build_filename(inkscape_datadir, relative_path, NULL);
-#endif
+    return inkscape_datadir;
 }
 
 /**
@@ -84,7 +104,7 @@ char *append_inkscape_datadir(const char *relative_path)
  * @return executable name (including full path) encoded as UTF-8
  *         or NULL if it can't be determined
  */
-gchar *get_program_name()
+char const *get_program_name()
 {
     static gchar *program_name = NULL;
 
@@ -109,11 +129,29 @@ gchar *get_program_name()
         } else {
             g_warning("get_program_name() - _NSGetExecutablePath failed");
         }
-#elif defined(__linux__)
+#elif defined(__linux__) || defined(__CYGWIN__)
         program_name = g_file_read_link("/proc/self/exe", NULL);
         if (!program_name) {
             g_warning("get_program_name() - g_file_read_link failed");
         }
+#elif defined(__NetBSD__)
+        static const int name[] = {CTL_KERN, KERN_PROC_ARGS, -1, KERN_PROC_PATHNAME};
+        char path[MAXPATHLEN];
+        size_t len = sizeof(path);
+        if (sysctl(name, __arraycount(name), path, &len, NULL, 0) == 0) {
+            program_name = realpath(path, nullptr);
+        } else {
+            g_warning("get_program_name() - sysctl failed");
+        }
+#elif defined(__FreeBSD__)
+       int mib[4] = { CTL_KERN, KERN_PROC, KERN_PROC_PATHNAME, -1 };
+       char buf[MAXPATHLEN];
+       size_t cb = sizeof(buf);
+       if (sysctl(mib, 4, buf, &cb, NULL, 0) == 0) {
+           program_name = realpath(buf, nullptr);
+       } else {
+           g_warning("get_program_name() - sysctl failed");
+       }      
 #else
 #warning get_program_name() - no known way to obtain executable name on this platform
         g_info("get_program_name() - no known way to obtain executable name on this platform");
@@ -126,12 +164,13 @@ gchar *get_program_name()
 /**
  * Gets the the full path to the directory containing the currently running program's executable
  *
- * @return full path to directory encoded as UTF-8
+ * @return full path to directory encoded in native encoding,
  *         or NULL if it can't be determined
  */
-gchar *get_program_dir()
+char const *get_program_dir()
 {
-    return g_path_get_dirname(get_program_name());
+    static char *program_dir = g_path_get_dirname(get_program_name());
+    return program_dir;
 }
 
 /*

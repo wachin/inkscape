@@ -109,8 +109,8 @@ GdkpixbufInput::open(Inkscape::Extension::Input *mod, char const *uri)
         // Create image node
         Inkscape::XML::Document *xml_doc = doc->getReprDoc();
         Inkscape::XML::Node *image_node = xml_doc->createElement("svg:image");
-        sp_repr_set_svg_double(image_node, "width", width);
-        sp_repr_set_svg_double(image_node, "height", height);
+        image_node->setAttributeSvgDouble("width", width);
+        image_node->setAttributeSvgDouble("height", height);
 
         // Set default value as we honor "preserveAspectRatio".
         image_node->setAttribute("preserveAspectRatio", "none");
@@ -190,34 +190,35 @@ GdkpixbufInput::init()
             }
             gchar *caption = g_strdup_printf(_("%s bitmap image import"), name);
 
+            // clang-format off
             gchar *xmlString = g_strdup_printf(
                 "<inkscape-extension xmlns=\"" INKSCAPE_EXTENSION_URI "\">\n"
-                  "<name>%s</name>\n"
-                  "<id>org.inkscape.input.gdkpixbuf.%s</id>\n"
+                    "<name>%s</name>\n"
+                    "<id>org.inkscape.input.gdkpixbuf.%s</id>\n"
 
-                  "<param name='link' type='optiongroup' gui-text='" N_("Image Import Type:") "' gui-description='" N_("Embed results in stand-alone, larger SVG files. Link references a file outside this SVG document and all files must be moved together.") "' >\n"
-                    "<option value='embed' >" N_("Embed") "</option>\n"
-                    "<option value='link' >" N_("Link") "</option>\n"
-                  "</param>\n"
+                    "<param name='link' type='optiongroup' gui-text='" N_("Image Import Type:") "' gui-description='" N_("Embed results in stand-alone, larger SVG files. Link references a file outside this SVG document and all files must be moved together.") "' >\n"
+                        "<option value='embed' >" N_("Embed") "</option>\n"
+                        "<option value='link' >" N_("Link") "</option>\n"
+                    "</param>\n"
 
-                  "<param name='dpi' type='optiongroup' gui-text='" N_("Image DPI:") "' gui-description='" N_("Take information from file or use default bitmap import resolution as defined in the preferences.") "' >\n"
-                    "<option value='from_file' >" N_("From file") "</option>\n"
-                    "<option value='from_default' >" N_("Default import resolution") "</option>\n"
-                  "</param>\n"
+                    "<param name='dpi' type='optiongroup' gui-text='" N_("Image DPI:") "' gui-description='" N_("Take information from file or use default bitmap import resolution as defined in the preferences.") "' >\n"
+                        "<option value='from_file' >" N_("From file") "</option>\n"
+                        "<option value='from_default' >" N_("Default import resolution") "</option>\n"
+                    "</param>\n"
 
-                  "<param name='scale' type='optiongroup' gui-text='" N_("Image Rendering Mode:") "' gui-description='" N_("When an image is upscaled, apply smoothing or keep blocky (pixelated). (Will not work in all browsers.)") "' >\n"
-                    "<option value='auto' >" N_("None (auto)") "</option>\n"
-                    "<option value='optimizeQuality' >" N_("Smooth (optimizeQuality)") "</option>\n"
-                    "<option value='optimizeSpeed' >" N_("Blocky (optimizeSpeed)") "</option>\n"
-                  "</param>\n"
+                    "<param name='scale' type='optiongroup' gui-text='" N_("Image Rendering Mode:") "' gui-description='" N_("When an image is upscaled, apply smoothing or keep blocky (pixelated). (Will not work in all browsers.)") "' >\n"
+                        "<option value='auto' >" N_("None (auto)") "</option>\n"
+                        "<option value='optimizeQuality' >" N_("Smooth (optimizeQuality)") "</option>\n"
+                        "<option value='optimizeSpeed' >" N_("Blocky (optimizeSpeed)") "</option>\n"
+                    "</param>\n"
 
-                  "<param name=\"do_not_ask\" gui-description='" N_("Hide the dialog next time and always apply the same actions.") "' gui-text=\"" N_("Don't ask again") "\" type=\"bool\" >false</param>\n"
-                  "<input>\n"
-                    "<extension>.%s</extension>\n"
-                    "<mimetype>%s</mimetype>\n"
-                    "<filetypename>%s (*.%s)</filetypename>\n"
-                    "<filetypetooltip>%s</filetypetooltip>\n"
-                  "</input>\n"
+                    "<param name=\"do_not_ask\" gui-description='" N_("Hide the dialog next time and always apply the same actions.") "' gui-text=\"" N_("Don't ask again") "\" type=\"bool\" >false</param>\n"
+                    "<input>\n"
+                        "<extension>.%s</extension>\n"
+                        "<mimetype>%s</mimetype>\n"
+                        "<filetypename>%s (*.%s)</filetypename>\n"
+                        "<filetypetooltip>%s</filetypetooltip>\n"
+                    "</input>\n"
                 "</inkscape-extension>",
                 caption,
                 extensions[i],
@@ -227,6 +228,7 @@ GdkpixbufInput::init()
                 extensions[i],
                 description
                 );
+            // clang-format off
 
             Inkscape::Extension::build_from_mem(xmlString, new GdkpixbufInput());
             g_free(xmlString);

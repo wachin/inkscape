@@ -164,7 +164,7 @@ PrefAdjustment::val_changed ()
 }
 
 /** \brief  A function to get the prefences for the grid
-    \param  moudule  Module which holds the params
+    \param  module  Module which holds the params
     \param  view     Unused today - may get style information in the future.
 
     Uses AutoGUI for creating the GUI.
@@ -188,6 +188,7 @@ Grid::prefs_effect(Inkscape::Extension::Effect *module, Inkscape::UI::View::View
 void
 Grid::init ()
 {
+    // clang-format off
     Inkscape::Extension::build_from_mem(
         "<inkscape-extension xmlns=\"" INKSCAPE_EXTENSION_URI "\">\n"
             "<name>" N_("Grid") "</name>\n"
@@ -207,6 +208,7 @@ Grid::init ()
                 "<menu-tip>" N_("Draw a path which is a grid") "</menu-tip>\n"
             "</effect>\n"
         "</inkscape-extension>\n", new Grid());
+    // clang-format on
     return;
 }
 

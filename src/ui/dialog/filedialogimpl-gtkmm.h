@@ -233,8 +233,8 @@ public:
     Inkscape::Extension::Extension *getSelectionType() override;
     void setSelectionType( Inkscape::Extension::Extension * key ) override;
 
-	Glib::ustring getCurrentDirectory() override;
-	void addFileType(Glib::ustring name, Glib::ustring pattern) override;
+    Glib::ustring getCurrentDirectory() override;
+    void addFileType(Glib::ustring name, Glib::ustring pattern) override;
 
 private:
     //void change_title(const Glib::ustring& title);
@@ -265,8 +265,8 @@ private:
     std::vector<FileType> fileTypes;
 
     //# Child widgets
-    Gtk::HBox childBox;
-    Gtk::VBox checksBox;
+    Gtk::Box childBox;
+    Gtk::Box checksBox;
 
     Gtk::CheckButton fileTypeCheckbox;
 
@@ -278,8 +278,7 @@ private:
     /**
      *  Create a filter menu for this type of dialog
      */
-    void createFileTypeMenu();
-
+    void createFilterMenu();
 
     /**
      * The extension to use to write this file

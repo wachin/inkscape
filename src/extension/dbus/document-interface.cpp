@@ -44,9 +44,6 @@
 #include "helper/action-context.h"
 #include "helper/action.h" //sp_action_perform
 
-#include "display/canvas-text.h" //text
-#include "display/sp-canvas.h" //text
-
 #include "extension/output.h" //IO
 #include "extension/system.h" //IO
 
@@ -57,6 +54,8 @@
 #include "object/sp-root.h"
 
 #include "util/units.h"
+
+#include "ui/widget/canvas.h" // Disable drawing
 
 #include "xml/repr.h" //sp_repr_document_new
 
@@ -232,7 +231,7 @@ gchar *finish_create_shape (DocumentInterface *doc_interface, GError ** /*error*
         newNode->setAttributeOrRemoveIfEmpty("style", str);
     }
     else {
-        newNode->setAttribute("style", "fill:#0000ff;fill-opacity:1;stroke:#c900b9;stroke-width:0;stroke-miterlimit:0;stroke-opacity:1;stroke-dasharray:none", true);
+        newNode->setAttribute("style", "fill:#0000ff;fill-opacity:1;stroke:#c900b9;stroke-width:0;stroke-miterlimit:0;stroke-opacity:1;stroke-dasharray:none");
     }
 
     doc_interface->target.getSelection()->layers()->currentLayer()->appendChildRepr(newNode);
@@ -376,10 +375,10 @@ document_interface_rectangle (DocumentInterface *doc_interface, int x, int y,
 
 
     Inkscape::XML::Node *newNode = dbus_create_node(doc_interface->target.getDocument(), "svg:rect");
-    sp_repr_set_int(newNode, "x", x);  //could also use newNode->setAttribute()
-    sp_repr_set_int(newNode, "y", y);
-    sp_repr_set_int(newNode, "width", width);
-    sp_repr_set_int(newNode, "height", height);
+    newNode->setAttributeInt("x", x);  //could also use newNode->setAttribute()
+    newNode->setAttributeInt("y", y);
+    newNode->setAttributeInt("width", width);
+    newNode->setAttributeInt("height", height);
     return finish_create_shape (doc_interface, error, newNode, (gchar *)"create rectangle");
 }
 
@@ -389,10 +388,10 @@ document_interface_ellipse_center (DocumentInterface *doc_interface, int cx, int
 {
     Inkscape::XML::Node *newNode = dbus_create_node(doc_interface->target.getDocument(), "svg:path");
     newNode->setAttribute("sodipodi:type", "arc");
-    sp_repr_set_int(newNode, "sodipodi:cx", cx);
-    sp_repr_set_int(newNode, "sodipodi:cy", cy);
-    sp_repr_set_int(newNode, "sodipodi:rx", rx);
-    sp_repr_set_int(newNode, "sodipodi:ry", ry);
+    newNode->setAttributeInt("sodipodi:cx", cx);
+    newNode->setAttributeInt("sodipodi:cy", cy);
+    newNode->setAttributeInt("sodipodi:rx", rx);
+    newNode->setAttributeInt("sodipodi:ry", ry);
     return finish_create_shape (doc_interface, error, newNode, (gchar *)"create circle");
 }
 
@@ -405,15 +404,15 @@ document_interface_polygon (DocumentInterface *doc_interface, int cx, int cy,
     Inkscape::XML::Node *newNode = dbus_create_node(doc_interface->target.getDocument(), "svg:path");
     newNode->setAttribute("inkscape:flatsided", "true");
     newNode->setAttribute("sodipodi:type", "star");
-    sp_repr_set_int(newNode, "sodipodi:cx", cx);
-    sp_repr_set_int(newNode, "sodipodi:cy", cy);
-    sp_repr_set_int(newNode, "sodipodi:r1", radius);
-    sp_repr_set_int(newNode, "sodipodi:r2", radius);
-    sp_repr_set_int(newNode, "sodipodi:sides", sides);
-    sp_repr_set_int(newNode, "inkscape:randomized", 0);
-    sp_repr_set_svg_double(newNode, "sodipodi:arg1", rot);
-    sp_repr_set_svg_double(newNode, "sodipodi:arg2", rot);
-    sp_repr_set_svg_double(newNode, "inkscape:rounded", 0);
+    newNode->setAttributeInt("sodipodi:cx", cx);
+    newNode->setAttributeInt("sodipodi:cy", cy);
+    newNode->setAttributeInt("sodipodi:r1", radius);
+    newNode->setAttributeInt("sodipodi:r2", radius);
+    newNode->setAttributeInt("sodipodi:sides", sides);
+    newNode->setAttributeInt("inkscape:randomized", 0);
+    newNode->setAttributeSvgDouble("sodipodi:arg1", rot);
+    newNode->setAttributeSvgDouble("sodipodi:arg2", rot);
+    newNode->setAttributeSvgDouble("inkscape:rounded", 0);
 
     return finish_create_shape (doc_interface, error, newNode, (gchar *)"create polygon");
 }
@@ -426,15 +425,15 @@ document_interface_star (DocumentInterface *doc_interface, int cx, int cy,
     Inkscape::XML::Node *newNode = dbus_create_node(doc_interface->target.getDocument(), "svg:path");
     newNode->setAttribute("inkscape:flatsided", "false");
     newNode->setAttribute("sodipodi:type", "star");
-    sp_repr_set_int(newNode, "sodipodi:cx", cx);
-    sp_repr_set_int(newNode, "sodipodi:cy", cy);
-    sp_repr_set_int(newNode, "sodipodi:r1", r1);
-    sp_repr_set_int(newNode, "sodipodi:r2", r2);
-    sp_repr_set_int(newNode, "sodipodi:sides", sides);
-    sp_repr_set_int(newNode, "inkscape:randomized", 0);
-    sp_repr_set_svg_double(newNode, "sodipodi:arg1", arg1);
-    sp_repr_set_svg_double(newNode, "sodipodi:arg2", arg2);
-    sp_repr_set_svg_double(newNode, "inkscape:rounded", rounded);
+    newNode->setAttributeInt("sodipodi:cx", cx);
+    newNode->setAttributeInt("sodipodi:cy", cy);
+    newNode->setAttributeInt("sodipodi:r1", r1);
+    newNode->setAttributeInt("sodipodi:r2", r2);
+    newNode->setAttributeInt("sodipodi:sides", sides);
+    newNode->setAttributeInt("inkscape:randomized", 0);
+    newNode->setAttributeSvgDouble("sodipodi:arg1", arg1);
+    newNode->setAttributeSvgDouble("sodipodi:arg2", arg2);
+    newNode->setAttributeSvgDouble("inkscape:rounded", rounded);
 
     return finish_create_shape (doc_interface, error, newNode, (gchar *)"create star");
 }
@@ -466,16 +465,16 @@ document_interface_spiral (DocumentInterface *doc_interface, int cx, int cy,
 {
     Inkscape::XML::Node *newNode = dbus_create_node(doc_interface->target.getDocument(), "svg:path");
     newNode->setAttribute("sodipodi:type", "spiral");
-    sp_repr_set_int(newNode, "sodipodi:cx", cx);
-    sp_repr_set_int(newNode, "sodipodi:cy", cy);
-    sp_repr_set_int(newNode, "sodipodi:radius", r);
-    sp_repr_set_int(newNode, "sodipodi:revolution", revolutions);
-    sp_repr_set_int(newNode, "sodipodi:t0", 0);
-    sp_repr_set_int(newNode, "sodipodi:argument", 0);
-    sp_repr_set_int(newNode, "sodipodi:expansion", 1);
+    newNode->setAttributeInt("sodipodi:cx", cx);
+    newNode->setAttributeInt("sodipodi:cy", cy);
+    newNode->setAttributeInt("sodipodi:radius", r);
+    newNode->setAttributeInt("sodipodi:revolution", revolutions);
+    newNode->setAttributeInt("sodipodi:t0", 0);
+    newNode->setAttributeInt("sodipodi:argument", 0);
+    newNode->setAttributeInt("sodipodi:expansion", 1);
     gchar * retval = finish_create_shape (doc_interface, error, newNode, (gchar *)"create spiral");
     //Makes sure there is no fill for spirals by default.
-    gchar* newString = g_strconcat(newNode->attribute("style"), ";fill:none", NULL);
+    gchar* newString = g_strconcat(newNode->attribute("style"), ";fill:none", nullptr);
     newNode->setAttribute("style", newString);
     g_free(newString);
     return retval;
@@ -486,8 +485,8 @@ document_interface_text (DocumentInterface *doc_interface, int x, int y, gchar *
 {
 
   Inkscape::XML::Node *text_node = dbus_create_node(doc_interface->target.getDocument(), "svg:text");
-    sp_repr_set_int(text_node, "x", x);
-    sp_repr_set_int(text_node, "y", y);
+    text_node->setAttributeInt("x", x);
+    text_node->setAttributeInt("y", y);
     //just a workaround so i can get an spitem from the name
     gchar  *name = finish_create_shape (doc_interface, error, text_node, (gchar *)"create text");
     
@@ -505,8 +504,8 @@ document_interface_image (DocumentInterface *doc_interface, int x, int y, gchar 
         return FALSE;
     
     Inkscape::XML::Node *newNode = dbus_create_node(doc_interface->target.getDocument(), "svg:image");
-    sp_repr_set_int(newNode, "x", x);
-    sp_repr_set_int(newNode, "y", y);
+    newNode->setAttributeInt("x", x);
+    newNode->setAttributeInt("y", y);
     newNode->setAttribute("xlink:href", uri);
     
     doc_interface->target.getSelection()->layers()->currentLayer()->appendChildRepr(newNode);
@@ -614,7 +613,7 @@ document_interface_document_get_display_area (DocumentInterface *doc_interface)
   if (!desk) {
       return NULL;
   }
-  Geom::Rect const d = desk->get_display_area();
+  Geom::Rect const d = desk->get_display_area().bounds();
   
   GArray * dArr = g_array_new (TRUE, TRUE, sizeof(double));
 
@@ -650,7 +649,7 @@ document_interface_set_attribute (DocumentInterface *doc_interface, char *shape,
     if (!newNode)
         return FALSE;
         
-    newNode->setAttribute(attribute, newval, true);
+    newNode->setAttribute(attribute, newval);
     return TRUE;
 }
 
@@ -663,7 +662,7 @@ document_interface_set_int_attribute (DocumentInterface *doc_interface,
     if (!newNode)
         return FALSE;
         
-    sp_repr_set_int (newNode, attribute, newval);
+    newNode->setAttributeInt(attribute, newval);
     return TRUE;
 }
 
@@ -680,7 +679,7 @@ document_interface_set_double_attribute (DocumentInterface *doc_interface,
     if (!newNode)
         return FALSE;
     
-    sp_repr_set_svg_double (newNode, attribute, newval);
+    newNode->setAttributeSvgDouble(attribute, newval);
     return TRUE;
 }
 
@@ -921,9 +920,9 @@ gboolean
 document_interface_save (DocumentInterface *doc_interface, GError **error)
 {
     SPDocument * doc = doc_interface->target.getDocument();
-    printf("1:  %s\n2:  %s\n3:  %s\n", doc->getDocumentURI(), doc->getDocumentBase(), doc->getDocumentName());
-    if (doc->getDocumentURI())
-      return document_interface_save_as (doc_interface, doc->getDocumentURI(), error);
+    printf("1:  %s\n2:  %s\n3:  %s\n", doc->getDocumentFilename(), doc->getDocumentBase(), doc->getDocumentName());
+    if (doc->getDocumentFilename())
+      return document_interface_save_as (doc_interface, doc->getDocumentFilename(), error);
     return FALSE;
 }
 
@@ -941,7 +940,7 @@ gboolean document_interface_load(DocumentInterface *doc_interface,
 
     Glib::RefPtr<Gio::File> file = Gio::File::create_for_path(filename);
 
-    ConcreteInkscapeApplication<Gtk::Application>* app = &(ConcreteInkscapeApplication<Gtk::Application>::get_instance());
+    auto *app = InkscapeApplication::instance();
 
     app->create_window(file);
 
@@ -1050,7 +1049,7 @@ void document_interface_pause_updates(DocumentInterface *doc_interface, GError *
     SPDesktop *desk = doc_interface->target.getDesktop();
     g_return_if_fail(ensure_desktop_valid(desk, error));
     doc_interface->updates = FALSE;
-    desk->canvas->_drawing_disabled = 1;
+    desk->getCanvas()->set_drawing_disabled(true);
 }
 
 void document_interface_resume_updates(DocumentInterface *doc_interface, GError ** error)
@@ -1058,7 +1057,7 @@ void document_interface_resume_updates(DocumentInterface *doc_interface, GError 
     SPDesktop *desk = doc_interface->target.getDesktop();
     g_return_if_fail(ensure_desktop_valid(desk, error));
     doc_interface->updates = TRUE;
-    desk->canvas->_drawing_disabled = 0;
+    desk->getCanvas()->set_drawing_disabled(false);
     //FIXME: use better verb than rect.
     Inkscape::DocumentUndo::done(doc_interface->target.getDocument(),  SP_VERB_CONTEXT_RECT, "Multiple actions");
 }

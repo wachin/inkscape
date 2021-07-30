@@ -17,16 +17,17 @@
 #include "desktop.h"
 #include "message-context.h"
 
-#include "display/sp-canvas.h"
-#include "display/snap-indicator.h"
+#include "display/control/canvas-item-enums.h"
+#include "display/control/snap-indicator.h"
 
 #include "object/sp-namedview.h"
 
 #include "ui/tools/tool-base.h"
-#include "ui/control-manager.h"
 #include "ui/tool/control-point.h"
 #include "ui/tool/event-utils.h"
 #include "ui/tool/transform-handle-set.h"
+
+#include "ui/widget/canvas.h" // Forced redraws
 
 namespace Inkscape {
 namespace UI {
@@ -51,9 +52,13 @@ Geom::Point ControlPoint::_drag_event_origin(Geom::infinity(), Geom::infinity())
 
 Geom::Point ControlPoint::_drag_origin(Geom::infinity(), Geom::infinity());
 
-int const ControlPoint::_grab_event_mask = (GDK_BUTTON_PRESS_MASK | GDK_BUTTON_RELEASE_MASK |
-        GDK_POINTER_MOTION_MASK | GDK_POINTER_MOTION_HINT_MASK | GDK_KEY_PRESS_MASK |
-        GDK_KEY_RELEASE_MASK | GDK_SCROLL_MASK | GDK_SMOOTH_SCROLL_MASK);
+Gdk::EventMask const ControlPoint::_grab_event_mask = (Gdk::BUTTON_PRESS_MASK   |
+                                                       Gdk::BUTTON_RELEASE_MASK |
+                                                       Gdk::POINTER_MOTION_MASK |
+                                                       Gdk::KEY_PRESS_MASK      |
+                                                       Gdk::KEY_RELEASE_MASK    |
+                                                       Gdk::SCROLL_MASK         |
+                                                       Gdk::SMOOTH_SCROLL_MASK  );
 
 bool ControlPoint::_drag_initiated = false;
 bool ControlPoint::_event_grab = false;
@@ -69,43 +74,37 @@ ControlPoint::ColorSet ControlPoint::invisible_cset = {
 
 ControlPoint::ControlPoint(SPDesktop *d, Geom::Point const &initial_pos, SPAnchorType anchor,
                            Glib::RefPtr<Gdk::Pixbuf> pixbuf,
-                           ColorSet const &cset, SPCanvasGroup *group) :
-    _desktop(d),
-    _canvas_item(nullptr),
-    _cset(cset),
-    _state(STATE_NORMAL),
-    _position(initial_pos),
-    _lurking(false),
-    _double_clicked(false)
+                           ColorSet const &cset,
+                           Inkscape::CanvasItemGroup *group)
+    : _desktop(d)
+    , _cset(cset)
+    , _position(initial_pos)
 {
-    _canvas_item = sp_canvas_item_new(
-        group ? group : _desktop->getControls(), SP_TYPE_CTRL,
-        "anchor", (SPAnchorType) anchor, "size", (unsigned int) pixbuf->get_width(),
-        "shape", SP_CTRL_SHAPE_BITMAP, "pixbuf", pixbuf->gobj(),
-        "filled", TRUE, "fill_color", _cset.normal.fill,
-        "stroked", TRUE, "stroke_color", _cset.normal.stroke,
-        "mode", SP_CTRL_MODE_XOR, NULL);
+    _canvas_item_ctrl = new Inkscape::CanvasItemCtrl(group ? group : _desktop->getCanvasControls(),
+                                                Inkscape::CANVAS_ITEM_CTRL_SHAPE_BITMAP);
+    _canvas_item_ctrl->set_name("CanvasItemCtrl:ControlPoint");
+    _canvas_item_ctrl->set_pixbuf(pixbuf->gobj());
+    _canvas_item_ctrl->set_fill(  _cset.normal.fill);
+    _canvas_item_ctrl->set_stroke(_cset.normal.stroke);
+    _canvas_item_ctrl->set_anchor(anchor);
 
     _commonInit();
 }
 
 ControlPoint::ControlPoint(SPDesktop *d, Geom::Point const &initial_pos, SPAnchorType anchor,
-                           ControlType type,
-                           ColorSet const &cset, SPCanvasGroup *group) :
-    _desktop(d),
-    _canvas_item(nullptr),
-    _cset(cset),
-    _state(STATE_NORMAL),
-    _position(initial_pos),
-    _lurking(false),
-    _double_clicked(false)
+                           Inkscape::CanvasItemCtrlType type,
+                           ColorSet const &cset,
+                           Inkscape::CanvasItemGroup *group)
+    : _desktop(d)
+    , _cset(cset)
+    , _position(initial_pos)
 {
-    _canvas_item = ControlManager::getManager().createControl(group ? group : _desktop->getControls(), type);
-    g_object_set(_canvas_item,
-                 "anchor", anchor,
-                 "filled", TRUE, "fill_color", _cset.normal.fill,
-                 "stroked", TRUE, "stroke_color", _cset.normal.stroke,
-                 "mode", SP_CTRL_MODE_XOR, NULL);
+    _canvas_item_ctrl = new Inkscape::CanvasItemCtrl(group ? group : _desktop->getCanvasControls(), type);
+    _canvas_item_ctrl->set_name("CanvasItemCtrl:ControlPoint");
+    _canvas_item_ctrl->set_fill(  _cset.normal.fill);
+    _canvas_item_ctrl->set_stroke(_cset.normal.stroke);
+    _canvas_item_ctrl->set_anchor(anchor);
+
     _commonInit();
 }
 
@@ -116,22 +115,25 @@ ControlPoint::~ControlPoint()
         _clearMouseover();
     }
 
-    g_signal_handler_disconnect(G_OBJECT(_canvas_item), _event_handler_connection);
-    //sp_canvas_item_hide(_canvas_item);
-    sp_canvas_item_destroy(_canvas_item);
+    //g_signal_handler_disconnect(G_OBJECT(_canvas_item_ctrl), _event_handler_connection);
+    _event_handler_connection.disconnect();
+    _canvas_item_ctrl->hide();
+    delete _canvas_item_ctrl;
 }
 
 void ControlPoint::_commonInit()
 {
-    SP_CTRL(_canvas_item)->moveto(_position);
-    _event_handler_connection = g_signal_connect(G_OBJECT(_canvas_item), "event",
-                                                 G_CALLBACK(_event_handler), this);
+    _canvas_item_ctrl->set_position(_position);
+    _event_handler_connection =
+        _canvas_item_ctrl->connect_event(sigc::bind(sigc::ptr_fun(_event_handler), this));
+    // _event_handler_connection = g_signal_connect(G_OBJECT(_canvas_item_ctrl), "event",
+    //                                              G_CALLBACK(_event_handler), this);
 }
 
 void ControlPoint::setPosition(Geom::Point const &pos)
 {
     _position = pos;
-    SP_CTRL(_canvas_item)->moveto(pos);
+    _canvas_item_ctrl->set_position(_position);
 }
 
 void ControlPoint::move(Geom::Point const &pos)
@@ -145,13 +147,16 @@ void ControlPoint::transform(Geom::Affine const &m) {
 
 bool ControlPoint::visible() const
 {
-    return sp_canvas_item_is_visible(_canvas_item);
+    return _canvas_item_ctrl->is_visible();
 }
 
 void ControlPoint::setVisible(bool v)
 {
-    if (v) sp_canvas_item_show(_canvas_item);
-    else sp_canvas_item_hide(_canvas_item);
+    if (v) {
+        _canvas_item_ctrl->show();
+    } else {
+        _canvas_item_ctrl->hide();
+    }
 }
 
 Glib::ustring ControlPoint::format_tip(char const *format, ...)
@@ -165,63 +170,36 @@ Glib::ustring ControlPoint::format_tip(char const *format, ...)
     return ret;
 }
 
-unsigned int ControlPoint::_size() const
-{
-    unsigned int ret;
-    g_object_get(_canvas_item, "size", &ret, NULL);
-    return ret;
-}
 
-SPCtrlShapeType ControlPoint::_shape() const
-{
-    SPCtrlShapeType ret;
-    g_object_get(_canvas_item, "shape", &ret, NULL);
-    return ret;
-}
-
-SPAnchorType ControlPoint::_anchor() const
-{
-    SPAnchorType ret;
-    g_object_get(_canvas_item, "anchor", &ret, NULL);
-    return ret;
-}
-
-Glib::RefPtr<Gdk::Pixbuf> ControlPoint::_pixbuf()
-{
-    GdkPixbuf *ret;
-    g_object_get(_canvas_item, "pixbuf", &ret, NULL);
-    return Glib::wrap(ret);
-}
-
-// Same for setters.
+// ===== Setters =====
 
 void ControlPoint::_setSize(unsigned int size)
 {
-    g_object_set(_canvas_item, "size", size, NULL);
+    _canvas_item_ctrl->set_size(size);
 }
 
-bool ControlPoint::_setControlType(Inkscape::ControlType type)
+void ControlPoint::_setControlType(Inkscape::CanvasItemCtrlType type)
 {
-    return ControlManager::getManager().setControlType(_canvas_item, type);
+    _canvas_item_ctrl->set_type(type);
 }
 
 void ControlPoint::_setAnchor(SPAnchorType anchor)
 {
-    g_object_set(_canvas_item, "anchor", anchor, NULL);
+//     g_object_set(_canvas_item_ctrl, "anchor", anchor, nullptr);
 }
 
 void ControlPoint::_setPixbuf(Glib::RefPtr<Gdk::Pixbuf> p)
 {
-    g_object_set(_canvas_item, "pixbuf", Glib::unwrap(p), NULL);
+    _canvas_item_ctrl->set_pixbuf(Glib::unwrap(p));
 }
 
-// re-routes events into the virtual function
-int ControlPoint::_event_handler(SPCanvasItem */*item*/, GdkEvent *event, ControlPoint *point)
+// re-routes events into the virtual function   TODO: Refactor this nonsense.
+bool ControlPoint::_event_handler(GdkEvent *event, ControlPoint *point)
 {
     if ((point == nullptr) || (point->_desktop == nullptr)) {
-        return FALSE;
+        return false;
     }
-    return point->_eventHandler(point->_desktop->event_context, event) ? TRUE : FALSE;
+    return point->_eventHandler(point->_desktop->event_context, event);
 }
 
 // main event callback, which emits all other callbacks.
@@ -243,7 +221,7 @@ bool ControlPoint::_eventHandler(Inkscape::UI::Tools::ToolBase *event_context, G
     {
         return false;
     }
-    if(event_context->desktop !=_desktop)
+    if(event_context->getDesktop() !=_desktop)
     {
         g_warning ("ControlPoint: desktop pointers not equal!");
         //return false;
@@ -256,13 +234,12 @@ bool ControlPoint::_eventHandler(Inkscape::UI::Tools::ToolBase *event_context, G
 
     Inkscape::Preferences *prefs = Inkscape::Preferences::get();
     int drag_tolerance = prefs->getIntLimited("/options/dragtolerance/value", 0, 0, 100);
-    GdkEventMotion em;
-    SPCanvas* Ca;
+
     switch(event->type)
     {   
     case GDK_BUTTON_PRESS:
         next_release_doubleclick = 0;
-        if (event->button.button == 1 && !event_context->space_panning) {
+        if (event->button.button == 1 && !event_context->is_space_panning()) {
             // 1st mouse button click. internally, start dragging, but do not emit signals
             // or change position until drag tolerance is exceeded.
             _drag_event_origin[Geom::X] = event->button.x;
@@ -270,7 +247,7 @@ bool ControlPoint::_eventHandler(Inkscape::UI::Tools::ToolBase *event_context, G
             pointer_offset = _position - _desktop->w2d(_drag_event_origin);
             _drag_initiated = false;
             // route all events to this handler
-            sp_canvas_item_grab(_canvas_item, _grab_event_mask, nullptr, event->button.time);
+            _canvas_item_ctrl->grab(_grab_event_mask, nullptr); // cursor is null
             _event_grab = true;
             _setState(STATE_CLICKED);
             return true;
@@ -283,27 +260,23 @@ bool ControlPoint::_eventHandler(Inkscape::UI::Tools::ToolBase *event_context, G
         return true;
         
     case GDK_MOTION_NOTIFY:
-        Ca = _desktop->canvas;
-        em = event->motion;
-        combine_motion_events(Ca, em, 0);
-
-        if (_event_grab && ! event_context->space_panning) {
+        if (_event_grab && ! event_context->is_space_panning()) {
             _desktop->snapindicator->remove_snaptarget(); 
             bool transferred = false;
             if (!_drag_initiated) {
-                bool t = fabs(em.x - _drag_event_origin[Geom::X]) <= drag_tolerance &&
-                         fabs(em.y - _drag_event_origin[Geom::Y]) <= drag_tolerance;
+                bool t = fabs(event->motion.x - _drag_event_origin[Geom::X]) <= drag_tolerance &&
+                         fabs(event->motion.y - _drag_event_origin[Geom::Y]) <= drag_tolerance;
                 if (t){
                     return true;
                 }
 
                 // if we are here, it means the tolerance was just exceeded.
                 _drag_origin = _position;
-                transferred = grabbed(&em);
+                transferred = grabbed(&event->motion);
                 // _drag_initiated might change during the above virtual call
                 if (!_drag_initiated) {
                     // this guarantees smooth redraws while dragging
-                    _desktop->canvas->forceFullRedrawAfterInterruptions(5);
+                    _desktop->getCanvas()->forced_redraws_start(5);
                     _drag_initiated = true;
                 }
             }
@@ -312,9 +285,9 @@ bool ControlPoint::_eventHandler(Inkscape::UI::Tools::ToolBase *event_context, G
                 // dragging in progress
                 Geom::Point new_pos = _desktop->w2d(event_point(event->motion)) + pointer_offset;
                 // the new position is passed by reference and can be changed in the handlers.
-                dragged(new_pos, &em);
+                dragged(new_pos, &event->motion);
                 move(new_pos);
-                _updateDragTip(&em); // update dragging tip after moving to new position
+                _updateDragTip(&event->motion); // update dragging tip after moving to new position
 
                 _desktop->scroll_to_point(new_pos);
                 _desktop->set_coordinate_status(_position);
@@ -339,13 +312,13 @@ bool ControlPoint::_eventHandler(Inkscape::UI::Tools::ToolBase *event_context, G
                 sp_event_context_snap_watchdog_callback(event_context->_delayed_snap_event);
             }
 
-            sp_canvas_item_ungrab(_canvas_item);
+            _canvas_item_ctrl->ungrab();
             _setMouseover(this, event->button.state);
             _event_grab = false;
 
             if (_drag_initiated) {
                 // it is the end of a drag
-                _desktop->canvas->endForcedFullRedraws();
+                _desktop->getCanvas()->forced_redraws_stop();
                 _drag_initiated = false;
                 ungrabbed(&event->button);
                 return true;
@@ -373,7 +346,7 @@ bool ControlPoint::_eventHandler(Inkscape::UI::Tools::ToolBase *event_context, G
             {
                 ungrabbed(nullptr);
                 if (_drag_initiated) {
-                    _desktop->canvas->endForcedFullRedraws();
+                    _desktop->getCanvas()->forced_redraws_stop();
                 }
             }
             _setState(STATE_NORMAL);
@@ -419,9 +392,9 @@ bool ControlPoint::_eventHandler(Inkscape::UI::Tools::ToolBase *event_context, G
             
             dragged(new_pos, &fake);
 
-            sp_canvas_item_ungrab(_canvas_item);
+            _canvas_item_ctrl->ungrab();
             _clearMouseover(); // this will also reset state to normal
-            _desktop->canvas->endForcedFullRedraws();
+            _desktop->getCanvas()->forced_redraws_stop();
             _event_grab = false;
             _drag_initiated = false;
 
@@ -535,11 +508,11 @@ void ControlPoint::transferGrab(ControlPoint *prev_point, GdkEventMotion *event)
     if (!_event_grab) return;
 
     grabbed(event);
-    sp_canvas_item_ungrab(prev_point->_canvas_item);
-    sp_canvas_item_grab(_canvas_item, _grab_event_mask, nullptr, event->time);
+    prev_point->_canvas_item_ctrl->ungrab();
+    _canvas_item_ctrl->grab(_grab_event_mask, nullptr); // cursor is null
 
     if (!_drag_initiated) {
-        _desktop->canvas->forceFullRedrawAfterInterruptions(5);
+        _desktop->getCanvas()->forced_redraws_start(5);
         _drag_initiated = true;
     }
 
@@ -566,16 +539,16 @@ void ControlPoint::_setState(State state)
     _state = state;
 }
 
+// TODO: RENAME
 void ControlPoint::_handleControlStyling()
 {
-    if (_canvas_item->ctrlType != CTRL_TYPE_UNKNOWN) {
-        ControlManager::getManager().updateItem(_canvas_item);
-    }
+    _canvas_item_ctrl->set_size_default();
 }
 
 void ControlPoint::_setColors(ColorEntry colors)
 {
-    g_object_set(_canvas_item, "fill_color", colors.fill, "stroke_color", colors.stroke, NULL);
+    _canvas_item_ctrl->set_fill(colors.fill);
+    _canvas_item_ctrl->set_stroke(colors.stroke);
 }
 
 bool ControlPoint::_isLurking()

@@ -1,16 +1,7 @@
 if(WIN32)
   install(FILES
-    AUTHORS
-    COPYING
     NEWS.md
     README.md
-    TRANSLATORS
-	LICENSES/GPL-2.0.txt
-	LICENSES/GPL-3.0.txt
-	LICENSES/LGPL-2.1.txt
-    DESTINATION .)
-
-  install(DIRECTORY doc
     DESTINATION .)
 
   # mingw-w64 dlls
@@ -23,6 +14,7 @@ if(WIN32)
     ${MINGW_BIN}/libaspell-[0-9]*.dll
     ${MINGW_BIN}/libatk-1.0-[0-9]*.dll
     ${MINGW_BIN}/libatkmm-1.6-[0-9]*.dll
+    ${MINGW_BIN}/libboost_filesystem-mt.dll
     ${MINGW_BIN}/libbrotlicommon.dll
     ${MINGW_BIN}/libbrotlidec.dll
     ${MINGW_BIN}/libbz2-[0-9]*.dll
@@ -48,7 +40,6 @@ if(WIN32)
     ${MINGW_BIN}/libgdk-3-[0-9]*.dll
     ${MINGW_BIN}/libgdk_pixbuf-2.0-[0-9]*.dll
     ${MINGW_BIN}/libgdkmm-3.0-[0-9]*.dll
-    ${MINGW_BIN}/libgdl-3-[0-9]*.dll
     ${MINGW_BIN}/libgfortran-[0-9]*.dll
     ${MINGW_BIN}/libgio-2.0-[0-9]*.dll
     ${MINGW_BIN}/libgiomm-2.4-[0-9]*.dll
@@ -61,9 +52,9 @@ if(WIN32)
     ${MINGW_BIN}/libgraphite[0-9]*.dll
     ${MINGW_BIN}/libgsl-[0-9]*.dll
     ${MINGW_BIN}/libgslcblas-[0-9]*.dll
+    ${MINGW_BIN}/libgspell-1-[0-9]*.dll
     ${MINGW_BIN}/libgtk-3-[0-9]*.dll
     ${MINGW_BIN}/libgtkmm-3.0-[0-9]*.dll
-    ${MINGW_BIN}/libgtkspell3-3-[0-9]*.dll
     ${MINGW_BIN}/libharfbuzz-[0-9]*.dll
     ${MINGW_BIN}/libiconv-[0-9]*.dll
     ${MINGW_BIN}/libicudt[0-9]*.dll
@@ -71,6 +62,7 @@ if(WIN32)
     ${MINGW_BIN}/libicuuc[0-9]*.dll
     ${MINGW_BIN}/libidn2-[0-9]*.dll
     ${MINGW_BIN}/libintl-[0-9]*.dll
+    ${MINGW_BIN}/libjbig-[0-9]*.dll
     ${MINGW_BIN}/libjpeg-[0-9]*.dll
     ${MINGW_BIN}/liblcms2-[0-9]*.dll
     ${MINGW_BIN}/liblqr-1-[0-9]*.dll
@@ -157,7 +149,7 @@ if(WIN32)
       FILES_MATCHING
       PATTERN "*glib20.mo"
       PATTERN "*gtk30.mo"
-      PATTERN "*gtkspell3.mo")
+      PATTERN "*gspell-1.mo")
   endforeach()
 
   install(DIRECTORY ${MINGW_PATH}/share/poppler
@@ -218,6 +210,7 @@ if(WIN32)
     ${MINGW_LIB}/girepository-1.0/GModule-2.0.typelib
     ${MINGW_LIB}/girepository-1.0/GObject-2.0.typelib
     ${MINGW_LIB}/girepository-1.0/Gtk-3.0.typelib
+    ${MINGW_LIB}/girepository-1.0/HarfBuzz-0.0.typelib
     ${MINGW_LIB}/girepository-1.0/Pango-1.0.typelib
     ${MINGW_LIB}/girepository-1.0/PangoCairo-1.0.typelib
     DESTINATION lib/girepository-1.0)
@@ -227,7 +220,7 @@ if(WIN32)
     DESTINATION lib
     COMPONENT dictionaries)
 
-  # Aspell backend for Enchant (gtkspell uses Enchant to access Aspell dictionaries)
+  # Aspell backend for Enchant (gspell uses Enchant to access Aspell dictionaries)
   install(FILES
     ${MINGW_LIB}/enchant-2/enchant_aspell.dll
     DESTINATION lib/enchant-2)
@@ -286,7 +279,9 @@ if(WIN32)
 
   set(site_packages "lib/python${python_version}/site-packages")
   # Python packages installed via pacman
-  set(packages "python-lxml" "python-numpy" "python-pillow" "python-six" "python-cairo" "python-gobject")
+  set(packages
+      "python-lxml" "python-numpy" "python-pillow" "python-six" "python-cairo" "python-cssselect"
+      "python-gobject" "python-coverage" "python-pyserial" "scour")
   foreach(package ${packages})
     list_files_pacman(${package} paths)
     install_list(FILES ${paths}
@@ -296,8 +291,23 @@ if(WIN32)
       EXCLUDE ".pyc$"
     )
   endforeach()
+
+  # Python packages for the extensions manager, and clipart importer extensions
+  set(packages
+      "python-appdirs" "python-msgpack" "python-lockfile" "python-cachecontrol"
+      "python-idna" "python-urllib3" "python-chardet" "python-certifi" "python-requests")
+  foreach(package ${packages})
+    list_files_pacman(${package} paths)
+    install_list(FILES ${paths}
+      ROOT ${MINGW_PATH}
+      COMPONENT extension_manager
+      INCLUDE ${site_packages} # only include content from "site-packages" (we might consider to install everything)
+      EXCLUDE ".pyc$"
+    )
+  endforeach()
+
   # Python packages installed via pip
-  set(packages "coverage" "pyserial" "scour")
+  set(packages "")
   foreach(package ${packages})
     list_files_pip(${package} paths)
     install_list(FILES ${paths}
@@ -308,6 +318,7 @@ if(WIN32)
       EXCLUDE ".pyc$"
     )
   endforeach()
+
   install(CODE
     "MESSAGE(\"Pre-compiling Python distribution to byte-code (.pyc files)\")
      execute_process(COMMAND \${CMAKE_INSTALL_PREFIX}/bin/python -m compileall -qq \${CMAKE_INSTALL_PREFIX}/lib/python${python_version})"
@@ -326,4 +337,12 @@ if(WIN32)
   install(FILES
     packaging/win32/gdb_create_backtrace.bat
     DESTINATION bin)
+    
+  # convenience launchers
+  install(FILES
+    "packaging/win32/Run Inkscape !.bat"
+    "packaging/win32/Run Inkscape and create debug trace.bat"
+    "packaging/win32/Run Inkscape with GTK Inspector.bat"
+    DESTINATION .)
+  
 endif()

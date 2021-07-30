@@ -25,19 +25,20 @@
 #include "desktop.h"
 #include "document-undo.h"
 #include "document.h"
-#include "inkscape.h"
+#include "selection.h"
 #include "message-stack.h"
 #include "selection-chemistry.h"
 #include "verbs.h"
 
-#include "display/sp-canvas.h"
 
 #include "object/sp-item-transform.h"
 #include "object/sp-namedview.h"
 
 #include "ui/icon-names.h"
+#include "ui/widget/canvas.h" // Focus widget
 #include "ui/widget/combo-tool-item.h"
 #include "ui/widget/spin-button-tool-item.h"
+#include "ui/widget/spinbutton.h"
 #include "ui/widget/unit-tracker.h"
 
 #include "widgets/widget-sizes.h"
@@ -57,6 +58,7 @@ SelectToolbar::SelectToolbar(SPDesktop *desktop) :
     _tracker(new UnitTracker(Inkscape::Util::UNIT_TYPE_LINEAR)),
     _update(false),
     _lock_btn(Gtk::manage(new Gtk::ToggleToolButton())),
+    _select_touch_btn(Gtk::manage(new Gtk::ToggleToolButton())),
     _transform_stroke_btn(Gtk::manage(new Gtk::ToggleToolButton())),
     _transform_corners_btn(Gtk::manage(new Gtk::ToggleToolButton())),
     _transform_gradient_btn(Gtk::manage(new Gtk::ToggleToolButton())),
@@ -68,6 +70,14 @@ SelectToolbar::SelectToolbar(SPDesktop *desktop) :
     add_toolbutton_for_verb(SP_VERB_EDIT_SELECT_ALL_IN_ALL_LAYERS);
     auto deselect_button                 = add_toolbutton_for_verb(SP_VERB_EDIT_DESELECT);
     _context_items.push_back(deselect_button);
+
+    _select_touch_btn->set_label(_("Select by touch"));
+    _select_touch_btn->set_tooltip_text(_("Toggle selection box to select all touched objects."));
+    _select_touch_btn->set_icon_name(INKSCAPE_ICON("selection-touch"));
+    _select_touch_btn->set_active(prefs->getBool("/tools/select/touch_box", false));
+    _select_touch_btn->signal_toggled().connect(sigc::mem_fun(*this, &SelectToolbar::toggle_touch));
+
+    add(*_select_touch_btn);
 
     add(* Gtk::manage(new Gtk::SeparatorToolItem()));
 
@@ -85,17 +95,17 @@ SelectToolbar::SelectToolbar(SPDesktop *desktop) :
 
     add(* Gtk::manage(new Gtk::SeparatorToolItem()));
 
-    auto selection_to_back_button        = add_toolbutton_for_verb(SP_VERB_SELECTION_TO_BACK);
-    _context_items.push_back(selection_to_back_button);
-
-    auto selection_lower_button          = add_toolbutton_for_verb(SP_VERB_SELECTION_LOWER);
-    _context_items.push_back(selection_lower_button);
+    auto selection_to_front_button       = add_toolbutton_for_verb(SP_VERB_SELECTION_TO_FRONT);
+    _context_items.push_back(selection_to_front_button);
 
     auto selection_raise_button          = add_toolbutton_for_verb(SP_VERB_SELECTION_RAISE);
     _context_items.push_back(selection_raise_button);
 
-    auto selection_to_front_button       = add_toolbutton_for_verb(SP_VERB_SELECTION_TO_FRONT);
-    _context_items.push_back(selection_to_front_button);
+    auto selection_lower_button          = add_toolbutton_for_verb(SP_VERB_SELECTION_LOWER);
+    _context_items.push_back(selection_lower_button);
+
+    auto selection_to_back_button        = add_toolbutton_for_verb(SP_VERB_SELECTION_TO_BACK);
+    _context_items.push_back(selection_to_back_button);
 
     add(* Gtk::manage(new Gtk::SeparatorToolItem()));
 
@@ -112,7 +122,8 @@ SelectToolbar::SelectToolbar(SPDesktop *desktop) :
                                                                 C_("Select toolbar", "X:"),
                                                                 _adj_x,
                                                                 SPIN_STEP, 3));
-    x_btn->set_focus_widget(Glib::wrap(GTK_WIDGET(_desktop->canvas)));
+    x_btn->get_spin_button()->addUnitTracker(_tracker.get());
+    x_btn->set_focus_widget(_desktop->getCanvas());
     x_btn->set_all_tooltip_text(C_("Select toolbar", "Horizontal coordinate of selection"));
     _context_items.push_back(x_btn);
     add(*x_btn);
@@ -127,7 +138,8 @@ SelectToolbar::SelectToolbar(SPDesktop *desktop) :
                                                                 C_("Select toolbar", "Y:"),
                                                                 _adj_y,
                                                                 SPIN_STEP, 3));
-    y_btn->set_focus_widget(Glib::wrap(GTK_WIDGET(_desktop->canvas)));
+    y_btn->get_spin_button()->addUnitTracker(_tracker.get());
+    y_btn->set_focus_widget(_desktop->getCanvas());
     y_btn->set_all_tooltip_text(C_("Select toolbar", "Vertical coordinate of selection"));
     _context_items.push_back(y_btn);
     add(*y_btn);
@@ -142,7 +154,8 @@ SelectToolbar::SelectToolbar(SPDesktop *desktop) :
                                                                 C_("Select toolbar", "W:"),
                                                                 _adj_w,
                                                                 SPIN_STEP, 3));
-    w_btn->set_focus_widget(Glib::wrap(GTK_WIDGET(_desktop->canvas)));
+    w_btn->get_spin_button()->addUnitTracker(_tracker.get());
+    w_btn->set_focus_widget(_desktop->getCanvas());
     w_btn->set_all_tooltip_text(C_("Select toolbar", "Width of selection"));
     _context_items.push_back(w_btn);
     add(*w_btn);
@@ -152,7 +165,7 @@ SelectToolbar::SelectToolbar(SPDesktop *desktop) :
     _lock_btn->set_tooltip_text(_("When locked, change both width and height by the same proportion"));
     _lock_btn->set_icon_name(INKSCAPE_ICON("object-unlocked"));
     _lock_btn->signal_toggled().connect(sigc::mem_fun(*this, &SelectToolbar::toggle_lock));
-    set_data("lock", _lock_btn->gobj());
+    _lock_btn->set_name("lock");
     add(*_lock_btn);
 
     // height-value control
@@ -165,7 +178,8 @@ SelectToolbar::SelectToolbar(SPDesktop *desktop) :
                                                                 C_("Select toolbar", "H:"),
                                                                 _adj_h,
                                                                 SPIN_STEP, 3));
-    h_btn->set_focus_widget(Glib::wrap(GTK_WIDGET(_desktop->canvas)));
+    h_btn->get_spin_button()->addUnitTracker(_tracker.get());
+    h_btn->set_focus_widget(_desktop->getCanvas());
     h_btn->set_all_tooltip_text(C_("Select toolbar", "Height of selection"));
     _context_items.push_back(h_btn);
     add(*h_btn);
@@ -204,12 +218,17 @@ SelectToolbar::SelectToolbar(SPDesktop *desktop) :
     _transform_pattern_btn->signal_toggled().connect(sigc::mem_fun(*this, &SelectToolbar::toggle_pattern));
     add(*_transform_pattern_btn);
 
+    assert(desktop);
+    auto *selection = desktop->getSelection();
+
     // Force update when selection changes.
-    INKSCAPE.signal_selection_modified.connect(sigc::mem_fun(*this, &SelectToolbar::on_inkscape_selection_modified));
-    INKSCAPE.signal_selection_changed.connect (sigc::mem_fun(*this, &SelectToolbar::on_inkscape_selection_changed));
+    _connections.emplace_back( //
+        selection->connectModified(sigc::mem_fun(*this, &SelectToolbar::on_inkscape_selection_modified)));
+    _connections.emplace_back(
+        selection->connectChanged(sigc::mem_fun(*this, &SelectToolbar::on_inkscape_selection_changed)));
 
     // Update now.
-    layout_widget_update(SP_ACTIVE_DESKTOP ? SP_ACTIVE_DESKTOP->getSelection() : nullptr);
+    layout_widget_update(selection);
 
     for (auto item : _context_items) {
         if ( item->is_sensitive() ) {
@@ -218,6 +237,15 @@ SelectToolbar::SelectToolbar(SPDesktop *desktop) :
     }
 
     show_all();
+}
+
+void SelectToolbar::on_unrealize()
+{
+    for (auto &conn : _connections) {
+        conn.disconnect();
+    }
+
+    parent_type::on_unrealize();
 }
 
 GtkWidget *
@@ -243,52 +271,52 @@ SelectToolbar::any_value_changed(Glib::RefPtr<Gtk::Adjustment>& adj)
     }
     _update = true;
 
-    SPDesktop *desktop = SP_ACTIVE_DESKTOP;
+    SPDesktop *desktop = _desktop;
     Inkscape::Selection *selection = desktop->getSelection();
     SPDocument *document = desktop->getDocument();
 
     document->ensureUpToDate ();
-    Inkscape::Preferences *prefs = Inkscape::Preferences::get();
 
     Geom::OptRect bbox_vis = selection->visualBounds();
     Geom::OptRect bbox_geom = selection->geometricBounds();
-
-    int prefs_bbox = prefs->getInt("/tools/bounding_box");
-    SPItem::BBoxType bbox_type = (prefs_bbox == 0)?
-        SPItem::VISUAL_BBOX : SPItem::GEOMETRIC_BBOX;
-    Geom::OptRect bbox_user = selection->bounds(bbox_type);
+    Geom::OptRect bbox_user = selection->preferredBounds();
 
     if ( !bbox_user ) {
         _update = false;
         return;
     }
 
-    gdouble x0 = 0;
-    gdouble y0 = 0;
-    gdouble x1 = 0;
-    gdouble y1 = 0;
-    gdouble xrel = 0;
-    gdouble yrel = 0;
     Unit const *unit = _tracker->getActiveUnit();
     g_return_if_fail(unit != nullptr);
 
+    gdouble old_w = bbox_user->dimensions()[Geom::X];
+    gdouble old_h = bbox_user->dimensions()[Geom::Y];
+    gdouble new_w, new_h, new_x, new_y = 0;
+
     if (unit->type == Inkscape::Util::UNIT_TYPE_LINEAR) {
-        x0 = Quantity::convert(_adj_x->get_value(), unit, "px");
-        y0 = Quantity::convert(_adj_y->get_value(), unit, "px");
-        x1 = x0 + Quantity::convert(_adj_w->get_value(), unit, "px");
-        xrel = Quantity::convert(_adj_w->get_value(), unit, "px") / bbox_user->dimensions()[Geom::X];
-        y1 = y0 + Quantity::convert(_adj_h->get_value(), unit, "px");;
-        yrel = Quantity::convert(_adj_h->get_value(), unit, "px") / bbox_user->dimensions()[Geom::Y];
+        new_w = Quantity::convert(_adj_w->get_value(), unit, "px");
+        new_h = Quantity::convert(_adj_h->get_value(), unit, "px");
+        new_x = Quantity::convert(_adj_x->get_value(), unit, "px");
+        new_y = Quantity::convert(_adj_y->get_value(), unit, "px");
+
     } else {
-        double const x0_propn = _adj_x->get_value() / 100 / unit->factor;
-        x0 = bbox_user->min()[Geom::X] * x0_propn;
-        double const y0_propn = _adj_y->get_value() / 100 / unit->factor;
-        y0 = y0_propn * bbox_user->min()[Geom::Y];
-        xrel = _adj_w->get_value() / (100 / unit->factor);
-        x1 = x0 + xrel * bbox_user->dimensions()[Geom::X];
-        yrel = _adj_h->get_value() / (100 / unit->factor);
-        y1 = y0 + yrel * bbox_user->dimensions()[Geom::Y];
+        gdouble old_x = bbox_user->min()[Geom::X] + (old_w * selection->anchor_x);
+        gdouble old_y = bbox_user->min()[Geom::Y] + (old_h * selection->anchor_y);
+
+        new_x = old_x * (_adj_x->get_value() / 100 / unit->factor);
+        new_y = old_y * (_adj_y->get_value() / 100 / unit->factor);
+        new_w = old_w * (_adj_w->get_value() / 100 / unit->factor);
+        new_h = old_h * (_adj_h->get_value() / 100 / unit->factor);
     }
+
+    // Adjust depending on the selected anchor.
+    gdouble x0 = (new_x - (old_w * selection->anchor_x)) - ((new_w - old_w) * selection->anchor_x);
+    gdouble y0 = (new_y - (old_h * selection->anchor_y)) - ((new_h - old_h) * selection->anchor_y);
+
+    gdouble x1 = x0 + new_w;
+    gdouble xrel = new_w / old_w;
+    gdouble y1 = y0 + new_h;
+    gdouble yrel = new_h / old_h;
 
     // Keep proportions if lock is on
     if ( _lock_btn->get_active() ) {
@@ -326,13 +354,14 @@ SelectToolbar::any_value_changed(Glib::RefPtr<Gtk::Adjustment>& adj)
     if (actionkey != nullptr) {
 
         // FIXME: fix for GTK breakage, see comment in SelectedStyle::on_opacity_changed
-        desktop->getCanvas()->forceFullRedrawAfterInterruptions(0);
+        desktop->getCanvas()->forced_redraws_start(0);
 
+        Inkscape::Preferences *prefs = Inkscape::Preferences::get();
         bool transform_stroke = prefs->getBool("/options/transform/stroke", true);
         bool preserve = prefs->getBool("/options/preservetransform/value", false);
 
         Geom::Affine scaler;
-        if (bbox_type == SPItem::VISUAL_BBOX) {
+        if (prefs->getInt("/tools/bounding_box") == 0) { // SPItem::VISUAL_BBOX
             scaler = get_scale_transform_for_variable_stroke (*bbox_vis, *bbox_geom, transform_stroke, preserve, x0, y0, x1, y1);
         } else {
             // 1) We could have use the newer get_scale_transform_for_variable_stroke() here, but to avoid regressions
@@ -347,7 +376,7 @@ SelectToolbar::any_value_changed(Glib::RefPtr<Gtk::Adjustment>& adj)
                                 _("Transform by toolbar"));
 
         // resume interruptibility
-        desktop->getCanvas()->endForcedFullRedraws();
+        desktop->getCanvas()->forced_redraws_stop();
     }
 
     _update = false;
@@ -361,25 +390,18 @@ SelectToolbar::layout_widget_update(Inkscape::Selection *sel)
     }
 
     _update = true;
-
-    Inkscape::Preferences *prefs = Inkscape::Preferences::get();
     using Geom::X;
     using Geom::Y;
     if ( sel && !sel->isEmpty() ) {
-        int prefs_bbox = prefs->getInt("/tools/bounding_box", 0);
-        SPItem::BBoxType bbox_type = (prefs_bbox ==0)?
-            SPItem::VISUAL_BBOX : SPItem::GEOMETRIC_BBOX;
-        Geom::OptRect const bbox(sel->bounds(bbox_type));
+        Geom::OptRect const bbox(sel->preferredBounds());
         if ( bbox ) {
             Unit const *unit = _tracker->getActiveUnit();
             g_return_if_fail(unit != nullptr);
 
-            struct { char const *key; double val; } const keyval[] = {
-                { "X", bbox->min()[X] },
-                { "Y", bbox->min()[Y] },
-                { "width", bbox->dimensions()[X] },
-                { "height", bbox->dimensions()[Y] }
-            };
+            auto width = bbox->dimensions()[X];
+            auto height = bbox->dimensions()[Y];
+            auto x = bbox->min()[X] + (width * sel->anchor_x);
+            auto y = bbox->min()[Y] + (height * sel->anchor_y);
 
             if (unit->type == Inkscape::Util::UNIT_TYPE_DIMENSIONLESS) {
                 double const val = unit->factor * 100;
@@ -387,15 +409,15 @@ SelectToolbar::layout_widget_update(Inkscape::Selection *sel)
                 _adj_y->set_value(val);
                 _adj_w->set_value(val);
                 _adj_h->set_value(val);
-                _tracker->setFullVal( _adj_x->gobj(), keyval[0].val );
-                _tracker->setFullVal( _adj_y->gobj(), keyval[1].val );
-                _tracker->setFullVal( _adj_w->gobj(), keyval[2].val );
-                _tracker->setFullVal( _adj_h->gobj(), keyval[3].val );
+                _tracker->setFullVal( _adj_x->gobj(), x );
+                _tracker->setFullVal( _adj_y->gobj(), y );
+                _tracker->setFullVal( _adj_w->gobj(), width );
+                _tracker->setFullVal( _adj_h->gobj(), height );
             } else {
-                _adj_x->set_value(Quantity::convert(keyval[0].val, "px", unit));
-                _adj_y->set_value(Quantity::convert(keyval[1].val, "px", unit));
-                _adj_w->set_value(Quantity::convert(keyval[2].val, "px", unit));
-                _adj_h->set_value(Quantity::convert(keyval[3].val, "px", unit));
+                _adj_x->set_value(Quantity::convert(x, "px", unit));
+                _adj_y->set_value(Quantity::convert(y, "px", unit));
+                _adj_w->set_value(Quantity::convert(width, "px", unit));
+                _adj_h->set_value(Quantity::convert(height, "px", unit));
             }
         }
     }
@@ -406,8 +428,8 @@ SelectToolbar::layout_widget_update(Inkscape::Selection *sel)
 void
 SelectToolbar::on_inkscape_selection_modified(Inkscape::Selection *selection, guint flags)
 {
-    if ((_desktop->getSelection() == selection) // only respond to changes in our desktop
-        && (flags & (SP_OBJECT_MODIFIED_FLAG        |
+    assert(_desktop->getSelection() == selection);
+    if ((flags & (SP_OBJECT_MODIFIED_FLAG        |
                      SP_OBJECT_PARENT_MODIFIED_FLAG |
                      SP_OBJECT_CHILD_MODIFIED_FLAG   )))
     {
@@ -418,7 +440,8 @@ SelectToolbar::on_inkscape_selection_modified(Inkscape::Selection *selection, gu
 void
 SelectToolbar::on_inkscape_selection_changed(Inkscape::Selection *selection)
 {
-    if (_desktop->getSelection() == selection) { // only respond to changes in our desktop
+    assert(_desktop->getSelection() == selection);
+    {
         bool setActive = (selection && !selection->isEmpty());
 
         for (auto item : _context_items) {
@@ -438,6 +461,13 @@ SelectToolbar::toggle_lock() {
     } else {
         _lock_btn->set_icon_name(INKSCAPE_ICON("object-unlocked"));
     }
+}
+
+void
+SelectToolbar::toggle_touch()
+{
+    Inkscape::Preferences *prefs = Inkscape::Preferences::get();
+    prefs->setBool("/tools/select/touch_box", _select_touch_btn->get_active());
 }
 
 void

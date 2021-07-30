@@ -34,6 +34,7 @@ FontVariationAxis::FontVariationAxis (Glib::ustring name, OTVarAxis& axis)
     // std::cout << "FontVariationAxis::FontVariationAxis:: "
     //           << " name: " << name
     //           << " min:  " << axis.minimum
+    //           << " def:  " << axis.def
     //           << " max:  " << axis.maximum
     //           << " val:  " << axis.set_val << std::endl;
 
@@ -49,6 +50,8 @@ FontVariationAxis::FontVariationAxis (Glib::ustring name, OTVarAxis& axis)
     scale->set_digits (precision);
     scale->set_hexpand(true);
     add( *scale );
+
+    def = axis.def; // Default value
 }
 
 
@@ -110,7 +113,7 @@ FontVariations::get_css_string() {
         // Translate the "named" axes. (Additional names in 'stat' table, may need to handle them.)
         if (name == "Width")  name = "wdth";       // 'font-stretch'
         if (name == "Weight") name = "wght";       // 'font-weight'
-        if (name == "Optical size") name = "opsz"; // 'font-optical-sizing' Can trigger glyph substitution.
+        if (name == "OpticalSize") name = "opsz";  // 'font-optical-sizing' Can trigger glyph substitution.
         if (name == "Slant")  name = "slnt";       // 'font-style'
         if (name == "Italic") name = "ital";       // 'font-style' Toggles from Roman to Italic.
 
@@ -132,13 +135,13 @@ FontVariations::get_pango_string() {
         pango_string += "@";
 
         for (auto axis: axes) {
-            if (axis->get_value() == 0) continue;  // TEMP: Should check against default value.
+            if (axis->get_value() == axis->get_def()) continue;
             Glib::ustring name = axis->get_name();
 
             // Translate the "named" axes. (Additional names in 'stat' table, may need to handle them.)
             if (name == "Width")  name = "wdth";       // 'font-stretch'
             if (name == "Weight") name = "wght";       // 'font-weight'
-            if (name == "Optical size") name = "opsz"; // 'font-optical-sizing' Can trigger glyph substitution.
+            if (name == "OpticalSize") name = "opsz";  // 'font-optical-sizing' Can trigger glyph substitution.
             if (name == "Slant")  name = "slnt";       // 'font-style'
             if (name == "Italic") name = "ital";       // 'font-style' Toggles from Roman to Italic.
 
@@ -147,7 +150,7 @@ FontVariations::get_pango_string() {
             pango_string += name + "=" + value.str() + ",";
         }
 
-        pango_string.erase (pango_string.size() - 1); // Erase last ','
+        pango_string.erase (pango_string.size() - 1); // Erase last ',' or '@'
     }
 
     return pango_string;

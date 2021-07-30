@@ -51,9 +51,6 @@ namespace Internal {
 
 #include "clear-n_.h"
 
-
-using Inkscape::Util::List;
-using Inkscape::XML::AttributeRecord;
 using Inkscape::XML::Node;
 
 /*
@@ -63,10 +60,10 @@ using Inkscape::XML::Node;
 static void pruneExtendedNamespaces( Inkscape::XML::Node *repr )
 {
     if (repr) {
-        if ( repr->type() == Inkscape::XML::ELEMENT_NODE ) {
+        if ( repr->type() == Inkscape::XML::NodeType::ELEMENT_NODE ) {
             std::vector<gchar const*> attrsRemoved;
-            for ( List<AttributeRecord const> it = repr->attributeList(); it; ++it ) {
-                const gchar* attrName = g_quark_to_string(it->key);
+            for ( const auto & it : repr->attributeList()) {
+                const gchar* attrName = g_quark_to_string(it.key);
                 if ((strncmp("inkscape:", attrName, 9) == 0) || (strncmp("sodipodi:", attrName, 9) == 0)) {
                     attrsRemoved.push_back(attrName);
                 }
@@ -142,7 +139,7 @@ static void remove_marker_auto_start_reverse(Inkscape::XML::Node *repr,
 
         if (matchInfo.matches()) {
 
-            std::string marker_name = matchInfo.fetch(1);
+            auto marker_name = matchInfo.fetch(1).raw();
             Inkscape::XML::Node *marker = sp_repr_lookup_child (defs, "id", marker_name.c_str());
             if (marker) {
 
@@ -150,7 +147,7 @@ static void remove_marker_auto_start_reverse(Inkscape::XML::Node *repr,
                 if (strncmp(marker->attribute("orient"), "auto-start-reverse", 17)==0) {
 
                     // See if a reversed marker already exists.
-                    Glib::ustring marker_name_reversed = marker_name + "_reversed";
+                    auto marker_name_reversed = marker_name + "_reversed";
                     Inkscape::XML::Node *marker_reversed =
                         sp_repr_lookup_child (defs, "id", marker_name_reversed.c_str());
 
@@ -160,9 +157,8 @@ static void remove_marker_auto_start_reverse(Inkscape::XML::Node *repr,
                         marker_reversed = repr->document()->createElement("svg:marker");
 
                         // Copy attributes
-                        for (List<AttributeRecord const> iter = marker->attributeList();
-                             iter ; ++iter) {
-                            marker_reversed->setAttribute(g_quark_to_string(iter->key), iter->value);
+                        for (const auto & iter : marker->attributeList()) {
+                            marker_reversed->setAttribute(g_quark_to_string(iter.key), iter.value);
                         }
 
                         // Override attributes
@@ -351,7 +347,7 @@ static void remove_marker_context_paint (Inkscape::XML::Node *repr,
  * Notes:
  *   Text must have been layed out. Access via old document.
  */
-static void insert_text_fallback( Inkscape::XML::Node *repr, SPDocument *original_doc, Inkscape::XML::Node *defs = nullptr )
+static void insert_text_fallback( Inkscape::XML::Node *repr, const SPDocument *original_doc, Inkscape::XML::Node *defs = nullptr )
 {
     if (repr) {
 
@@ -398,13 +394,8 @@ static void insert_text_fallback( Inkscape::XML::Node *repr, SPDocument *origina
             // For round-tripping, xml:space (or 'white-space:pre') must be set.
             repr->setAttribute("xml:space", "preserve");
 
-            Geom::Point text_anchor_point = text->layout.characterAnchorPoint(text->layout.begin());
-            // std::cout << "  text_anchor_point: " << text_anchor_point << std::endl;
-
-            double text_x = 0.0;
-            double text_y = 0.0;
-            sp_repr_get_double(repr, "x", &text_x);
-            sp_repr_get_double(repr, "y", &text_y);
+            double text_x = repr->getAttributeDouble("x", 0.0);
+            double text_y = repr->getAttributeDouble("y", 0.0);
             // std::cout << "text_x: " << text_x << " text_y: " << text_y << std::endl;
 
             // Loop over all lines in layout.
@@ -436,19 +427,19 @@ static void insert_text_fallback( Inkscape::XML::Node *repr, SPDocument *origina
                         if (text->has_inline_size()) {
                             // We use text_x as this is the reference for 'text-anchor'
                             // (line_x is the start of the line which gives wrong position when 'text-anchor' not start).
-                            sp_repr_set_svg_double(line_tspan, "x", text_x);
+                            line_tspan->setAttributeSvgDouble("x", text_x);
                         } else {
                             // shape-inside (we don't have to worry about 'text-anchor').
-                            sp_repr_set_svg_double(line_tspan, "x", line_x);
+                            line_tspan->setAttributeSvgDouble("x", line_x);
                         }
-                        sp_repr_set_svg_double(line_tspan, "y", line_y); // FIXME: this will pick up the wrong end of counter-directional runs
+                        line_tspan->setAttributeSvgDouble("y", line_y); // FIXME: this will pick up the wrong end of counter-directional runs
                     } else {
                         // std::cout << "  vertical:   " << line_anchor_point[Geom::X] << " " << text_y << std::endl;
-                        sp_repr_set_svg_double(line_tspan, "x", line_x); // FIXME: this will pick up the wrong end of counter-directional runs
+                        line_tspan->setAttributeSvgDouble("x", line_x); // FIXME: this will pick up the wrong end of counter-directional runs
                         if (text->has_inline_size()) {
-                            sp_repr_set_svg_double(line_tspan, "y", text_y);
+                            line_tspan->setAttributeSvgDouble("y", text_y);
                         } else {
-                            sp_repr_set_svg_double(line_tspan, "y", line_y);
+                            line_tspan->setAttributeSvgDouble("y", line_y);
                         }
                     }
                 }
@@ -486,9 +477,19 @@ static void insert_text_fallback( Inkscape::XML::Node *repr, SPDocument *origina
                     text->layout.getSourceOfCharacter(it, &source_obj, &span_text_start_iter);
 
                     // Set tspan style
-                    Glib::ustring style_text = (dynamic_cast<SPString *>(source_obj) ? source_obj->parent : source_obj)->style->write( SP_STYLE_FLAG_IFDIFF, SP_STYLE_SRC_UNSET, text->style);
+                    Glib::ustring style_text = (dynamic_cast<SPString *>(source_obj) ? source_obj->parent : source_obj)
+                                                   ->style->writeIfDiff(text->style);
                     if (!style_text.empty()) {
                         span_tspan->setAttributeOrRemoveIfEmpty("style", style_text);
+                    }
+
+                    // If this tspan has no attributes, discard it and add content directly to parent element.
+                    if (span_tspan->attributeList().empty()) {
+                        Inkscape::GC::release(span_tspan);
+                        span_tspan = line_tspan;
+                    } else {
+                        line_tspan->appendChild(span_tspan);
+                        Inkscape::GC::release(span_tspan);
                     }
 
                     // Add text node
@@ -526,10 +527,6 @@ static void insert_text_fallback( Inkscape::XML::Node *repr, SPDocument *origina
                         }
                     }
                     it = it_span_end;
-
-                    // Add tspan to document
-                    line_tspan->appendChild(span_tspan);
-                    Inkscape::GC::release(span_tspan);
                 }
 
                 // Add line tspan to document
@@ -545,9 +542,9 @@ static void insert_text_fallback( Inkscape::XML::Node *repr, SPDocument *origina
                     // Set either 'x' or 'y' to force a new text chunk. To do: this really should
                     // be positioned at the end of the line (overhanging).
                     if (text->is_horizontal()) {
-                        sp_repr_set_svg_double(space_tspan, "y", line_y);
+                        space_tspan->setAttributeSvgDouble("y", line_y);
                     } else {
-                        sp_repr_set_svg_double(space_tspan, "x", line_x);
+                        space_tspan->setAttributeSvgDouble("x", line_x);
                     }
                     Inkscape::XML::Node *space = repr->document()->createTextNode(trailing_whitespace.c_str());
                     space_tspan->appendChild(space);
@@ -722,6 +719,7 @@ static void transform_2_to_1( Inkscape::XML::Node *repr, Inkscape::XML::Node *de
 void
 Svg::init()
 {
+    // clang-format off
     /* SVG in */
     Inkscape::Extension::build_from_mem(
         "<inkscape-extension xmlns=\"" INKSCAPE_EXTENSION_URI "\">\n"
@@ -733,7 +731,6 @@ Svg::init()
                 "<mimetype>image/svg+xml</mimetype>\n"
                 "<filetypename>" N_("Scalable Vector Graphic (*.svg)") "</filetypename>\n"
                 "<filetypetooltip>" N_("Inkscape native file format and W3C standard") "</filetypetooltip>\n"
-                "<output_extension>" SP_MODULE_KEY_OUTPUT_SVG_INKSCAPE "</output_extension>\n"
             "</input>\n"
         "</inkscape-extension>", new Svg());
 
@@ -763,6 +760,7 @@ Svg::init()
                 "<filetypetooltip>" N_("Scalable Vector Graphics format as defined by the W3C") "</filetypetooltip>\n"
             "</output>\n"
         "</inkscape-extension>", new Svg());
+    // clang-format on
 
     return;
 }
@@ -831,6 +829,18 @@ Svg::open (Inkscape::Extension::Input *mod, const gchar *uri)
         // SPDocument * ret = SPDocument::createNewDoc(file->get_uri().c_str(), true);
         SPDocument * ret = SPDocument::createNewDoc(uri, true);
 
+        if (!ret) {
+            return nullptr;
+        }
+
+        // What is display unit doing here?
+        Glib::ustring display_unit = doc->getDisplayUnit()->abbr;
+        double width = ret->getWidth().value(display_unit);
+        double height = ret->getHeight().value(display_unit);
+        if (width < 0 || height < 0) {
+            return nullptr;
+        }
+
         // Create image node
         Inkscape::XML::Document *xml_doc = doc->getReprDoc();
         Inkscape::XML::Node *image_node = xml_doc->createElement("svg:image");
@@ -841,10 +851,6 @@ Svg::open (Inkscape::Extension::Input *mod, const gchar *uri)
         double svgdpi = mod->get_param_float("svgdpi");
         image_node->setAttribute("inkscape:svg-dpi", Glib::ustring::format(svgdpi));
 
-        // What is display unit doing here?
-        Glib::ustring display_unit = doc->getDisplayUnit()->abbr;
-        double width  = ret->getWidth().value(display_unit);
-        double height = ret->getHeight().value(display_unit);
         image_node->setAttribute("width", Glib::ustring::format(width));
         image_node->setAttribute("height", Glib::ustring::format(height));
 
@@ -949,6 +955,7 @@ Svg::save(Inkscape::Extension::Output *mod, SPDocument *doc, gchar const *filena
     g_return_if_fail(doc != nullptr);
     g_return_if_fail(filename != nullptr);
     Inkscape::XML::Document *rdoc = doc->getReprDoc();
+    const SPDocument *original_doc = doc->getOriginalDocument();
 
     bool const exportExtensions = ( !mod->get_id()
       || !strcmp (mod->get_id(), SP_MODULE_KEY_OUTPUT_SVG_INKSCAPE)
@@ -965,57 +972,37 @@ Svg::save(Inkscape::Extension::Output *mod, SPDocument *doc, gchar const *filena
     bool const insert_hatch_polyfill_flag =
         prefs->getBool("/options/svgexport/hatch_insertpolyfill", true);
 
-    bool createNewDoc =
-        !exportExtensions         ||
-        transform_2_to_1_flag     ||
-        insert_text_fallback_flag ||
-        insert_mesh_polyfill_flag ||
-        insert_hatch_polyfill_flag;
+    // We used to copy the svg here if there was modification, but no need now
+    // We copy the svg document for ALL exports and saves and the extensions can
+    // decide what to do without fear.
 
     // We prune the in-use document and deliberately loose data, because there
     // is no known use for this data at the present time.
     pruneProprietaryGarbage(rdoc->root());
 
-    if (createNewDoc) {
+    // Start off with a svg 2.0 document
+    rdoc->setAttribute("standalone", "no");
+    rdoc->setAttribute("version", "2.0");
 
-        // We make a duplicate document so we don't prune the in-use document
-        // and loose data. Perhaps the user intends to save as inkscape-svg next.
-        Inkscape::XML::Document *new_rdoc = new Inkscape::XML::SimpleDocument();
+    if (!exportExtensions) {
+        pruneExtendedNamespaces(rdoc->root());
+    }
 
-        // Comments and PI nodes are not included in this duplication
-        // TODO: Move this code into xml/document.h and duplicate rdoc instead of root.
-        new_rdoc->setAttribute("standalone", "no");
-        new_rdoc->setAttribute("version", "2.0");
+    if (transform_2_to_1_flag) {
+        transform_2_to_1 (rdoc->root());
+        rdoc->setAttribute("version", "1.1");
+    }
 
-        // Get a new xml repr for the svg root node
-        Inkscape::XML::Node *root = rdoc->root()->duplicate(new_rdoc);
+    if (insert_text_fallback_flag && original_doc) {
+        insert_text_fallback (rdoc->root(), original_doc);
+    }
 
-        // Add the duplicated svg node as the document's rdoc
-        new_rdoc->appendChild(root);
-        Inkscape::GC::release(root);
+    if (insert_mesh_polyfill_flag) {
+        insert_mesh_polyfill (rdoc->root());
+    }
 
-        if (!exportExtensions) {
-            pruneExtendedNamespaces(root);
-        }
-
-        if (transform_2_to_1_flag) {
-            transform_2_to_1 (root);
-            new_rdoc->setAttribute("version", "1.1");
-        }
-
-        if (insert_text_fallback_flag) {
-            insert_text_fallback (root, doc);
-        }
-
-        if (insert_mesh_polyfill_flag) {
-            insert_mesh_polyfill (root);
-        }
-
-        if (insert_hatch_polyfill_flag) {
-            insert_hatch_polyfill (root);
-        }
-
-        rdoc = new_rdoc;
+    if (insert_hatch_polyfill_flag) {
+        insert_hatch_polyfill (rdoc->root());
     }
 
     if (!sp_repr_save_rebased_file(rdoc, filename, SP_SVG_NS_URI,
@@ -1023,12 +1010,6 @@ Svg::save(Inkscape::Extension::Output *mod, SPDocument *doc, gchar const *filena
                                    m_detachbase ? nullptr : filename)) {
         throw Inkscape::Extension::Output::save_failed();
     }
-
-    if (createNewDoc) {
-        Inkscape::GC::release(rdoc);
-    }
-
-    return;
 }
 
 } } }  /* namespace inkscape, module, implementation */

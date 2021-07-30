@@ -35,8 +35,7 @@
 #include "svg/svg-icc-color.h"
 
 #include "ui/dialog-events.h"
-#include "ui/tools-switch.h"
-#include "ui/tools/tool-base.h"
+#include "ui/tools/dropper-tool.h"
 #include "ui/widget/color-entry.h"
 #include "ui/widget/color-icc-selector.h"
 #include "ui/widget/color-notebook.h"
@@ -73,10 +72,8 @@ ColorNotebook::ColorNotebook(SelectedColor &color)
     _available_pages.push_back(page);
     page = new Page(new ColorWheelSelectorFactory, true);
     _available_pages.push_back(page);
-#if defined(HAVE_LIBLCMS2)
     page = new Page(new ColorICCSelectorFactory, true);
     _available_pages.push_back(page);
-#endif
 
     _initUI();
 
@@ -90,6 +87,8 @@ ColorNotebook::~ColorNotebook()
         delete[] _buttons;
         _buttons = nullptr;
     }
+    if (_onetimepick)
+        _onetimepick.disconnect();
 }
 
 ColorNotebook::Page::Page(Inkscape::UI::ColorSelectorFactory *selector_factory, bool enabled_full)
@@ -144,7 +143,6 @@ void ColorNotebook::_initUI()
 
     GtkWidget *rgbabox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
 
-#if defined(HAVE_LIBLCMS2)
     /* Create color management icons */
     _box_colormanaged = gtk_event_box_new();
     GtkWidget *colormanaged = sp_get_icon_image("color-management", GTK_ICON_SIZE_SMALL_TOOLBAR);
@@ -166,7 +164,6 @@ void ColorNotebook::_initUI()
     gtk_widget_set_tooltip_text(_box_toomuchink, _("Too much ink!"));
     gtk_widget_set_sensitive(_box_toomuchink, false);
     gtk_box_pack_start(GTK_BOX(rgbabox), _box_toomuchink, FALSE, FALSE, 2);
-#endif // defined(HAVE_LIBLCMS2)
 
 
     /* Color picker */
@@ -190,10 +187,8 @@ void ColorNotebook::_initUI()
 
     gtk_widget_show_all(rgbabox);
 
-#if defined(HAVE_LIBLCMS2)
     // the "too much ink" icon is initially hidden
     gtk_widget_hide(GTK_WIDGET(_box_toomuchink));
-#endif // defined(HAVE_LIBLCMS2)
 
     gtk_widget_set_margin_start(rgbabox, XPAD);
     gtk_widget_set_margin_end(rgbabox, XPAD);
@@ -210,12 +205,25 @@ void ColorNotebook::_initUI()
     g_signal_connect(G_OBJECT(_book), "switch-page", G_CALLBACK(ColorNotebook::_onPageSwitched), this);
 }
 
-void ColorNotebook::_onPickerClicked(GtkWidget * /*widget*/, ColorNotebook * /*colorbook*/)
+void ColorNotebook::_onPickerClicked(GtkWidget * /*widget*/, ColorNotebook *colorbook)
 {
     // Set the dropper into a "one click" mode, so it reverts to the previous tool after a click
-    Inkscape::Preferences *prefs = Inkscape::Preferences::get();
-    prefs->setBool("/tools/dropper/onetimepick", true);
-    Inkscape::UI::Tools::sp_toggle_dropper(SP_ACTIVE_DESKTOP);
+    if (colorbook->_onetimepick) {
+        colorbook->_onetimepick.disconnect();
+    }
+    else {
+        Inkscape::UI::Tools::sp_toggle_dropper(SP_ACTIVE_DESKTOP);
+        auto tool = dynamic_cast<Inkscape::UI::Tools::DropperTool *>(SP_ACTIVE_DESKTOP->event_context);
+        if (tool) {
+            colorbook->_onetimepick = tool->onetimepick_signal.connect(sigc::mem_fun(*colorbook, &ColorNotebook::_pickColor));
+        }
+    }
+}
+
+void ColorNotebook::_pickColor(ColorRGBA *color) {
+    // Set color to color notebook here.
+    _selected_color.setValue(color->getIntValue());
+    _onSelectedColorChanged();
 }
 
 void ColorNotebook::_onButtonClicked(GtkWidget *widget, ColorNotebook *nb)
@@ -251,7 +259,6 @@ void ColorNotebook::_updateICCButtons()
 
     g_return_if_fail((0.0 <= alpha) && (alpha <= 1.0));
 
-#if defined(HAVE_LIBLCMS2)
     /* update color management icon*/
     gtk_widget_set_sensitive(_box_colormanaged, color.icc != nullptr);
 
@@ -287,7 +294,6 @@ void ColorNotebook::_updateICCButtons()
             gtk_widget_hide(GTK_WIDGET(_box_toomuchink));
         }
     }
-#endif // defined(HAVE_LIBLCMS2)
 }
 
 void ColorNotebook::_setCurrentPage(int i)

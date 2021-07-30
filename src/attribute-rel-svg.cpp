@@ -26,6 +26,7 @@
 
 #include "attribute-rel-svg.h"
 
+#include "io/resource.h"
 #include "path-prefix.h"
 #include "preferences.h"
 
@@ -72,6 +73,7 @@ bool SPAttributeRelSVG::findIfValid(Glib::ustring attribute, Glib::ustring eleme
     }
     
     // Check for attributes with -, role, aria etc. to allow for more accessibility
+    // clang-format off
     if (attribute[0] == '-'
         || attribute.substr(0,4) == "role"
         || attribute.substr(0,4) == "aria"
@@ -81,9 +83,9 @@ bool SPAttributeRelSVG::findIfValid(Glib::ustring attribute, Glib::ustring eleme
         || attribute.substr(0,4) == "rdf:"
         || attribute.substr(0,3) == "cc:"
         || attribute.substr(0,4) == "ns1:"  // JessyInk
-        || attribute.substr(0,4) == "osb:"  // Open Swatch Book
         || (SPAttributeRelSVG::instance->attributesOfElements[temp].find(attribute)
             != SPAttributeRelSVG::instance->attributesOfElements[temp].end()) ) {
+    // clang-format on
         return true;
     } else {
         //g_warning( "Invalid attribute: %s used on <%s>", attribute.c_str(), element.c_str() );
@@ -100,8 +102,8 @@ SPAttributeRelSVG::SPAttributeRelSVG()
     std::fstream f;
     
     // Read data from standard path
-    std::string filepath = INKSCAPE_ATTRRELDIR;
-    filepath += "/svgprops";
+    using namespace Inkscape::IO::Resource;
+    auto filepath = get_path_string(SYSTEM, ATTRIBUTES, "svgprops");
 
     f.open(filepath.c_str(), std::ios::in);
 

@@ -20,9 +20,6 @@
 #include "svg/svg-length.h"
 #include "sp-shape.h"
 
-#define SP_RECT(obj) (dynamic_cast<SPRect*>((SPObject*)obj))
-#define SP_IS_RECT(obj) (dynamic_cast<const SPRect*>((SPObject*)obj) != NULL)
-
 class SPRect : public SPShape {
 public:
 	SPRect();
@@ -52,12 +49,13 @@ public:
 
 	void build(SPDocument* doc, Inkscape::XML::Node* repr) override;
 
-	void set(SPAttributeEnum key, char const *value) override;
+	void set(SPAttr key, char const *value) override;
 	void update(SPCtx* ctx, unsigned int flags) override;
   void modified(unsigned int flags) override;
   bool set_rect_path_attribute(Inkscape::XML::Node *repr);
 
   Inkscape::XML::Node* write(Inkscape::XML::Document *xml_doc, Inkscape::XML::Node *repr, unsigned int flags) override;
+  const char* typeName() const override;
   const char* displayName() const override;
   void update_patheffect(bool write) override;
 	void set_shape() override;
@@ -76,6 +74,9 @@ public:
 private:
 	static double vectorStretch(Geom::Point p0, Geom::Point p1, Geom::Affine xform);
 };
+
+MAKE_SP_OBJECT_DOWNCAST_FUNCTIONS(SP_RECT, SPRect)
+MAKE_SP_OBJECT_TYPECHECK_FUNCTIONS(SP_IS_RECT, SPRect)
 
 #endif // SEEN_SP_RECT_H
 

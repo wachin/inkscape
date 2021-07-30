@@ -13,9 +13,6 @@
 #ifndef SEEN_UI_DIALOGS_XML_TREE_H
 #define SEEN_UI_DIALOGS_XML_TREE_H
 
-#include <memory>
-
-#include "ui/widget/panel.h"
 #include <gtkmm/button.h>
 #include <gtkmm/entry.h>
 #include <gtkmm/paned.h>
@@ -25,14 +22,12 @@
 #include <gtkmm/switch.h>
 #include <gtkmm/textview.h>
 #include <gtkmm/toolbar.h>
+#include <memory>
 
 #include "message.h"
-
 #include "ui/dialog/attrdialog.h"
-#include "ui/dialog/desktop-tracker.h"
+#include "ui/dialog/dialog-base.h"
 
-
-class SPDesktop;
 class SPObject;
 struct SPXMLViewAttrList;
 struct SPXMLViewContent;
@@ -54,7 +49,8 @@ namespace Dialog {
  *
  */
 
-class XmlTree : public Widget::Panel {
+class XmlTree : public DialogBase
+{
 public:
     XmlTree ();
     ~XmlTree () override;
@@ -62,16 +58,9 @@ public:
     static XmlTree &getInstance() { return *new XmlTree(); }
 
 private:
-
-    /**
-     * Is invoked by the desktop tracker when the desktop changes.
-     */
-    void set_tree_desktop(SPDesktop *desktop);
-
-    /**
-     * Is invoked when the document changes
-     */
-    void set_tree_document(SPDocument *document);
+    void unsetDocument();
+    void documentReplaced() override;
+    void selectionChanged(Selection *selection) override;
 
     /**
      * Select a node in the xml tree
@@ -156,10 +145,7 @@ private:
     /**
       * Callbacks for changes in desktop selection and current document
       */
-    void on_desktop_selection_changed();
-    void on_document_replaced(SPDesktop *dt, SPDocument *document);
     static void on_document_uri_set(gchar const *uri, SPDocument *document);
-
     static void _set_status_message(Inkscape::MessageType type, const gchar *message, GtkWidget *dialog);
 
     /**
@@ -174,16 +160,10 @@ private:
     void cmd_indent_node();
     void cmd_unindent_node();
 
-    void present() override;
     void _attrtoggler();
     void _toggleDirection(Gtk::RadioButton *vertical);
     void _resized();
     bool in_dt_coordsys(SPObject const &item);
-
-    /**
-     * Can be invoked for setting the desktop. Currently not used.
-     */
-    void setDesktop(SPDesktop *desktop) override;
 
     /**
      * Flag to ensure only one operation is performed at once
@@ -201,15 +181,7 @@ private:
      * Signal handlers
      */
     sigc::connection _message_changed_connection;
-    sigc::connection document_replaced_connection;
     sigc::connection document_uri_set_connection;
-    sigc::connection sel_changed_connection;
-
-    /**
-     * Current document and desktop this dialog is attached to
-     */
-    SPDesktop *current_desktop;
-    SPDocument *current_document;
 
     gint selected_attr;
     Inkscape::XML::Node *selected_repr;
@@ -225,8 +197,8 @@ private:
     Gtk::Button *create_button;
     Gtk::Paned _paned;
 
-    Gtk::VBox node_box;
-    Gtk::HBox status_box;
+    Gtk::Box node_box;
+    Gtk::Box status_box;
     Gtk::Switch _attrswitch;
     Gtk::Label status;
     Gtk::Toolbar tree_toolbar;
@@ -242,9 +214,6 @@ private:
     Gtk::ToolButton lower_node_button;
 
     GtkWidget *new_window;
-
-    DesktopTracker deskTrack;
-    sigc::connection desktopChangeConn;
 };
 
 }

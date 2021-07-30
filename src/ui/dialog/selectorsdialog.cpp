@@ -40,8 +40,6 @@
 // #define G_LOG_DOMAIN "SELECTORSDIALOG"
 
 using Inkscape::DocumentUndo;
-using Inkscape::Util::List;
-using Inkscape::XML::AttributeRecord;
 
 /**
  * This macro is used to remove spaces around selectors or any strings when
@@ -219,12 +217,11 @@ Glib::RefPtr<SelectorsDialog::TreeStore> SelectorsDialog::TreeStore::create(Sele
  * Any addition/deletion of the selectors updates XML style element accordingly.
  */
 SelectorsDialog::SelectorsDialog()
-    : UI::Widget::Panel("/dialogs/selectors", SP_VERB_DIALOG_SELECTORS)
+    : DialogBase("/dialogs/selectors", "Selectors")
     , _updating(false)
     , _textNode(nullptr)
     , _scroolpos(0)
     , _scroollock(false)
-    , _desktopTracker()
 {
     g_debug("SelectorsDialog::SelectorsDialog");
 
@@ -239,6 +236,9 @@ SelectorsDialog::SelectorsDialog()
     addRenderer->add_icon("empty-icon");
     _store = TreeStore::create(this);
     _treeView.set_model(_store);
+
+    // ALWAYS be a single selection widget
+    _treeView.get_selection()->set_mode(Gtk::SELECTION_SINGLE);
 
     _treeView.set_headers_visible(false);
     _treeView.enable_model_drag_source();
@@ -272,27 +272,6 @@ SelectorsDialog::SelectorsDialog()
 
     _showWidgets();
 
-    // Document & Desktop
-    _desktop_changed_connection =
-        _desktopTracker.connectDesktopChanged(sigc::mem_fun(*this, &SelectorsDialog::_handleDesktopChanged));
-    _desktopTracker.connect(GTK_WIDGET(gobj()));
-
-    _document_replaced_connection =
-        getDesktop()->connectDocumentReplaced(sigc::mem_fun(this, &SelectorsDialog::_handleDocumentReplaced));
-
-    _selection_changed_connection = getDesktop()->getSelection()->connectChanged(
-        sigc::hide(sigc::mem_fun(this, &SelectorsDialog::_handleSelectionChanged)));
-
-    // Add watchers
-    _updateWatchers(getDesktop());
-
-    // Load tree
-    _readStyleElement();
-    _selectRow();
-
-    if (!_store->children().empty()) {
-        _del.show();
-    }
     show_all();
 }
 
@@ -362,13 +341,12 @@ void SelectorsDialog::_showWidgets()
     dialog_scroller->set_policy(Gtk::POLICY_AUTOMATIC, Gtk::POLICY_AUTOMATIC);
     dialog_scroller->set_shadow_type(Gtk::SHADOW_IN);
     dialog_scroller->add(*Gtk::manage(contents));
-    _getContents()->pack_start(*dialog_scroller, Gtk::PACK_EXPAND_WIDGET);
+    pack_start(*dialog_scroller, Gtk::PACK_EXPAND_WIDGET);
     show_all();
     int widthpos = _paned.property_max_position() - _paned.property_min_position();
     int panedpos = prefs->getInt("/dialogs/selectors/panedpos", widthpos / 2);
     _paned.property_position().signal_changed().connect(sigc::mem_fun(*this, &SelectorsDialog::_childresized));
     _paned.signal_size_allocate().connect(sigc::mem_fun(*this, &SelectorsDialog::_panedresized));
-    _paned.signal_realize().connect(sigc::mem_fun(*this, &SelectorsDialog::_panedrealized));
     _updating = true;
     _paned.property_position() = panedpos;
     _updating = false;
@@ -381,8 +359,6 @@ void SelectorsDialog::_panedresized(Gtk::Allocation allocation)
     g_debug("SelectorsDialog::_panedresized");
     _resized();
 }
-
-void SelectorsDialog::_panedrealized() { _style_dialog->readStyleElement(); }
 
 void SelectorsDialog::_childresized()
 {
@@ -399,7 +375,6 @@ void SelectorsDialog::_resized()
     }
     _updating = true;
     Inkscape::Preferences *prefs = Inkscape::Preferences::get();
-    bool dir = !prefs->getBool("/dialogs/selectors/vertical", true);
     int max = int(_paned.property_max_position() * 0.95);
     int min = int(_paned.property_max_position() * 0.05);
     if (_paned.property_position() > max) {
@@ -425,18 +400,6 @@ void SelectorsDialog::_toggleDirection(Gtk::RadioButton *vertical)
     prefs->setInt("/dialogs/selectors/panedpos", widthpos / 2);
     _paned.property_position() = widthpos / 2;
 }
-
-/**
- * Class destructor
- */
-SelectorsDialog::~SelectorsDialog()
-{
-    g_debug("SelectorsDialog::~SelectorsDialog");
-    _desktop_changed_connection.disconnect();
-    _document_replaced_connection.disconnect();
-    _selection_changed_connection.disconnect();
-}
-
 
 /**
  * @return Inkscape::XML::Node* pointing to a style element's text node.
@@ -531,7 +494,6 @@ void SelectorsDialog::_readStyleElement()
     bool rewrite = false;
 
 
-    std::vector<SPObject *> objVec;
     for (unsigned i = 0; i < tokens.size()-1; i += 2) {
         Glib::ustring selector = tokens[i];
         REMOVE_SPACES(selector); // Remove leading/trailing spaces
@@ -544,7 +506,7 @@ void SelectorsDialog::_readStyleElement()
                 row[_mColumns._colSelector] = selectoritem + ";";
                 row[_mColumns._colExpand] = false;
                 row[_mColumns._colType] = OTHER;
-                row[_mColumns._colObj] = objVec;
+                row[_mColumns._colObj] = nullptr;
                 row[_mColumns._colProperties] = "";
                 row[_mColumns._colVisible] = true;
                 row[_mColumns._colSelected] = 400;
@@ -561,8 +523,6 @@ void SelectorsDialog::_readStyleElement()
         }
         std::vector<Glib::ustring> tokensplus = Glib::Regex::split_simple("[,]+", selector);
         coltype colType = SELECTOR;
-        // Get list of objects selector matches
-        objVec = _getObjVec(selector);
 
         Glib::ustring properties;
         // Check to make sure we do have a value to match selector.
@@ -582,15 +542,15 @@ void SelectorsDialog::_readStyleElement()
         }
         std::vector<Glib::ustring> properties_data = Glib::Regex::split_simple(";", properties);
         Gtk::TreeModel::Row row = *(_store->append());
-        row[_mColumns._colSelector]   = selector;
+        row[_mColumns._colSelector] = selector;
         row[_mColumns._colExpand] = colExpand;
         row[_mColumns._colType] = colType;
-        row[_mColumns._colObj]        = objVec;
+        row[_mColumns._colObj] = nullptr;
         row[_mColumns._colProperties] = properties;
         row[_mColumns._colVisible] = true;
         row[_mColumns._colSelected] = 400;
         // Add as children, objects that match selector.
-        for (auto &obj : objVec) {
+        for (auto &obj : _getObjVec(selector)) {
             auto *id = obj->getId();
             if (!id)
                 continue;
@@ -598,7 +558,7 @@ void SelectorsDialog::_readStyleElement()
             childrow[_mColumns._colSelector] = "#" + Glib::ustring(id);
             childrow[_mColumns._colExpand] = false;
             childrow[_mColumns._colType] = colType == OBJECT;
-            childrow[_mColumns._colObj] = std::vector<SPObject *>(1, obj);
+            childrow[_mColumns._colObj] = obj;
             childrow[_mColumns._colProperties] = ""; // Unused
             childrow[_mColumns._colVisible] = true;  // Unused
             childrow[_mColumns._colSelected] = 400;
@@ -667,7 +627,6 @@ void SelectorsDialog::_writeStyleElement()
         styleContent = "* > .inkscapehacktmp{}";
     }
     textNode->setContent(styleContent.c_str());
-    INKSCAPE.readStyleSheets(true);
     if (empty) {
         styleContent = "";
         textNode->setContent(styleContent.c_str());
@@ -681,28 +640,6 @@ void SelectorsDialog::_writeStyleElement()
     g_debug("SelectorsDialog::_writeStyleElement(): | %s |", styleContent.c_str());
 }
 
-/**
- * Update the watchers on objects.
- */
-void SelectorsDialog::_updateWatchers(SPDesktop *desktop)
-{
-    g_debug("SelectorsDialog::_updateWatchers");
-
-    if (_textNode) {
-        _textNode->removeObserver(*m_styletextwatcher);
-        _textNode = nullptr;
-    }
-
-    if (m_root) {
-        m_root->removeSubtreeObserver(*m_nodewatcher);
-        m_root = nullptr;
-    }
-
-    if (desktop) {
-        m_root = desktop->getDocument()->getReprRoot();
-        m_root->addSubtreeObserver(*m_nodewatcher);
-    }
-}
 /*
 void sp_get_selector_active(Glib::ustring &selector)
 {
@@ -794,8 +731,6 @@ void SelectorsDialog::_addToSelector(Gtk::TreeModel::Row row)
         Inkscape::Selection *selection = getDesktop()->getSelection();
         std::vector<SPObject *> toAddObjVec(selection->objects().begin(), selection->objects().end());
         Glib::ustring multiselector = row[_mColumns._colSelector];
-        std::vector<SPObject *> objVec = _getObjVec(multiselector);
-        row[_mColumns._colObj] = objVec;
         row[_mColumns._colExpand] = true;
         std::vector<Glib::ustring> tokens = Glib::Regex::split_simple("[,]+", multiselector);
         for (auto &obj : toAddObjVec) {
@@ -832,14 +767,12 @@ void SelectorsDialog::_addToSelector(Gtk::TreeModel::Row row)
             childrow[_mColumns._colSelector] = "#" + Glib::ustring(id);
             childrow[_mColumns._colExpand] = false;
             childrow[_mColumns._colType] = OBJECT;
-            childrow[_mColumns._colObj] = std::vector<SPObject *>(1, obj);
+            childrow[_mColumns._colObj] = obj;
             childrow[_mColumns._colProperties] = ""; // Unused
             childrow[_mColumns._colVisible] = true;  // Unused
             childrow[_mColumns._colSelected] = 400;
         }
-        objVec = _getObjVec(multiselector);
         row[_mColumns._colSelector] = multiselector;
-        row[_mColumns._colObj] = objVec;
         _updating = false;
 
         // Add entry to style element
@@ -850,9 +783,9 @@ void SelectorsDialog::_addToSelector(Gtk::TreeModel::Row row)
             sp_repr_css_attr_add_from_string(css, obj->getRepr()->attribute("style"));
             Glib::ustring selprops = row[_mColumns._colProperties];
             sp_repr_css_attr_add_from_string(css_selector, selprops.c_str());
-            for (List<AttributeRecord const> iter = css_selector->attributeList(); iter; ++iter) {
-                gchar const *key = g_quark_to_string(iter->key);
-                css->setAttribute(key, nullptr);
+            for (const auto & iter : css_selector->attributeList()) {
+                gchar const *key = g_quark_to_string(iter.key);
+                css->removeAttribute(key);
             }
             sp_repr_css_write_string(css, css_str);
             sp_repr_css_attr_unref(css);
@@ -907,7 +840,7 @@ void SelectorsDialog::_removeFromSelector(Gtk::TreeModel::Row row)
                 _store->erase(row);
                 parent[_mColumns._colSelector] = selector;
                 parent[_mColumns._colExpand] = true;
-                parent[_mColumns._colObj] = _getObjVec(selector);
+                parent[_mColumns._colObj] = nullptr;
             }
         }
         _updating = false;
@@ -1077,14 +1010,18 @@ void SelectorsDialog::_selectObjects(int eventX, int eventY)
             Gtk::TreeModel::iterator iter = _store->get_iter(path);
             if (iter) {
                 Gtk::TreeModel::Row row = *iter;
+                if (row[_mColumns._colObj]) {
+                    getDesktop()->selection->add(row[_mColumns._colObj]);
+                }
                 Gtk::TreeModel::Children children = row.children();
                 if (children.empty() || children.size() == 1) {
                     _del.show();
                 }
-                std::vector<SPObject *> objVec = row[_mColumns._colObj];
-
-                for (auto obj : objVec) {
-                    getDesktop()->selection->add(obj);
+                for (auto child : row.children()) {
+                    Gtk::TreeModel::Row child_row = *child;
+                    if (child[_mColumns._colObj]) {
+                        getDesktop()->selection->add(child[_mColumns._colObj]);
+                    }
                 }
             }
             _lastpath = path;
@@ -1177,12 +1114,11 @@ void SelectorsDialog::_addSelector()
     // If class selector, add selector name to class attribute for each object
     REMOVE_SPACES(selectorValue);
     if (originalValue.find("@import ") != std::string::npos) {
-        std::vector<SPObject *> objVecEmpty;
         Gtk::TreeModel::Row row = *(_store->prepend());
         row[_mColumns._colSelector] = originalValue;
         row[_mColumns._colExpand] = false;
         row[_mColumns._colType] = OTHER;
-        row[_mColumns._colObj] = objVecEmpty;
+        row[_mColumns._colObj] = nullptr;
         row[_mColumns._colProperties] = "";
         row[_mColumns._colVisible] = true;
         row[_mColumns._colSelected] = 400;
@@ -1207,16 +1143,15 @@ void SelectorsDialog::_addSelector()
                 }
             }
         }
-        objVec = _getObjVec(selectorValue);
         Gtk::TreeModel::Row row = *(_store->prepend());
         row[_mColumns._colExpand] = true;
         row[_mColumns._colType] = SELECTOR;
         row[_mColumns._colSelector] = selectorValue;
-        row[_mColumns._colObj] = objVec;
+        row[_mColumns._colObj] = nullptr;
         row[_mColumns._colProperties] = "";
         row[_mColumns._colVisible] = true;
         row[_mColumns._colSelected] = 400;
-        for (auto &obj : objVec) {
+        for (auto &obj : _getObjVec(selectorValue)) {
             auto *id = obj->getId();
             if (!id)
                 continue;
@@ -1224,7 +1159,7 @@ void SelectorsDialog::_addSelector()
             childrow[_mColumns._colSelector] = "#" + Glib::ustring(id);
             childrow[_mColumns._colExpand] = false;
             childrow[_mColumns._colType] = OBJECT;
-            childrow[_mColumns._colObj] = std::vector<SPObject *>(1, obj);
+            childrow[_mColumns._colObj] = obj;
             childrow[_mColumns._colProperties] = ""; // Unused
             childrow[_mColumns._colVisible] = true;  // Unused
             childrow[_mColumns._colSelected] = 400;
@@ -1248,7 +1183,6 @@ void SelectorsDialog::_delSelector()
 
     _scroollock = true;
     Glib::RefPtr<Gtk::TreeSelection> refTreeSelection = _treeView.get_selection();
-    _treeView.get_selection()->set_mode(Gtk::SELECTION_SINGLE);
     Gtk::TreeModel::iterator iter = refTreeSelection->get_selected();
     if (iter) {
         _vscrool();
@@ -1325,71 +1259,49 @@ private:
 
 // -------------------------------------------------------------------
 
-
-/**
- * Handle document replaced. (Happens when a default document is immediately replaced by another
- * document in a new window.)
- */
-void SelectorsDialog::_handleDocumentReplaced(SPDesktop *desktop, SPDocument * /* document */)
+SelectorsDialog::~SelectorsDialog()
 {
-    g_debug("SelectorsDialog::handleDocumentReplaced()");
-
-    _selection_changed_connection.disconnect();
-
-    _updateWatchers(desktop);
-
-    if (!desktop)
-        return;
-
-    _selection_changed_connection = desktop->getSelection()->connectChanged(
-        sigc::hide(sigc::mem_fun(this, &SelectorsDialog::_handleSelectionChanged)));
-
-    _readStyleElement();
-    _selectRow();
+    removeObservers();
+    _style_dialog->setDesktop(nullptr);
 }
 
-
-/*
- * When a dialog is floating, it is connected to the active desktop.
- */
-void SelectorsDialog::_handleDesktopChanged(SPDesktop *desktop)
+void SelectorsDialog::update()
 {
-    g_debug("SelectorsDialog::handleDesktopReplaced()");
+    _style_dialog->update();
+}
 
-    if (getDesktop() == desktop) {
-        // This will happen after construction of dialog. We've already
-        // set up signals so just return.
-        return;
+void SelectorsDialog::desktopReplaced()
+{
+    _style_dialog->setDesktop(getDesktop());
+}
+
+void SelectorsDialog::removeObservers()
+{
+    if (_textNode) {
+        _textNode->removeObserver(*m_styletextwatcher);
+        _textNode = nullptr;
     }
-
-    _selection_changed_connection.disconnect();
-    _document_replaced_connection.disconnect();
-
-    setDesktop( desktop );
-
-    _selection_changed_connection = desktop->getSelection()->connectChanged(
-        sigc::hide(sigc::mem_fun(this, &SelectorsDialog::_handleSelectionChanged)));
-    _document_replaced_connection =
-        desktop->connectDocumentReplaced(sigc::mem_fun(this, &SelectorsDialog::_handleDocumentReplaced));
-
-    _updateWatchers(desktop);
-    _readStyleElement();
-    _selectRow();
+    if (m_root) {
+        m_root->removeSubtreeObserver(*m_nodewatcher);
+        m_root = nullptr;
+    }
 }
 
-
-/*
- * Handle a change in which objects are selected in a document.
- */
-void SelectorsDialog::_handleSelectionChanged()
+void SelectorsDialog::documentReplaced()
 {
-    g_debug("SelectorsDialog::_handleSelectionChanged()");
+    removeObservers();
+    if (auto document = getDocument()) {
+        m_root = document->getReprRoot();
+        m_root->addSubtreeObserver(*m_nodewatcher);
+    }
+}
+
+void SelectorsDialog::selectionChanged(Selection *selection)
+{
     _lastpath.clear();
-    _treeView.get_selection()->set_mode(Gtk::SELECTION_MULTIPLE);
     _readStyleElement();
     _selectRow();
 }
-
 
 /**
  * @param event
@@ -1400,15 +1312,15 @@ void SelectorsDialog::_handleSelectionChanged()
 void SelectorsDialog::_buttonEventsSelectObjs(GdkEventButton *event)
 {
     g_debug("SelectorsDialog::_buttonEventsSelectObjs");
-    _treeView.get_selection()->set_mode(Gtk::SELECTION_SINGLE);
-    _updating = true;
-    _del.show();
     if (event->type == GDK_BUTTON_RELEASE && event->button == 1) {
+        _updating = true;
+        _del.show();
         int x = static_cast<int>(event->x);
         int y = static_cast<int>(event->y);
         _selectObjects(x, y);
+        _updating = false;
+        _selectRow();
     }
-    _updating = false;
 }
 
 
@@ -1427,7 +1339,7 @@ void SelectorsDialog::_selectRow()
         if (!row->parent() && row->children().size() < 2) {
             _del.show();
         }
-        if (!row->parent()) {
+        if (row) {
             _style_dialog->setCurrentSelector(row[_mColumns._colSelector]);
         }
     } else if (selectedrows.size() == 0) {
@@ -1435,7 +1347,6 @@ void SelectorsDialog::_selectRow()
     }
     if (_updating || !getDesktop()) return; // Avoid updating if we have set row via dialog.
 
-    _treeView.get_selection()->unselect_all();
     Gtk::TreeModel::Children children = _store->children();
     Inkscape::Selection* selection = getDesktop()->getSelection();
     SPObject *obj = nullptr;
@@ -1445,28 +1356,38 @@ void SelectorsDialog::_selectRow()
         _style_dialog->setCurrentSelector("");
     }
     for (auto row : children) {
+        row[_mColumns._colSelected] = 400;
         Gtk::TreeModel::Children subchildren = row->children();
         for (auto subrow : subchildren) {
             subrow[_mColumns._colSelected] = 400;
         }
     }
-    for (auto obj : selection->items()) {
-        for (auto row : children) {
-            Gtk::TreeModel::Children subchildren = row->children();
-            for (auto subrow : subchildren) {
-                std::vector<SPObject *> objVec = subrow[_mColumns._colObj];
-                if (obj == objVec[0]) {
-                    _treeView.get_selection()->select(row);
-                    row[_mColumns._colVisible] = true;
-                    subrow[_mColumns._colSelected] = 700;
-                }
+
+    // Sort selection for matching.
+    std::vector<SPObject *> selected_objs(
+        selection->objects().begin(), selection->objects().end());
+    std::sort(selected_objs.begin(), selected_objs.end());
+
+    for (auto row : children) {
+        // Recalculate the selector, in real time.
+        auto row_children = _getObjVec(row[_mColumns._colSelector]);
+        std::sort(row_children.begin(), row_children.end());
+
+        // If all selected objects are in the css-selector, select it.
+        if (row_children == selected_objs) {
+            row[_mColumns._colSelected] = 700;
+        }
+
+        Gtk::TreeModel::Children subchildren = row->children();
+
+        for (auto subrow : subchildren) {
+            if (subrow[_mColumns._colObj] && selection->includes(subrow[_mColumns._colObj])) {
+                subrow[_mColumns._colSelected] = 700;
             }
             if (row[_mColumns._colExpand]) {
                 _treeView.expand_to_path(Gtk::TreePath(row));
             }
         }
-    }
-    for (auto row : children) {
         if (row[_mColumns._colExpand]) {
             _treeView.expand_to_path(Gtk::TreePath(row));
         }

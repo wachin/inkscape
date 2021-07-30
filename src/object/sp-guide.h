@@ -18,7 +18,6 @@
 #include <vector>
 
 #include "sp-object.h"
-#include "sp-guide-attachment.h"
 
 typedef unsigned int guint32;
 extern "C" {
@@ -26,11 +25,17 @@ extern "C" {
 }
 
 class SPDesktop;
-struct SPCanvas;
-struct SPCanvasGroup;
-struct SPGuideLine;
-#define SP_GUIDE(obj) (dynamic_cast<SPGuide*>((SPObject*)obj))
-#define SP_IS_GUIDE(obj) (dynamic_cast<const SPGuide*>((SPObject*)obj) != NULL)
+
+namespace Inkscape {
+  class CanvasItemGroup;
+  class CanvasItemGuideLine;
+
+namespace UI::Widget {
+  class Canvas;
+
+}
+} // namespace Inkscape
+
 
 /* Represents the constraint on p that dot(g.direction, p) == g.position. */
 class SPGuide : public SPObject {
@@ -59,12 +64,12 @@ public:
     static SPGuide *createSPGuide(SPDocument *doc, Geom::Point const &pt1, Geom::Point const &pt2);
     SPGuide *duplicate();
 
-    void showSPGuide(SPCanvasGroup *group, GCallback handler);
-    void hideSPGuide(SPCanvas *canvas);
+    void showSPGuide(Inkscape::CanvasItemGroup *group);
+    void hideSPGuide(Inkscape::UI::Widget::Canvas *canvas);
     void showSPGuide(); // argument-free versions
     void hideSPGuide();
 
-    void sensitize(SPCanvas *canvas, bool sensitive);
+    void sensitize(Inkscape::UI::Widget::Canvas *canvas, bool sensitive);
 
     bool isHorizontal() const { return (normal_to_line[Geom::X] == 0.); };
     bool isVertical() const { return (normal_to_line[Geom::Y] == 0.); };
@@ -72,24 +77,20 @@ public:
     char* description(bool const verbose = true) const;
 
     double angle() const { return std::atan2( - normal_to_line[Geom::X], normal_to_line[Geom::Y] ); }
-    double getDistanceFrom(Geom::Point const &pt) const;
-    Geom::Point getPositionFrom(Geom::Point const &pt) const;
 
 protected:
     void build(SPDocument* doc, Inkscape::XML::Node* repr) override;
     void release() override;
-    void set(SPAttributeEnum key, const char* value) override;
+    void set(SPAttr key, const char* value) override;
 
     char* label;
-    std::vector<SPGuideLine *> views; // contains an object of type SPGuideline (see display/guideline.cpp for definition)
+    std::vector<Inkscape::CanvasItemGuideLine *> views; // See display/control/guideline.h.
     bool locked;
     Geom::Point normal_to_line;
     Geom::Point point_on_line;
 
     guint32 color;
     guint32 hicolor;
-public:
-    std::vector<SPGuideAttachment> attached_items; // unused
 };
 
 // These functions rightfully belong to SPDesktop. What gives?!
@@ -98,6 +99,9 @@ void sp_guide_create_guides_around_page(SPDesktop *dt);
 void sp_guide_delete_all_guides(SPDesktop *dt);
 
 void sp_guide_remove(SPGuide *guide);
+
+MAKE_SP_OBJECT_DOWNCAST_FUNCTIONS(SP_GUIDE, SPGuide)
+MAKE_SP_OBJECT_TYPECHECK_FUNCTIONS(SP_IS_GUIDE, SPGuide)
 
 #endif // SEEN_SP_GUIDE_H
 

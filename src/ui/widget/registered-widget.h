@@ -103,8 +103,10 @@ protected:
         Inkscape::XML::Node *local_repr = repr;
         SPDocument *local_doc = doc;
         if (!local_repr) {
-            // no repr specified, use active desktop's namedview's repr
-            SPDesktop* dt = SP_ACTIVE_DESKTOP;
+            SPDesktop* dt = _wr->desktop();
+            if (!dt) {
+                return;
+            }
             local_repr = reinterpret_cast<SPObject *>(dt->getNamedView())->getRepr();
             local_doc = dt->getDocument();
         }
@@ -158,7 +160,7 @@ public:
     // a slave button is only sensitive when the master button is active
     // i.e. a slave button is greyed-out when the master button is not checked
 
-    void setSlaveWidgets(std::list<Gtk::Widget*> btns) {
+    void setSlaveWidgets(std::list<Gtk::Widget*> const &btns) {
         _slavewidgets = btns;
     }
 
@@ -183,7 +185,7 @@ public:
     // a slave button is only sensitive when the master button is active
     // i.e. a slave button is greyed-out when the master button is not checked
 
-    void setSlaveWidgets(std::list<Gtk::Widget*> btns) {
+    void setSlaveWidgets(std::list<Gtk::Widget*> const &btns) {
         _slavewidgets = btns;
     }
 
@@ -310,7 +312,7 @@ protected:
     void on_value_changed();
 };
 
-class RegisteredRadioButtonPair : public RegisteredWidget<Gtk::HBox> {
+class RegisteredRadioButtonPair : public RegisteredWidget<Gtk::Box> {
 public:
     ~RegisteredRadioButtonPair() override;
     RegisteredRadioButtonPair ( const Glib::ustring& label,

@@ -26,17 +26,16 @@
 #include "document.h"
 #include "gradient-chemistry.h"
 #include "gradient-drag.h"
+#include "include/macros.h"
 #include "inkscape.h"
-#include "knot.h"
 #include "selection-chemistry.h"
 #include "selection.h"
 #include "snap.h"
 #include "verbs.h"
 
-#include "display/sp-canvas-util.h"
-#include "display/sp-canvas.h"
-#include "display/sp-ctrlcurve.h"
-#include "display/sp-ctrlline.h"
+#include "display/control/canvas-item-group.h"
+#include "display/control/canvas-item-ctrl.h"
+#include "display/control/canvas-item-curve.h"
 
 #include "object/sp-linear-gradient.h"
 #include "object/sp-mesh-gradient.h"
@@ -48,17 +47,15 @@
 #include "svg/css-ostringstream.h"
 #include "svg/svg.h"
 
-#include "ui/control-manager.h"
+#include "ui/knot/knot.h"
 #include "ui/tools/tool-base.h"
+#include "ui/widget/canvas.h" // Forced redraws
 
 #include "xml/sp-css-attr.h"
+#include "xml/attribute-record.h"
 
-using Inkscape::ControlManager;
-using Inkscape::CtrlLineType;
 using Inkscape::DocumentUndo;
 using Inkscape::allPaintTargets;
-using Inkscape::CTLINE_PRIMARY;
-using Inkscape::CTLINE_SECONDARY;
 
 guint32 const GR_KNOT_COLOR_NORMAL     = 0xffffff00;
 guint32 const GR_KNOT_COLOR_MOUSEOVER  = 0xff000000;
@@ -70,19 +67,19 @@ guint32 const GR_KNOT_COLOR_MESHCORNER = 0xbfbfbf00;
 #define MERGE_DIST 0.1
 
 // knot shapes corresponding to GrPointType enum (in sp-gradient.h)
-SPKnotShapeType gr_knot_shapes [] = {
-        SP_KNOT_SHAPE_SQUARE,  // POINT_LG_BEGIN
-        SP_KNOT_SHAPE_CIRCLE,  // POINT_LG_END
-        SP_KNOT_SHAPE_DIAMOND, // POINT_LG_MID
-        SP_KNOT_SHAPE_SQUARE,  // POINT_RG_CENTER
-        SP_KNOT_SHAPE_CIRCLE,  // POINT_RG_R1
-        SP_KNOT_SHAPE_CIRCLE,  // POINT_RG_R2
-        SP_KNOT_SHAPE_CROSS,   // POINT_RG_FOCUS
-        SP_KNOT_SHAPE_DIAMOND, // POINT_RG_MID1
-        SP_KNOT_SHAPE_DIAMOND, // POINT_RG_MID2
-        SP_KNOT_SHAPE_DIAMOND, // POINT_MG_CORNER
-        SP_KNOT_SHAPE_CIRCLE,  // POINT_MG_HANDLE
-        SP_KNOT_SHAPE_SQUARE   // POINT_MG_TENSOR
+Inkscape::CanvasItemCtrlShape gr_knot_shapes [] = {
+        Inkscape::CANVAS_ITEM_CTRL_SHAPE_SQUARE,  // POINT_LG_BEGIN
+        Inkscape::CANVAS_ITEM_CTRL_SHAPE_CIRCLE,  // POINT_LG_END
+        Inkscape::CANVAS_ITEM_CTRL_SHAPE_DIAMOND, // POINT_LG_MID
+        Inkscape::CANVAS_ITEM_CTRL_SHAPE_SQUARE,  // POINT_RG_CENTER
+        Inkscape::CANVAS_ITEM_CTRL_SHAPE_CIRCLE,  // POINT_RG_R1
+        Inkscape::CANVAS_ITEM_CTRL_SHAPE_CIRCLE,  // POINT_RG_R2
+        Inkscape::CANVAS_ITEM_CTRL_SHAPE_CROSS,   // POINT_RG_FOCUS
+        Inkscape::CANVAS_ITEM_CTRL_SHAPE_DIAMOND, // POINT_RG_MID1
+        Inkscape::CANVAS_ITEM_CTRL_SHAPE_DIAMOND, // POINT_RG_MID2
+        Inkscape::CANVAS_ITEM_CTRL_SHAPE_DIAMOND, // POINT_MG_CORNER
+        Inkscape::CANVAS_ITEM_CTRL_SHAPE_CIRCLE,  // POINT_MG_HANDLE
+        Inkscape::CANVAS_ITEM_CTRL_SHAPE_SQUARE   // POINT_MG_TENSOR
 };
 
 const gchar *gr_knot_descr [] = {
@@ -143,11 +140,13 @@ static int gr_drag_style_query(SPStyle *style, int property, gpointer data)
         float cf[4];
         cf[0] = cf[1] = cf[2] = cf[3] = 0;
 
+        SPStop* selected = nullptr;
         int count = 0;
         for(auto d : drag->selected) { //for all selected draggers
             for(auto draggable : d->draggables) { //for all draggables of dragger
                 if (ret == QUERY_STYLE_NOTHING) {
                     ret = QUERY_STYLE_SINGLE;
+                    selected = sp_item_gradient_get_stop(draggable->item, draggable->point_type, draggable->point_i, draggable->fill_or_stroke);
                 } else if (ret == QUERY_STYLE_SINGLE) {
                     ret = QUERY_STYLE_MULTIPLE_AVERAGED;
                 }
@@ -172,9 +171,11 @@ static int gr_drag_style_query(SPStyle *style, int property, gpointer data)
             style->fill.clear();
             style->fill.setColor( cf[0], cf[1], cf[2] );
             style->fill.set = TRUE;
+            style->fill.setTag(selected);
             style->stroke.clear();
             style->stroke.setColor( cf[0], cf[1], cf[2] );
             style->stroke.set = TRUE;
+            style->stroke.setTag(selected);
 
             style->fill_opacity.value = SP_SCALE24_FROM_FLOAT (cf[3]);
             style->fill_opacity.set = TRUE;
@@ -221,7 +222,7 @@ Glib::ustring GrDrag::makeStopSafeColor( gchar const *str, bool &isNull )
     return colorStr;
 }
 
-bool GrDrag::styleSet( const SPCSSAttr *css )
+bool GrDrag::styleSet( const SPCSSAttr *css, bool switch_style)
 {
     if (selected.empty()) {
         return false;
@@ -286,13 +287,24 @@ bool GrDrag::styleSet( const SPCSSAttr *css )
         }
     }
 
-    if (!stop->attributeList()) { // nothing for us here, pass it on
+    const auto& al = stop->attributeList();
+    if (al.empty()) { // nothing for us here, pass it on
         sp_repr_css_attr_unref(stop);
         return false;
     }
 
     for(auto d : selected) { //for all selected draggers
         for(auto draggable : d->draggables) { //for all draggables of dragger
+            SPGradient* gradient = getGradient(draggable->item, draggable->fill_or_stroke);
+
+            // for linear and radial gradients F&S dialog deals with stops' colors;
+            // don't handle style notifications, or else it will not be possible to switch
+            // object style back to solid color
+            if (switch_style && gradient && SP_IS_GRADIENT(gradient) &&
+                (SP_IS_LINEARGRADIENT(gradient) || SP_IS_RADIALGRADIENT(gradient))) {
+                continue;
+            }
+
             local_change = true;
             sp_item_gradient_stop_set_style(draggable->item, draggable->point_type, draggable->point_i, draggable->fill_or_stroke, stop);
         }
@@ -300,7 +312,7 @@ bool GrDrag::styleSet( const SPCSSAttr *css )
 
     //sp_repr_css_print(stop);
     sp_repr_css_attr_unref(stop);
-    return true;
+    return local_change; // true if handled
 }
 
 guint32 GrDrag::getColor()
@@ -573,22 +585,15 @@ bool GrDrag::dropColor(SPItem */*item*/, gchar const *c, Geom::Point p)
     }
 
     // now see if we're over line and create a new stop
-    bool over_line = false;
-    if (!lines.empty()) {
-        for (std::vector<SPCtrlLine *>::const_iterator l = lines.begin(); l != lines.end() && (!over_line); ++l) {
-            SPCtrlLine *line = *l;
-            Geom::LineSegment ls(line->s, line->e);
-            Geom::Point nearest = ls.pointAt(ls.nearestTime(p));
-            double dist_screen = Geom::L2(p - nearest) * desktop->current_zoom();
-            if (line->item && dist_screen < 5) {
-                SPStop *stop = addStopNearPoint(line->item, p, 5/desktop->current_zoom());
-                if (stop) {
-                    SPCSSAttr *css = sp_repr_css_attr_new();
-                    sp_repr_css_set_property( css, "stop-color", stopIsNull ? nullptr : toUse.c_str() );
-                    sp_repr_css_set_property( css, "stop-opacity", "1" );
-                    sp_repr_css_change(stop->getRepr(), css, "style");
-                    return true;
-                }
+    for (auto curve : item_curves) {
+        if (curve->is_line() && curve->get_item() && curve->contains(p, 5)) {
+            SPStop *stop = addStopNearPoint(curve->get_item(), p, 5/desktop->current_zoom());
+            if (stop) {
+                SPCSSAttr *css = sp_repr_css_attr_new();
+                sp_repr_css_set_property( css, "stop-color", stopIsNull ? nullptr : toUse.c_str() );
+                sp_repr_css_set_property( css, "stop-opacity", "1" );
+                sp_repr_css_change(stop->getRepr(), css, "style");
+                return true;
             }
         }
     }
@@ -604,7 +609,6 @@ GrDrag::GrDrag(SPDesktop *desktop) :
     hor_levels(),
     vert_levels(),
     draggers(0),
-    lines(0),
     selection(desktop->getSelection()),
     sel_changed_connection(),
     sel_modified_connection(),
@@ -623,7 +627,7 @@ GrDrag::GrDrag(SPDesktop *desktop) :
             (gpointer)this )
         );
 
-    style_set_connection = desktop->connectSetStyle( sigc::mem_fun(*this, &GrDrag::styleSet) );
+    style_set_connection = desktop->connectSetStyleEx( sigc::mem_fun(*this, &GrDrag::styleSet) );
 
     style_query_connection = desktop->connectQueryStyle(
         sigc::bind(
@@ -670,10 +674,10 @@ GrDrag::~GrDrag()
     this->draggers.clear();
     this->selected.clear();
 
-    for (std::vector<SPCtrlLine *>::const_iterator it = this->lines.begin(); it != this->lines.end(); ++it) {
-        sp_canvas_item_destroy(SP_CANVAS_ITEM(*it));
+    for (auto curve : item_curves) {
+        delete curve;
     }
-    this->lines.clear();
+    item_curves.clear();
 }
 
 GrDraggable::GrDraggable(SPItem *item, GrPointType point_type, guint point_i, Inkscape::PaintTarget fill_or_stroke) :
@@ -772,7 +776,7 @@ static void gr_knot_moved_handler(SPKnot *knot, Geom::Point const &ppointer, gui
                 delete dragger;
 
                 // throw out delayed snap context 
-                Inkscape::UI::Tools::sp_event_context_discard_delayed_snap_event(SP_ACTIVE_DESKTOP->event_context);
+                Inkscape::UI::Tools::sp_event_context_discard_delayed_snap_event(desktop->event_context);
 
                 // update the new merged dragger
                 d_new->fireDraggables(true, false, true);
@@ -856,7 +860,7 @@ static void gr_knot_moved_handler(SPKnot *knot, Geom::Point const &ppointer, gui
                     sp = m.constrainedAngularSnap(scp, dragger->point_original, dr_snap, 2);
                 } else {
                     // with Ctrl, snap to M_PI/snaps
-                    sp = m.constrainedAngularSnap(scp, boost::optional<Geom::Point>(), dr_snap, snaps);
+                    sp = m.constrainedAngularSnap(scp, std::optional<Geom::Point>(), dr_snap, snaps);
                 }
                 m.unSetup();
                 isr.points.push_back(sp);
@@ -1060,7 +1064,7 @@ static void gr_knot_mousedown_handler(SPKnot */*knot*/, unsigned int /*state*/, 
         dragger_corner->highlightCorner(true);
     }
 
-    dragger->parent->desktop->canvas->forceFullRedrawAfterInterruptions(5);
+    dragger->parent->desktop->getCanvas()->forced_redraws_start(5);
 }
 
 /**
@@ -1070,7 +1074,7 @@ static void gr_knot_ungrabbed_handler(SPKnot *knot, unsigned int state, gpointer
 {
     GrDragger *dragger = (GrDragger *) data;
 
-    dragger->parent->desktop->canvas->endForcedFullRedraws();
+    dragger->parent->desktop->getCanvas()->forced_redraws_stop();
 
     dragger->point_original = dragger->point = knot->pos;
 
@@ -1124,7 +1128,7 @@ static void gr_knot_clicked_handler(SPKnot */*knot*/, guint state, gpointer data
                         SPStop *next = stop->getNextStop();
                         if (next) {
                             next->offset = 0;
-                            sp_repr_set_css_double(next->getRepr(), "offset", 0);
+                            next->getRepr()->setAttributeCssDouble("offset", 0);
                         }
                     }
                     break;
@@ -1137,7 +1141,7 @@ static void gr_knot_clicked_handler(SPKnot */*knot*/, guint state, gpointer data
                         SPStop *prev = stop->getPrevStop();
                         if (prev) {
                             prev->offset = 1;
-                            sp_repr_set_css_double(prev->getRepr(), "offset", 1);
+                            prev->getRepr()->setAttributeCssDouble("offset", 1);
                         }
                     }
                     break;
@@ -1181,12 +1185,6 @@ static void gr_knot_doubleclicked_handler(SPKnot */*knot*/, guint /*state*/, gpo
 
     if (dragger->draggables.empty())
         return;
-
-    /*
-     *  2012/4 - Do nothing (gradient editor to be disabled)
-     */
-    //GrDraggable *draggable = (GrDraggable *) dragger->draggables->data;
-    //sp_item_gradient_edit_stop (draggable->item, draggable->point_type, draggable->point_i, draggable->fill_or_stroke);
 }
 
 /**
@@ -1208,20 +1206,19 @@ void GrDragger::fireDraggables(bool write_repr, bool scale_radial, bool merging_
     }
 }
 
+// TODO: REMOVE THIS
 void GrDragger::updateControlSizesOverload(SPKnot * knot)
 {
     Inkscape::Preferences *prefs = Inkscape::Preferences::get();
-    int sizes[] = {4, 6, 8, 10, 12, 14, 16};
-    std::vector<int> sizeTable = std::vector<int>(sizes, sizes + (sizeof(sizes) / sizeof(sizes[0])));
-    int size = prefs->getIntLimited("/options/grabsize/value", 3, 1, 7);
-    int knot_size = sizeTable[size - 1];
-    if(knot->shape == SP_KNOT_SHAPE_TRIANGLE){
-        knot_size *= 2.2;
-        knot_size = floor(knot_size);
-        if ( knot_size % 2 == 0 ){
-            knot_size += 1;
-        }
+    int size = prefs->getIntLimited("/options/grabsize/value", 3, 1, 15);
+
+    // shadow what's done in CanvasItemCtrl::set_size_via_index;
+    // TODO: code should likely be merged
+    int knot_size = size * 2 + 3;
+    if(knot->shape == Inkscape::CANVAS_ITEM_CTRL_SHAPE_TRIANGLE) {
+        knot_size = size * 2 + 1;
     }
+
     knot->setSize(knot_size);
 }
 
@@ -1481,13 +1478,13 @@ void GrDragger::updateKnotShape()
         return;
     GrDraggable *last = draggables.back();
 
-    g_object_set (G_OBJECT (this->knot->item), "shape", gr_knot_shapes[last->point_type], NULL);
+    this->knot->ctrl->set_shape(gr_knot_shapes[last->point_type]);
 
     // For highlighting mesh handles corresponding to selected corner
-    if (this->knot->shape == SP_KNOT_SHAPE_TRIANGLE) {
+    if (this->knot->shape == Inkscape::CANVAS_ITEM_CTRL_SHAPE_TRIANGLE) {
         this->knot->setFill(GR_KNOT_COLOR_HIGHLIGHT, GR_KNOT_COLOR_MOUSEOVER, GR_KNOT_COLOR_MOUSEOVER, GR_KNOT_COLOR_MOUSEOVER);
-        if (gr_knot_shapes[last->point_type] == SP_KNOT_SHAPE_CIRCLE) {
-            g_object_set (G_OBJECT (this->knot->item), "shape", SP_KNOT_SHAPE_TRIANGLE, NULL);
+        if (gr_knot_shapes[last->point_type] == Inkscape::CANVAS_ITEM_CTRL_SHAPE_CIRCLE) {
+            this->knot->ctrl->set_shape(Inkscape::CANVAS_ITEM_CTRL_SHAPE_TRIANGLE);
         }
     }
 }
@@ -1623,13 +1620,13 @@ GrDragger::GrDragger(GrDrag *parent, Geom::Point p, GrDraggable *draggable)
 
     this->parent = parent;
 
-    // create the knot
-    this->knot = new SPKnot(parent->desktop, nullptr);
-    this->knot->setMode(SP_KNOT_MODE_XOR);
     guint32 fill_color = GR_KNOT_COLOR_NORMAL;
     if (draggable && draggable->point_type == POINT_MG_CORNER) {
         fill_color = GR_KNOT_COLOR_MESHCORNER;
     }
+
+    // create the knot
+    this->knot = new SPKnot(parent->desktop, "", Inkscape::CANVAS_ITEM_CTRL_TYPE_SHAPER, "CanvasItemCtrl::GrDragger");
     this->knot->setFill(fill_color, GR_KNOT_COLOR_MOUSEOVER, GR_KNOT_COLOR_MOUSEOVER, GR_KNOT_COLOR_MOUSEOVER);
     this->knot->setStroke(0x0000007f, 0x0000007f, 0x0000007f, 0x0000007f);
     this->updateControlSizesOverload(this->knot);
@@ -1651,11 +1648,17 @@ GrDragger::GrDragger(GrDrag *parent, Geom::Point p, GrDraggable *draggable)
         this->_moved_connection = this->knot->moved_signal.connect(sigc::bind(sigc::ptr_fun(gr_knot_moved_handler), this));
     }
 
-    this->sizeUpdatedConn = ControlManager::getManager().connectCtrlSizeChanged(sigc::mem_fun(*this, &GrDragger::updateControlSizes));
-    this->_clicked_connection = this->knot->click_signal.connect(sigc::bind(sigc::ptr_fun(gr_knot_clicked_handler), this));
-    this->_doubleclicked_connection = this->knot->doubleclicked_signal.connect(sigc::bind(sigc::ptr_fun(gr_knot_doubleclicked_handler), this));
-    this->_mousedown_connection = this->knot->mousedown_signal.connect(sigc::bind(sigc::ptr_fun(gr_knot_mousedown_handler), this));
-    this->_ungrabbed_connection = this->knot->ungrabbed_signal.connect(sigc::bind(sigc::ptr_fun(gr_knot_ungrabbed_handler), this));
+    this->_clicked_connection =
+        this->knot->click_signal.connect(sigc::bind(sigc::ptr_fun(gr_knot_clicked_handler), this));
+
+    this->_doubleclicked_connection =
+        this->knot->doubleclicked_signal.connect(sigc::bind(sigc::ptr_fun(gr_knot_doubleclicked_handler), this));
+
+    this->_mousedown_connection =
+        this->knot->mousedown_signal.connect(sigc::bind(sigc::ptr_fun(gr_knot_mousedown_handler), this));
+
+    this->_ungrabbed_connection =
+        this->knot->ungrabbed_signal.connect(sigc::bind(sigc::ptr_fun(gr_knot_ungrabbed_handler), this));
 
     // add the initial draggable
     if (draggable) {
@@ -1674,7 +1677,6 @@ GrDragger::~GrDragger()
     //this->parent->setDeselected(this);
 
     // disconnect signals
-    this->sizeUpdatedConn.disconnect();
     this->_moved_connection.disconnect();
     this->_clicked_connection.disconnect();
     this->_doubleclicked_connection.disconnect();
@@ -1814,9 +1816,9 @@ void GrDragger::highlightNode(SPMeshNode *node, bool highlight, Geom::Point corn
 
         if (type == POINT_MG_HANDLE) {
             if (highlight) {
-                knot->setShape(SP_KNOT_SHAPE_TRIANGLE);
+                knot->setShape(Inkscape::CANVAS_ITEM_CTRL_SHAPE_TRIANGLE);
             } else {
-                knot->setShape(SP_KNOT_SHAPE_CIRCLE);
+                knot->setShape(Inkscape::CANVAS_ITEM_CTRL_SHAPE_CIRCLE);
             }
         } else {
             //Code for tensors
@@ -1892,7 +1894,7 @@ void  GrDragger::highlightCorner(bool highlight)
 void GrDragger::select()
 {
     this->knot->fill [SP_KNOT_STATE_NORMAL] = GR_KNOT_COLOR_SELECTED;
-    g_object_set (G_OBJECT (this->knot->item), "fill_color", GR_KNOT_COLOR_SELECTED, NULL);
+    this->knot->ctrl->set_fill(GR_KNOT_COLOR_SELECTED);
     highlightCorner(true);
 }
 
@@ -1903,7 +1905,7 @@ void GrDragger::deselect()
 {
     guint32 fill_color = isA(POINT_MG_CORNER) ? GR_KNOT_COLOR_MESHCORNER : GR_KNOT_COLOR_NORMAL;
     this->knot->fill [SP_KNOT_STATE_NORMAL] = fill_color;
-    g_object_set (G_OBJECT (this->knot->item), "fill_color", fill_color, NULL);
+    this->knot->ctrl->set_fill(fill_color);
     highlightCorner(false);
 }
 
@@ -1929,7 +1931,7 @@ void GrDrag::deselect_all()
 void GrDrag::deselectAll()
 {
     deselect_all();
-    this->desktop->emitToolSubselectionChanged(nullptr);
+    desktop->emit_gradient_stop_selected(this, nullptr);
 }
 
 /**
@@ -2030,7 +2032,7 @@ void GrDrag::setSelected(GrDragger *dragger, bool add_to_selection, bool overrid
         }
     }
     if (seldragger) {
-        this->desktop->emitToolSubselectionChanged((gpointer) seldragger);
+        desktop->emit_gradient_stop_selected(this, nullptr);
     }
 }
 
@@ -2044,30 +2046,28 @@ void GrDrag::setDeselected(GrDragger *dragger)
         selected.erase(dragger);
         dragger->deselect();
     }
-    this->desktop->emitToolSubselectionChanged((gpointer) (selected.empty() ? NULL :*(selected.begin())));
+    desktop->emit_gradient_stop_selected(this, nullptr);
 }
 
 
-
 /**
- * Create a line from p1 to p2 and add it to the lines list.
+ * Create a line from p1 to p2 and add it to the curves list. Used for linear and radial gradients.
  */
 void GrDrag::addLine(SPItem *item, Geom::Point p1, Geom::Point p2, Inkscape::PaintTarget fill_or_stroke)
 {
-    CtrlLineType type = (fill_or_stroke == Inkscape::FOR_FILL) ? CTLINE_PRIMARY : CTLINE_SECONDARY;
-    SPCtrlLine *line = ControlManager::getManager().createControlLine(this->desktop->getControls(), p1, p2, type);
-
-    sp_canvas_item_move_to_z(line, 0);
-    line->item = item;
-    line->is_fill = (fill_or_stroke == Inkscape::FOR_FILL);
-    sp_canvas_item_show(line);
-    this->lines.push_back(line);
+    auto canvas_item_color = (fill_or_stroke == Inkscape::FOR_FILL) ? Inkscape::CANVAS_ITEM_PRIMARY : Inkscape::CANVAS_ITEM_SECONDARY;
+    auto item_curve = new Inkscape::CanvasItemCurve(desktop->getCanvasControls(), p1, p2);
+    item_curve->set_name("GradientLine");
+    item_curve->set_stroke(canvas_item_color);
+    item_curve->set_is_fill(fill_or_stroke == Inkscape::FOR_FILL);
+    item_curve->set_item(item);
+    item_curves.push_back(item_curve);
 }
 
 
 
 /**
- * Create a curve from p0 to p3 and add it to the lines list. Used for mesh sides.
+ * Create a curve from p0 to p3 and add it to the curves list. Used for mesh sides.
  */
 void GrDrag::addCurve(SPItem *item, Geom::Point p0, Geom::Point p1, Geom::Point p2, Geom::Point p3,
                       int corner0, int corner1, int handle0, int handle1, Inkscape::PaintTarget fill_or_stroke)
@@ -2086,20 +2086,21 @@ void GrDrag::addCurve(SPItem *item, Geom::Point p0, Geom::Point p1, Geom::Point 
         highlight = true;
     }
 
-    // CtrlLineType only sets color
-    CtrlLineType type = (fill_or_stroke == Inkscape::FOR_FILL) ? CTLINE_PRIMARY : CTLINE_SECONDARY;
+    auto canvas_item_color =
+        (fill_or_stroke == Inkscape::FOR_FILL) ? Inkscape::CANVAS_ITEM_PRIMARY : Inkscape::CANVAS_ITEM_SECONDARY;
     if (highlight) {
-        type = (fill_or_stroke == Inkscape::FOR_FILL) ?  CTLINE_SECONDARY : CTLINE_PRIMARY;
+        canvas_item_color =
+            (fill_or_stroke == Inkscape::FOR_FILL) ? Inkscape::CANVAS_ITEM_SECONDARY : Inkscape::CANVAS_ITEM_PRIMARY;
     }
-    SPCtrlCurve *line = ControlManager::getManager().createControlCurve(this->desktop->getControls(), p0, p1, p2, p3, type); 
-    line->corner0 = corner0;
-    line->corner1 = corner1;
 
-    sp_canvas_item_move_to_z(line, 0);
-    line->item = item;
-    line->is_fill = (fill_or_stroke == Inkscape::FOR_FILL);
-    sp_canvas_item_show (line);
-    this->lines.push_back(line);
+    auto item_curve = new Inkscape::CanvasItemCurve(desktop->getCanvasControls(), p0, p1, p2, p3);
+    item_curve->set_name("GradientCurve");
+    item_curve->set_stroke(canvas_item_color);
+    item_curve->set_is_fill(fill_or_stroke == Inkscape::FOR_FILL);
+    item_curve->set_item(item);
+    item_curve->set_corner0(corner0);
+    item_curve->set_corner1(corner1);
+    item_curves.push_back(item_curve);
 }
 
 
@@ -2375,15 +2376,14 @@ void GrDrag::updateDraggers()
 
         if (style && (style->fill.isPaintserver())) {
             SPPaintServer *server = style->getFillPaintServer();
-            if ( server && SP_IS_GRADIENT( server ) ) {
-                if ( server->isSolid()
-                     || (SP_GRADIENT(server)->getVector() && SP_GRADIENT(server)->getVector()->isSolid())) {
+            if (auto gradient = dynamic_cast<SPGradient *>(server)) {
+                if (gradient->isSolid() || (gradient->getVector() && gradient->getVector()->isSolid())) {
                     // Suppress "gradientness" of solid paint
-                } else if ( SP_IS_LINEARGRADIENT(server) ) {
+                } else if (SP_IS_LINEARGRADIENT(server)) {
                     addDraggersLinear( SP_LINEARGRADIENT(server), item, Inkscape::FOR_FILL );
-                } else if ( SP_IS_RADIALGRADIENT(server) ) {
+                } else if (SP_IS_RADIALGRADIENT(server)) {
                     addDraggersRadial( SP_RADIALGRADIENT(server), item, Inkscape::FOR_FILL );
-                } else if ( SP_IS_MESHGRADIENT(server) ) {
+                } else if (SP_IS_MESHGRADIENT(server)) {
                     addDraggersMesh(   SP_MESHGRADIENT(server),   item, Inkscape::FOR_FILL );
                 }
             }
@@ -2391,15 +2391,14 @@ void GrDrag::updateDraggers()
 
         if (style && (style->stroke.isPaintserver())) {
             SPPaintServer *server = style->getStrokePaintServer();
-            if ( server && SP_IS_GRADIENT( server ) ) {
-                if ( server->isSolid()
-                     || (SP_GRADIENT(server)->getVector() && SP_GRADIENT(server)->getVector()->isSolid())) {
+            if (auto gradient = dynamic_cast<SPGradient *>(server)) {
+                if (gradient->isSolid() || (gradient->getVector() && gradient->getVector()->isSolid())) {
                     // Suppress "gradientness" of solid paint
-                } else if ( SP_IS_LINEARGRADIENT(server) ) {
+                } else if (SP_IS_LINEARGRADIENT(server)) {
                     addDraggersLinear( SP_LINEARGRADIENT(server), item, Inkscape::FOR_STROKE );
-                } else if ( SP_IS_RADIALGRADIENT(server) ) {
+                } else if (SP_IS_RADIALGRADIENT(server)) {
                     addDraggersRadial( SP_RADIALGRADIENT(server), item, Inkscape::FOR_STROKE );
-                } else if ( SP_IS_MESHGRADIENT(server) ) {
+                } else if (SP_IS_MESHGRADIENT(server)) {
                     addDraggersMesh(   SP_MESHGRADIENT(server),   item, Inkscape::FOR_STROKE );
                 }
             }
@@ -2470,11 +2469,10 @@ bool GrDrag::mouseOver()
  */
 void GrDrag::updateLines()
 {
-    // delete old lines
-    for (std::vector<SPCtrlLine *>::const_iterator i = this->lines.begin(); i != this->lines.end(); ++i) {
-        sp_canvas_item_destroy(SP_CANVAS_ITEM(*i));
+    for (auto curve : item_curves) {
+        delete curve;
     }
-    this->lines.clear();
+    item_curves.clear();
 
     g_return_if_fail(this->selection != nullptr);
 
@@ -2486,18 +2484,16 @@ void GrDrag::updateLines()
 
         if (style && (style->fill.isPaintserver())) {
             SPPaintServer *server = item->style->getFillPaintServer();
-            if ( server && SP_IS_GRADIENT( server ) ) {
-                if ( server->isSolid()
-                     || (SP_GRADIENT(server)->getVector() && SP_GRADIENT(server)->getVector()->isSolid())) {
+            if (auto gradient = dynamic_cast<SPGradient *>(server)) {
+                if (gradient->isSolid() || (gradient->getVector() && gradient->getVector()->isSolid())) {
                     // Suppress "gradientness" of solid paint
-                } else if ( SP_IS_LINEARGRADIENT(server) ) {
+                } else if (SP_IS_LINEARGRADIENT(server)) {
                     addLine(item, getGradientCoords(item, POINT_LG_BEGIN, 0, Inkscape::FOR_FILL), getGradientCoords(item, POINT_LG_END, 0, Inkscape::FOR_FILL), Inkscape::FOR_FILL);
-                } else if ( SP_IS_RADIALGRADIENT(server) ) {
+                } else if (SP_IS_RADIALGRADIENT(server)) {
                     Geom::Point center = getGradientCoords(item, POINT_RG_CENTER, 0, Inkscape::FOR_FILL);
                     addLine(item, center, getGradientCoords(item, POINT_RG_R1, 0, Inkscape::FOR_FILL), Inkscape::FOR_FILL);
                     addLine(item, center, getGradientCoords(item, POINT_RG_R2, 0, Inkscape::FOR_FILL), Inkscape::FOR_FILL);
-                } else if ( SP_IS_MESHGRADIENT(server) ) {
-
+                } else if (SP_IS_MESHGRADIENT(server)) {
                     Inkscape::Preferences *prefs = Inkscape::Preferences::get();
                     bool edit_fill    = (prefs->getBool("/tools/mesh/edit_fill",    true));
 
@@ -2562,24 +2558,22 @@ void GrDrag::updateLines()
                         }
                     }
                     }
-                }                        
+                }
             }
         }
 
         if (style && (style->stroke.isPaintserver())) {
             SPPaintServer *server = item->style->getStrokePaintServer();
-            if ( server && SP_IS_GRADIENT( server ) ) {
-                if ( server->isSolid()
-                     || (SP_GRADIENT(server)->getVector() && SP_GRADIENT(server)->getVector()->isSolid())) {
+            if (auto gradient = dynamic_cast<SPGradient *>(server)) {
+                if (gradient->isSolid() || (gradient->getVector() && gradient->getVector()->isSolid())) {
                     // Suppress "gradientness" of solid paint
-                } else if ( SP_IS_LINEARGRADIENT(server) ) {
+                } else if (SP_IS_LINEARGRADIENT(server)) {
                     addLine(item, getGradientCoords(item, POINT_LG_BEGIN, 0, Inkscape::FOR_STROKE), getGradientCoords(item, POINT_LG_END, 0, Inkscape::FOR_STROKE), Inkscape::FOR_STROKE);
-                } else if ( SP_IS_RADIALGRADIENT(server) ) {
+                } else if (SP_IS_RADIALGRADIENT(server)) {
                     Geom::Point center = getGradientCoords(item, POINT_RG_CENTER, 0, Inkscape::FOR_STROKE);
                     addLine(item, center, getGradientCoords(item, POINT_RG_R1, 0, Inkscape::FOR_STROKE), Inkscape::FOR_STROKE);
                     addLine(item, center, getGradientCoords(item, POINT_RG_R2, 0, Inkscape::FOR_STROKE), Inkscape::FOR_STROKE);
-                } else if ( SP_IS_MESHGRADIENT(server) ) {
-
+                } else if (SP_IS_MESHGRADIENT(server)) {
                     Inkscape::Preferences *prefs = Inkscape::Preferences::get();
                     bool edit_stroke   = (prefs->getBool("/tools/mesh/edit_stroke",   true));
 
@@ -2787,6 +2781,71 @@ void GrDrag::selected_move_screen(double x, double y)
 }
 
 /**
+ * Handle arrow key events
+ * @param event Event with type GDK_KEY_PRESS
+ * @return True if the event was handled, false otherwise
+ */
+bool GrDrag::key_press_handler(GdkEvent *event)
+{
+    if (MOD__CTRL(event)) {
+        return false;
+    }
+
+    auto keyval = Inkscape::UI::Tools::get_latin_keyval(&event->key);
+    double x_dir = 0;
+    double y_dir = 0;
+
+    switch (keyval) {
+        case GDK_KEY_Left: // move handle left
+        case GDK_KEY_KP_Left:
+        case GDK_KEY_KP_4:
+            x_dir = -1;
+            break;
+
+        case GDK_KEY_Up: // move handle up
+        case GDK_KEY_KP_Up:
+        case GDK_KEY_KP_8:
+            y_dir = 1;
+            break;
+
+        case GDK_KEY_Right: // move handle right
+        case GDK_KEY_KP_Right:
+        case GDK_KEY_KP_6:
+            x_dir = 1;
+            break;
+
+        case GDK_KEY_Down: // move handle down
+        case GDK_KEY_KP_Down:
+        case GDK_KEY_KP_2:
+            y_dir = -1;
+            break;
+
+        default:
+            return false;
+    }
+
+    y_dir *= -desktop->yaxisdir();
+
+    gint mul = 1 + Inkscape::UI::Tools::gobble_key_events(keyval, 0); // with any mask
+
+    if (MOD__SHIFT(event)) {
+        mul *= 10;
+    }
+
+    if (MOD__ALT(event)) {
+        selected_move_screen(mul * x_dir, mul * y_dir);
+    } else {
+        auto *prefs = Inkscape::Preferences::get();
+        auto nudge = prefs->getDoubleLimited("/options/nudgedistance/value", 2, 0, 1000, "px"); // in px
+
+        mul *= nudge;
+        selected_move(mul * x_dir, mul * y_dir);
+    }
+
+    return true;
+}
+
+/**
  * Select the knot next to the last selected one and deselect all other selected.
  */
 GrDragger *GrDrag::select_next()
@@ -2939,17 +2998,17 @@ void GrDrag::deleteSelected(bool just_one)
                         lg->y1.computed = newbegin[Geom::Y];
 
                         Inkscape::XML::Node *repr = stopinfo->gradient->getRepr();
-                        sp_repr_set_svg_double(repr, "x1", lg->x1.computed);
-                        sp_repr_set_svg_double(repr, "y1", lg->y1.computed);
+                        repr->setAttributeSvgDouble("x1", lg->x1.computed);
+                        repr->setAttributeSvgDouble("y1", lg->y1.computed);
                         stop->offset = 0;
-                        sp_repr_set_css_double(stop->getRepr(), "offset", 0);
+                        stop->getRepr()->setAttributeCssDouble("offset", 0);
 
                         // iterate through midstops to set new offset values such that they won't move on canvas.
                         SPStop *laststop = sp_last_stop(stopinfo->vector);
                         stop = stop->getNextStop();
                         while ( stop != laststop ) {
                             stop->offset = (stop->offset - offset)/(1 - offset);
-                            sp_repr_set_css_double(stop->getRepr(), "offset", stop->offset);
+                            stop->getRepr()->setAttributeCssDouble("offset", stop->offset);
                             stop = stop->getNextStop();
                         }
                     }
@@ -2968,17 +3027,17 @@ void GrDrag::deleteSelected(bool just_one)
                         lg->y2.computed = newend[Geom::Y];
 
                         Inkscape::XML::Node *repr = stopinfo->gradient->getRepr();
-                        sp_repr_set_svg_double(repr, "x2", lg->x2.computed);
-                        sp_repr_set_svg_double(repr, "y2", lg->y2.computed);
+                        repr->setAttributeSvgDouble("x2", lg->x2.computed);
+                        repr->setAttributeSvgDouble("y2", lg->y2.computed);
                         laststop->offset = 1;
-                        sp_repr_set_css_double(laststop->getRepr(), "offset", 1);
+                        laststop->getRepr()->setAttributeCssDouble("offset", 1);
 
                         // iterate through midstops to set new offset values such that they won't move on canvas.
                         SPStop *stop = stopinfo->vector->getFirstStop();
                         stop = stop->getNextStop();
                         while ( stop != laststop ) {
                             stop->offset = stop->offset / offset;
-                            sp_repr_set_css_double(stop->getRepr(), "offset", stop->offset);
+                            stop->getRepr()->setAttributeCssDouble("offset", stop->offset);
                             stop = stop->getNextStop();
                         }
                     }
@@ -2988,7 +3047,7 @@ void GrDrag::deleteSelected(bool just_one)
                         SPStop *newfirst = stopinfo->spstop->getNextStop();
                         if (newfirst) {
                             newfirst->offset = 0;
-                            sp_repr_set_css_double(newfirst->getRepr(), "offset", 0);
+                            newfirst->getRepr()->setAttributeCssDouble("offset", 0);
                         }
                         stopinfo->vector->getRepr()->removeChild(stopinfo->spstop->getRepr());
                     }
@@ -3006,16 +3065,16 @@ void GrDrag::deleteSelected(bool just_one)
                         rg->r.computed = newradius;
 
                         Inkscape::XML::Node *repr = rg->getRepr();
-                        sp_repr_set_svg_double(repr, "r", rg->r.computed);
+                        repr->setAttributeSvgDouble("r", rg->r.computed);
                         laststop->offset = 1;
-                        sp_repr_set_css_double(laststop->getRepr(), "offset", 1);
+                        laststop->getRepr()->setAttributeCssDouble("offset", 1);
 
                         // iterate through midstops to set new offset values such that they won't move on canvas.
                         SPStop *stop = stopinfo->vector->getFirstStop();
                         stop = stop->getNextStop();
                         while ( stop != laststop ) {
                             stop->offset = stop->offset / offset;
-                            sp_repr_set_css_double(stop->getRepr(), "offset", stop->offset);
+                            stop->getRepr()->setAttributeCssDouble("offset", stop->offset);
                             stop = stop->getNextStop();
                         }
                     }

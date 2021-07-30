@@ -402,7 +402,7 @@ void FontLister::update_font_list(SPDocument *document)
 void FontLister::update_font_data_recursive(SPObject& r, std::map<Glib::ustring, std::set<Glib::ustring>> &font_data)
 {
     // Text nodes (i.e. the content of <text> or <tspan>) do not have their own style.
-    if (r.getRepr()->type() == Inkscape::XML::TEXT_NODE) {
+    if (r.getRepr()->type() == Inkscape::XML::NodeType::TEXT_NODE) {
         return;
     }
 
@@ -893,9 +893,9 @@ void FontLister::fill_css(SPCSSAttr *css, Glib::ustring fontspec)
             regex->match(token, matchInfo);
             if (matchInfo.matches()) {
                 variations += "'";
-                variations += matchInfo.fetch(1);
+                variations += matchInfo.fetch(1).raw();
                 variations += "' ";
-                variations += matchInfo.fetch(2);
+                variations += matchInfo.fetch(2).raw();
                 variations += ", ";
             }
         }
@@ -1153,17 +1153,23 @@ void font_lister_cell_data_func2(GtkCellLayout * /*cell_layout*/,
                                 GtkCellRenderer *cell,
                                 GtkTreeModel *model,
                                 GtkTreeIter *iter,
-                                gpointer /*data*/)
+                                gpointer data)
 {
     gchar *family;
     gboolean onSystem = false;
     gtk_tree_model_get(model, iter, 0, &family, 2, &onSystem, -1);
     gchar* family_escaped = g_markup_escape_text(family, -1);
+    Inkscape::Preferences *prefs = Inkscape::Preferences::get();
+    bool dark = prefs->getBool("/theme/darkTheme", false);
     Glib::ustring markup;
 
     if (!onSystem) {
-        markup = "<span foreground='darkblue'>";
-
+        markup = "";
+        if (dark) {
+            markup += "<span foreground='powderblue'>";
+        } else {
+            markup += "<span foreground='darkblue'>";
+        }
         /* See if font-family on system */
         std::vector<Glib::ustring> tokens = Glib::Regex::split_simple("\\s*,\\s*", family);
         for (auto token : tokens) {
@@ -1189,7 +1195,11 @@ void font_lister_cell_data_func2(GtkCellLayout * /*cell_layout*/,
                 markup += g_markup_escape_text(token.c_str(), -1);
                 markup += ", ";
             } else {
-                markup += "<span strikethrough=\"true\" strikethrough_color=\"red\">";
+                if (dark) {
+                    markup += "<span strikethrough='true' strikethrough_color='salmon'>";
+                } else {
+                    markup += "<span strikethrough='true' strikethrough_color='red'>";
+                }
                 markup += g_markup_escape_text(token.c_str(), -1);
                 markup += "</span>";
                 markup += ", ";
@@ -1205,22 +1215,25 @@ void font_lister_cell_data_func2(GtkCellLayout * /*cell_layout*/,
         markup = family_escaped;
     }
 
-    Inkscape::Preferences *prefs = Inkscape::Preferences::get();
     int show_sample = prefs->getInt("/tools/text/show_sample_in_list", 1);
     if (show_sample) {
 
         Glib::ustring sample = prefs->getString("/tools/text/font_sample");
         gchar* sample_escaped = g_markup_escape_text(sample.data(), -1);
-
-        markup += "  <span foreground='gray' font_family='";
-        markup += family_escaped;
+        if (data) {
+            markup += " <span alpha='55%";
+            markup += "' font_family='";
+            markup += family_escaped;
+        } else {
+            markup += " <span alpha='1";
+        }
         markup += "'>";
         markup += sample_escaped;
         markup += "</span>";
         g_free(sample_escaped);
     }
 
-    g_object_set(G_OBJECT(cell), "markup", markup.c_str(), NULL);
+    g_object_set(G_OBJECT(cell), "markup", markup.c_str(), nullptr);
     g_free(family);
     g_free(family_escaped);
 }

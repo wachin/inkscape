@@ -31,7 +31,7 @@
 #include "message-context.h"
 #include "svg/svg-color.h"
 #include "verbs.h"
-#include "widgets/gradient-vector.h"
+#include "ui/widget/gradient-vector-selector.h"
 
 
 namespace Inkscape {
@@ -41,58 +41,6 @@ namespace Dialog {
 static std::vector<std::string> mimeStrings;
 static std::map<std::string, guint> mimeToInt;
 
-
-#if ENABLE_MAGIC_COLORS
-// TODO remove this soon:
-extern std::vector<SwatchPage*> possible;
-#endif // ENABLE_MAGIC_COLORS
-
-
-#if ENABLE_MAGIC_COLORS
-static bool bruteForce( SPDocument* document, Inkscape::XML::Node* node, Glib::ustring const& match, int r, int g, int b )
-{
-    bool changed = false;
-
-    if ( node ) {
-        gchar const * val = node->attribute("inkscape:x-fill-tag");
-        if ( val  && (match == val) ) {
-            SPObject *obj = document->getObjectByRepr( node );
-
-            gchar c[64] = {0};
-            sp_svg_write_color( c, sizeof(c), SP_RGBA32_U_COMPOSE( r, g, b, 0xff ) );
-            SPCSSAttr *css = sp_repr_css_attr_new();
-            sp_repr_css_set_property( css, "fill", c );
-
-            sp_desktop_apply_css_recursive( obj, css, true );
-            static_cast<SPItem*>(obj)->updateRepr();
-
-            changed = true;
-        }
-
-        val = node->attribute("inkscape:x-stroke-tag");
-        if ( val  && (match == val) ) {
-            SPObject *obj = document->getObjectByRepr( node );
-
-            gchar c[64] = {0};
-            sp_svg_write_color( c, sizeof(c), SP_RGBA32_U_COMPOSE( r, g, b, 0xff ) );
-            SPCSSAttr *css = sp_repr_css_attr_new();
-            sp_repr_css_set_property( css, "stroke", c );
-
-            sp_desktop_apply_css_recursive( (SPItem*)obj, css, true );
-            ((SPItem*)obj)->updateRepr();
-
-            changed = true;
-        }
-
-        Inkscape::XML::Node* first = node->firstChild();
-        changed |= bruteForce( document, first, match, r, g, b );
-
-        changed |= bruteForce( document, node->next(), match, r, g, b );
-    }
-
-    return changed;
-}
-#endif // ENABLE_MAGIC_COLORS
 
 void
 ColorItem::handleClick() {
@@ -126,11 +74,6 @@ ColorItem::handleLeaveNotify(GdkEventCrossing* /*event*/) {
     }
 
     return false;
-}
-
-static void dieDieDie( GObject *obj, gpointer user_data )
-{
-    g_message("die die die %p  %p", obj, user_data );
 }
 
 static bool getBlock( std::string& dst, guchar ch, std::string const & str )
@@ -260,7 +203,7 @@ ColorItem::ColorItem(ege::PaintDef::ColorType type) :
 }
 
 ColorItem::ColorItem( unsigned int r, unsigned int g, unsigned int b, Glib::ustring& name ) :
-    def( r, g, b, name ),
+    def( r, g, b, name.raw() ),
     _isFill(false),
     _isStroke(false),
     _isLive(false),
@@ -433,51 +376,6 @@ void ColorItem::_updatePreviews()
 
         _listener->def.setRGB( r, g, b );
     }
-
-
-#if ENABLE_MAGIC_COLORS
-    // Look for objects using this color
-    {
-        SPDesktop *desktop = SP_ACTIVE_DESKTOP;
-        if ( desktop ) {
-            SPDocument* document = desktop->getDocument();
-            Inkscape::XML::Node *rroot =  document->getReprRoot();
-            if ( rroot ) {
-
-                // Find where this thing came from
-                Glib::ustring paletteName;
-                bool found = false;
-                int index = 0;
-                for ( std::vector<SwatchPage*>::iterator it2 = possible.begin(); it2 != possible.end() && !found; ++it2 ) {
-                    SwatchPage* curr = *it2;
-                    index = 0;
-                    for ( boost::ptr_vector<ColorItem>::iterator zz = curr->_colors.begin(); zz != curr->_colors.end(); ++zz ) {
-                        if ( this == &*zz ) {
-                            found = true;
-                            paletteName = curr->_name;
-                            break;
-                        } else {
-                            index++;
-                        }
-                    }
-                }
-
-                if ( !paletteName.empty() ) {
-                    gchar* str = g_strdup_printf("%d|", index);
-                    paletteName.insert( 0, str );
-                    g_free(str);
-                    str = 0;
-
-                    if ( bruteForce( document, rroot, paletteName, def.getR(), def.getG(), def.getB() ) ) {
-                        SPDocumentUndo::done( document , SP_VERB_DIALOG_SWATCHES,
-                                          _("Change color definition"));
-                    }
-                }
-            }
-        }
-    }
-#endif // ENABLE_MAGIC_COLORS
-
 }
 
 void ColorItem::_regenPreview(UI::Widget::Preview * preview)
@@ -526,6 +424,15 @@ void ColorItem::_regenPreview(UI::Widget::Preview * preview)
                                                          | (_isLive            ? UI::Widget::PREVIEW_LINK_OTHER:0)) );
 }
 
+Gtk::Widget* ColorItem::createWidget() {
+   auto widget = dynamic_cast<UI::Widget::Preview*>(_getPreview(Inkscape::UI::Widget::PREVIEW_STYLE_ICON,
+		Inkscape::UI::Widget::VIEW_TYPE_GRID, Inkscape::UI::Widget::PREVIEW_SIZE_TINY, 100, 0));
+
+   if (widget) widget->set_freesize(true);
+
+   return widget;
+}
+
 Gtk::Widget*
 ColorItem::getPreview(UI::Widget::PreviewStyle style,
                       UI::Widget::ViewType     view,
@@ -533,6 +440,16 @@ ColorItem::getPreview(UI::Widget::PreviewStyle style,
                       guint                    ratio,
                       guint                    border)
 {
+   auto widget = _getPreview(style, view, size, ratio, border);
+    _previews.push_back( widget );
+    return widget;
+}
+
+
+Gtk::Widget* ColorItem::_getPreview(UI::Widget::PreviewStyle style,
+		  UI::Widget::ViewType view, UI::Widget::PreviewSize size,
+		  guint ratio, guint border) {
+
     Gtk::Widget* widget = nullptr;
     if ( style == UI::Widget::PREVIEW_STYLE_BLURB) {
         Gtk::Label *lbl = new Gtk::Label(def.descr);
@@ -586,8 +503,6 @@ ColorItem::getPreview(UI::Widget::PreviewStyle style,
 
         widget = preview;
     }
-
-    _previews.push_back( widget );
 
     return widget;
 }

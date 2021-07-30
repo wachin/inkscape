@@ -68,16 +68,23 @@ public:
 
     //basically, to get this method called before the derived classes, a bit
     //of indirection is needed. We first call these methods, then the below.
-    void doAfterEffect_impl(SPLPEItem const *lpeitem);
+    void doAfterEffect_impl(SPLPEItem const *lpeitem, SPCurve *curve);
     void doOnApply_impl(SPLPEItem const* lpeitem);
     void doBeforeEffect_impl(SPLPEItem const* lpeitem);
     void setCurrentZoom(double cZ);
     void setSelectedNodePoints(std::vector<Geom::Point> sNP);
     bool isNodePointSelected(Geom::Point const &nodePoint) const;
+    bool isOnClipboard();
     virtual void doOnApply (SPLPEItem const* lpeitem);
     virtual void doBeforeEffect (SPLPEItem const* lpeitem);
+    std::vector<SPLPEItem *> getCurrrentLPEItems() const;
+
+private:
     virtual void transform_multiply(Geom::Affine const &postmul, bool set);
-    virtual void doAfterEffect (SPLPEItem const* lpeitem);
+
+public:
+    void transform_multiply(Geom::Affine const &postmul, SPLPEItem *);
+    virtual void doAfterEffect (SPLPEItem const* lpeitem, SPCurve *curve);
     virtual void doOnException(SPLPEItem const *lpeitem);
     virtual void doOnRemove (SPLPEItem const* lpeitem);
     virtual void doOnVisibilityToggled(SPLPEItem const* lpeitem);
@@ -86,7 +93,6 @@ public:
     virtual void acceptParamPath (SPPath const* param_path);
     static int acceptsNumClicks(EffectType type);
     int acceptsNumClicks() const { return acceptsNumClicks(effectType()); }
-    void doAcceptPathPreparations(SPLPEItem *lpeitem);
     SPShape * getCurrentShape() const { return current_shape; };
     void setCurrentShape(SPShape * shape) { current_shape = shape; }
     void processObjects(LPEAction lpe_action);
@@ -140,6 +146,7 @@ public:
     bool apply_to_clippath_and_mask;
     bool keep_paths; // set this to false allow retain extra generated objects, see measure line LPE
     bool is_load;
+    bool on_remove_all;
     bool refresh_widgets;
     BoolParam is_visible;
     HiddenParam lpeversion;

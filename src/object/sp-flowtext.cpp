@@ -21,6 +21,8 @@
 #include "document.h"
 
 #include "desktop.h"
+#include "desktop-style.h"
+#include "svg/svg.h"
 
 #include "text-tag-attributes.h"
 #include "text-editing.h"
@@ -37,6 +39,7 @@
 
 #include "livarot/Shape.h"
 
+#include "display/curve.h"
 #include "display/drawing-text.h"
 
 SPFlowtext::SPFlowtext() : SPItem(),
@@ -151,12 +154,12 @@ void SPFlowtext::build(SPDocument* doc, Inkscape::XML::Node* repr) {
 
     SPItem::build(doc, repr);
 
-    this->readAttr( "inkscape:layoutOptions" );     // must happen after css has been read
+    this->readAttr(SPAttr::LAYOUT_OPTIONS);     // must happen after css has been read
 }
 
-void SPFlowtext::set(SPAttributeEnum key, const gchar* value) {
+void SPFlowtext::set(SPAttr key, const gchar* value) {
     switch (key) {
-        case SP_ATTR_LAYOUT_OPTIONS: {
+        case SPAttr::LAYOUT_OPTIONS: {
             // deprecated attribute, read for backward compatibility only
             //XML Tree being directly used while it shouldn't be.
             SPCSSAttr *opts = sp_repr_css_attr(this->getRepr(), "inkscape:layoutOptions");
@@ -275,6 +278,10 @@ void SPFlowtext::print(SPPrintContext *ctx) {
     this->layout.print(ctx, pbox, dbox, bbox, ctm);
 }
 
+const char* SPFlowtext::typeName() const {
+    return "text";
+}
+
 const char* SPFlowtext::displayName() const {
     if (has_internal_frame()) {
         return _("Flowed Text");
@@ -297,7 +304,7 @@ void SPFlowtext::snappoints(std::vector<Inkscape::SnapCandidatePoint> &p, Inksca
         Inkscape::Text::Layout const *layout = te_get_layout((SPItem *) this);
 
         if (layout != nullptr && layout->outputExists()) {
-            boost::optional<Geom::Point> pt = layout->baselineAnchorPoint();
+            std::optional<Geom::Point> pt = layout->baselineAnchorPoint();
 
             if (pt) {
                 p.emplace_back((*pt) * this->i2dt_affine(), Inkscape::SNAPSOURCE_TEXT_ANCHOR, Inkscape::SNAPTARGET_TEXT_ANCHOR);
@@ -424,6 +431,8 @@ void SPFlowtext::_buildLayoutInput(SPObject *root, Shape const *exclusion_shape,
             }
         }
     }
+    
+    if (dynamic_cast<SPFlowpara *>(root) && !root->hasChildren()) return;
 
     if (dynamic_cast<SPFlowdiv *>(root) || dynamic_cast<SPFlowpara *>(root) || dynamic_cast<SPFlowregionbreak *>(root) || dynamic_cast<SPFlowline *>(root)) {
         if (!root->hasChildren()) {
@@ -476,6 +485,11 @@ void SPFlowtext::_clearFlow(Inkscape::DrawingGroup *in_arena)
     in_arena->clearChildren();
 }
 
+std::unique_ptr<SPCurve> SPFlowtext::getNormalizedBpath() const
+{
+    return layout.convertToCurves();
+}
+
 Inkscape::XML::Node *SPFlowtext::getAsText()
 {
     if (!this->layout.outputExists()) {
@@ -487,8 +501,8 @@ Inkscape::XML::Node *SPFlowtext::getAsText()
     repr->setAttribute("xml:space", "preserve");
     repr->setAttribute("style", this->getRepr()->attribute("style"));
     Geom::Point anchor_point = this->layout.characterAnchorPoint(this->layout.begin());
-    sp_repr_set_svg_double(repr, "x", anchor_point[Geom::X]);
-    sp_repr_set_svg_double(repr, "y", anchor_point[Geom::Y]);
+    repr->setAttributeSvgDouble("x", anchor_point[Geom::X]);
+    repr->setAttributeSvgDouble("y", anchor_point[Geom::Y]);
 
     for (Inkscape::Text::Layout::iterator it = this->layout.begin() ; it != this->layout.end() ; ) {
         Inkscape::XML::Node *line_tspan = xml_doc->createElement("svg:tspan");
@@ -527,19 +541,20 @@ Inkscape::XML::Node *SPFlowtext::getAsText()
                 attrs.dx[0] = 0.0;
             TextTagAttributes(attrs).writeTo(span_tspan);
             if (set_x)
-                sp_repr_set_svg_double(span_tspan, "x", anchor_point[Geom::X]);  // FIXME: this will pick up the wrong end of counter-directional runs
+                span_tspan->setAttributeSvgDouble("x", anchor_point[Geom::X]);  // FIXME: this will pick up the wrong end of counter-directional runs
             if (set_y)
-                sp_repr_set_svg_double(span_tspan, "y", anchor_point[Geom::Y]);
+                span_tspan->setAttributeSvgDouble("y", anchor_point[Geom::Y]);
             if (line_tspan->childCount() == 0) {
-                sp_repr_set_svg_double(line_tspan, "x", anchor_point[Geom::X]);  // FIXME: this will pick up the wrong end of counter-directional runs
-                sp_repr_set_svg_double(line_tspan, "y", anchor_point[Geom::Y]);
+                line_tspan->setAttributeSvgDouble("x", anchor_point[Geom::X]);  // FIXME: this will pick up the wrong end of counter-directional runs
+                line_tspan->setAttributeSvgDouble("y", anchor_point[Geom::Y]);
             }
 
             SPObject *source_obj = nullptr;
             Glib::ustring::iterator span_text_start_iter;
             this->layout.getSourceOfCharacter(it, &source_obj, &span_text_start_iter);
 
-            Glib::ustring style_text = (dynamic_cast<SPString *>(source_obj) ? source_obj->parent : source_obj)->style->write( SP_STYLE_FLAG_IFDIFF, SP_STYLE_SRC_UNSET, this->style);
+            Glib::ustring style_text = (dynamic_cast<SPString *>(source_obj) ? source_obj->parent : source_obj)
+                                           ->style->writeIfDiff(this->style);
             span_tspan->setAttributeOrRemoveIfEmpty("style", style_text);
 
             SPString *str = dynamic_cast<SPString *>(source_obj);
@@ -631,10 +646,17 @@ bool SPFlowtext::has_internal_frame() const
 SPItem *create_flowtext_with_internal_frame (SPDesktop *desktop, Geom::Point p0, Geom::Point p1)
 {
     SPDocument *doc = desktop->getDocument();
+    auto const parent = dynamic_cast<SPItem *>(desktop->currentLayer());
+    assert(parent);
 
     Inkscape::XML::Document *xml_doc = doc->getReprDoc();
     Inkscape::XML::Node *root_repr = xml_doc->createElement("svg:flowRoot");
     root_repr->setAttribute("xml:space", "preserve"); // we preserve spaces in the text objects we create
+    root_repr->setAttributeOrRemoveIfEmpty("transform", sp_svg_transform_write(parent->i2doc_affine().inverse()));
+
+    /* Set style */
+    sp_desktop_apply_style_tool(desktop, root_repr, "/tools/text", true);
+
     SPItem *ft_item = dynamic_cast<SPItem *>(desktop->currentLayer()->appendChildRepr(root_repr));
     g_assert(ft_item != nullptr);
     SPObject *root_object = doc->getObjectByRepr(root_repr);
@@ -662,10 +684,7 @@ SPItem *create_flowtext_with_internal_frame (SPDesktop *desktop, Geom::Point p0,
     Geom::Coord const w  = x1 - x0;
     Geom::Coord const h  = y1 - y0;
 
-    SPItem *item = dynamic_cast<SPItem *>(desktop->currentLayer());
-    g_assert(item != nullptr);
     rect->setPosition(x0, y0, w, h);
-    rect->doWriteTransform(item->i2doc_affine().inverse(), nullptr, true);
     rect->updateRepr();
 
     Inkscape::XML::Node *para_repr = xml_doc->createElement("svg:flowPara");

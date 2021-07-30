@@ -14,12 +14,14 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
-#include "live_effects/lpe-tangent_to_curve.h"
+#include "lpe-tangent_to_curve.h"
+
 #include "display/curve.h"
-#include "knotholder.h"
 
 #include "object/sp-shape.h"
 #include "object/sp-object-group.h"
+#include "ui/knot/knot-holder.h"
+#include "ui/knot/knot-holder-entity.h"
 
 // TODO due to internal breakage in glibmm headers, this must be last:
 #include <glibmm/i18n.h>
@@ -97,17 +99,20 @@ void
 LPETangentToCurve::addKnotHolderEntities(KnotHolder *knotholder, SPItem *item) {
     {
         KnotHolderEntity *e = new TtC::KnotHolderEntityAttachPt(this);
-e->create(nullptr, item, knotholder, Inkscape::CTRL_TYPE_LPE, _("Adjust the point of attachment of the tangent"));
-knotholder->add(e);
+        e->create(nullptr, item, knotholder, Inkscape::CANVAS_ITEM_CTRL_TYPE_LPE, "LPE:TangentToCurvePT",
+                  _("Adjust the point of attachment of the tangent"));
+        knotholder->add(e);
     }
     {
         KnotHolderEntity *e = new TtC::KnotHolderEntityLeftEnd(this);
-        e->create(nullptr, item, knotholder, Inkscape::CTRL_TYPE_LPE, _("Adjust the <b>left</b> end of the tangent"));
+        e->create(nullptr, item, knotholder, Inkscape::CANVAS_ITEM_CTRL_TYPE_LPE, "LPE:TangentToCurveLeftEnd",
+                  _("Adjust the <b>left</b> end of the tangent"));
         knotholder->add(e);
     }
     {
         KnotHolderEntity *e = new TtC::KnotHolderEntityRightEnd(this);
-        e->create(nullptr, item, knotholder, Inkscape::CTRL_TYPE_LPE, _("Adjust the <b>right</b> end of the tangent"));
+        e->create(nullptr, item, knotholder, Inkscape::CANVAS_ITEM_CTRL_TYPE_LPE, "LPE:TangetToCurveRightEnd",
+                  _("Adjust the <b>right</b> end of the tangent"));
         knotholder->add(e);
     }
 };

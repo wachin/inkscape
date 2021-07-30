@@ -53,7 +53,7 @@ PrefDialog::PrefDialog (Glib::ustring name, Gtk::Widget * controls, Effect * eff
 {
     this->set_default_size(0,0);  // we want the window to be as small as possible instead of clobbering up space
 
-    Gtk::HBox *hbox = Gtk::manage(new Gtk::HBox());
+    Gtk::Box *hbox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL));
     if (controls == nullptr) {
         if (_effect == nullptr) {
             std::cout << "AH!!!  No controls and no effect!!!" << std::endl;
@@ -88,7 +88,7 @@ PrefDialog::PrefDialog (Glib::ustring name, Gtk::Widget * controls, Effect * eff
 
         this->get_content_area()->pack_start(*sep, false, false, InxWidget::GUI_BOX_SPACING);
 
-        hbox = Gtk::manage(new Gtk::HBox());
+        hbox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL));
         hbox->set_border_width(InxWidget::GUI_BOX_MARGIN);
         _button_preview = _param_preview->get_widget(&_signal_preview);
         _button_preview->show();
@@ -111,9 +111,6 @@ PrefDialog::PrefDialog (Glib::ustring name, Gtk::Widget * controls, Effect * eff
         set_modal(false);
     }
 
-    GtkWidget *dlg = GTK_WIDGET(gobj());
-    sp_transientize(dlg);
-
     return;
 }
 
@@ -134,7 +131,6 @@ PrefDialog::~PrefDialog ( )
     if (_effect != nullptr) {
         _effect->set_pref_dialog(nullptr);
     }
-
     return;
 }
 
@@ -194,12 +190,12 @@ void
 PrefDialog::on_response (int signal) {
     if (signal == Gtk::RESPONSE_OK) {
         if (_exEnv == nullptr) {
-			if (_effect != nullptr) {
-				_effect->effect(SP_ACTIVE_DESKTOP);
-			} else {
-				// Shutdown run()
-				return;
-			}
+            if (_effect != nullptr) {
+                _effect->effect(SP_ACTIVE_DESKTOP);
+            } else {
+                // Shutdown run()
+                return;
+            }
         } else {
             if (_exEnv->wait()) {
                 _exEnv->commit();

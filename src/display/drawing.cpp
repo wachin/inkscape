@@ -11,15 +11,14 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
-#include <algorithm>
 #include "display/drawing.h"
+#include "display/control/canvas-item-drawing.h"
 #include "nr-filter-gaussian.h"
 #include "nr-filter-types.h"
 
 //grayscale colormode:
 #include "cairo-templates.h"
 #include "drawing-context.h"
-#include "canvas-arena.h"
 
 
 namespace Inkscape {
@@ -32,22 +31,11 @@ static const gdouble grayscale_value_matrix[20] = {
     0   , 0   , 0    , 1, 0
 };
 
-Drawing::Drawing(SPCanvasArena *arena)
-    : _root(nullptr)
-    , outlinecolor(0x000000ff)
-    , delta(0)
-    , _exact(false)
-    , _outline_sensitive(true)
-    , _rendermode(RENDERMODE_NORMAL)
-    , _colormode(COLORMODE_NORMAL)
-    , _blur_quality(BLUR_QUALITY_BEST)
-    , _filter_quality(Filters::FILTER_QUALITY_BEST)
-    , _cache_score_threshold(50000.0)
-    , _cache_budget(0)
+Drawing::Drawing(Inkscape::CanvasItemDrawing *canvas_item_drawing)
+    : _canvas_item_drawing(canvas_item_drawing)
     , _grayscale_colormatrix(std::vector<gdouble>(grayscale_value_matrix, grayscale_value_matrix + 20))
-    , _canvasarena(arena)
 {
-
+    // _canvas_item_drawing can be null. Used this way by Eraser tool.
 }
 
 Drawing::~Drawing()
@@ -69,32 +57,37 @@ Drawing::setRoot(DrawingItem *item)
 RenderMode
 Drawing::renderMode() const
 {
-    return _exact ? RENDERMODE_NORMAL : _rendermode;
+    return _exact ? RenderMode::NORMAL : _rendermode;
 }
 ColorMode
 Drawing::colorMode() const
 {
-    return (outline() || _exact) ? COLORMODE_NORMAL : _colormode;
+    return (outline() || _exact) ? ColorMode::NORMAL : _colormode;
 }
 bool
 Drawing::outline() const
 {
-    return renderMode() == RENDERMODE_OUTLINE;
+    return renderMode() == RenderMode::OUTLINE;
 }
 bool
 Drawing::visibleHairlines() const
 {
-    return renderMode() == RENDERMODE_VISIBLE_HAIRLINES;
+    return renderMode() == RenderMode::VISIBLE_HAIRLINES;
+}
+bool
+Drawing::outlineOverlay() const
+{
+    return renderMode() == RenderMode::OUTLINE_OVERLAY;
 }
 bool
 Drawing::renderFilters() const
 {
-    return renderMode() == RENDERMODE_NORMAL || renderMode() == RENDERMODE_VISIBLE_HAIRLINES;
+    return renderMode() == RenderMode::NORMAL || renderMode() == RenderMode::VISIBLE_HAIRLINES || renderMode() == RenderMode::OUTLINE_OVERLAY;
 }
 int
 Drawing::blurQuality() const
 {
-    if (renderMode() == RENDERMODE_NORMAL) {
+    if (renderMode() == RenderMode::NORMAL) {
         return _exact ? BLUR_QUALITY_BEST : _blur_quality;
     } else {
         return BLUR_QUALITY_WORST;
@@ -103,7 +96,7 @@ Drawing::blurQuality() const
 int
 Drawing::filterQuality() const
 {
-    if (renderMode() == RENDERMODE_NORMAL) {
+    if (renderMode() == RenderMode::NORMAL) {
         return _exact ? Filters::FILTER_QUALITY_BEST : _filter_quality;
     } else {
         return Filters::FILTER_QUALITY_WORST;
@@ -171,7 +164,7 @@ void
 Drawing::update(Geom::IntRect const &area, unsigned flags, unsigned reset)
 {
     if (_root) {
-        auto ctx = _canvasarena ? _canvasarena->ctx : UpdateContext();
+        auto ctx = _canvas_item_drawing ? _canvas_item_drawing->get_context() : UpdateContext();
         _root->update(area, ctx, flags, reset);
     }
     if ((flags & DrawingItem::STATE_CACHE) || (flags & DrawingItem::STATE_ALL)) {
@@ -191,7 +184,7 @@ Drawing::render(DrawingContext &dc, Geom::IntRect const &area, unsigned flags, i
         _root->setAntialiasing(prev_a);
     }
 
-    if (colorMode() == COLORMODE_GRAYSCALE) {
+    if (colorMode() == ColorMode::GRAYSCALE) {
         // apply grayscale filter on top of everything
         cairo_surface_t *input = dc.rawTarget();
         cairo_surface_t *out = ink_cairo_surface_create_identical(input);
@@ -211,6 +204,8 @@ Drawing::pick(Geom::Point const &p, double delta, unsigned flags)
 {
     if (_root) {
         return _root->pick(p, delta, flags);
+    } else {
+        std::cerr << "Drawing::pick: _root is null!" << std::endl;
     }
     return nullptr;
 }
@@ -218,8 +213,6 @@ Drawing::pick(Geom::Point const &p, double delta, unsigned flags)
 void
 Drawing::_pickItemsForCaching()
 {
-    // we cache the objects with the highest score until the budget is exhausted
-    _candidate_items.sort(std::greater<CacheRecord>());
     size_t used = 0;
     CandidateList::iterator i;
     for (i = _candidate_items.begin(); i != _candidate_items.end(); ++i) {
@@ -243,6 +236,20 @@ Drawing::_pickItemsForCaching()
         j->setCached(false);
     }
 }
+
+/*
+ * Return average color over area. Used by Calligraphic, Dropper, and Spray tools.
+ */
+void
+Drawing::average_color(Geom::IntRect const &area, double &R, double &G, double &B, double &A)
+{
+    auto surface = Cairo::ImageSurface::create(Cairo::FORMAT_ARGB32, area.width(), area.height());
+    Inkscape::DrawingContext dc(surface->cobj(), area.min());
+    render(dc, area);
+
+    ink_cairo_surface_average_color_premul(surface->cobj(), R, G, B, A);
+}
+
 
 } // end namespace Inkscape
 

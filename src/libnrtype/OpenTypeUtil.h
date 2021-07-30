@@ -27,6 +27,8 @@
  * All three provide variable amounts of access to data.
  */
 
+struct hb_font_t;
+
 // OpenType substitution
 class OTSubstitution {
 public:
@@ -42,17 +44,20 @@ class OTVarAxis {
 public:
     OTVarAxis()
         : minimum(0)
+        , def(500) // Default
         , maximum(1000)
         , set_val(500)
         , index(-1) {};
 
-    OTVarAxis(double _minimum, double _maximum, double _set_val, int _index)
+    OTVarAxis(double _minimum, double _def, double _maximum, double _set_val, int _index)
         : minimum(_minimum)
+        , def(_def) // Default
         , maximum(_maximum)
         , set_val(_set_val)
         , index  (_index) {};
 
     double minimum;
+    double def;
     double maximum;
     double set_val;
     int    index;  // Index in OpenType file (since we use a map).
@@ -85,7 +90,7 @@ public:
 // This would be better if one had std::vector<OTSubstitution> instead of OTSubstitution where each
 // entry corresponded to one substitution (e.g. ff -> ﬀ) but Harfbuzz at the moment cannot return
 // individual substitutions. See Harfbuzz issue #673.
-void readOpenTypeGsubTable (const FT_Face ft_face,
+void readOpenTypeGsubTable (hb_font_t* hb_font,
                             std::map<Glib::ustring, OTSubstitution >& tables);
 
 void readOpenTypeFvarAxes  (const FT_Face ft_face,
@@ -94,7 +99,7 @@ void readOpenTypeFvarAxes  (const FT_Face ft_face,
 void readOpenTypeFvarNamed (const FT_Face ft_face,
                             std::map<Glib::ustring, OTVarInstance>& named);
 
-void readOpenTypeSVGTable  (const FT_Face ft_face,
+void readOpenTypeSVGTable  (hb_font_t* hb_font,
                             std::map<int, SVGTableEntry>& glyphs);
 
 #endif /* !USE_PANGO_WIND32    */

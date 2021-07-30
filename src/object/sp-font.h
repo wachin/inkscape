@@ -15,9 +15,6 @@
 
 #include "sp-object.h"
 
-#define SP_FONT(obj) (dynamic_cast<SPFont*>((SPObject*)obj))
-#define SP_IS_FONT(obj) (dynamic_cast<const SPFont*>((SPObject*)obj) != NULL)
-
 class SPFont : public SPObject {
 public:
 	SPFont();
@@ -37,11 +34,14 @@ protected:
 	void child_added(Inkscape::XML::Node* child, Inkscape::XML::Node* ref) override;
 	void remove_child(Inkscape::XML::Node* child) override;
 
-	void set(SPAttributeEnum key, char const* value) override;
+	void set(SPAttr key, char const* value) override;
 
 	void update(SPCtx* ctx, unsigned int flags) override;
 
 	Inkscape::XML::Node* write(Inkscape::XML::Document* doc, Inkscape::XML::Node* repr, unsigned int flags) override;
 };
+
+MAKE_SP_OBJECT_DOWNCAST_FUNCTIONS(SP_FONT, SPFont)
+MAKE_SP_OBJECT_TYPECHECK_FUNCTIONS(SP_IS_FONT, SPFont)
 
 #endif //#ifndef SP_FONT_H_SEEN

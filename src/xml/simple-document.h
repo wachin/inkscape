@@ -29,9 +29,9 @@ class SimpleDocument : public SimpleNode,
 public:
     explicit SimpleDocument()
     : SimpleNode(g_quark_from_static_string("xml"), this),
-      _in_transaction(false), _is_CData(false) {}
+      _in_transaction(false) {}
 
-    NodeType type() const override { return Inkscape::XML::DOCUMENT_NODE; }
+    NodeType type() const override { return Inkscape::XML::NodeType::DOCUMENT_NODE; }
 
     bool inTransaction() override { return _in_transaction; }
 
@@ -66,8 +66,8 @@ public:
 protected:
     SimpleDocument(SimpleDocument const &doc)
     : Node(), SimpleNode(doc), Document(), NodeObserver(),
-      _in_transaction(false),
-      _is_CData(false){}
+      _in_transaction(false)
+      {}
 
     SimpleNode *_duplicate(Document* /*doc*/) const override
     {
@@ -78,7 +78,6 @@ protected:
 private:
     bool _in_transaction;
     LogBuilder _log_builder;
-    bool _is_CData;
 };
 
 }

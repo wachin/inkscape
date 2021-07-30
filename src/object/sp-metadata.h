@@ -17,9 +17,6 @@
 
 /* Metadata base class */
 
-#define SP_METADATA(obj) (dynamic_cast<SPMetadata*>((SPObject*)obj))
-#define SP_IS_METADATA(obj) (dynamic_cast<const SPMetadata*>((SPObject*)obj) != NULL)
-
 class SPMetadata : public SPObject {
 public:
 	SPMetadata();
@@ -29,12 +26,14 @@ protected:
 	void build(SPDocument* doc, Inkscape::XML::Node* repr) override;
 	void release() override;
 
-	void set(SPAttributeEnum key, const char* value) override;
+	void set(SPAttr key, const char* value) override;
 	void update(SPCtx* ctx, unsigned int flags) override;
 	Inkscape::XML::Node* write(Inkscape::XML::Document* doc, Inkscape::XML::Node* repr, unsigned int flags) override;
 };
 
 SPMetadata * sp_document_metadata (SPDocument *document);
+
+MAKE_SP_OBJECT_DOWNCAST_FUNCTIONS(SP_METADATA, SPMetadata)
 
 #endif
 // vim: filetype=cpp:expandtab:shiftwidth=4:tabstop=8:softtabstop=4 :

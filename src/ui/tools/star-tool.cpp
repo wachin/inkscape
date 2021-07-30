@@ -21,6 +21,8 @@
 #include <gdk/gdkkeysyms.h>
 #include <glibmm/i18n.h>
 
+#include "star-tool.h"
+
 #include "context-fns.h"
 #include "desktop-style.h"
 #include "desktop.h"
@@ -30,18 +32,12 @@
 #include "selection.h"
 #include "verbs.h"
 
-#include "display/sp-canvas.h"
-#include "display/sp-canvas-item.h"
-
 #include "include/macros.h"
 
 #include "object/sp-namedview.h"
 #include "object/sp-star.h"
 
-#include "ui/pixmaps/cursor-star.xpm"
-
 #include "ui/shape-editor.h"
-#include "ui/tools/star-tool.h"
 
 #include "xml/node-event-vector.h"
 
@@ -58,7 +54,7 @@ const std::string& StarTool::getPrefsPath() {
 const std::string StarTool::prefsPath = "/tools/shapes/star";
 
 StarTool::StarTool()
-    : ToolBase(cursor_star_xpm)
+    : ToolBase("star.svg")
     , star(nullptr)
     , magnitude(5)
     , proportion(0.5)
@@ -69,7 +65,7 @@ StarTool::StarTool()
 }
 
 void StarTool::finish() {
-    sp_canvas_item_ungrab(SP_CANVAS_ITEM(desktop->acetate));
+    ungrabCanvasEvents();
 
     this->finishItem();
     this->sel_changed_connection.disconnect();
@@ -105,42 +101,42 @@ void StarTool::selection_changed(Inkscape::Selection* selection) {
 }
 
 void StarTool::setup() {
-	ToolBase::setup();
+    ToolBase::setup();
 
-	sp_event_context_read(this, "magnitude");
-	sp_event_context_read(this, "proportion");
-	sp_event_context_read(this, "isflatsided");
-	sp_event_context_read(this, "rounded");
-	sp_event_context_read(this, "randomized");
+    sp_event_context_read(this, "isflatsided");
+    sp_event_context_read(this, "magnitude");
+    sp_event_context_read(this, "proportion");
+    sp_event_context_read(this, "rounded");
+    sp_event_context_read(this, "randomized");
 
-	this->shape_editor = new ShapeEditor(this->desktop);
+    this->shape_editor = new ShapeEditor(this->desktop);
 
-	SPItem *item = this->desktop->getSelection()->singleItem();
-	if (item) {
-		this->shape_editor->set_item(item);
-	}
+    SPItem *item = this->desktop->getSelection()->singleItem();
+    if (item) {
+        this->shape_editor->set_item(item);
+    }
 
-	Inkscape::Selection *selection = this->desktop->getSelection();
-	
-	this->sel_changed_connection.disconnect();
+    Inkscape::Selection *selection = this->desktop->getSelection();
 
-	this->sel_changed_connection = selection->connectChanged(sigc::mem_fun(this, &StarTool::selection_changed));
+    this->sel_changed_connection.disconnect();
 
-	Inkscape::Preferences *prefs = Inkscape::Preferences::get();
-	if (prefs->getBool("/tools/shapes/selcue")) {
-		this->enableSelectionCue();
-	}
+    this->sel_changed_connection = selection->connectChanged(sigc::mem_fun(this, &StarTool::selection_changed));
 
-	if (prefs->getBool("/tools/shapes/gradientdrag")) {
-		this->enableGrDrag();
-	}
+    Inkscape::Preferences *prefs = Inkscape::Preferences::get();
+    if (prefs->getBool("/tools/shapes/selcue")) {
+        this->enableSelectionCue();
+    }
+
+    if (prefs->getBool("/tools/shapes/gradientdrag")) {
+        this->enableGrDrag();
+    }
 }
 
 void StarTool::set(const Inkscape::Preferences::Entry& val) {
     Glib::ustring path = val.getEntryName();
 
     if (path == "magnitude") {
-        this->magnitude = CLAMP(val.getInt(5), 3, 1024);
+        this->magnitude = CLAMP(val.getInt(5), this->isflatsided ? 3 : 2, 1024);
     } else if (path == "proportion") {
         this->proportion = CLAMP(val.getDouble(0.5), 0.01, 2.0);
     } else if (path == "isflatsided") {
@@ -165,7 +161,7 @@ bool StarTool::root_handler(GdkEvent* event) {
 
     switch (event->type) {
     case GDK_BUTTON_PRESS:
-        if (event->button.button == 1 && !this->space_panning) {
+        if (event->button.button == 1) {
             dragging = true;
 
             this->center = Inkscape::setup_for_drag_start(desktop, this, event);
@@ -176,18 +172,13 @@ bool StarTool::root_handler(GdkEvent* event) {
             m.freeSnapReturnByRef(this->center, Inkscape::SNAPSOURCE_NODE_HANDLE);
             m.unSetup();
 
-            sp_canvas_item_grab(SP_CANVAS_ITEM(desktop->acetate),
-                                GDK_KEY_PRESS_MASK | GDK_BUTTON_RELEASE_MASK |
-                                GDK_POINTER_MOTION_MASK |
-                                GDK_POINTER_MOTION_HINT_MASK |
-                                GDK_BUTTON_PRESS_MASK,
-                                nullptr, event->button.time);
+            grabCanvasEvents();
             ret = TRUE;
         }
         break;
 
     case GDK_MOTION_NOTIFY:
-        if (dragging && (event->motion.state & GDK_BUTTON1_MASK) && !this->space_panning) {
+        if (dragging && (event->motion.state & GDK_BUTTON1_MASK)) {
             if ( this->within_tolerance
                  && ( abs( (gint) event->motion.x - this->xp ) < this->tolerance )
                  && ( abs( (gint) event->motion.y - this->yp ) < this->tolerance ) ) {
@@ -220,7 +211,7 @@ bool StarTool::root_handler(GdkEvent* event) {
     case GDK_BUTTON_RELEASE:
         this->xp = this->yp = 0;
 
-        if (event->button.button == 1 && !this->space_panning) {
+        if (event->button.button == 1) {
             dragging = false;
 
             sp_event_context_discard_delayed_snap_event(this);
@@ -242,7 +233,7 @@ bool StarTool::root_handler(GdkEvent* event) {
 
             this->item_to_select = nullptr;
             ret = TRUE;
-            sp_canvas_item_ungrab(SP_CANVAS_ITEM (desktop->acetate));
+            ungrabCanvasEvents();
         }
         break;
 
@@ -281,7 +272,7 @@ bool StarTool::root_handler(GdkEvent* event) {
 
         case GDK_KEY_space:
             if (dragging) {
-                sp_canvas_item_ungrab(SP_CANVAS_ITEM(desktop->acetate));
+                ungrabCanvasEvents();
 
                 dragging = false;
 
@@ -361,7 +352,7 @@ void StarTool::drag(Geom::Point p, guint state)
         this->star->transform = SP_ITEM(desktop->currentLayer())->i2doc_affine().inverse();
         this->star->updateRepr();
 
-        desktop->canvas->forceFullRedrawAfterInterruptions(5);
+        forced_redraws_start(5);
     }
 
     /* Snap corner point with no constraints */
@@ -416,7 +407,7 @@ void StarTool::finishItem() {
         this->star->set_shape();
         this->star->updateRepr(SP_OBJECT_WRITE_EXT);
         this->star->doWriteTransform(this->star->transform, nullptr, true);
-        desktop->canvas->endForcedFullRedraws();
+        forced_redraws_stop();
 
         desktop->getSelection()->set(this->star);
         DocumentUndo::done(desktop->getDocument(), SP_VERB_CONTEXT_STAR,
@@ -428,7 +419,7 @@ void StarTool::finishItem() {
 
 void StarTool::cancel() {
     desktop->getSelection()->clear();
-    sp_canvas_item_ungrab(SP_CANVAS_ITEM(desktop->acetate));
+    ungrabCanvasEvents();
 
     if (this->star != nullptr) {
         this->star->deleteObject();
@@ -440,7 +431,7 @@ void StarTool::cancel() {
     this->yp = 0;
     this->item_to_select = nullptr;
 
-    desktop->canvas->endForcedFullRedraws();
+    forced_redraws_stop();
 
     DocumentUndo::cancel(desktop->getDocument());
 }

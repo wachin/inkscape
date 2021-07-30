@@ -44,7 +44,9 @@ Selection::Selection(LayerModel *layers, SPDesktop *desktop):
     _layers(layers),
     _selection_context(nullptr),
     _flags(0),
-    _idle(0)
+    _idle(0),
+    anchor_x(0.0),
+    anchor_y(0.0)
 {
 }
 
@@ -53,6 +55,10 @@ Selection::~Selection() {
     if (_idle) {
         g_source_remove(_idle);
         _idle = 0;
+    }
+
+    for (auto &c : _modified_connections) {
+        c.second.disconnect();
     }
 }
 
@@ -142,10 +148,8 @@ std::vector<Inkscape::SnapCandidatePoint> Selection::getSnapPoints(SnapPreferenc
 
 SPObject *Selection::_objectForXMLNode(Inkscape::XML::Node *repr) const {
     g_return_val_if_fail(repr != nullptr, NULL);
-    gchar const *id = repr->attribute("id");
-    g_return_val_if_fail(id != nullptr, NULL);
-    SPObject *object=_layers->getDocument()->getObjectById(id);
-    g_return_val_if_fail(object != nullptr, NULL);
+    SPObject *object = _layers->getDocument()->getObjectByRepr(repr);
+    assert(object == _layers->getDocument()->getObjectById(repr->attribute("id")));
     return object;
 }
 
@@ -170,10 +174,6 @@ size_t Selection::numberOfParents() {
     return parents.size();
 }
 
-void Selection::_emitSignals() {
-    _emitChanged();
-}
-
 void Selection::_connectSignals(SPObject *object) {
     _modified_connections[object] = object->connectModified(sigc::mem_fun(*this, &Selection::_schedule_modified));
 }
@@ -194,7 +194,6 @@ void
 Selection::setBackup ()
 {
     SPDesktop *desktop = this->desktop();
-    SPDocument *document = SP_ACTIVE_DOCUMENT;
     Inkscape::UI::Tools::NodeTool *tool = nullptr;
     if (desktop) {
         Inkscape::UI::Tools::ToolBase *ec = desktop->event_context;
@@ -208,6 +207,9 @@ Selection::setBackup ()
     auto items = const_cast<Selection *>(this)->items();
     for (auto iter = items.begin(); iter != items.end(); ++iter) {
         SPItem *item = *iter;
+        if(!item->getId()) {
+            continue;
+        }
         std::string selected_id;
         selected_id += "--id=";
         selected_id += item->getId();
@@ -283,7 +285,6 @@ Selection::restoreBackup()
         if (node) {
             Inkscape::UI::SubpathList sp = node->nodeList().subpathList();
             for (auto & l : _seldata) {
-                SPPath * path = dynamic_cast<SPPath *>(document->getObjectById(l.first));
                 gint sp_count = 0;
                 for (Inkscape::UI::SubpathList::iterator j = sp.begin(); j != sp.end(); ++j, ++sp_count) {
                     if(sp_count == l.second.first) {

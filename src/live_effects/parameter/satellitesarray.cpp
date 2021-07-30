@@ -7,18 +7,21 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
-#include "live_effects/parameter/satellitesarray.h"
-#include "helper/geom.h"
-#include "knotholder.h"
-#include "live_effects/effect.h"
-#include "live_effects/lpe-fillet-chamfer.h"
-#include "ui/dialog/lpe-fillet-chamfer-properties.h"
-#include "ui/shape-editor.h"
-#include "ui/tools-switch.h"
-#include "ui/tools/node-tool.h"
+#include "satellitesarray.h"
 
 #include "inkscape.h"
-#include <preferences.h>
+#include "preferences.h"
+
+#include "helper/geom.h"
+
+#include "live_effects/effect.h"
+#include "live_effects/lpe-fillet-chamfer.h"
+
+#include "ui/dialog/lpe-fillet-chamfer-properties.h"
+#include "ui/knot/knot-holder.h"
+#include "ui/shape-editor.h"
+#include "ui/tools/node-tool.h"
+
 // TODO due to internal breakage in glibmm headers,
 // this has to be included last.
 #include <glibmm/i18n.h>
@@ -34,21 +37,13 @@ SatellitesArrayParam::SatellitesArrayParam(const Glib::ustring &label,
         Effect *effect)
     : ArrayParam<std::vector<Satellite> >(label, tip, key, wr, effect, 0), _knoth(nullptr)
 {
-    _knot_shape = SP_KNOT_SHAPE_DIAMOND;
-    _knot_mode = SP_KNOT_MODE_XOR;
-    _knot_color = 0xAAFF8800;
-    _use_distance = false;
-    _global_knot_hide = false;
-    _current_zoom = 0;
-    _effectType = FILLET_CHAMFER;
-    _last_pathvector_satellites = nullptr;
     param_widget_is_visible(false);
 }
 
 
-void SatellitesArrayParam::set_oncanvas_looks(SPKnotShapeType shape,
-        SPKnotModeType mode,
-        guint32 color)
+void SatellitesArrayParam::set_oncanvas_looks(Inkscape::CanvasItemCtrlShape shape,
+                                              Inkscape::CanvasItemCtrlMode mode,
+                                              guint32 color)
 {
     _knot_shape = shape;
     _knot_mode = mode;
@@ -68,11 +63,11 @@ void SatellitesArrayParam::setPathVectorSatellites(PathVectorSatellites *pathVec
 void SatellitesArrayParam::reloadKnots()
 {
     SPDesktop *desktop = SP_ACTIVE_DESKTOP;
-    if (desktop && tools_isactive(desktop, TOOLS_NODES)) {
-        Inkscape::UI::Tools::NodeTool *nt = static_cast<Inkscape::UI::Tools::NodeTool *>(desktop->event_context);
+    if (desktop) {
+        Inkscape::UI::Tools::NodeTool *nt = dynamic_cast<Inkscape::UI::Tools::NodeTool *>(desktop->event_context);
         if (nt) {
-            for (auto i = nt->_shape_editors.begin(); i != nt->_shape_editors.end(); ++i) {
-                Inkscape::UI::ShapeEditor *shape_editor = i->second;
+            for (auto &_shape_editor : nt->_shape_editors) {
+                Inkscape::UI::ShapeEditor *shape_editor = _shape_editor.second.get();
                 if (shape_editor && shape_editor->lpeknotholder) {
                     SPItem *item = shape_editor->knotholder->item;
                     shape_editor->unset_item(true);
@@ -197,7 +192,18 @@ void SatellitesArrayParam::addKnotHolderEntities(KnotHolder *knotholder,
                                                  bool mirror)
 {
     if (!_last_pathvector_satellites) {
-        return;
+        // this also done because on load _last_pathvector_satellites is none. 
+        // anyway the duple caller function same code is not executed because is_load become false
+        // after LPE update
+        if (param_effect->is_load) {
+            SPLPEItem *lpeitem = dynamic_cast<SPLPEItem *>(item);
+            if (lpeitem) {
+                sp_lpe_item_update_patheffect(lpeitem, false, false);
+            }
+        }
+        if (!_last_pathvector_satellites) {
+            return;
+        }
     }
     size_t index = 0;
     for (size_t i = 0; i < _vector.size(); ++i) {
@@ -231,8 +237,8 @@ void SatellitesArrayParam::addKnotHolderEntities(KnotHolder *knotholder,
                             "<b>Ctrl+Alt+Click</b> reset");
                 }
                 FilletChamferKnotHolderEntity *e = new FilletChamferKnotHolderEntity(this, index);
-                e->create(nullptr, item, knotholder, Inkscape::CTRL_TYPE_LPE, _(tip), _knot_shape, _knot_mode,
-                          _knot_color);
+                e->create(nullptr, item, knotholder, Inkscape::CANVAS_ITEM_CTRL_TYPE_LPE, "LPE:Chamfer",
+                          _(tip), _knot_color);
                 knotholder->add(e);
             }
             index++;

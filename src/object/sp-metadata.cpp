@@ -11,6 +11,9 @@
  */
 
 #include "sp-metadata.h"
+
+#include <regex>
+
 #include "xml/node-iterators.h"
 #include "document.h"
 
@@ -39,7 +42,7 @@ namespace {
 
 void strip_ids_recursively(Inkscape::XML::Node *node) {
     using Inkscape::XML::NodeSiblingIterator;
-    if ( node->type() == Inkscape::XML::ELEMENT_NODE ) {
+    if ( node->type() == Inkscape::XML::NodeType::ELEMENT_NODE ) {
         node->removeAttribute("id");
     }
     for ( NodeSiblingIterator iter=node->firstChild() ; iter ; ++iter ) {
@@ -47,6 +50,28 @@ void strip_ids_recursively(Inkscape::XML::Node *node) {
     }
 }
 
+/**
+ * Return true if the given metadata belongs to a CorelDraw layer.
+ */
+bool is_corel_layer_metadata(SPMetadata const &metadata)
+{
+    char const *id = metadata.getId();
+    return id &&                                  //
+           g_str_has_prefix(id, "CorelCorpID") && //
+           g_str_has_suffix(id, "Corel-Layer");
+}
+
+/**
+ * Get the label of a CorelDraw layer.
+ */
+std::string corel_layer_get_label(SPGroup const &layer)
+{
+    char const *id = layer.getId();
+    if (id) {
+        return std::regex_replace(id, std::regex("_x0020_"), " ");
+    }
+    return "<unnamed-corel-layer>";
+}
 }
 
 
@@ -76,7 +101,7 @@ void SPMetadata::release() {
     SPObject::release();
 }
 
-void SPMetadata::set(SPAttributeEnum key, const gchar* value) {
+void SPMetadata::set(SPAttr key, const gchar* value) {
     debug("0x%08x %s(%u): '%s'",(unsigned int)this,
           sp_attribute_name(key),key,value);
 
@@ -93,6 +118,16 @@ void SPMetadata::update(SPCtx* /*ctx*/, unsigned int flags) {
 
         /* do something? */
 
+        // Detect CorelDraw layers
+        if (is_corel_layer_metadata(*this)) {
+            auto layer = dynamic_cast<SPGroup *>(parent);
+            if (layer && layer->layerMode() == SPGroup::GROUP) {
+                layer->setLayerMode(SPGroup::LAYER);
+                if (!layer->label()) {
+                    layer->setLabel(corel_layer_get_label(*layer).c_str());
+                }
+            }
+        }
     }
 
 //    SPObject::onUpdate(ctx, flags);

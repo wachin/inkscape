@@ -56,8 +56,8 @@ BlurEdge::effect (Inkscape::Extension::Effect *module, Inkscape::UI::View::View 
 {
     Inkscape::Selection * selection     = static_cast<SPDesktop *>(desktop)->selection;
 
-    float width = module->get_param_float("blur-width");
-    int   steps = module->get_param_int("num-steps");
+    double width = module->get_param_float("blur-width");
+    int    steps = module->get_param_int("num-steps");
 
     Inkscape::Preferences *prefs = Inkscape::Preferences::get();
     double old_offset = prefs->getDouble("/options/defaultoffsetwidth/value", 1.0, "px");
@@ -125,6 +125,7 @@ BlurEdge::prefs_effect(Inkscape::Extension::Effect * module, Inkscape::UI::View:
 void
 BlurEdge::init ()
 {
+    // clang-format off
     Inkscape::Extension::build_from_mem(
         "<inkscape-extension xmlns=\"" INKSCAPE_EXTENSION_URI "\">\n"
             "<name>" N_("Inset/Outset Halo") "</name>\n"
@@ -138,6 +139,7 @@ BlurEdge::init ()
                 "</effects-menu>\n"
             "</effect>\n"
         "</inkscape-extension>\n" , new BlurEdge());
+    // clang-format on
     return;
 }
 

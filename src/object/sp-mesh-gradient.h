@@ -17,9 +17,6 @@
 #include "svg/svg-length.h"
 #include "sp-gradient.h"
 
-#define SP_MESHGRADIENT(obj) (dynamic_cast<SPMeshGradient*>((SPObject*)obj))
-#define SP_IS_MESHGRADIENT(obj) (dynamic_cast<const SPMeshGradient*>((SPObject*)obj) != NULL)
-
 /** Mesh gradient. */
 class SPMeshGradient : public SPGradient {
 public:
@@ -34,9 +31,12 @@ public:
 
 protected:
     void build(SPDocument *document, Inkscape::XML::Node *repr) override;
-    void set(SPAttributeEnum key, char const *value) override;
+    void set(SPAttr key, char const *value) override;
     Inkscape::XML::Node* write(Inkscape::XML::Document *xml_doc, Inkscape::XML::Node *repr, unsigned int flags) override;
 };
+
+MAKE_SP_OBJECT_DOWNCAST_FUNCTIONS(SP_MESHGRADIENT, SPMeshGradient)
+MAKE_SP_OBJECT_TYPECHECK_FUNCTIONS(SP_IS_MESHGRADIENT, SPMeshGradient)
 
 #endif /* !SP_MESH_GRADIENT_H */
 

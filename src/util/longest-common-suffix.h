@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 /*
- * Inkscape::Algorithms::longest_common_suffix
+ * Inkscape::Algorithms::nearest_common_ancestor
  *
  * Authors:
  *   MenTaLguY <mental@rydia.net>
@@ -10,12 +10,11 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
-#ifndef SEEN_INKSCAPE_ALGORITHMS_LONGEST_COMMON_SUFFIX_H
-#define SEEN_INKSCAPE_ALGORITHMS_LONGEST_COMMON_SUFFIX_H
+#ifndef SEEN_INKSCAPE_ALGORITHMS_NEAREST_COMMON_ANCESTOR_H
+#define SEEN_INKSCAPE_ALGORITHMS_NEAREST_COMMON_ANCESTOR_H
 
 #include <iterator>
 #include <functional>
-#include "util/list.h"
 
 namespace Inkscape {
 
@@ -26,22 +25,13 @@ namespace Algorithms {
  *
  * The case of sharing a common successor is handled in O(1) time.
  *
- * If \a a is the longest common suffix, then runs in O(len(rest of b)) time.
+ * If \a a is the nearest common ancestor, then runs in O(len(rest of b)) time.
  *
  * Otherwise, runs in O(len(a) + len(b)) time.
  */
 
 template <typename ForwardIterator>
-ForwardIterator longest_common_suffix(ForwardIterator a, ForwardIterator b,
-                                      ForwardIterator end)
-{
-    typedef typename std::iterator_traits<ForwardIterator>::value_type value_type;
-    return longest_common_suffix(a, b, end, std::equal_to<value_type>());
-}
-
-template <typename ForwardIterator, typename BinaryPredicate>
-ForwardIterator longest_common_suffix(ForwardIterator a, ForwardIterator b,
-                                      ForwardIterator end, BinaryPredicate pred)
+ForwardIterator nearest_common_ancestor(ForwardIterator a, ForwardIterator b, ForwardIterator end)
 {
     if ( a == end || b == end ) {
         return end;
@@ -64,10 +54,8 @@ ForwardIterator longest_common_suffix(ForwardIterator a, ForwardIterator b,
 
     /* Build parallel lists of suffixes, ordered by increasing length. */
 
-    using Inkscape::Util::List;
-    using Inkscape::Util::cons;
     ForwardIterator lists[2] = { a, b };
-    List<ForwardIterator> suffixes[2];
+    std::vector<ForwardIterator> suffixes[2];
 
     for ( int i=0 ; i < 2 ; i++ ) {
         for ( ForwardIterator iter(lists[i]) ; iter != end ; ++iter ) {
@@ -75,8 +63,7 @@ ForwardIterator longest_common_suffix(ForwardIterator a, ForwardIterator b,
                 // the other list is a suffix of this one
                 return lists[1-i];
             }
-
-            suffixes[i] = cons(iter, suffixes[i]);
+            suffixes[i].push_back(iter);
         }
     }
 
@@ -86,12 +73,12 @@ ForwardIterator longest_common_suffix(ForwardIterator a, ForwardIterator b,
 
     ForwardIterator longest_common(end);
 
-    while ( suffixes[0] && suffixes[1] &&
-            pred(**suffixes[0], **suffixes[1]) )
+    while ( !suffixes[0].empty() && !suffixes[1].empty() &&
+             suffixes[0].back() == suffixes[1].back() )
     {
-        longest_common = *suffixes[0];
-        ++suffixes[0];
-        ++suffixes[1];
+        longest_common = suffixes[0].back();
+        suffixes[0].pop_back();
+        suffixes[1].pop_back();
     }
 
     return longest_common;
@@ -101,7 +88,7 @@ ForwardIterator longest_common_suffix(ForwardIterator a, ForwardIterator b,
 
 }
 
-#endif /* !SEEN_INKSCAPE_ALGORITHMS_LONGEST_COMMON_SUFFIX_H */
+#endif /* !SEEN_INKSCAPE_ALGORITHMS_NEAREST_COMMON_ANCESTOR_H */
 
 /*
   Local Variables:

@@ -18,7 +18,8 @@
 
 #include "object/sp-path.h"
 
-#include "knotholder.h"
+#include "ui/knot/knot-holder.h"
+#include "ui/knot/knot-holder-entity.h"
 
 // TODO due to internal breakage in glibmm headers, this must be last:
 #include <glibmm/i18n.h>
@@ -153,12 +154,14 @@ void
 LPEPerpBisector::addKnotHolderEntities(KnotHolder *knotholder, SPDesktop *desktop, SPItem *item) {
     {
         KnotHolderEntity *e = new PB::KnotHolderEntityLeftEnd(this);
-e->create(desktop, item, knotholder, Inkscape::CTRL_TYPE_LPE, _("Adjust the \"left\" end of the bisector"));
+        e->create(desktop, item, knotholder, Inkscape::CANVAS_ITEM_CTRL_TYPE_LPE, "LPE:PerpBisectorLeftEnd",
+                  _("Adjust the \"left\" end of the bisector"));
 knotholder->add(e);
     }
     {
         KnotHolderEntity *e = new PB::KnotHolderEntityRightEnd(this);
-        e->create(desktop, item, knotholder, Inkscape::CTRL_TYPE_LPE, _("Adjust the \"right\" end of the bisector"));
+        e->create(desktop, item, knotholder, Inkscape::CANVAS_ITEM_CTRL_TYPE_LPE, "LPE:PerpBisectorRightEnd",
+                  _("Adjust the \"right\" end of the bisector"));
         knotholder->add(e);
     }
 };

@@ -18,6 +18,7 @@
 #include <shlobj.h> // for SHGetSpecialFolderLocation
 #endif
 
+#include <glibmm/convert.h>
 #include <glibmm/i18n.h>
 #include <glibmm/miscutils.h>
 #include <glibmm/stringutils.h>
@@ -35,78 +36,81 @@ namespace IO {
 
 namespace Resource {
 
+
+static void get_foldernames_from_path(std::vector<Glib::ustring> &folders, std::string const &path,
+                                      std::vector<const char *> const &exclusions = {});
+
 #define INKSCAPE_PROFILE_DIR "inkscape"
 
 gchar *_get_path(Domain domain, Type type, char const *filename)
 {
-    gchar *path=nullptr;
+    if (domain == USER) {
+        switch (type) {
+        case ATTRIBUTES:
+        case EXAMPLES:
+        case DOCS:
+        case SCREENS:
+        case TUTORIALS:
+            // Happens for example with `get_filename_string(SCREENS, ...)`
+            // but we don't want a user configurable about screen.
+            return nullptr;
+        }
+    }
+
+    char const *name = nullptr;
+    char const *sysdir = nullptr;
+
     switch (domain) {
-        case SYSTEM: {
-            gchar const* temp = nullptr;
-            switch (type) {
-                case EXTENSIONS: temp = INKSCAPE_EXTENSIONDIR; break;
-                case FILTERS: temp = INKSCAPE_FILTERDIR; break;
-                case FONTS: temp = INKSCAPE_FONTSDIR; break;
-                case ICONS: temp = INKSCAPE_ICONSDIR; break;
-                case KEYS: temp = INKSCAPE_KEYSDIR; break;
-                case MARKERS: temp = INKSCAPE_MARKERSDIR; break;
-                case NONE: g_assert_not_reached(); break;
-                case PAINT: temp = INKSCAPE_PAINTDIR; break;
-                case PALETTES: temp = INKSCAPE_PALETTESDIR; break;
-                case SCREENS: temp = INKSCAPE_SCREENSDIR; break;
-                case SYMBOLS: temp = INKSCAPE_SYMBOLSDIR; break;
-                case TEMPLATES: temp = INKSCAPE_TEMPLATESDIR; break;
-                case THEMES: temp = INKSCAPE_THEMEDIR; break;
-                case TUTORIALS: temp = INKSCAPE_TUTORIALSDIR; break;
-                case UIS: temp = INKSCAPE_UIDIR; break;
-                case PIXMAPS: temp = INKSCAPE_PIXMAPSDIR; break;
-                default: temp = "";
-            }
-            path = g_strdup(temp);
-        } break;
         case CREATE: {
-            gchar const* temp = nullptr;
+            sysdir = "create";
             switch (type) {
-                case PAINT: temp = CREATE_PAINTDIR; break;
-                case PALETTES: temp = CREATE_PALETTESDIR; break;
-                default: temp = "";
+                case PAINT: name = "paint"; break;
+                case PALETTES: name = "swatches"; break;
+                default: return nullptr;
             }
-            path = g_strdup(temp);
         } break;
         case CACHE: {
-            path = g_build_filename(g_get_user_cache_dir(), "inkscape", NULL);
+            g_assert(type == NONE);
+            return g_build_filename(g_get_user_cache_dir(), "inkscape", filename, nullptr);
         } break;
+
+        case SYSTEM:
+            sysdir = "inkscape";
         case USER: {
-            char const *name=nullptr;
             switch (type) {
+                case ATTRIBUTES: name = "attributes"; break;
+                case DOCS: name = "doc"; break;
+                case EXAMPLES: name = "examples"; break;
                 case EXTENSIONS: name = "extensions"; break;
                 case FILTERS: name = "filters"; break;
                 case FONTS: name = "fonts"; break;
                 case ICONS: name = "icons"; break;
                 case KEYS: name = "keys"; break;
                 case MARKERS: name = "markers"; break;
-                case NONE: name = ""; break;
                 case PAINT: name = "paint"; break;
                 case PALETTES: name = "palettes"; break;
+                case SCREENS: name = "screens"; break;
                 case SYMBOLS: name = "symbols"; break;
                 case TEMPLATES: name = "templates"; break;
                 case THEMES: name = "themes"; break;
+                case TUTORIALS: name = "tutorials"; break;
                 case UIS: name = "ui"; break;
                 case PIXMAPS: name = "pixmaps"; break;
-                default: return _get_path(SYSTEM, type, filename);
+                default: g_assert_not_reached();
+                         return nullptr;
             }
-            path = profile_path(name);
         } break;
     }
 
-
-    if (filename && path) {
-        gchar *temp=g_build_filename(path, filename, NULL);
-        g_free(path);
-        path = temp;
+    if (!name) {
+        return nullptr;
     }
 
-    return path;
+    if (sysdir) {
+        return g_build_filename(get_inkscape_datadir(), sysdir, name, filename, nullptr);
+    } else {
+        return g_build_filename(profile_path(), name, filename, nullptr);
+    }
 }
 
 
@@ -128,6 +132,16 @@ Glib::ustring get_path_ustring(Domain domain, Type type, char const *filename)
     }
     return result;
 }
+std::string get_path_string(Domain domain, Type type, char const *filename)
+{
+    std::string result;
+    char *path = _get_path(domain, type, filename);
+    if (path) {
+        result = path;
+        g_free(path);
+    }
+    return result;
+}
 
 /*
  * Same as get_path, but checks for file's existence and falls back
@@ -137,12 +151,17 @@ Glib::ustring get_path_ustring(Domain domain, Type type, char const *filename)
  *  filename  - The filename to get, i.e. preferences.xml
  *  localized - Prefer a localized version of the file, i.e. default.de.svg instead of default.svg.
  *              (will use gettext to determine the preferred language of the user)
- *  silent    - do not warn if file doesnt exist
+ *  silent    - do not warn if file doesn't exist
  * 
  */
 Glib::ustring get_filename(Type type, char const *filename, bool localized, bool silent)
 {
-    Glib::ustring result;
+    return get_filename_string(type, filename, localized, silent);
+}
+
+std::string get_filename_string(Type type, char const *filename, bool localized, bool silent)
+{
+    std::string result;
 
     char *user_filename = nullptr;
     char *sys_filename = nullptr;
@@ -154,7 +173,7 @@ Glib::ustring get_filename(Type type, char const *filename, bool localized, bool
     localized = localized && strcmp(_("en"), "en");
 
     if (localized) {
-        Glib::ustring localized_filename = filename;
+        std::string localized_filename = filename;
         localized_filename.insert(localized_filename.rfind('.'), ".");
         localized_filename.insert(localized_filename.rfind('.'), _("en"));
 
@@ -167,16 +186,16 @@ Glib::ustring get_filename(Type type, char const *filename, bool localized, bool
     // impose the following load order:
     //   USER (localized) > USER > SYSTEM (localized) > SYSTEM
     if (localized && file_test(user_filename_localized, G_FILE_TEST_EXISTS)) {
-        result = Glib::ustring(user_filename_localized);
+        result = user_filename_localized;
         g_info("Found localized version of resource file '%s' in profile directory:\n\t%s", filename, result.c_str());
     } else if (file_test(user_filename, G_FILE_TEST_EXISTS)) {
-        result = Glib::ustring(user_filename);
+        result = user_filename;
         g_info("Found resource file '%s' in profile directory:\n\t%s", filename, result.c_str());
     } else if (localized && file_test(sys_filename_localized, G_FILE_TEST_EXISTS)) {
-        result = Glib::ustring(sys_filename_localized);
+        result = sys_filename_localized;
         g_info("Found localized version of resource file '%s' in system directory:\n\t%s", filename, result.c_str());
     } else if (file_test(sys_filename, G_FILE_TEST_EXISTS)) {
-        result = Glib::ustring(sys_filename);
+        result = sys_filename;
         g_info("Found resource file '%s' in system directory:\n\t%s", filename, result.c_str());
     } else if (!silent) {
         if (localized) {
@@ -204,21 +223,29 @@ Glib::ustring get_filename(Type type, char const *filename, bool localized, bool
  */
 Glib::ustring get_filename(Glib::ustring path, Glib::ustring filename)
 {
+    return get_filename(Glib::filename_from_utf8(path), //
+                        Glib::filename_from_utf8(filename));
+}
+
+std::string get_filename(std::string const& path, std::string const& filename)
+{
     // Test if it's a filename and get the parent directory instead
     if (Glib::file_test(path, Glib::FILE_TEST_IS_REGULAR)) {
-        return get_filename(g_path_get_dirname(path.c_str()), filename);
+        auto dirname = Glib::path_get_dirname(path);
+        g_assert(!Glib::file_test(dirname, Glib::FILE_TEST_IS_REGULAR)); // recursion sanity check
+        return get_filename(dirname, filename);
     }
     if (g_path_is_absolute(filename.c_str())) {
         if (Glib::file_test(filename, Glib::FILE_TEST_EXISTS)) {
             return filename;
         }
     } else {
-        Glib::ustring ret = Glib::build_filename(path, filename);
+        auto ret = Glib::build_filename(path, filename);
         if (Glib::file_test(ret, Glib::FILE_TEST_EXISTS)) {
             return ret;
         }
     }
-    return Glib::ustring();
+    return {};
 }
 
 /*
@@ -229,25 +256,25 @@ Glib::ustring get_filename(Glib::ustring path, Glib::ustring filename)
  *  extensions - A list of extensions to return, e.g. xml, svg
  *  exclusions - A list of names to exclude e.g. default.xml
  */
-std::vector<Glib::ustring> get_filenames(Type type, std::vector<const char *> extensions, std::vector<const char *> exclusions)
+std::vector<Glib::ustring> get_filenames(Type type, std::vector<const char *> const &extensions, std::vector<const char *> const &exclusions)
 {
     std::vector<Glib::ustring> ret;
-    get_filenames_from_path(ret, get_path_ustring(USER, type), extensions, exclusions);
-    get_filenames_from_path(ret, get_path_ustring(SYSTEM, type), extensions, exclusions);
-    get_filenames_from_path(ret, get_path_ustring(CREATE, type), extensions, exclusions);
+    get_filenames_from_path(ret, get_path_string(USER, type), extensions, exclusions);
+    get_filenames_from_path(ret, get_path_string(SYSTEM, type), extensions, exclusions);
+    get_filenames_from_path(ret, get_path_string(CREATE, type), extensions, exclusions);
     return ret;
 }
 
-std::vector<Glib::ustring> get_filenames(Domain domain, Type type, std::vector<const char *> extensions, std::vector<const char *> exclusions)
+std::vector<Glib::ustring> get_filenames(Domain domain, Type type, std::vector<const char *> const &extensions, std::vector<const char *> const &exclusions)
 {
     std::vector<Glib::ustring> ret;
-    get_filenames_from_path(ret, get_path_ustring(domain, type), extensions, exclusions);
+    get_filenames_from_path(ret, get_path_string(domain, type), extensions, exclusions);
     return ret;
 }
-std::vector<Glib::ustring> get_filenames(Glib::ustring path, std::vector<const char *> extensions, std::vector<const char *> exclusions)
+std::vector<Glib::ustring> get_filenames(Glib::ustring path, std::vector<const char *> const &extensions, std::vector<const char *> const &exclusions)
 {
     std::vector<Glib::ustring> ret;
-    get_filenames_from_path(ret, path, extensions, exclusions);
+    get_filenames_from_path(ret, Glib::filename_from_utf8(path), extensions, exclusions);
     return ret;
 }
 
@@ -259,7 +286,7 @@ std::vector<Glib::ustring> get_filenames(Glib::ustring path, std::vector<const c
  *  extensions - A list of extensions to return, e.g. xml, svg
  *  exclusions - A list of names to exclude e.g. default.xml
  */
-std::vector<Glib::ustring> get_foldernames(Type type, std::vector<const char *> exclusions)
+std::vector<Glib::ustring> get_foldernames(Type type, std::vector<const char *> const &exclusions)
 {
     std::vector<Glib::ustring> ret;
     get_foldernames_from_path(ret, get_path_ustring(USER, type), exclusions);
@@ -268,13 +295,13 @@ std::vector<Glib::ustring> get_foldernames(Type type, std::vector<const char *> 
     return ret;
 }
 
-std::vector<Glib::ustring> get_foldernames(Domain domain, Type type, std::vector<const char *> exclusions)
+std::vector<Glib::ustring> get_foldernames(Domain domain, Type type, std::vector<const char *> const &exclusions)
 {
     std::vector<Glib::ustring> ret;
     get_foldernames_from_path(ret, get_path_ustring(domain, type), exclusions);
     return ret;
 }
-std::vector<Glib::ustring> get_foldernames(Glib::ustring path, std::vector<const char *> exclusions)
+std::vector<Glib::ustring> get_foldernames(Glib::ustring path, std::vector<const char *> const &exclusions)
 {
     std::vector<Glib::ustring> ret;
     get_foldernames_from_path(ret, path, exclusions);
@@ -290,7 +317,8 @@ std::vector<Glib::ustring> get_foldernames(Glib::ustring path, std::vector<const
  * extensions - Only add files with these extensions, they must be duplicated
  * exclusions - Exclude files that exactly match these names.
  */
-void get_filenames_from_path(std::vector<Glib::ustring> &files, Glib::ustring path, std::vector<const char *> extensions, std::vector<const char *> exclusions)
+void get_filenames_from_path(std::vector<Glib::ustring> &files, std::string const &path,
+                             std::vector<const char *> const &extensions, std::vector<const char *> const &exclusions)
 {
     if(!Glib::file_test(path, Glib::FILE_TEST_IS_DIR)) {
         return;
@@ -313,12 +341,12 @@ void get_filenames_from_path(std::vector<Glib::ustring> &files, Glib::ustring pa
         }
 
         // Reject any filename which isn't a regular file
-        Glib::ustring filename = Glib::build_filename(path, file);
+        auto filename = Glib::build_filename(path, file);
 
         if(Glib::file_test(filename, Glib::FILE_TEST_IS_DIR)) {
             get_filenames_from_path(files, filename, extensions, exclusions);
         } else if(Glib::file_test(filename, Glib::FILE_TEST_IS_REGULAR) && !reject) {
-            files.push_back(filename);
+            files.push_back(Glib::filename_to_utf8(filename));
         }
         file = dir.read_name();
     }
@@ -333,6 +361,12 @@ void get_filenames_from_path(std::vector<Glib::ustring> &files, Glib::ustring pa
  */
 void get_foldernames_from_path(std::vector<Glib::ustring> &folders, Glib::ustring path,
                                std::vector<const char *> exclusions)
+{
+    get_foldernames_from_path(folders, Glib::filename_from_utf8(path), exclusions);
+}
+
+void get_foldernames_from_path(std::vector<Glib::ustring> &folders, std::string const &path,
+                               std::vector<const char *> const &exclusions)
 {
     if (!Glib::file_test(path, Glib::FILE_TEST_IS_DIR)) {
         return;
@@ -350,10 +384,10 @@ void get_foldernames_from_path(std::vector<Glib::ustring> &folders, Glib::ustrin
         }
 
         // Reject any filename which isn't a regular file
-        Glib::ustring filename = Glib::build_filename(path, file);
+        auto filename = Glib::build_filename(path, file);
 
         if (Glib::file_test(filename, Glib::FILE_TEST_IS_DIR) && !reject) {
-            folders.push_back(filename);
+            folders.push_back(Glib::filename_to_utf8(filename));
         }
         file = dir.read_name();
     }
@@ -366,6 +400,11 @@ void get_foldernames_from_path(std::vector<Glib::ustring> &folders, Glib::ustrin
  * shared files may optionally exist.
  */
 char *profile_path(const char *filename)
+{
+    return g_build_filename(profile_path(), filename, nullptr);
+}
+
+char const *profile_path()
 {
     static const gchar *prefdir = nullptr;
 
@@ -406,14 +445,14 @@ char *profile_path(const char *filename)
             }
 
             if (prefdir) {
-                const char *prefdir_profile = g_build_filename(prefdir, INKSCAPE_PROFILE_DIR, NULL);
+                const char *prefdir_profile = g_build_filename(prefdir, INKSCAPE_PROFILE_DIR, nullptr);
                 g_free((void *)prefdir);
                 prefdir = prefdir_profile;
             }
         }
 #endif
         if (!prefdir) {
-            prefdir = g_build_filename(g_get_user_config_dir(), INKSCAPE_PROFILE_DIR, NULL);
+            prefdir = g_build_filename(g_get_user_config_dir(), INKSCAPE_PROFILE_DIR, nullptr);
             // In case the XDG user config dir of the moment does not yet exist...
             int mode = S_IRWXU;
 #ifdef S_IRGRP
@@ -432,14 +471,14 @@ char *profile_path(const char *filename)
                 gchar const *userDirs[] = { "keys", "templates", "icons", "extensions", "ui",
                                             "symbols", "paint", "themes", "palettes", nullptr };
                 for (gchar const** name = userDirs; *name; ++name) {
-                    gchar *dir = g_build_filename(prefdir, *name, NULL);
+                    gchar *dir = g_build_filename(prefdir, *name, nullptr);
                     g_mkdir_with_parents(dir, mode);
                     g_free(dir);
                 }
             }
         }
     }
-    return g_build_filename(prefdir, filename, NULL);
+    return prefdir;
 }
 
 /*
@@ -456,7 +495,7 @@ char *homedir_path(const char *filename)
     static const gchar *homedir = nullptr;
     homedir = g_get_home_dir();
 
-    return g_build_filename(homedir, filename, NULL);
+    return g_build_filename(homedir, filename, nullptr);
 }
 
 }

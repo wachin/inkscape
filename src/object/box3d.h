@@ -54,7 +54,7 @@ public:
 
 	void build(SPDocument *document, Inkscape::XML::Node *repr) override;
 	void release() override;
-	void set(SPAttributeEnum key, char const* value) override;
+	void set(SPAttr key, char const* value) override;
 	void update(SPCtx *ctx, unsigned int flags) override;
 	Inkscape::XML::Node* write(Inkscape::XML::Document *xml_doc, Inkscape::XML::Node *repr, unsigned int flags) override;
 
@@ -63,32 +63,31 @@ public:
     void convert_to_guides() const override;
     const char* displayName() const override;
     char *description() const override;
+
+    void position_set ();
+    Geom::Point get_corner_screen (unsigned int id, bool item_coords = true) const;
+    Proj::Pt3 get_proj_center ();
+    Geom::Point get_center_screen ();
+
+    void set_corner (unsigned int id, Geom::Point const &new_pos, Box3D::Axis movement, bool constrained);
+    void set_center (Geom::Point const &new_pos, Geom::Point const &old_pos, Box3D::Axis movement, bool constrained);
+    void corners_for_PLs (Proj::Axis axis, Geom::Point &corner1, Geom::Point &corner2, Geom::Point &corner3, Geom::Point &corner4) const;
+    bool recompute_z_orders ();
+    void set_z_orders ();
+
+    int pt_lies_in_PL_sector (Geom::Point const &pt, int id1, int id2, Box3D::Axis axis) const;
+    int VP_lies_in_PL_sector (Proj::Axis vpdir, int id1, int id2, Box3D::Axis axis) const;
+
+    void relabel_corners();
+    void check_for_swapped_coords();
+
+    static std::list<SPBox3D *> extract_boxes(SPObject *obj);
+
+    Persp3D *get_perspective() const;
+    void switch_perspectives(Persp3D *old_persp, Persp3D *new_persp, bool recompute_corners = false);
+
+    SPGroup *convert_to_group();
 };
-
-void box3d_position_set (SPBox3D *box);
-Proj::Pt3 box3d_get_proj_corner (SPBox3D const *box, unsigned int id);
-Geom::Point box3d_get_corner_screen (SPBox3D const *box, unsigned int id, bool item_coords = true);
-Proj::Pt3 box3d_get_proj_center (SPBox3D *box);
-Geom::Point box3d_get_center_screen (SPBox3D *box);
-
-void box3d_set_corner (SPBox3D *box, unsigned int id, Geom::Point const &new_pos, Box3D::Axis movement, bool constrained);
-void box3d_set_center (SPBox3D *box, Geom::Point const &new_pos, Geom::Point const &old_pos, Box3D::Axis movement, bool constrained);
-void box3d_corners_for_PLs (const SPBox3D * box, Proj::Axis axis, Geom::Point &corner1, Geom::Point &corner2, Geom::Point &corner3, Geom::Point &corner4);
-bool box3d_recompute_z_orders (SPBox3D *box);
-void box3d_set_z_orders (SPBox3D *box);
-
-int box3d_pt_lies_in_PL_sector (SPBox3D const *box, Geom::Point const &pt, int id1, int id2, Box3D::Axis axis);
-int box3d_VP_lies_in_PL_sector (SPBox3D const *box, Proj::Axis vpdir, int id1, int id2, Box3D::Axis axis);
-
-void box3d_relabel_corners(SPBox3D *box);
-void box3d_check_for_swapped_coords(SPBox3D *box);
-
-std::list<SPBox3D *> box3d_extract_boxes(SPObject *obj);
-
-Persp3D *box3d_get_perspective(SPBox3D const *box);
-void box3d_switch_perspectives(SPBox3D *box, Persp3D *old_persp, Persp3D *new_persp, bool recompute_corners = false);
-
-SPGroup *box3d_convert_to_group(SPBox3D *box);
 
 
 #endif // SEEN_SP_BOX3D_H

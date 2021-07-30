@@ -27,7 +27,7 @@ public:
     void set_rgb(const double& r, const double& g, const double& b, bool override_hue = true);
     void get_rgb(double& r, double& g, double& b);
     guint32 get_rgb();
-    bool is_adjusting() {return _mode != DRAG_NONE;}
+    bool is_adjusting() {return _mode != DragMode::NONE;}
 
 protected:
     bool on_draw(const::Cairo::RefPtr<::Cairo::Context>& cr) override;
@@ -40,10 +40,13 @@ private:
     bool is_in_ring(    const double& x, const double& y);
     bool is_in_triangle(const double& x, const double& y);
 
-    enum DragMode {
-        DRAG_NONE,
-        DRAG_H,
-        DRAG_SV
+    void update_triangle_color(const double x, const double y);
+    void update_ring_color(const double x, const double y);
+
+    enum class DragMode {
+        NONE,
+        HUE,
+        SATURATION_VALUE
     };
 
     double _hue;  // Range [0,1)

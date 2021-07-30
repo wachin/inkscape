@@ -107,7 +107,7 @@ PdfImportDialog::PdfImportDialog(std::shared_ptr<PDFDoc> doc, const gchar */*uri
     auto _pageNumberSpin_adj = Gtk::Adjustment::create(1, 1, _pdf_doc->getNumPages(), 1, 10, 0);
     _pageNumberSpin = Gtk::manage(new Inkscape::UI::Widget::SpinButton(_pageNumberSpin_adj, 1, 1));
     _labelTotalPages = Gtk::manage(new class Gtk::Label());
-    hbox2 = Gtk::manage(new class Gtk::HBox(false, 0));
+    hbox2 = Gtk::manage(new class Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 0));
     // Disable the page selector when there's only one page
     int num_pages = _pdf_doc->getCatalog()->getNumPages();
     if ( num_pages == 1 ) {
@@ -129,8 +129,8 @@ PdfImportDialog::PdfImportDialog(std::shared_ptr<PDFDoc> doc, const gchar */*uri
     _cropTypeCombo->set_active_text(_(crop_setting_choices[0]));
     _cropTypeCombo->set_sensitive(false);
 
-    hbox3 = Gtk::manage(new class Gtk::HBox(false, 4));
-    vbox2 = Gtk::manage(new class Gtk::VBox(false, 4));
+    hbox3 = Gtk::manage(new class Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 4));
+    vbox2 = Gtk::manage(new class Gtk::Box(Gtk::ORIENTATION_VERTICAL, 4));
     _pageSettingsFrame = Gtk::manage(new class Inkscape::UI::Widget::Frame(_("Page settings")));
     _labelPrecision = Gtk::manage(new class Gtk::Label(_("Precision of approximating gradient meshes:")));
     _labelPrecisionWarning = Gtk::manage(new class Gtk::Label(_("<b>Note</b>: setting the precision too high may result in a large SVG file and slow performance.")));
@@ -150,24 +150,24 @@ PdfImportDialog::PdfImportDialog(std::shared_ptr<PDFDoc> doc, const gchar */*uri
     _fallbackPrecisionSlider = Gtk::manage(new class Gtk::Scale(_fallbackPrecisionSlider_adj));
     _fallbackPrecisionSlider->set_value(2.0);
     _labelPrecisionComment = Gtk::manage(new class Gtk::Label(_("rough")));
-    hbox6 = Gtk::manage(new class Gtk::HBox(false, 4));
+    hbox6 = Gtk::manage(new class Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 4));
 
     // Text options
     // _labelText = Gtk::manage(new class Gtk::Label(_("Text handling:")));
     // _textHandlingCombo = Gtk::manage(new class Gtk::ComboBoxText());
     // _textHandlingCombo->append(_("Import text as text"));
     // _textHandlingCombo->set_active_text(_("Import text as text"));
-    // hbox5 = Gtk::manage(new class Gtk::HBox(false, 4));
+    // hbox5 = Gtk::manage(new class Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 4));
 
     // Font option
     _localFontsCheck = Gtk::manage(new class Gtk::CheckButton(_("Replace PDF fonts by closest-named installed fonts")));
 
     _embedImagesCheck = Gtk::manage(new class Gtk::CheckButton(_("Embed images")));
-    vbox3 = Gtk::manage(new class Gtk::VBox(false, 4));
+    vbox3 = Gtk::manage(new class Gtk::Box(Gtk::ORIENTATION_VERTICAL, 4));
     _importSettingsFrame = Gtk::manage(new class Inkscape::UI::Widget::Frame(_("Import settings")));
-    vbox1 = Gtk::manage(new class Gtk::VBox(false, 4));
+    vbox1 = Gtk::manage(new class Gtk::Box(Gtk::ORIENTATION_VERTICAL, 4));
     _previewArea = Gtk::manage(new class Gtk::DrawingArea());
-    hbox1 = Gtk::manage(new class Gtk::HBox(false, 4));
+    hbox1 = Gtk::manage(new class Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 4));
     cancelbutton->set_can_focus();
     cancelbutton->set_can_default();
     cancelbutton->set_relief(Gtk::RELIEF_NORMAL);
@@ -326,7 +326,7 @@ PdfImportDialog::PdfImportDialog(std::shared_ptr<PDFDoc> doc, const gchar */*uri
     _render_thumb = true;
 
     // Create PopplerDocument
-    Glib::ustring filename = _pdf_doc->getFileName()->getCString();
+    std::string filename = _pdf_doc->getFileName()->getCString();
     if (!Glib::path_is_absolute(filename)) {
         filename = Glib::build_filename(Glib::get_current_dir(),filename);
     }
@@ -396,7 +396,7 @@ bool PdfImportDialog::getImportMethod() {
  *        for determining the behaviour desired by the user
  */
 void PdfImportDialog::getImportSettings(Inkscape::XML::Node *prefs) {
-    sp_repr_set_svg_double(prefs, "selectedPage", (double)_current_page);
+    prefs->setAttributeSvgDouble("selectedPage", (double)_current_page);
     if (_cropCheck->get_active()) {
         Glib::ustring current_choice = _cropTypeCombo->get_active_text();
         int num_crop_choices = sizeof(crop_setting_choices) / sizeof(crop_setting_choices[0]);
@@ -406,12 +406,11 @@ void PdfImportDialog::getImportSettings(Inkscape::XML::Node *prefs) {
                 break;
             }
         }
-        sp_repr_set_svg_double(prefs, "cropTo", (double)i);
+        prefs->setAttributeSvgDouble("cropTo", (double)i);
     } else {
-        sp_repr_set_svg_double(prefs, "cropTo", -1.0);
+        prefs->setAttributeSvgDouble("cropTo", -1.0);
     }
-    sp_repr_set_svg_double(prefs, "approximationPrecision",
-                           _fallbackPrecisionSlider->get_value());
+    prefs->setAttributeSvgDouble("approximationPrecision", _fallbackPrecisionSlider->get_value());
     if (_localFontsCheck->get_active()) {
         prefs->setAttribute("localFonts", "1");
     } else {
@@ -658,31 +657,7 @@ PdfInput::open(::Inkscape::Extension::Input * /*mod*/, const gchar * uri) {
 
     // Initialize the globalParams variable for poppler
     if (!globalParams) {
-#ifdef ENABLE_OSX_APP_LOCATIONS
-        //
-        // data files for poppler are not relocatable (loaded from 
-        // path defined at build time). This fails to work with relocatable
-        // application bundles for OS X. 
-        //
-        // Workaround: 
-        // 1. define $POPPLER_DATADIR env variable in app launcher script
-        // 2. pass custom $POPPLER_DATADIR via poppler's GlobalParams()
-        //
-        // relevant poppler commit:
-        // <http://cgit.freedesktop.org/poppler/poppler/commit/?id=869584a84eed507775ff1c3183fe484c14b6f77b>
-        //
-        // FIXES: Inkscape bug #956282, #1264793
-        // TODO: report RFE upstream (full relocation support for OS X packaging)
-        //
-        gchar const *poppler_datadir = g_getenv("POPPLER_DATADIR");
-        if (poppler_datadir != NULL) {
-            globalParams = _POPPLER_NEW_GLOBAL_PARAMS(poppler_datadir);
-        } else {
-            globalParams = _POPPLER_NEW_GLOBAL_PARAMS();
-        }
-#else
         globalParams = _POPPLER_NEW_GLOBAL_PARAMS();
-#endif // ENABLE_OSX_APP_LOCATIONS
     }
 
 
@@ -690,22 +665,10 @@ PdfInput::open(::Inkscape::Extension::Input * /*mod*/, const gchar * uri) {
     // PDFDoc is from poppler. PDFDoc is used for preview and for native import.
     std::shared_ptr<PDFDoc> pdf_doc;
 
-#ifndef _WIN32
     // poppler does not use glib g_open. So on win32 we must use unicode call. code was copied from
     // glib gstdio.c
     GooString *filename_goo = new GooString(uri);
     pdf_doc = std::make_shared<PDFDoc>(filename_goo, nullptr, nullptr, nullptr);   // TODO: Could ask for password
-    //delete filename_goo;
-#else
-    wchar_t *wfilename = reinterpret_cast<wchar_t*>(g_utf8_to_utf16 (uri, -1, NULL, NULL, NULL));
-
-    if (wfilename == NULL) {
-      return NULL;
-    }
-
-    pdf_doc = std::make_shared<PDFDoc>(wfilename, wcslen(wfilename), nullptr, nullptr, nullptr);   // TODO: Could ask for password
-    g_free (wfilename);
-#endif
 
     if (!pdf_doc->isOk()) {
         int error = pdf_doc->getErrorCode();
@@ -739,7 +702,7 @@ PdfInput::open(::Inkscape::Extension::Input * /*mod*/, const gchar * uri) {
 
     std::unique_ptr<PdfImportDialog> dlg;
     if (INKSCAPE.use_gui()) {
-        dlg.reset(new PdfImportDialog(pdf_doc, uri));
+        dlg = std::make_unique<PdfImportDialog>(pdf_doc, uri);
         if (!dlg->showDialog()) {
             throw Input::open_cancelled();
         }
@@ -798,8 +761,7 @@ PdfInput::open(::Inkscape::Extension::Input * /*mod*/, const gchar * uri) {
 
         // Apply crop settings
         _POPPLER_CONST PDFRectangle *clipToBox = nullptr;
-        double crop_setting = -1.0;
-        sp_repr_get_double(prefs, "cropTo", &crop_setting);
+        double crop_setting = prefs->getAttributeDouble("cropTo", -1.0);
 
         if ( crop_setting >= 0.0 ) {    // Do page clipping
             int crop_choice = (int)crop_setting;
@@ -829,8 +791,7 @@ PdfInput::open(::Inkscape::Extension::Input * /*mod*/, const gchar * uri) {
                                               page->getResourceDict(), page->getCropBox(), clipToBox);
 
         // Set up approximation precision for parser. Used for converting Mesh Gradients into tiles.
-        double color_delta = 2.0;
-        sp_repr_get_double(prefs, "approximationPrecision", &color_delta);
+        double color_delta = prefs->getAttributeDouble("approximationPrecision", 2.0);
         if ( color_delta <= 0.0 ) {
             color_delta = 1.0 / 2.0;
         } else {
@@ -864,7 +825,7 @@ PdfInput::open(::Inkscape::Extension::Input * /*mod*/, const gchar * uri) {
 #ifdef HAVE_POPPLER_CAIRO
         // the poppler import
 
-        Glib::ustring full_path = uri;
+        std::string full_path = uri;
         if (!Glib::path_is_absolute(uri)) {
             full_path = Glib::build_filename(Glib::get_current_dir(),uri);
         }
@@ -946,6 +907,7 @@ PdfInput::open(::Inkscape::Extension::Input * /*mod*/, const gchar * uri) {
 
 void PdfInput::init() {
     /* PDF in */
+    // clang-format off
     Inkscape::Extension::build_from_mem(
         "<inkscape-extension xmlns=\"" INKSCAPE_EXTENSION_URI "\">\n"
             "<name>" N_("PDF Input") "</name>\n"
@@ -957,8 +919,10 @@ void PdfInput::init() {
                 "<filetypetooltip>" N_("Portable Document Format") "</filetypetooltip>\n"
             "</input>\n"
         "</inkscape-extension>", new PdfInput());
+    // clang-format on
 
     /* AI in */
+    // clang-format off
     Inkscape::Extension::build_from_mem(
         "<inkscape-extension xmlns=\"" INKSCAPE_EXTENSION_URI "\">\n"
             "<name>" N_("AI Input") "</name>\n"
@@ -970,6 +934,7 @@ void PdfInput::init() {
                 "<filetypetooltip>" N_("Open files saved in Adobe Illustrator 9.0 and newer versions") "</filetypetooltip>\n"
             "</input>\n"
         "</inkscape-extension>", new PdfInput());
+    // clang-format on
 } // init
 
 } } }  /* namespace Inkscape, Extension, Implementation */

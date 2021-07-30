@@ -33,32 +33,32 @@ SPLine::~SPLine() = default;
 void SPLine::build(SPDocument * document, Inkscape::XML::Node * repr) {
     SPShape::build(document, repr);
 
-    this->readAttr( "x1" );
-    this->readAttr( "y1" );
-    this->readAttr( "x2" );
-    this->readAttr( "y2" );
+    this->readAttr(SPAttr::X1);
+    this->readAttr(SPAttr::Y1);
+    this->readAttr(SPAttr::X2);
+    this->readAttr(SPAttr::Y2);
 }
 
-void SPLine::set(SPAttributeEnum key, const gchar* value) {
+void SPLine::set(SPAttr key, const gchar* value) {
     /* fixme: we should really collect updates */
 
     switch (key) {
-        case SP_ATTR_X1:
+        case SPAttr::X1:
             this->x1.readOrUnset(value);
             this->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG);
             break;
 
-        case SP_ATTR_Y1:
+        case SPAttr::Y1:
             this->y1.readOrUnset(value);
             this->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG);
             break;
 
-        case SP_ATTR_X2:
+        case SPAttr::X2:
             this->x2.readOrUnset(value);
             this->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG);
             break;
 
-        case SP_ATTR_Y2:
+        case SPAttr::Y2:
             this->y2.readOrUnset(value);
             this->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG);
             break;
@@ -98,18 +98,22 @@ Inkscape::XML::Node* SPLine::write(Inkscape::XML::Document *xml_doc, Inkscape::X
         repr->mergeFrom(this->getRepr(), "id");
     }
 
-    sp_repr_set_svg_double(repr, "x1", this->x1.computed);
-    sp_repr_set_svg_double(repr, "y1", this->y1.computed);
-    sp_repr_set_svg_double(repr, "x2", this->x2.computed);
-    sp_repr_set_svg_double(repr, "y2", this->y2.computed);
+    repr->setAttributeSvgDouble("x1", this->x1.computed);
+    repr->setAttributeSvgDouble("y1", this->y1.computed);
+    repr->setAttributeSvgDouble("x2", this->x2.computed);
+    repr->setAttributeSvgDouble("y2", this->y2.computed);
 
     SPShape::write(xml_doc, repr, flags);
 
     return repr;
 }
 
+const char* SPLine::typeName() const {
+    return "path";
+}
+
 const char* SPLine::displayName() const {
-	return _("Line");
+    return _("Line");
 }
 
 void SPLine::convert_to_guides() const {
@@ -145,17 +149,16 @@ Geom::Affine SPLine::set_transform(Geom::Affine const &transform) {
 }
 
 void SPLine::set_shape() {
-    SPCurve *c = new SPCurve();
+    auto c = std::make_unique<SPCurve>();
 
     c->moveto(this->x1.computed, this->y1.computed);
     c->lineto(this->x2.computed, this->y2.computed);
 
-    this->setCurveInsync(c); // *_insync does not call update, avoiding infinite recursion when set_shape is called by update
-    this->setCurveBeforeLPE(c);
+    // *_insync does not call update, avoiding infinite recursion when set_shape is called by update
+    setCurveInsync(std::move(c));
+    setCurveBeforeLPE(curve());
 
     // LPE's cannot be applied to lines. (the result can (generally) not be represented as SPLine)
-
-    c->unref();
 }
 
 /*

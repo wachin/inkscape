@@ -17,7 +17,9 @@
 #include <gtkmm.h>
 
 #include "display/drawing.h"
-#include "ui/widget/panel.h"
+#include "ui/dialog/dialog-base.h"
+
+class SPObject;
 
 namespace Inkscape {
 namespace UI {
@@ -34,27 +36,31 @@ class PaintServersColumns; // For Gtk::ListStore
  * for each document, for all documents and for the current document.
  */
 
-class PaintServersDialog : public Inkscape::UI::Widget::Panel {
-
+class PaintServersDialog : public DialogBase
+{
 public:
-    PaintServersDialog(gchar const *prefsPath = "/dialogs/paint");
     ~PaintServersDialog() override;
+    static PaintServersDialog &getInstance() { return *new PaintServersDialog(); }
 
-    static PaintServersDialog &getInstance() { return *new PaintServersDialog(); };
-    PaintServersDialog(PaintServersDialog const &) = delete;
-    PaintServersDialog &operator=(PaintServersDialog const &) = delete;
+    void documentReplaced() override;
 
-  private:
+private:
+    // No default constructor, noncopyable, nonassignable
+    PaintServersDialog();
+    PaintServersDialog(PaintServersDialog const &d) = delete;
+    PaintServersDialog operator=(PaintServersDialog const &d) = delete;
+
     static PaintServersColumns *getColumns();
     void load_sources();
     void load_document(SPDocument *document);
-    void load_current_document(SPObject *, guint);
+    void load_current_document();
     Glib::RefPtr<Gdk::Pixbuf> get_pixbuf(SPDocument *, Glib::ustring, Glib::ustring *);
     void on_target_changed();
     void on_document_changed();
     void on_item_activated(const Gtk::TreeModel::Path &path);
     std::vector<SPObject *> extract_elements(SPObject *item);
 
+    bool target_selected;
     const Glib::ustring ALLDOCS;
     const Glib::ustring CURRENTDOC;
     std::map<Glib::ustring, Glib::RefPtr<Gtk::ListStore>> store;
@@ -64,9 +70,7 @@ public:
     Inkscape::Drawing renderDrawing;
     Gtk::ComboBoxText *dropdown;
     Gtk::IconView *icon_view;
-    SPDesktop *desktop;
     Gtk::ComboBoxText *target_dropdown;
-    bool target_selected;
 };
 
 } // namespace Dialog

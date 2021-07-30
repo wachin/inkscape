@@ -33,9 +33,9 @@ it yourself, to take advantage of the security settings and testing functions.
 
 import os
 from subprocess import Popen, PIPE
+from tempfile import TemporaryDirectory
 from lxml.etree import ElementTree
 
-from .utils import TemporaryDirectory, PY3
 from .elements import SvgDocumentElement
 
 INKSCAPE_EXECUTABLE_NAME = os.environ.get('INKSCAPE_COMMAND', 'inkscape')
@@ -54,29 +54,16 @@ def which(program):
     """
     if os.path.isabs(program) and os.path.isfile(program):
         return program
-    try:
-        # Python2 and python3, but must have distutils and may not always
-        # work on windows versions (depending on the version)
-        from distutils.spawn import find_executable
-        prog = find_executable(program)
-        if prog:
-            return prog
-    except ImportError:
-        pass
 
-    try:
-        # Python3 only version of which
-        from shutil import which as warlock
-        prog = warlock(program)
-        if prog:
+    from shutil import which as warlock
+    prog = warlock(program)
+    if prog:
             return prog
-    except ImportError:
-        pass # python2
 
     # There may be other methods for doing a `which` command for other
     # operating systems; These should go here as they are discovered.
 
-    raise CommandNotFound("Can not find the command: '{}'".format(program))
+    raise CommandNotFound(f"Can not find the command: '{program}'")
 
 def write_svg(svg, *filename):
     """Writes an svg to the given filename"""
@@ -107,32 +94,38 @@ def to_arg(arg, oldie=False):
             return arg
         if val is False:
             return None
-        return '{}={}'.format(arg, str(val))
+        return f"{arg}={str(val)}"
     return str(arg)
 
 def to_args(prog, *positionals, **arguments):
-    """
-    Convert positional arguments and key word arguments
-    into a list of strings which Popen will understand.
+    """Compile arguments and keyword arguments into a list of strings which Popen will understand.
 
-    Values can be:
+    :param prog:
+        Program executable prepended to the output.
+    :type first: ``str``
+    :param *args:
+        See below
+    :param **kwargs:
+        See below
 
-    args = *[
-        'strait_up_string',
-        '--or_manual_kwarg=1',
-        ('ordered list', 'version of kwargs (as below)'),
-        ...
-    ]
-    kwargs = **{
-        'name': 'val',          # --name="val"'
-        'name': ['foo', 'bar'], # --name=foo --name=bar
-        'name': True,           # --name
-        'n': 'v',               # -n=v
-        'n': True,              # -n
-    }
+    :Arguments:
+        * (``str``) -- String added as given
+        * (``tuple``) -- Ordered version of Kwyward Arguments, see below
 
-    All args appear after the kwargs, so if you need args before,
-    use the ordered list tuple and don't use kwargs.
+    :Keyword Arguments:
+        * *name* (``str``) --
+          Becomes ``--name="val"``
+        * *name* (``bool``) --
+          Becomes ``--name``
+        * *name* (``list``) --
+          Becomes ``--name="val1"`` ...
+        * *n* (``str``) --
+          Becomes ``-n=val``
+        * *n* (``bool``) --
+          Becomes ``-n``
+
+    :return: Returns a list of compiled arguments ready for Popen.
+    :rtype: ``list[str]``
     """
     args = [prog]
     oldie = arguments.pop('oldie', False)
@@ -153,7 +146,7 @@ def to_args(prog, *positionals, **arguments):
 
 def _call(program, *args, **kwargs):
     stdin = kwargs.pop('stdin', None)
-    if PY3 and isinstance(stdin, str):
+    if isinstance(stdin, str):
         stdin = stdin.encode('utf-8')
     inpipe = PIPE if stdin else None
 
@@ -168,8 +161,7 @@ def _call(program, *args, **kwargs):
     (stdout, stderr) = process.communicate(input=stdin)
     if process.returncode == 0:
         return stdout
-    raise ProgramRunError("Return Code: {}: {}\n{}\nargs: {}".format(
-        process.returncode, stderr, stdout, args))
+    raise ProgramRunError(f"Return Code: {process.returncode}: {stderr}\n{stdout}\nargs: {args}")
 
 def call(program, *args, **kwargs):
     """
@@ -193,8 +185,8 @@ def inkscape_command(svg, select=None, verbs=()):
 
     inkscape_command('<svg...>', ('verb', 'VerbName'), ...)
     """
-    with TemporaryDirectory(prefix='inkscape-command') as dirname:
-        svg_file = write_svg(svg, dirname, 'input.svg')
+    with TemporaryDirectory(prefix='inkscape-command') as tmpdir:
+        svg_file = write_svg(svg, tmpdir, 'input.svg')
         select = ('select', select) if select else None
         verbs += ('FileSave', 'FileQuit')
         inkscape(svg_file, select, batch_process=True, verb=';'.join(verbs))

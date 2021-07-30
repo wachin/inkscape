@@ -58,7 +58,7 @@ struct _CRCascadePriv {
  *should call their ref/unref method instead if it wants
  *
  *Returns the newly built instance of CRCascade or NULL if
- *an error arose during constrution.
+ *an error arose during construction.
  */
 CRCascade *
 cr_cascade_new (CRStyleSheet * a_author_sheet,
@@ -122,12 +122,12 @@ cr_cascade_get_sheet (CRCascade * a_this, enum CRStyleOrigin a_origin)
 /**
  * cr_cascade_set_sheet:
  *@a_this: the current instance of #CRCascade.
- *@a_sheet: the stylesheet to set.
+ *@a_sheet: the stylesheet to set. May be NULL.
  *@a_origin: the origin of the stylesheet.
  *
  *Sets a stylesheet in the cascade
  *
- *Returns CR_OK upon successfull completion, an error
+ *Returns CR_OK upon successful completion, an error
  *code otherwise.
  */
 enum CRStatus
@@ -135,14 +135,15 @@ cr_cascade_set_sheet (CRCascade * a_this,
                       CRStyleSheet * a_sheet, enum CRStyleOrigin a_origin)
 {
         g_return_val_if_fail (a_this
-                              && a_sheet
                               && (unsigned)a_origin < NB_ORIGINS, CR_BAD_PARAM_ERROR);
 
         if (PRIVATE (a_this)->sheets[a_origin])
                 cr_stylesheet_unref (PRIVATE (a_this)->sheets[a_origin]);
         PRIVATE (a_this)->sheets[a_origin] = a_sheet;
-        cr_stylesheet_ref (a_sheet);
-        a_sheet->origin = a_origin;
+        if (a_sheet) {
+                cr_stylesheet_ref (a_sheet);
+                a_sheet->origin = a_origin;
+        }
         return CR_OK;
 }
 
@@ -197,7 +198,7 @@ cr_cascade_destroy (CRCascade * a_this)
         if (PRIVATE (a_this)) {
                 gulong i = 0;
 
-                for (i = 0; PRIVATE (a_this)->sheets && i < NB_ORIGINS; i++) {
+                for (i = 0; i < NB_ORIGINS; i++) {
                         if (PRIVATE (a_this)->sheets[i]) {
                                 if (cr_stylesheet_unref
                                     (PRIVATE (a_this)->sheets[i])

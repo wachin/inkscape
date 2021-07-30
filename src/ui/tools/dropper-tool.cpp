@@ -19,33 +19,29 @@
 #include <2geom/transforms.h>
 #include <2geom/circle.h>
 
-#include "color-rgba.h"
 #include "desktop-style.h"
 #include "desktop.h"
 #include "document-undo.h"
 #include "message-context.h"
 #include "preferences.h"
 #include "selection.h"
-#include "sp-cursor.h"
+#include "style.h"
 #include "verbs.h"
 
-#include "display/canvas-bpath.h"
-#include "display/canvas-arena.h"
 #include "display/curve.h"
-#include "display/cairo-utils.h"
+#include "display/drawing.h"
+#include "display/control/canvas-item-bpath.h"
+#include "display/control/canvas-item-drawing.h"
 
 #include "include/macros.h"
 
 #include "object/sp-namedview.h"
 
-#include "ui/pixmaps/cursor-dropper-f.xpm"
-#include "ui/pixmaps/cursor-dropper-s.xpm"
-#include "ui/pixmaps/cursor-dropping-f.xpm"
-#include "ui/pixmaps/cursor-dropping-s.xpm"
-
 #include "svg/svg-color.h"
 
+#include "ui/cursor-utils.h"
 #include "ui/tools/dropper-tool.h"
+#include "ui/widget/canvas.h"
 
 using Inkscape::DocumentUndo;
 
@@ -60,19 +56,7 @@ const std::string& DropperTool::getPrefsPath() {
 const std::string DropperTool::prefsPath = "/tools/dropper";
 
 DropperTool::DropperTool()
-    : ToolBase(cursor_dropper_f_xpm)
-	, R(0)
-	, G(0)
-	, B(0)
-	, alpha(0)
-	, radius(0)
-	, invert(false)
-	, stroke(false)
-	, dropping(false)
-	, dragging(false)
-	, grabbed(nullptr)
-	, area(nullptr)
-	, centre(0, 0)
+    : ToolBase("dropper-pick-fill.svg")
 {
 }
 
@@ -81,18 +65,10 @@ DropperTool::~DropperTool() = default;
 void DropperTool::setup() {
     ToolBase::setup();
 
-    /* TODO: have a look at CalligraphicTool::setup where the same is done.. generalize? */
-    Geom::PathVector path = Geom::Path(Geom::Circle(0,0,1));
-
-    SPCurve *c = new SPCurve(path);
-
-    this->area = sp_canvas_bpath_new(this->desktop->getControls(), c);
-
-    c->unref();
-    
-    sp_canvas_bpath_set_fill(SP_CANVAS_BPATH(this->area), 0x00000000,(SPWindRule)0);
-    sp_canvas_bpath_set_stroke(SP_CANVAS_BPATH(this->area), 0x0000007f, 1.0, SP_STROKE_LINEJOIN_MITER, SP_STROKE_LINECAP_BUTT);
-    sp_canvas_item_hide(this->area);
+    area = new Inkscape::CanvasItemBpath(desktop->getCanvasControls());
+    area->set_stroke(0x0000007f);
+    area->set_fill(0x0, SP_WIND_RULE_EVENODD);
+    area->hide();
 
     Inkscape::Preferences *prefs = Inkscape::Preferences::get();
     
@@ -107,14 +83,11 @@ void DropperTool::setup() {
 
 void DropperTool::finish() {
     this->enableGrDrag(false);
-	
-    if (this->grabbed) {
-        sp_canvas_item_ungrab(this->grabbed);
-        this->grabbed = nullptr;
-    }
+
+    ungrabCanvasEvents();
 
     if (this->area) {
-        sp_canvas_item_destroy(this->area);
+        delete this->area;
         this->area = nullptr;
     }
 
@@ -123,18 +96,34 @@ void DropperTool::finish() {
 
 /**
  * Returns the current dropper context color.
+ *
+ * - If in dropping mode, returns color from selected objects.
+ * Ignored if non_dropping set to true.
+ * - If in dragging mode, returns average color on canvas, depending on radius
+ * - If in pick mode, alpha is not premultiplied. Alpha is only set if in pick mode
+ * and setalpha is true. Both values are taken from preferences.
+ *
+ * @param invert If true, invert the rgb value
+ * @param non_dropping If true, use color from canvas, even in dropping mode.
  */
-guint32 DropperTool::get_color(bool invert) {
+guint32 DropperTool::get_color(bool invert, bool non_dropping) {
     Inkscape::Preferences   *prefs = Inkscape::Preferences::get();
 
     int pick = prefs->getInt("/tools/dropper/pick", SP_DROPPER_PICK_VISIBLE);
     bool setalpha = prefs->getBool("/tools/dropper/setalpha", true);
 
+    // non_dropping ignores dropping mode and always uses color from canvas.
+    // Used by the clipboard
+    double r = non_dropping ? this->non_dropping_R : this->R;
+    double g = non_dropping ? this->non_dropping_G : this->G;
+    double b = non_dropping ? this->non_dropping_B : this->B;
+    double a = non_dropping ? this->non_dropping_A : this->alpha;
+
     return SP_RGBA32_F_COMPOSE(
-        fabs(invert - this->R),
-        fabs(invert - this->G),
-        fabs(invert - this->B),
-       (pick == SP_DROPPER_PICK_ACTUAL && setalpha) ? this->alpha : 1.0);
+        fabs(invert - r),
+        fabs(invert - g),
+        fabs(invert - b),
+       (pick == SP_DROPPER_PICK_ACTUAL && setalpha) ? a : 1.0);
 }
 
 bool DropperTool::root_handler(GdkEvent* event) {
@@ -161,7 +150,9 @@ bool DropperTool::root_handler(GdkEvent* event) {
         }
     }
 
-    // Get color from selected object instead.
+    // Get color from selected object
+    // Only if dropping mode enabled and object's color is set.
+    // Otherwise dropping mode disabled.
     if(this->dropping) {
 	Inkscape::Selection *selection = desktop->getSelection();
 	g_assert(selection);
@@ -172,13 +163,13 @@ bool DropperTool::root_handler(GdkEvent* event) {
                 double opacity = 1.0;
                 if(!this->stroke && obj->style->fill.set) {
                     if(obj->style->fill_opacity.set) {
-                        opacity = obj->style->fill_opacity.value;
+                        opacity = SP_SCALE24_TO_FLOAT(obj->style->fill_opacity.value);
                     }
                     apply_color = obj->style->fill.value.color.toRGBA32(opacity);
                     apply_set = true;
                 } else if(this->stroke && obj->style->stroke.set) {
                     if(obj->style->stroke_opacity.set) {
-                        opacity = obj->style->stroke_opacity.value;
+                        opacity = SP_SCALE24_TO_FLOAT(obj->style->stroke_opacity.value);
                     }
                     apply_color = obj->style->stroke.value.color.toRGBA32(opacity);
                     apply_set = true;
@@ -199,34 +190,33 @@ bool DropperTool::root_handler(GdkEvent* event) {
 
     switch (event->type) {
 	case GDK_BUTTON_PRESS:
-            if (event->button.button == 1 && !this->space_panning) {
+            if (event->button.button == 1) {
                 this->centre = Geom::Point(event->button.x, event->button.y);
                 this->dragging = true;
                 ret = TRUE;
             }
 
-            sp_canvas_item_grab(SP_CANVAS_ITEM(desktop->acetate),
-                GDK_KEY_PRESS_MASK | GDK_KEY_RELEASE_MASK | GDK_BUTTON_RELEASE_MASK |
-                GDK_POINTER_MOTION_MASK | GDK_POINTER_MOTION_HINT_MASK | GDK_BUTTON_PRESS_MASK,
-                nullptr, event->button.time);
-            this->grabbed = SP_CANVAS_ITEM(desktop->acetate);
-
+            grabCanvasEvents(Gdk::KEY_PRESS_MASK      |
+                             Gdk::KEY_RELEASE_MASK    |
+                             Gdk::BUTTON_RELEASE_MASK |
+                             Gdk::POINTER_MOTION_MASK |
+                             Gdk::BUTTON_PRESS_MASK   );
             break;
+
 	case GDK_MOTION_NOTIFY:
             if (event->motion.state & GDK_BUTTON2_MASK || event->motion.state & GDK_BUTTON3_MASK) {
                 // pass on middle and right drag
                 ret = FALSE;
                 break;
-            } else if (!this->space_panning) {
-                // otherwise, constantly calculate color no matter is any button pressed or not
-                double rw = 0.0;
-                double R(0), G(0), B(0), A(0);
+            } else {
+                // otherwise, constantly calculate color no matter if any button pressed or not
 
+                Geom::IntRect pick_area;
                 if (this->dragging) {
                     // calculate average
 
                     // radius
-                    rw = std::min(Geom::L2(Geom::Point(event->button.x, event->button.y) - this->centre), 400.0);
+                    double rw = std::min(Geom::L2(Geom::Point(event->button.x, event->button.y) - this->centre), 400.0);
                     if (rw == 0) { // happens sometimes, little idea why...
                         break;
                     }
@@ -236,27 +226,34 @@ bool DropperTool::root_handler(GdkEvent* event) {
                     Geom::Affine const w2dt = desktop->w2d();
                     const double scale = rw * w2dt.descrim();
                     Geom::Affine const sm( Geom::Scale(scale, scale) * Geom::Translate(cd) );
-                    sp_canvas_item_affine_absolute(this->area, sm);
-                    sp_canvas_item_show(this->area);
+
+                    // Show circle on canvas
+                    Geom::PathVector path = Geom::Path(Geom::Circle(0, 0, 1)); // Unit circle centered at origin.
+                    path *= sm;
+                    this->area->set_bpath(path);
+                    this->area->show();
 
                     /* Get buffer */
                     Geom::Rect r(this->centre, this->centre);
                     r.expandBy(rw);
                     if (!r.hasZeroArea()) {
-                        Geom::IntRect area = r.roundOutwards();
-                        cairo_surface_t *s = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, area.width(), area.height());
-                        sp_canvas_arena_render_surface(SP_CANVAS_ARENA(desktop->getDrawing()), s, area);
-                        ink_cairo_surface_average_color_premul(s, R, G, B, A);
-                        cairo_surface_destroy(s);
+                        pick_area = r.roundOutwards();
+
                     }
                 } else {
                     // pick single pixel
-                    Geom::IntRect area = Geom::IntRect::from_xywh(floor(event->button.x), floor(event->button.y), 1, 1);
-                    cairo_surface_t *s = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, 1, 1);
-                    sp_canvas_arena_render_surface(SP_CANVAS_ARENA(desktop->getDrawing()), s, area);
-                    ink_cairo_surface_average_color_premul(s, R, G, B, A);
-                    cairo_surface_destroy(s);
+                    pick_area = Geom::IntRect::from_xywh(floor(event->button.x), floor(event->button.y), 1, 1);
                 }
+
+                Inkscape::CanvasItemDrawing *canvas_item_drawing = desktop->getCanvasDrawing();
+                Inkscape::Drawing *drawing = canvas_item_drawing->get_drawing();
+
+                // Ensure drawing up-to-date. (Is this really necessary?)
+                drawing->update();
+
+                // Get average color.
+                double R, G, B, A;
+                drawing->average_color(pick_area, R, G, B, A);
 
                 if (pick == SP_DROPPER_PICK_VISIBLE) {
                     // compose with page color
@@ -279,25 +276,29 @@ bool DropperTool::root_handler(GdkEvent* event) {
                 }
 
                 // remember color
-                if(!this->dropping && (R != this->R || G != this->G || B != this->B || A != this->alpha)) {
+                if (!this->dropping) {
                     this->R = R;
                     this->G = G;
                     this->B = B;
                     this->alpha = A;
                 }
+                // remember color from canvas, even in dropping mode
+                // These values are used by the clipboard
+                this->non_dropping_R = R;
+                this->non_dropping_G = G;
+                this->non_dropping_B = B;
+                this->non_dropping_A = A;
+
                 ret = TRUE;
             }
             break;
 
 	case GDK_BUTTON_RELEASE:
-            if (event->button.button == 1 && !this->space_panning) {
-		sp_canvas_item_hide(this->area);
+            if (event->button.button == 1) {
+                this->area->hide();
 		this->dragging = false;
 
-		if (this->grabbed) {
-		    sp_canvas_item_ungrab(this->grabbed);
-		    this->grabbed = nullptr;
-		}
+                ungrabCanvasEvents();
 
                 Inkscape::Selection *selection = desktop->getSelection();
                 g_assert(selection);
@@ -312,15 +313,22 @@ bool DropperTool::root_handler(GdkEvent* event) {
                         std::vector<SPItem *> vec(selection->items().begin(), selection->items().end());
                         selection->set(this->item_to_select);
                     }
-                } else {
-                    if (prefs->getBool("/tools/dropper/onetimepick", false)) {
-                        // "One time" pick from Fill/Stroke dialog stroke page, always apply fill or stroke (ignore <Shift> key)
-                        stroke = (prefs->getInt("/dialogs/fillstroke/page", 0) == 0) ? false : true;
-                    }
+                }
+
+                auto picked_color = ColorRGBA(this->get_color(this->invert));
+
+                // One time pick has active signal, call them all and clear.
+                if (!onetimepick_signal.empty())
+                {
+                    onetimepick_signal.emit(&picked_color);
+                    onetimepick_signal.clear();
+                    // Do this last as it destroys the picker tool.
+                    sp_toggle_dropper(desktop);
+                    return true;
                 }
 
                 // do the actual color setting
-                sp_desktop_set_color(desktop, ColorRGBA(this->get_color(this->invert)), false, !this->stroke);
+                sp_desktop_set_color(desktop, picked_color, false, !this->stroke);
 
                 // REJON: set aux. toolbar input to hex color!
                 if (!(desktop->getSelection()->isEmpty())) {
@@ -331,14 +339,6 @@ bool DropperTool::root_handler(GdkEvent* event) {
                     selection->setList(old_selection);
                 }
 
-                if (prefs->getBool("/tools/dropper/onetimepick", false)) {
-                    prefs->setBool("/tools/dropper/onetimepick", false);
-                    sp_toggle_dropper(desktop);
-
-                    // sp_toggle_dropper will delete ourselves.
-                    // Thus, make sure we return immediately.
-                    return true;
-                }
 
                 ret = TRUE;
             }
@@ -383,12 +383,13 @@ bool DropperTool::root_handler(GdkEvent* event) {
     g_free(alpha);
 
     // Set the right cursor for the mode and apply the special Fill color
-    auto xpm = (this->dropping ? (this->stroke ? cursor_dropping_s_xpm : cursor_dropping_f_xpm) :
-                                 (this->stroke ? cursor_dropper_s_xpm : cursor_dropper_f_xpm));
-    GdkCursor *cursor = sp_cursor_from_xpm(xpm, this->get_color(this->invert));
-    GdkWindow* window = gtk_widget_get_window(GTK_WIDGET(desktop->getCanvas()));
-    gdk_window_set_cursor(window, cursor);
-    g_object_unref(cursor);
+    cursor_filename = (this->dropping ? (this->stroke ? "dropper-drop-stroke.svg" : "dropper-drop-fill.svg") :
+                                        (this->stroke ? "dropper-pick-stroke.svg" : "dropper-pick-fill.svg") );
+
+    // We do this ourselves to get color correct.
+    auto display = desktop->getCanvas()->get_display();
+    auto window = desktop->getCanvas()->get_window();
+    load_svg_cursor(display, window, cursor_filename, get_color(invert));
 
     if (!ret) {
     	ret = ToolBase::root_handler(event);

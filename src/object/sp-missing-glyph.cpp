@@ -30,11 +30,11 @@ SPMissingGlyph::~SPMissingGlyph() = default;
 void SPMissingGlyph::build(SPDocument* doc, Inkscape::XML::Node* repr) {
     SPObject::build(doc, repr);
 
-    this->readAttr( "d" );
-    this->readAttr( "horiz-adv-x" );
-    this->readAttr( "vert-origin-x" );
-    this->readAttr( "vert-origin-y" );
-    this->readAttr( "vert-adv-y" );
+    this->readAttr(SPAttr::D);
+    this->readAttr(SPAttr::HORIZ_ADV_X);
+    this->readAttr(SPAttr::VERT_ORIGIN_X);
+    this->readAttr(SPAttr::VERT_ORIGIN_Y);
+    this->readAttr(SPAttr::VERT_ADV_Y);
 }
 
 void SPMissingGlyph::release() {
@@ -42,9 +42,9 @@ void SPMissingGlyph::release() {
 }
 
 
-void SPMissingGlyph::set(SPAttributeEnum key, const gchar* value) {
+void SPMissingGlyph::set(SPAttr key, const gchar* value) {
     switch (key) {
-        case SP_ATTR_D:
+        case SPAttr::D:
         {
             if (this->d) {
                 g_free(this->d);
@@ -53,7 +53,7 @@ void SPMissingGlyph::set(SPAttributeEnum key, const gchar* value) {
             this->requestModified(SP_OBJECT_MODIFIED_FLAG);
             break;
         }
-        case SP_ATTR_HORIZ_ADV_X:
+        case SPAttr::HORIZ_ADV_X:
         {
             double number = value ? g_ascii_strtod(value, nullptr) : 0;
             if (number != this->horiz_adv_x){
@@ -62,7 +62,7 @@ void SPMissingGlyph::set(SPAttributeEnum key, const gchar* value) {
             }
             break;
         }
-        case SP_ATTR_VERT_ORIGIN_X:
+        case SPAttr::VERT_ORIGIN_X:
         {
             double number = value ? g_ascii_strtod(value, nullptr) : 0;
             if (number != this->vert_origin_x){
@@ -71,7 +71,7 @@ void SPMissingGlyph::set(SPAttributeEnum key, const gchar* value) {
             }
             break;
         }
-        case SP_ATTR_VERT_ORIGIN_Y:
+        case SPAttr::VERT_ORIGIN_Y:
         {
             double number = value ? g_ascii_strtod(value, nullptr) : 0;
             if (number != this->vert_origin_y){
@@ -80,7 +80,7 @@ void SPMissingGlyph::set(SPAttributeEnum key, const gchar* value) {
             }
             break;
         }
-        case SP_ATTR_VERT_ADV_Y:
+        case SPAttr::VERT_ADV_Y:
         {
             double number = value ? g_ascii_strtod(value, nullptr) : 0;
             if (number != this->vert_adv_y){
@@ -106,10 +106,10 @@ Inkscape::XML::Node* SPMissingGlyph::write(Inkscape::XML::Document* xml_doc, Ink
 
 	/* I am commenting out this part because I am not certain how does it work. I will have to study it later. Juca
 	    repr->setAttribute("d", glyph->d);
-	    sp_repr_set_svg_double(repr, "horiz-adv-x", glyph->horiz_adv_x);
-	    sp_repr_set_svg_double(repr, "vert-origin-x", glyph->vert_origin_x);
-	    sp_repr_set_svg_double(repr, "vert-origin-y", glyph->vert_origin_y);
-	    sp_repr_set_svg_double(repr, "vert-adv-y", glyph->vert_adv_y);
+	    repr->setAttributeSvgDouble("horiz-adv-x", glyph->horiz_adv_x);
+	    repr->setAttributeSvgDouble("vert-origin-x", glyph->vert_origin_x);
+	    repr->setAttributeSvgDouble("vert-origin-y", glyph->vert_origin_y);
+	    repr->setAttributeSvgDouble("vert-adv-y", glyph->vert_adv_y);
 	*/
 	    if (repr != this->getRepr()) {
 

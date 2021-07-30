@@ -145,6 +145,25 @@ void DialogPage::add_group_header(Glib::ustring name)
     }
 }
 
+void DialogPage::add_group_note(Glib::ustring name)
+{
+    if (name != "")
+    {
+        Gtk::Label* label_widget = Gtk::manage(new Gtk::Label(Glib::ustring("<i>") + name +
+                                               Glib::ustring("</i>") , Gtk::ALIGN_START , Gtk::ALIGN_CENTER, true));
+        label_widget->set_use_markup(true);
+        label_widget->set_valign(Gtk::ALIGN_CENTER);
+        label_widget->set_line_wrap(true);
+        label_widget->set_line_wrap_mode(Pango::WRAP_WORD);
+
+        add(*label_widget);
+        GValue width = G_VALUE_INIT;
+        g_value_init(&width, G_TYPE_INT);
+        g_value_set_int(&width, 2);
+        gtk_container_child_set_property(GTK_CONTAINER(gobj()), GTK_WIDGET(label_widget->gobj()), "width", &width);
+    }
+}
+
 void DialogPage::set_tip(Gtk::Widget& widget, Glib::ustring const &tip)
 {
     widget.set_tooltip_text (tip);
@@ -161,12 +180,12 @@ void PrefCheckButton::init(Glib::ustring const &label, Glib::ustring const &pref
 
 void PrefCheckButton::on_toggled()
 {
-    this->changed_signal.emit(this->get_active());
     if (this->get_visible()) //only take action if the user toggled it
     {
         Inkscape::Preferences *prefs = Inkscape::Preferences::get();
         prefs->setBool(_prefs_path, this->get_active());
     }
+    this->changed_signal.emit(this->get_active());
 }
 
 void PrefRadioButton::init(Glib::ustring const &label, Glib::ustring const &prefs_path,
@@ -211,7 +230,6 @@ void PrefRadioButton::init(Glib::ustring const &label, Glib::ustring const &pref
 
 void PrefRadioButton::on_toggled()
 {
-    this->changed_signal.emit(this->get_active());
     Inkscape::Preferences *prefs = Inkscape::Preferences::get();
 
     if (this->get_visible() && this->get_active() ) //only take action if toggled by user (to active)
@@ -221,6 +239,7 @@ void PrefRadioButton::on_toggled()
         else if ( _value_type == VAL_INT )
             prefs->setInt(_prefs_path, _int_value);
     }
+    this->changed_signal.emit(this->get_active());
 }
 
 void PrefSpinButton::init(Glib::ustring const &prefs_path,
@@ -270,6 +289,7 @@ void PrefSpinButton::on_value_changed()
             prefs->setDouble(_prefs_path, this->get_value());
         }
     }
+    this->changed_signal.emit(this->get_value());
 }
 
 void PrefSpinUnit::init(Glib::ustring const &prefs_path,
@@ -433,7 +453,7 @@ ZoomCorrRulerSlider::on_slider_value_changed()
         freeze = true;
         Inkscape::Preferences *prefs = Inkscape::Preferences::get();
         prefs->setDouble("/options/zoomcorrection/value", _slider->get_value() / 100.0);
-        _sb.set_value(_slider->get_value());
+        _sb->set_value(_slider->get_value());
         _ruler.queue_draw();
         freeze = false;
     }
@@ -446,8 +466,8 @@ ZoomCorrRulerSlider::on_spinbutton_value_changed()
     {
         freeze = true;
         Inkscape::Preferences *prefs = Inkscape::Preferences::get();
-        prefs->setDouble("/options/zoomcorrection/value", _sb.get_value() / 100.0);
-        _slider->set_value(_sb.get_value());
+        prefs->setDouble("/options/zoomcorrection/value", _sb->get_value() / 100.0);
+        _slider->set_value(_sb->get_value());
         _ruler.queue_draw();
         freeze = false;
     }
@@ -455,7 +475,7 @@ ZoomCorrRulerSlider::on_spinbutton_value_changed()
 
 void
 ZoomCorrRulerSlider::on_unit_changed() {
-    if (GPOINTER_TO_INT(_unit.get_data("sensitive")) == 0) {
+    if (!_unit.get_sensitive()) {
         // when the unit menu is initialized, the unit is set to the default but
         // it needs to be reset later so we don't perform the change in this case
         return;
@@ -471,7 +491,7 @@ ZoomCorrRulerSlider::on_unit_changed() {
 
 bool ZoomCorrRulerSlider::on_mnemonic_activate ( bool group_cycling )
 {
-    return _sb.mnemonic_activate ( group_cycling );
+    return _sb->mnemonic_activate ( group_cycling );
 }
 
 
@@ -495,26 +515,29 @@ ZoomCorrRulerSlider::init(int ruler_width, int ruler_height, double lower, doubl
     _slider->set_digits(2);
 
     _slider->signal_value_changed().connect(sigc::mem_fun(*this, &ZoomCorrRulerSlider::on_slider_value_changed));
-    _sb.signal_value_changed().connect(sigc::mem_fun(*this, &ZoomCorrRulerSlider::on_spinbutton_value_changed));
+    _sb = Gtk::manage(new Inkscape::UI::Widget::SpinButton());
+    _sb->signal_value_changed().connect(sigc::mem_fun(*this, &ZoomCorrRulerSlider::on_spinbutton_value_changed));
     _unit.signal_changed().connect(sigc::mem_fun(*this, &ZoomCorrRulerSlider::on_unit_changed));
 
-    _sb.set_range (lower, upper);
-    _sb.set_increments (step_increment, 0);
-    _sb.set_value (value);
-    _sb.set_digits(2);
-    _sb.set_halign(Gtk::ALIGN_CENTER);
-    _sb.set_valign(Gtk::ALIGN_END);
+    _sb->set_range (lower, upper);
+    _sb->set_increments (step_increment, 0);
+    _sb->set_value (value);
+    _sb->set_digits(2);
+    _sb->set_halign(Gtk::ALIGN_CENTER);
+    _sb->set_valign(Gtk::ALIGN_END);
 
-    _unit.set_data("sensitive", GINT_TO_POINTER(0));
+    _unit.set_sensitive(false);
     _unit.setUnitType(UNIT_TYPE_LINEAR);
-    _unit.set_data("sensitive", GINT_TO_POINTER(1));
+    _unit.set_sensitive(true);
     _unit.setUnit(prefs->getString("/options/zoomcorrection/unit"));
     _unit.set_halign(Gtk::ALIGN_CENTER);
     _unit.set_valign(Gtk::ALIGN_END);
 
+    _slider->set_hexpand(true);
+    _ruler.set_hexpand(true);
     auto table = Gtk::manage(new Gtk::Grid());
     table->attach(*_slider, 0, 0, 1, 1);
-    table->attach(_sb,      1, 0, 1, 1);
+    table->attach(*_sb,      1, 0, 1, 1);
     table->attach(_ruler,   0, 1, 1, 1);
     table->attach(_unit,    1, 1, 1, 1);
 
@@ -529,7 +552,7 @@ PrefSlider::on_slider_value_changed()
         freeze = true;
         Inkscape::Preferences *prefs = Inkscape::Preferences::get();
         prefs->setDouble(_prefs_path, _slider->get_value());
-        _sb.set_value(_slider->get_value());
+        _sb->set_value(_slider->get_value());
         freeze = false;
     }
 }
@@ -541,15 +564,15 @@ PrefSlider::on_spinbutton_value_changed()
     {
         freeze = true;
         Inkscape::Preferences *prefs = Inkscape::Preferences::get();
-        prefs->setDouble(_prefs_path, _sb.get_value());
-        _slider->set_value(_sb.get_value());
+        prefs->setDouble(_prefs_path, _sb->get_value());
+        _slider->set_value(_sb->get_value());
         freeze = false;
     }
 }
 
 bool PrefSlider::on_mnemonic_activate ( bool group_cycling )
 {
-    return _sb.mnemonic_activate ( group_cycling );
+    return _sb->mnemonic_activate ( group_cycling );
 }
 
 void
@@ -570,19 +593,19 @@ PrefSlider::init(Glib::ustring const &prefs_path,
     _slider->set_value (value);
     _slider->set_digits(digits);
     _slider->signal_value_changed().connect(sigc::mem_fun(*this, &PrefSlider::on_slider_value_changed));
-
-    _sb.signal_value_changed().connect(sigc::mem_fun(*this, &PrefSlider::on_spinbutton_value_changed));
-    _sb.set_range (lower, upper);
-    _sb.set_increments (step_increment, 0);
-    _sb.set_value (value);
-    _sb.set_digits(digits);
-    _sb.set_halign(Gtk::ALIGN_CENTER);
-    _sb.set_valign(Gtk::ALIGN_END);
+    _sb = Gtk::manage(new Inkscape::UI::Widget::SpinButton());
+    _sb->signal_value_changed().connect(sigc::mem_fun(*this, &PrefSlider::on_spinbutton_value_changed));
+    _sb->set_range (lower, upper);
+    _sb->set_increments (step_increment, 0);
+    _sb->set_value (value);
+    _sb->set_digits(digits);
+    _sb->set_halign(Gtk::ALIGN_CENTER);
+    _sb->set_valign(Gtk::ALIGN_END);
 
     auto table = Gtk::manage(new Gtk::Grid());
     _slider->set_hexpand();
     table->attach(*_slider, 0, 0, 1, 1);
-    table->attach(_sb,      1, 0, 1, 1);
+    table->attach(*_sb,     1, 0, 1, 1);
 
     this->pack_start(*table, Gtk::PACK_EXPAND_WIDGET);
 }
@@ -678,6 +701,30 @@ void PrefCombo::init(Glib::ustring const &prefs_path, std::vector<Glib::ustring>
     this->set_active(row);
 }
 
+void PrefCombo::init(Glib::ustring const &prefs_path,
+                     std::vector<std::pair<Glib::ustring, Glib::ustring>> labels_and_values,
+                     Glib::ustring default_value)
+{
+    _prefs_path = prefs_path;
+    Inkscape::Preferences *prefs = Inkscape::Preferences::get();
+    Glib::ustring value = prefs->getString(_prefs_path);
+    if (value.empty()) {
+        value = default_value;
+    }
+
+    int row = 0;
+    int i = 0;
+    for (auto entry : labels_and_values) {
+        this->append(entry.first);
+        _ustr_values.push_back(entry.second);
+        if (value == entry.second) {
+            row = i;
+        }
+        ++i;
+    }
+    this->set_active(row);
+}
+
 void PrefCombo::on_changed()
 {
     if (this->get_visible()) //only take action if user changed value
@@ -749,7 +796,7 @@ void PrefEntryFileButtonHBox::init(Glib::ustring const &prefs_path,
     relatedEntry->set_text(prefs->getString(_prefs_path));
     
     relatedButton = new Gtk::Button();
-    Gtk::HBox* pixlabel = new Gtk::HBox(false, 3);
+    Gtk::Box* pixlabel = new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 3);
     Gtk::Image *im = sp_get_icon_image("applications-graphics", Gtk::ICON_SIZE_BUTTON);
     pixlabel->pack_start(*im);
     Gtk::Label *l = new Gtk::Label();
@@ -877,7 +924,7 @@ void PrefOpenFolder::init(Glib::ustring const &entry_string, Glib::ustring const
 {
     relatedEntry = new Gtk::Entry();
     relatedButton = new Gtk::Button();
-    Gtk::HBox *pixlabel = new Gtk::HBox(false, 3);
+    Gtk::Box *pixlabel = new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 3);
     Gtk::Image *im = sp_get_icon_image("document-open", Gtk::ICON_SIZE_BUTTON);
     pixlabel->pack_start(*im);
     Gtk::Label *l = new Gtk::Label();
@@ -903,9 +950,8 @@ void PrefOpenFolder::onRelatedButtonClickedCallback()
     Glib::spawn_async("", argv, Glib::SpawnFlags::SPAWN_SEARCH_PATH);
 #else
     gchar *path = g_filename_to_uri(relatedEntry->get_text().c_str(), NULL, NULL);
-    Glib::ustring xgd = "xdg-open ";
-    xgd += path;
-    system((xgd).c_str());
+    std::vector<std::string> argv = { "xdg-open", path };
+    Glib::spawn_async("", argv, Glib::SpawnFlags::SPAWN_SEARCH_PATH);
     g_free(path);
 #endif
 }

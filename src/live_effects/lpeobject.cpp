@@ -49,7 +49,7 @@ void LivePathEffectObject::build(SPDocument *document, Inkscape::XML::Node *repr
 
     SPObject::build(document, repr);
 
-    this->readAttr( "effect" );
+    this->readAttr(SPAttr::PATH_EFFECT);
 
     if (repr) {
         repr->addListener (&livepatheffect_repr_events, this);
@@ -94,13 +94,13 @@ void LivePathEffectObject::release() {
 /**
  * Virtual set: set attribute to value.
  */
-void LivePathEffectObject::set(SPAttributeEnum key, gchar const *value) {
+void LivePathEffectObject::set(SPAttr key, gchar const *value) {
 #ifdef LIVEPATHEFFECT_VERBOSE
     g_print("Set livepatheffect");
 #endif
 
     switch (key) {
-        case SP_PROP_PATH_EFFECT:
+        case SPAttr::PATH_EFFECT:
             if (this->lpe) {
                 delete this->lpe;
                 this->lpe = nullptr;
@@ -170,7 +170,7 @@ livepatheffect_on_repr_attr_changed ( Inkscape::XML::Node * /*repr*/,
 // effect, we use on clipboard to do not fork in same doc on pastepatheffect
 bool LivePathEffectObject::is_similar(LivePathEffectObject *that)
 {
-    if (this && that) {
+    if (that) {
         const char *thisid = this->getId();
         const char *thatid = that->getId();
         if (!thisid || !thatid || strcmp(thisid, thatid) != 0) {
@@ -199,8 +199,14 @@ LivePathEffectObject *LivePathEffectObject::fork_private_if_necessary(unsigned i
 
         doc->getDefs()->getRepr()->addChild(dup_repr, nullptr);
         LivePathEffectObject *lpeobj_new = dynamic_cast<LivePathEffectObject *>(doc->getObjectByRepr(dup_repr));
-
         Inkscape::GC::release(dup_repr);
+        // To regenerate ID
+        sp_object_ref(lpeobj_new, nullptr);
+        gchar *id = sp_object_get_unique_id(this, nullptr);
+        lpeobj_new->setAttribute("id", id);
+        g_free(id);
+        // Load all volatile vars of forked item
+        sp_object_unref(lpeobj_new, nullptr);
         return lpeobj_new;
     }
     return this;

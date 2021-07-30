@@ -5,32 +5,30 @@
  * for otherwise constant-width paths.
  *
  * Authors:
- *   Liam P White <inkscapebrony@gmail.com>
+ *   Liam P White
  *
- * Copyright (C) 2014 Authors
+ * Copyright (C) 2014-2020 Authors
  *
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
 #include "live_effects/lpe-taperstroke.h"
+#include "live_effects/fill-conversion.h"
 
 #include <2geom/circle.h>
 #include <2geom/sbasis-to-bezier.h>
 
-#include "desktop-style.h"
+#include "style.h"
 
+#include "display/curve.h"
 #include "helper/geom-nodetype.h"
 #include "helper/geom-pathstroke.h"
-#include "display/curve.h"
+#include "object/sp-shape.h"
 #include "svg/svg-color.h"
 #include "svg/css-ostringstream.h"
 #include "svg/svg.h"
-
-#include "knotholder.h"
-
-#include "object/sp-shape.h"
-#include "object/sp-object-group.h"
-#include "style.h"
+#include "ui/knot/knot-holder.h"
+#include "ui/knot/knot-holder-entity.h"
 
 // TODO due to internal breakage in glibmm headers, this must be last:
 #include <glibmm/i18n.h>
@@ -48,6 +46,7 @@ namespace TpS {
     public:
         KnotHolderEntityAttachBegin(LPETaperStroke * effect) : LPEKnotHolderEntity(effect) {}
         void knot_set(Geom::Point const &p, Geom::Point const &origin, guint state) override;
+        void knot_click(guint state) override;
         Geom::Point knot_get() const override;
     };
     
@@ -55,26 +54,46 @@ namespace TpS {
     public:
         KnotHolderEntityAttachEnd(LPETaperStroke * effect) : LPEKnotHolderEntity(effect) {}
         void knot_set(Geom::Point const &p, Geom::Point const &origin, guint state) override;
+        void knot_click(guint state) override;
         Geom::Point knot_get() const override;
     };
 } // TpS
 
 static const Util::EnumData<unsigned> JoinType[] = {
+    // clang-format off
     {JOIN_BEVEL,          N_("Beveled"),         "bevel"},
     {JOIN_ROUND,          N_("Rounded"),         "round"},
     {JOIN_MITER,          N_("Miter"),           "miter"},
     {JOIN_EXTRAPOLATE,    N_("Extrapolated"),    "extrapolated"},
+    // clang-format on
+};
+
+enum TaperShape {
+    TAPER_CENTER,
+    TAPER_RIGHT,
+    TAPER_LEFT,
+    LAST_SHAPE
+};
+
+static const Util::EnumData<unsigned> TaperShapeType[] = {
+    {TAPER_CENTER, N_("Center"), "center"},
+    {TAPER_LEFT,   N_("Left"),   "left"},
+    {TAPER_RIGHT,  N_("Right"),  "right"},
 };
 
 static const Util::EnumDataConverter<unsigned> JoinTypeConverter(JoinType, sizeof (JoinType)/sizeof(*JoinType));
+static const Util::EnumDataConverter<unsigned> TaperShapeTypeConverter(TaperShapeType, sizeof (TaperShapeType)/sizeof(*TaperShapeType));
 
 LPETaperStroke::LPETaperStroke(LivePathEffectObject *lpeobject) :
     Effect(lpeobject),
     line_width(_("Stroke width:"), _("The (non-tapered) width of the path"), "stroke_width", &wr, this, 1.),
     attach_start(_("Start offset:"), _("Taper distance from path start"), "attach_start", &wr, this, 0.2),
     attach_end(_("End offset:"), _("The ending position of the taper"), "end_offset", &wr, this, 0.2),
-    smoothing(_("Taper smoothing:"), _("Amount of smoothing to apply to the tapers"), "smoothing", &wr, this, 0.5),
+    start_smoothing(_("Start smoothing:"), _("Amount of smoothing to apply to the start taper"), "start_smoothing", &wr, this, 0.5),
+    end_smoothing(_("End smoothing:"), _("Amount of smoothing to apply to the end taper"), "end_smoothing", &wr, this, 0.5),
     join_type(_("Join type:"), _("Join type for non-smooth nodes"), "jointype", JoinTypeConverter, &wr, this, JOIN_EXTRAPOLATE),
+    start_shape(_("Start direction:"), _("Direction of the taper at the path start"), "start_shape", TaperShapeTypeConverter, &wr, this, TAPER_CENTER),
+    end_shape(_("End direction:"), _("Direction of the taper at the path end"), "end_shape", TaperShapeTypeConverter, &wr, this, TAPER_CENTER),
     miter_limit(_("Miter limit:"), _("Limit for miter joins"), "miter_limit", &wr, this, 100.)
 {
     show_orig_path = true;
@@ -86,8 +105,11 @@ LPETaperStroke::LPETaperStroke(LivePathEffectObject *lpeobject) :
     registerParameter(&line_width);
     registerParameter(&attach_start);
     registerParameter(&attach_end);
-    registerParameter(&smoothing);
+    registerParameter(&start_smoothing);
+    registerParameter(&end_smoothing);
     registerParameter(&join_type);
+    registerParameter(&start_shape);
+    registerParameter(&end_shape);
     registerParameter(&miter_limit);
 }
 
@@ -105,82 +127,43 @@ void LPETaperStroke::transform_multiply(Geom::Affine const &postmul, bool /*set*
 
 void LPETaperStroke::doOnApply(SPLPEItem const* lpeitem)
 {
-    if (SP_IS_SHAPE(lpeitem)) {
-        Inkscape::Preferences *prefs = Inkscape::Preferences::get();
-        SPLPEItem* item = const_cast<SPLPEItem*>(lpeitem);
-        double width = (lpeitem && lpeitem->style) ? lpeitem->style->stroke_width.computed : 1.;
+    auto lpeitem_mutable = const_cast<SPLPEItem *>(lpeitem);
+    auto item = dynamic_cast<SPShape *>(lpeitem_mutable);
 
-        SPCSSAttr *css = sp_repr_css_attr_new ();
-        if (lpeitem->style->stroke.isPaintserver()) {
-            SPPaintServer * server = lpeitem->style->getStrokePaintServer();
-            if (server) {
-                Glib::ustring str;
-                str += "url(#";
-                str += server->getId();
-                str += ")";
-                sp_repr_css_set_property (css, "fill", str.c_str());
-            }
-        } else if (lpeitem->style->stroke.isColor()) {
-            gchar c[64];
-            sp_svg_write_color (c, sizeof(c), lpeitem->style->stroke.value.color.toRGBA32(SP_SCALE24_TO_FLOAT(lpeitem->style->stroke_opacity.value)));
-            sp_repr_css_set_property (css, "fill", c);
-        } else {
-            sp_repr_css_set_property (css, "fill", "none");
-        }
-
-        sp_repr_css_set_property(css, "fill-rule", "nonzero");
-        sp_repr_css_set_property(css, "stroke", "none");
-
-        sp_desktop_apply_css_recursive(item, css, true);
-        sp_repr_css_attr_unref (css);
-        Glib::ustring pref_path = (Glib::ustring)"/live_effects/" +
-                                       (Glib::ustring)LPETypeConverter.get_key(effectType()).c_str() +
-                                       (Glib::ustring)"/" + 
-                                       (Glib::ustring)"stroke_width";
-        bool valid = prefs->getEntry(pref_path).isValid();
-        if(!valid){
-            line_width.param_set_value(width);
-        }
-        line_width.write_to_SVG();
-    } else {
+    if (!item) {
         printf("WARNING: It only makes sense to apply Taper stroke to paths (not groups).\n");
     }
-}
 
-// from LPEPowerStroke -- sets stroke color from existing fill color
+    Inkscape::Preferences *prefs = Inkscape::Preferences::get();
+
+    double width = (lpeitem && lpeitem->style) ? lpeitem->style->stroke_width.computed : 1.;
+
+    lpe_shape_convert_stroke_and_fill(item);
+
+    Glib::ustring pref_path = (Glib::ustring)"/live_effects/" +
+                                    (Glib::ustring)LPETypeConverter.get_key(effectType()).c_str() +
+                                    (Glib::ustring)"/" + 
+                                    (Glib::ustring)"stroke_width";
+
+    bool valid = prefs->getEntry(pref_path).isValid();
+
+    if (!valid) {
+        line_width.param_set_value(width);
+    }
+
+    line_width.write_to_SVG();
+}
 
 void LPETaperStroke::doOnRemove(SPLPEItem const* lpeitem)
 {
-    if (SP_IS_SHAPE(lpeitem)) {
-        SPLPEItem *item = const_cast<SPLPEItem*>(lpeitem);
+    auto lpeitem_mutable = const_cast<SPLPEItem *>(lpeitem);
+    auto item = dynamic_cast<SPShape *>(lpeitem_mutable);
 
-        SPCSSAttr *css = sp_repr_css_attr_new ();
-        if (lpeitem->style->fill.isPaintserver()) {
-            SPPaintServer * server = lpeitem->style->getFillPaintServer();
-            if (server) {
-                Glib::ustring str;
-                str += "url(#";
-                str += server->getId();
-                str += ")";
-                sp_repr_css_set_property (css, "stroke", str.c_str());
-            }
-        } else if (lpeitem->style->fill.isColor()) {
-            gchar c[64];
-            sp_svg_write_color (c, sizeof(c), lpeitem->style->fill.value.color.toRGBA32(SP_SCALE24_TO_FLOAT(lpeitem->style->fill_opacity.value)));
-            sp_repr_css_set_property (css, "stroke", c);
-        } else {
-            sp_repr_css_set_property (css, "stroke", "none");
-        }
-
-        Inkscape::CSSOStringStream os;
-        os << fabs(line_width);
-        sp_repr_css_set_property (css, "stroke-width", os.str().c_str());
-
-        sp_repr_css_set_property(css, "fill", "none");
-
-        sp_desktop_apply_css_recursive(item, css, true);
-        sp_repr_css_attr_unref (css);
+    if (!item) {
+        return;
     }
+
+    lpe_shape_revert_stroke_and_fill(item, line_width);
 }
 
 using Geom::Piecewise;
@@ -288,7 +271,18 @@ Geom::PathVector LPETaperStroke::doEffect_path(Geom::PathVector const& path_in)
         // Construct the pattern
         std::stringstream pat_str;
         pat_str.imbue(std::locale::classic());
-        pat_str << "M 1,0 C " << 1 - (double)smoothing << ",0 0,0.5 0,0.5 0,0.5 " << 1 - (double)smoothing << ",1 1,1";
+
+        switch (start_shape.get_value()) {
+            case TAPER_RIGHT:
+                pat_str << "M 1,0 Q " << 1 - (double)start_smoothing << ",0 0,1 L 1,1";
+                break;
+            case TAPER_LEFT:
+                pat_str << "M 1,0 L 0,0 Q " << 1 - (double)start_smoothing << ",1 1,1";
+                break;
+            default:
+                pat_str << "M 1,0 C " << 1 - (double)start_smoothing << ",0 0,0.5 0,0.5 0,0.5 " << 1 - (double)start_smoothing << ",1 1,1";
+                break;
+        }
 
         pat_vec = sp_svg_read_pathv(pat_str.str().c_str());
         pwd2.concat(stretch_along(pathv_out[0].toPwSb(), pat_vec[0], fabs(line_width)));
@@ -316,7 +310,19 @@ Geom::PathVector LPETaperStroke::doEffect_path(Geom::PathVector const& path_in)
         // append the ending taper
         std::stringstream pat_str_1;
         pat_str_1.imbue(std::locale::classic());
-        pat_str_1 << "M 0,1 C " << (double)smoothing << ",1 1,0.5 1,0.5 1,0.5 " << double(smoothing) << ",0 0,0";
+
+        switch (end_shape.get_value()) {
+            case TAPER_RIGHT:
+                pat_str_1 << "M 0,1 L 1,1 Q " << (double)end_smoothing << ",0 0,0";
+                break;
+            case TAPER_LEFT:
+                pat_str_1 << "M 0,1 Q " << (double)end_smoothing << ",1 1,0 L 0,0";
+                break;
+            default:
+                pat_str_1 << "M 0,1 C " << (double)end_smoothing << ",1 1,0.5 1,0.5 1,0.5 " << (double)end_smoothing << ",0 0,0";
+                break;
+        }
+
         pat_vec = sp_svg_read_pathv(pat_str_1.str().c_str());
 
         pwd2 = Piecewise<D2<SBasis> >();
@@ -459,11 +465,13 @@ Piecewise<D2<SBasis> > stretch_along(Piecewise<D2<SBasis> > pwd2_in, Geom::Path 
 void LPETaperStroke::addKnotHolderEntities(KnotHolder *knotholder, SPItem *item)
 {
     KnotHolderEntity *e = new TpS::KnotHolderEntityAttachBegin(this);
-    e->create(nullptr, item, knotholder, Inkscape::CTRL_TYPE_LPE, _("Start point of the taper"), SP_KNOT_SHAPE_CIRCLE);
+    e->create(nullptr, item, knotholder, Inkscape::CANVAS_ITEM_CTRL_TYPE_LPE, "LPE:TaperStrokeBegin",
+              _("<b>Start point of the taper</b>: drag to alter the taper, <b>Shift+click</b> changes the taper direction"));
     knotholder->add(e);
 
     KnotHolderEntity *f = new TpS::KnotHolderEntityAttachEnd(this);
-    f->create(nullptr, item, knotholder, Inkscape::CTRL_TYPE_LPE, _("End point of the taper"), SP_KNOT_SHAPE_CIRCLE);
+    f->create(nullptr, item, knotholder, Inkscape::CANVAS_ITEM_CTRL_TYPE_LPE, "LPE:TaperStrokeEnd",
+              _("<b>End point of the taper</b>: drag to alter the taper, <b>Shift+click</b> changes the taper direction"));
     knotholder->add(f);
 }
 
@@ -482,8 +490,7 @@ void KnotHolderEntityAttachBegin::knot_set(Geom::Point const &p, Geom::Point con
         return;
     }
     
-    SPCurve* curve;
-    if (!(curve = SP_SHAPE(lpe->sp_lpe_item)->getCurve())) {
+    if (!SP_SHAPE(lpe->sp_lpe_item)->curve()) {
         // oops
         return;
     }
@@ -501,6 +508,31 @@ void KnotHolderEntityAttachBegin::knot_set(Geom::Point const &p, Geom::Point con
     // FIXME: this should not directly ask for updating the item. It should write to SVG, which triggers updating.
     sp_lpe_item_update_patheffect(SP_LPE_ITEM(item), false, true);
 }
+
+void KnotHolderEntityAttachBegin::knot_click(guint state)
+{
+    if (!(state & GDK_SHIFT_MASK)) {
+        return;
+    }
+
+    LPETaperStroke* lpe = dynamic_cast<LPETaperStroke *>(_effect);
+
+    lpe->start_shape.param_set_value((lpe->start_shape.get_value() + 1) % LAST_SHAPE);
+    lpe->start_shape.write_to_SVG();
+}
+
+void KnotHolderEntityAttachEnd::knot_click(guint state)
+{
+    if (!(state & GDK_SHIFT_MASK)) {
+        return;
+    }
+
+    LPETaperStroke* lpe = dynamic_cast<LPETaperStroke *>(_effect);
+
+    lpe->end_shape.param_set_value((lpe->end_shape.get_value() + 1) % LAST_SHAPE);
+    lpe->end_shape.write_to_SVG();
+}
+
 void KnotHolderEntityAttachEnd::knot_set(Geom::Point const &p, Geom::Point const& /*origin*/, guint state)
 {
     using namespace Geom;
@@ -514,8 +546,7 @@ void KnotHolderEntityAttachEnd::knot_set(Geom::Point const &p, Geom::Point const
         return;
     }
     
-    SPCurve* curve;
-    if ( !(curve = SP_SHAPE(lpe->sp_lpe_item)->getCurve()) ) {
+    if (!SP_SHAPE(lpe->sp_lpe_item)->curve()) {
         // oops
         return;
     }

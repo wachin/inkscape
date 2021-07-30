@@ -23,21 +23,21 @@
 #include <sigc++/sigc++.h>
 #include <vector>
 
-#include "knot.h"
 #include "message-context.h"
 #include "seltrans-handles.h"
 #include "selcue.h"
 
 #include "object/sp-item.h"
-#include "display/guideline.h"
+#include "ui/knot/knot.h"
 
-class  SPKnot;
 class  SPDesktop;
 struct SPCanvasItem;
-struct SPCtrlLine;
 struct SPSelTransHandle;
 
 namespace Inkscape {
+
+class CanvasItemCtrl;
+class CanvasItemCurve;
 
 Geom::Scale calcScaleFactors(Geom::Point const &initial_point, Geom::Point const &new_point, Geom::Point const &origin, bool const skew = false);
 
@@ -92,7 +92,7 @@ public:
         return _grabbed;
     }
     bool centerIsVisible() {
-        return ( SP_KNOT_IS_VISIBLE (knots[0]) );
+        return ( knots[0]->is_visible());
     }
 
     void getNextClosestPoint(bool reverse);
@@ -146,8 +146,8 @@ private:
     State _state;
     Show _show;
 
-    bool _grabbed;
-    bool _show_handles;
+    bool _grabbed = false;
+    bool _show_handles = true;
     bool _empty;
     bool _changed;
 
@@ -176,16 +176,13 @@ private:
     double _handle_x;
     double _handle_y;
 
-    boost::optional<Geom::Point> _center;
+    std::optional<Geom::Point> _center;
     bool _center_is_set; ///< we've already set _center, no need to reread it from items
-    int  _center_handle;
 
     SPKnot *knots[NUMHANDS];
-    SPCanvasItem *_norm;
-    SPCanvasItem *_grip;
-    SPCtrlLine *_l[4];
-    unsigned int _sel_changed_id;
-    unsigned int _sel_modified_id;
+    Inkscape::CanvasItemCtrl *_norm;
+    Inkscape::CanvasItemCtrl *_grip;
+    Inkscape::CanvasItemCurve *_l[4];
     std::vector<SPItem*> _stamp_cache;
 
     Geom::Point _origin; ///< position of origin for transforms

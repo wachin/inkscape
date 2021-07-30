@@ -37,14 +37,12 @@ rect { fill: green; opacity:1.0; }\
 .cls2 { fill: green; opacity:0.5; }\
 </style>\
 </svg>";
-        doc = SPDocument::createNewDocFromMem(docString, static_cast<int>(strlen(docString)), false);
+        doc.reset(SPDocument::createNewDocFromMem(docString, static_cast<int>(strlen(docString)), false));
     }
 
-    ~ObjectTest() override {
-        doc->doUnref();
-    }
+    ~ObjectTest() override = default;
 
-    SPDocument *doc;
+    std::unique_ptr<SPDocument> doc;
 };
 
 /*
@@ -60,14 +58,14 @@ TEST_F(ObjectTest, StyleElems) {
     SPStyleElem *one = dynamic_cast<SPStyleElem *>(doc->getObjectById("style01"));
     ASSERT_TRUE(one != nullptr);
 
-    for(auto style: one->styles) {
+    for (auto &style : one->get_styles()) {
         EXPECT_EQ(style->fill.get_value(), Glib::ustring("#ff0000"));
     }
 
     SPStyleElem *two = dynamic_cast<SPStyleElem *>(doc->getObjectById("style02"));
     ASSERT_TRUE(one != nullptr);
 
-    for(auto style: two->styles) {
+    for (auto &style : two->get_styles()) {
         EXPECT_EQ(style->fill.get_value(), Glib::ustring("#008000"));
     }
 }

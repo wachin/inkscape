@@ -79,7 +79,6 @@ bool sp_repr_save_rebased_file(Inkscape::XML::Document *doc, char const *filenam
 SPCSSAttr *sp_repr_css_attr_new();
 void sp_repr_css_attr_unref(SPCSSAttr *css);
 SPCSSAttr *sp_repr_css_attr(Inkscape::XML::Node const *repr, char const *attr);
-SPCSSAttr *sp_repr_css_attr_parse_color_to_fill(const Glib::ustring &text);
 SPCSSAttr *sp_repr_css_attr_inherited(Inkscape::XML::Node const *repr, char const *attr);
 SPCSSAttr *sp_repr_css_attr_unset_all(SPCSSAttr *css);
 
@@ -110,18 +109,6 @@ inline void sp_repr_unparent(Inkscape::XML::Node *repr) {
 }
 
 bool sp_repr_is_meta_element(const Inkscape::XML::Node *node);
-
-/* Convenience */
-unsigned sp_repr_get_boolean(Inkscape::XML::Node *repr, char const *key, unsigned *val);
-unsigned sp_repr_get_int(Inkscape::XML::Node *repr, char const *key, int *val);
-unsigned sp_repr_get_double(Inkscape::XML::Node *repr, char const *key, double *val);
-unsigned sp_repr_set_boolean(Inkscape::XML::Node *repr, char const *key, unsigned val);
-unsigned sp_repr_set_int(Inkscape::XML::Node *repr, char const *key, int val);
-unsigned sp_repr_set_css_double(Inkscape::XML::Node *repr, char const *key, double val);
-unsigned sp_repr_set_svg_double(Inkscape::XML::Node *repr, char const *key, double val);
-unsigned sp_repr_set_svg_length(Inkscape::XML::Node *repr, char const *key, SVGLength &val);
-unsigned sp_repr_set_point(Inkscape::XML::Node *repr, char const *key, Geom::Point const & val);
-unsigned sp_repr_get_point(Inkscape::XML::Node *repr, char const *key, Geom::Point *val);
 
 //c++-style comparison : returns (bool)(a<b)
 int sp_repr_compare_position(Inkscape::XML::Node const *first, Inkscape::XML::Node const *second);

@@ -27,6 +27,20 @@
 #include <gdk/gdkkeysyms.h>
 #include <glibmm/i18n.h>
 
+/**
+ * Return true if `node` is a text or comment node
+ */
+static bool is_text_or_comment_node(Inkscape::XML::Node const &node)
+{
+    switch (node.type()) {
+      case Inkscape::XML::NodeType::TEXT_NODE:
+      case Inkscape::XML::NodeType::COMMENT_NODE:
+            return true;
+        default:
+            return false;
+    }
+}
+
 static void on_attr_changed (Inkscape::XML::Node * repr,
                          const gchar * name,
                          const gchar * /*old_value*/,
@@ -42,7 +56,13 @@ static void on_content_changed (Inkscape::XML::Node * repr,
                                 gchar const * newcontent,
                                 gpointer data)
 {
-    ATTR_DIALOG(data)->onAttrChanged(repr, "content", repr->content());
+    auto self = ATTR_DIALOG(data);
+    auto buffer = self->_content_tv->get_buffer();
+    if (!buffer->get_modified()) {
+        const char *c = repr->content();
+        buffer->set_text(c ? c : "");
+    }
+    buffer->set_modified(false);
 }
 
 Inkscape::XML::NodeEventVector _repr_events = {
@@ -64,12 +84,34 @@ static gboolean key_callback(GtkWidget *widget, GdkEventKey *event, AttrDialog *
  * New attribute can be added by clicking '+' at bottom of the attr pane. '-'
  */
 AttrDialog::AttrDialog()
-    : UI::Widget::Panel("/dialogs/attr", SP_VERB_DIALOG_ATTR)
-    , _desktop(nullptr)
+    : DialogBase("/dialogs/attr", "AttrDialog")
     , _repr(nullptr)
+    , _mainBox(Gtk::ORIENTATION_VERTICAL)
+    , status_box(Gtk::ORIENTATION_HORIZONTAL)
 {
     set_size_request(20, 15);
     _mainBox.pack_start(_scrolledWindow, Gtk::PACK_EXPAND_WIDGET);
+
+    // For text and comment nodes
+    _content_tv = Gtk::manage(new Gtk::TextView());
+    _content_tv->show();
+    _content_tv->set_wrap_mode(Gtk::WrapMode::WRAP_CHAR);
+    _content_tv->set_monospace(true);
+    _content_tv->set_border_width(4);
+    _content_tv->set_buffer(Gtk::TextBuffer::create());
+    _content_tv->get_buffer()->signal_end_user_action().connect([this]() {
+        if (_repr) {
+            _repr->setContent(_content_tv->get_buffer()->get_text().c_str());
+            setUndo(_("Type text"));
+        }
+    });
+    _content_sw = Gtk::manage(new Gtk::ScrolledWindow());
+    _content_sw->hide();
+    _content_sw->set_no_show_all();
+    _content_sw->add(*_content_tv);
+    _mainBox.pack_start(*_content_sw);
+
+    // For element nodes
     _treeView.set_headers_visible(true);
     _treeView.set_hover_selection(true);
     _treeView.set_activate_on_single_click(true);
@@ -118,7 +160,7 @@ AttrDialog::AttrDialog()
     status.set_line_wrap(true);
     status.get_style_context()->add_class("inksmall");
     status_box.pack_start(status, TRUE, TRUE, 0);
-    _getContents()->pack_end(status_box, false, false, 2);
+    pack_end(status_box, false, false, 2);
 
     _message_stack = std::make_shared<Inkscape::MessageStack>();
     _message_context = std::unique_ptr<Inkscape::MessageContext>(new Inkscape::MessageContext(_message_stack));
@@ -152,7 +194,7 @@ AttrDialog::AttrDialog()
     _scrolled_text_view.set_max_content_height(450);
     _scrolled_text_view.set_policy(Gtk::POLICY_AUTOMATIC, Gtk::POLICY_AUTOMATIC);
     _scrolled_text_view.set_propagate_natural_width(true);
-    Gtk::Label *helpreturn = Gtk::manage(new Gtk::Label(_("Shift+Return new line")));
+    Gtk::Label *helpreturn = Gtk::manage(new Gtk::Label(_("Shift+Return for a new line")));
     helpreturn->get_style_context()->add_class("inksmall");
     Gtk::Button *apply = Gtk::manage(new Gtk::Button());
     Gtk::Image *icon = Gtk::manage(sp_get_icon_image("on-outline", 26));
@@ -178,8 +220,7 @@ AttrDialog::AttrDialog()
     _popover->signal_closed().connect(sigc::mem_fun(*this, &AttrDialog::popClosed));
     _popover->get_style_context()->add_class("attrpop");
     attr_reset_context(0);
-    _getContents()->pack_start(_mainBox, Gtk::PACK_EXPAND_WIDGET);
-    setDesktop(getDesktop());
+    pack_start(_mainBox, Gtk::PACK_EXPAND_WIDGET);
     // I couldent get the signal go well not using C way signals
     g_signal_connect(GTK_WIDGET(_popover->gobj()), "key-press-event", G_CALLBACK(key_callback), this);
     _popover->hide();
@@ -263,11 +304,9 @@ static Glib::ustring prepare_rendervalue(const char *value)
  */
 AttrDialog::~AttrDialog()
 {
-    setDesktop(nullptr);
     _message_changed_connection.disconnect();
     _message_context = nullptr;
     _message_stack = nullptr;
-    _message_changed_connection.~connection();
 }
 
 void AttrDialog::startNameEdit(Gtk::CellEditable *cell, const Glib::ustring &path)
@@ -309,8 +348,7 @@ void AttrDialog::startValueEdit(Gtk::CellEditable *cell, const Glib::ustring &pa
     Gtk::TreeModel::Row row = *iter;
     if (row && this->_repr) {
         Glib::ustring name = row[_attrColumns._attributeName];
-        if (row[_attrColumns._attributeValue] != row[_attrColumns._attributeValueRender] || colwidth - 10 < width ||
-            name == "content") {
+        if (row[_attrColumns._attributeValue] != row[_attrColumns._attributeValueRender] || colwidth - 10 < width) {
             valueediting = entry->get_text();
             Gdk::Rectangle rect;
             _treeView.get_cell_area((Gtk::TreeModel::Path)iter, *_valueCol, rect);
@@ -339,16 +377,6 @@ void AttrDialog::popClosed()
 }
 
 /**
- * @brief AttrDialog::setDesktop
- * @param desktop
- * This function sets the 'desktop' for the CSS pane.
- */
-void AttrDialog::setDesktop(SPDesktop* desktop)
-{
-    _desktop = desktop;
-}
-
-/**
  * @brief AttrDialog::setRepr
  * Set the internal xml object that I'm working on right now.
  */
@@ -363,16 +391,20 @@ void AttrDialog::setRepr(Inkscape::XML::Node * repr)
     }
     _repr = repr;
     if (repr) {
-        Inkscape::GC::anchor(_repr); 
+        Inkscape::GC::anchor(_repr);
         _repr->addListener(&_repr_events, this);
         _repr->synthesizeEvents(&_repr_events, this);
+
+        // show either attributes or content
+        bool show_content = is_text_or_comment_node(*_repr);
+        _scrolledWindow.set_visible(!show_content);
+        _content_sw->set_visible(show_content);
     }
 }
 
 void AttrDialog::setUndo(Glib::ustring const &event_description)
 {
-    SPDocument *document = this->_desktop->doc();
-    DocumentUndo::done(document, SP_VERB_DIALOG_XML_EDITOR, event_description);
+    DocumentUndo::done(getDocument(), SP_VERB_DIALOG_XML_EDITOR, event_description);
 }
 
 void AttrDialog::_set_status_message(Inkscape::MessageType /*type*/, const gchar *message, GtkWidget *widget)
@@ -460,9 +492,7 @@ void AttrDialog::onAttrDelete(Glib::ustring path)
     Gtk::TreeModel::Row row = *_store->get_iter(path);
     if (row) {
         Glib::ustring name = row[_attrColumns._attributeName];
-        if (name == "content") {
-            return;
-        } else {
+        {
             this->_store->erase(row);
             this->_repr->removeAttribute(name);
             this->setUndo(_("Delete attribute"));
@@ -489,7 +519,7 @@ bool AttrDialog::onKeyPressed(GdkEventKey *event)
             case GDK_KEY_KP_Delete: {
                 // Create new attribute (repeat code, fold into above event!)
                 Glib::ustring name = row[_attrColumns._attributeName];
-                if (name != "content") {
+                {
                     this->_store->erase(row);
                     this->_repr->removeAttribute(name);
                     this->setUndo(_("Delete attribute"));
@@ -584,9 +614,6 @@ void AttrDialog::nameEdited (const Glib::ustring& path, const Glib::ustring& nam
             grab_focus();
             return;
         }
-        if (old_name == "content") {
-            return;
-        }
         // Do not allow empty name (this would delete the attribute)
         if (name.empty()) {
             return;
@@ -647,6 +674,10 @@ void AttrDialog::valueCanceledPop()
  */
 void AttrDialog::valueEdited (const Glib::ustring& path, const Glib::ustring& value)
 {
+    auto selection = getSelection();
+    if (!selection)
+        return;
+
     Gtk::TreeModel::Row row = *_store->get_iter(path);
     if(row && this->_repr) {
         Glib::ustring name = row[_attrColumns._attributeName];
@@ -655,9 +686,7 @@ void AttrDialog::valueEdited (const Glib::ustring& path, const Glib::ustring& va
             return;
         }
         if(name.empty()) return;
-        if (name == "content") {
-            _repr->setContent(value.c_str());
-        } else {
+        {
             _repr->setAttributeOrRemoveIfEmpty(name, value);
         }
         if(!value.empty()) {
@@ -665,7 +694,6 @@ void AttrDialog::valueEdited (const Glib::ustring& path, const Glib::ustring& va
             Glib::ustring renderval = prepare_rendervalue(value.c_str());
             row[_attrColumns._attributeValueRender] = renderval;
         }
-        Inkscape::Selection *selection = _desktop->getSelection();
         SPObject *obj = nullptr;
         if (selection->objects().size() == 1) {
             obj = selection->objects().back();

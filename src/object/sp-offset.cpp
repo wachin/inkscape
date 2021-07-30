@@ -113,7 +113,7 @@ void SPOffset::build(SPDocument *document, Inkscape::XML::Node *repr) {
 
     //XML Tree being used directly here while it shouldn't be.
     if (this->getRepr()->attribute("inkscape:radius")) {
-        this->readAttr( "inkscape:radius" );
+        this->readAttr(SPAttr::INKSCAPE_RADIUS);
     } else {
         //XML Tree being used directly here (as object->getRepr) 
         //in all the below lines in the block while it shouldn't be.
@@ -121,21 +121,21 @@ void SPOffset::build(SPDocument *document, Inkscape::XML::Node *repr) {
         this->setAttribute("inkscape:radius", oldA);
         this->removeAttribute("sodipodi:radius");
 
-        this->readAttr( "inkscape:radius" );
+        this->readAttr(SPAttr::INKSCAPE_RADIUS);
     }
 
     if (this->getRepr()->attribute("inkscape:original")) {
-        this->readAttr( "inkscape:original" );
+        this->readAttr(SPAttr::INKSCAPE_ORIGINAL);
     } else {
         gchar const *oldA = this->getRepr()->attribute("sodipodi:original");
         this->setAttribute("inkscape:original", oldA);
         this->removeAttribute("sodipodi:original");
 
-        this->readAttr( "inkscape:original" );
+        this->readAttr(SPAttr::INKSCAPE_ORIGINAL);
     }
 
     if (this->getRepr()->attribute("xlink:href")) {
-        this->readAttr( "xlink:href" );
+        this->readAttr(SPAttr::XLINK_HREF);
     } else {
         gchar const *oldA = this->getRepr()->attribute("inkscape:href");
 
@@ -155,7 +155,7 @@ void SPOffset::build(SPDocument *document, Inkscape::XML::Node *repr) {
             this->removeAttribute("inkscape:href");
         }
 
-        this->readAttr( "xlink:href" );
+        this->readAttr(SPAttr::XLINK_HREF);
     }
 }
 
@@ -170,23 +170,19 @@ Inkscape::XML::Node* SPOffset::write(Inkscape::XML::Document *xml_doc, Inkscape:
          * inkscape:offset="cx cy exp revo rad arg t0"
          */
         repr->setAttribute("sodipodi:type", "inkscape:offset");
-        sp_repr_set_svg_double(repr, "inkscape:radius", this->rad);
+        repr->setAttributeSvgDouble("inkscape:radius", this->rad);
         repr->setAttribute("inkscape:original", this->original);
         repr->setAttribute("inkscape:href", this->sourceHref);
     }
 
 
     // Make sure the offset has curve
-    SPCurve *curve = SP_SHAPE (this)->getCurve();
-
-    if (curve == nullptr) {
+    if (_curve == nullptr) {
         this->set_shape();
     }
 
     // write that curve to "d"
-    char *d = sp_svg_write_path (this->_curve->get_pathvector());
-    repr->setAttribute("d", d);
-    g_free (d);
+    repr->setAttribute("d", sp_svg_write_path(this->_curve->get_pathvector()));
 
     SPShape::write(xml_doc, repr, flags | SP_SHAPE_WRITE_PATH);
 
@@ -217,7 +213,7 @@ void SPOffset::release() {
     SPShape::release();
 }
 
-void SPOffset::set(SPAttributeEnum key, const gchar* value) {
+void SPOffset::set(SPAttr key, const gchar* value) {
     if ( this->sourceDirty ) {
     	refresh_offset_source(this);
     }
@@ -225,8 +221,8 @@ void SPOffset::set(SPAttributeEnum key, const gchar* value) {
     /* fixme: we should really collect updates */
     switch (key)
     {
-        case SP_ATTR_INKSCAPE_ORIGINAL:
-        case SP_ATTR_SODIPODI_ORIGINAL:
+        case SPAttr::INKSCAPE_ORIGINAL:
+        case SPAttr::SODIPODI_ORIGINAL:
             if (value == nullptr) {
             } else {
                 if (this->original) {
@@ -252,8 +248,8 @@ void SPOffset::set(SPAttributeEnum key, const gchar* value) {
             }
             break;
 
-        case SP_ATTR_INKSCAPE_RADIUS:
-        case SP_ATTR_SODIPODI_RADIUS:
+        case SPAttr::INKSCAPE_RADIUS:
+        case SPAttr::SODIPODI_RADIUS:
             if (!sp_svg_length_read_computed_absolute (value, &this->rad)) {
                 if (fabs (this->rad) < 0.01) {
                     this->rad = (this->rad < 0) ? -0.01 : 0.01;
@@ -267,8 +263,8 @@ void SPOffset::set(SPAttributeEnum key, const gchar* value) {
             }
             break;
 
-        case SP_ATTR_INKSCAPE_HREF:
-        case SP_ATTR_XLINK_HREF:
+        case SPAttr::INKSCAPE_HREF:
+        case SPAttr::XLINK_HREF:
             if ( value == nullptr ) {
                 sp_offset_quit_listening(this);
                 if ( this->sourceHref ) {
@@ -355,13 +351,8 @@ void SPOffset::set_shape() {
 
         if ( res_d ) {
             Geom::PathVector pv = sp_svg_read_pathv(res_d);
-            SPCurve *c = new SPCurve(pv);
-            g_assert(c != nullptr);
-
-            this->setCurveInsync (c);
-            this->setCurveBeforeLPE(c);
-
-            c->unref();
+            setCurveInsync(std::make_unique<SPCurve>(pv));
+            setCurveBeforeLPE(curve());
         }
 
         return;
@@ -429,7 +420,7 @@ void SPOffset::set_shape() {
 
         //  if (o_width >= 1.0)
         //  {
-        //    orig->Coalesce (0.1);  // small treshhold, since we only want to get rid of small segments
+        //    orig->Coalesce (0.1);  // small threshold, since we only want to get rid of small segments
         // the curve should already be computed by the Outline() function
         //   orig->ConvertEvenLines (1.0);
         //   orig->Simplify (0.5);
@@ -663,12 +654,8 @@ void SPOffset::set_shape() {
         delete orig;
 
         Geom::PathVector pv = sp_svg_read_pathv(res_d);
-        SPCurve *c = new SPCurve(pv);
-        g_assert(c != nullptr);
-
-        this->setCurveInsync (c);
-        this->setCurveBeforeLPE(c);
-        c->unref();
+        setCurveInsync(std::make_unique<SPCurve>(pv));
+        setCurveBeforeLPE(curve());
 
         free (res_d);
     }
@@ -943,15 +930,13 @@ sp_offset_top_point (SPOffset const * offset, Geom::Point *px)
         return;
     }
 
-    SPCurve *curve = SP_SHAPE (offset)->getCurve();
+    SPCurve const *curve = offset->curve();
 
     if (curve == nullptr)
     {
-    	// CPPIFY
-        //offset->set_shape();
     	const_cast<SPOffset*>(offset)->set_shape();
 
-        curve = SP_SHAPE (offset)->getCurve();
+        curve = offset->curve();
 
         if (curve == nullptr)
             return;
@@ -959,7 +944,6 @@ sp_offset_top_point (SPOffset const * offset, Geom::Point *px)
 
     if (curve->is_empty())
     {
-        curve->unref();
         return;
     }
 
@@ -979,7 +963,6 @@ sp_offset_top_point (SPOffset const * offset, Geom::Point *px)
 
     delete theShape;
     delete finalPath;
-    curve->unref();
 }
 
 // the listening functions
@@ -1042,7 +1025,7 @@ static void sp_offset_move_compensate(Geom::Affine const *mp, SPItem */*original
     }
 
     // calculate the compensation matrix and the advertized movement matrix
-    self->readAttr("transform");
+    self->readAttr(SPAttr::TRANSFORM);
 
     Geom::Affine t = self->transform;
     Geom::Affine offset_move = t.inverse() * m * t;
@@ -1116,15 +1099,13 @@ refresh_offset_source(SPOffset* offset)
     }
 
     SPItem  *item  = SP_ITEM (refobj);
-    SPCurve *curve = nullptr;
+    std::unique_ptr<SPCurve> curve;
 
-    if (SP_IS_SHAPE (item)) {
-        curve = SP_SHAPE (item)->getCurve ();
-    }
-    else if (SP_IS_TEXT (item)) {
-        curve = SP_TEXT (item)->getNormalizedBpath ();
-    }
-    else {
+    if (auto shape = dynamic_cast<SPShape const *>(item)) {
+        curve = SPCurve::copy(shape->curve());
+    } else if (auto text = dynamic_cast<SPText const *>(item)) {
+        curve = text->getNormalizedBpath();
+    } else {
         return;
     }
 
@@ -1134,7 +1115,6 @@ refresh_offset_source(SPOffset* offset)
 
     Path *orig = new Path;
     orig->LoadPathVector(curve->get_pathvector());
-    curve->unref();
 
     if (!item->transform.isIdentity()) {
         gchar const *t_attr = item->getRepr()->attribute("transform");

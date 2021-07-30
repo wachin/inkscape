@@ -17,11 +17,11 @@
 
 #include <cassert>
 #include <iostream>
+#include <vector>
 
 #include "xml/node.h"
 #include "xml/attribute-record.h"
 #include "xml/composite-node-observer.h"
-#include "util/list-container.h"
 
 namespace Inkscape {
 
@@ -91,7 +91,7 @@ public:
     bool equal(Node const *other, bool recursive) override;
     void mergeFrom(Node const *src, char const *key, bool extension = false, bool clean = false) override;
 
-    Inkscape::Util::List<AttributeRecord const> attributeList() const override {
+    const AttributeVector & attributeList() const override {
         return _attributes;
     }
 
@@ -126,7 +126,7 @@ protected:
     SimpleNode(SimpleNode const &repr, Document *document);
 
     virtual SimpleNode *_duplicate(Document *doc) const=0;
-    void setAttributeImpl(char const *key, char const *value, bool is_interactive) override;
+    void setAttributeImpl(char const *key, char const *value) override;
 
 private:
     void operator=(Node const &); // no assign
@@ -142,7 +142,7 @@ private:
 
     int _name;
 
-    Inkscape::Util::MutableList<AttributeRecord> _attributes;
+    AttributeVector _attributes;
 
     Inkscape::Util::ptr_shared _content;
 

@@ -10,8 +10,6 @@
  *  Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
-#include <gtk/gtk.h>
-
 #include <utility>
 #include "snapped-point.h"
 #include "preferences.h"
@@ -19,6 +17,9 @@
 // overloaded constructor
 Inkscape::SnappedPoint::SnappedPoint(Geom::Point const &p, SnapSourceType const &source, long source_num, SnapTargetType const &target, Geom::Coord const &d, Geom::Coord const &t, bool const &a, bool const &constrained_snap, bool const &fully_constrained, Geom::OptRect target_bbox) :
     _point(p),
+    //_alignment_target(Geom::Point(0,0)),
+    //_alignment_target2(Geom::Point(0,0)),
+    _equal_distance(Geom::infinity()),
     _tangent(Geom::Point(0,0)),
     _source(source),
     _source_num(source_num),
@@ -37,8 +38,105 @@ Inkscape::SnappedPoint::SnappedPoint(Geom::Point const &p, SnapSourceType const 
 {
 }
 
+Inkscape::SnappedPoint::SnappedPoint(Geom::Point const &p, Geom::Point const &ap, SnapSourceType const &source, long source_num, SnapTargetType const &target, Geom::Coord const &d, Geom::Coord const &t, bool const &a, bool const &constrained_snap, bool const &fully_constrained, Geom::OptRect target_bbox) :
+    _point(p),
+    _alignment_target(ap),
+    //_alignment_target2(Geom::Point(0,0)),
+    _alignment_target_type(target),
+    _equal_distance(Geom::infinity()),
+    _tangent(Geom::Point(0,0)),
+    _source(source),
+    _source_num(source_num),
+    _target(target),
+    _at_intersection (false),
+    _constrained_snap (constrained_snap),
+    _fully_constrained (fully_constrained),
+    _distance(d),
+    _tolerance(std::max(t,1.0)),// tolerance should never be smaller than 1 px, as it is used for normalization in isOtherSnapBetter. We don't want a division by zero.
+    _always_snap(a),
+    _second_distance (Geom::infinity()),
+    _second_tolerance (1),
+    _second_always_snap (false),
+    _target_bbox(std::move(target_bbox)),
+    _pointer_distance (Geom::infinity())
+{
+}
+
+Inkscape::SnappedPoint::SnappedPoint(Geom::Point const &p, Geom::Point const &ap, Geom::Point const &ap2, SnapSourceType const &source, long source_num, SnapTargetType const &target, Geom::Coord const &d, Geom::Coord const &t, bool const &a, bool const &constrained_snap, bool const &fully_constrained, Geom::OptRect target_bbox) :
+    _point(p),
+    _alignment_target(ap),
+    _alignment_target2(ap2),
+    _alignment_target_type(target),
+    _equal_distance(Geom::infinity()),
+    _tangent(Geom::Point(0,0)),
+    _source(source),
+    _source_num(source_num),
+    _target(target),
+    _at_intersection (false),
+    _constrained_snap (constrained_snap),
+    _fully_constrained (fully_constrained),
+    _distance(d),
+    _tolerance(std::max(t,1.0)),// tolerance should never be smaller than 1 px, as it is used for normalization in isOtherSnapBetter. We don't want a division by zero.
+    _always_snap(a),
+    _second_distance (Geom::infinity()),
+    _second_tolerance (1),
+    _second_always_snap (false),
+    _target_bbox(std::move(target_bbox)),
+    _pointer_distance (Geom::infinity())
+{
+}
+
+Inkscape::SnappedPoint::SnappedPoint(Geom::Point const &p, std::vector<Geom::Rect> const &bboxes, Geom::Rect const &source_bbox, Geom::Coord equal_dist, SnapSourceType const &source, long source_num, SnapTargetType const &target, Geom::Coord const &d, Geom::Coord const &t, bool const &a, bool const &constrained_snap, bool const &fully_constrained) :
+    _point(p),
+    _equal_distance(equal_dist),
+    _distribution_bboxes(std::move(bboxes)), 
+    _source_bbox(source_bbox),
+    _tangent(Geom::Point(0,0)),
+    _source(source),
+    _source_num(source_num),
+    _target(target),
+    _at_intersection (false),
+    _constrained_snap (constrained_snap),
+    _fully_constrained (fully_constrained),
+    _distance(d),
+    _tolerance(std::max(t,1.0)),// tolerance should never be smaller than 1 px, as it is used for normalization in isOtherSnapBetter. We don't want a division by zero.
+    _always_snap(a),
+    _second_distance (Geom::infinity()),
+    _second_tolerance (1),
+    _second_always_snap (false),
+    //_target_bbox(std::move(target_bbox)),
+    _pointer_distance (Geom::infinity())
+{
+}
+
+Inkscape::SnappedPoint::SnappedPoint(Geom::Point const &p, std::vector<Geom::Rect> const &bboxes, std::vector<Geom::Rect> const &bboxes2, Geom::Rect const &source_bbox, Geom::Coord equal_dist, Geom::Coord equal_dist2, SnapSourceType const &source, long source_num, SnapTargetType const &target, Geom::Coord const &d, Geom::Coord const &t, bool const &a, bool const &constrained_snap, bool const &fully_constrained) :
+    _point(p),
+    _equal_distance(equal_dist),
+    _equal_distance2(equal_dist2),
+    _distribution_bboxes(std::move(bboxes)), 
+    _distribution_bboxes2(std::move(bboxes2)), 
+    _source_bbox(source_bbox),
+    _tangent(Geom::Point(0,0)),
+    _source(source),
+    _source_num(source_num),
+    _target(target),
+    _at_intersection (false),
+    _constrained_snap (constrained_snap),
+    _fully_constrained (fully_constrained),
+    _distance(d),
+    _tolerance(std::max(t,1.0)),// tolerance should never be smaller than 1 px, as it is used for normalization in isOtherSnapBetter. We don't want a division by zero.
+    _always_snap(a),
+    _second_distance (Geom::infinity()),
+    _second_tolerance (1),
+    _second_always_snap (false),
+    //_target_bbox(std::move(target_bbox)),
+    _pointer_distance (Geom::infinity())
+{
+}
+
 Inkscape::SnappedPoint::SnappedPoint(Inkscape::SnapCandidatePoint const &p, SnapTargetType const &target, Geom::Coord const &d, Geom::Coord const &t, bool const &a, bool const &constrained_snap, bool const &fully_constrained) :
     _point (p.getPoint()),
+    _equal_distance(Geom::infinity()),
     _tangent (Geom::Point(0,0)),
     _source (p.getSourceType()),
     _source_num (p.getSourceNum()),
@@ -59,6 +157,7 @@ Inkscape::SnappedPoint::SnappedPoint(Inkscape::SnapCandidatePoint const &p, Snap
 
 Inkscape::SnappedPoint::SnappedPoint(Geom::Point const &p, SnapSourceType const &source, long source_num, SnapTargetType const &target, Geom::Coord const &d, Geom::Coord const &t, bool const &a, bool const &at_intersection, bool const &constrained_snap, bool const &fully_constrained, Geom::Coord const &d2, Geom::Coord const &t2, bool const &a2) :
     _point(p),
+    _equal_distance(Geom::infinity()),
     _tangent (Geom::Point(0,0)),
     _source(source),
     _source_num(source_num),
@@ -81,6 +180,7 @@ Inkscape::SnappedPoint::SnappedPoint(Geom::Point const &p, SnapSourceType const 
 
 Inkscape::SnappedPoint::SnappedPoint():
     _point (Geom::Point(0,0)),
+    _equal_distance(Geom::infinity()),
     _tangent (Geom::Point(0,0)),
     _source (SNAPSOURCE_UNDEFINED),
     _source_num (-1),
@@ -101,6 +201,7 @@ Inkscape::SnappedPoint::SnappedPoint():
 
 Inkscape::SnappedPoint::SnappedPoint(Geom::Point const &p):
     _point (p),
+    _equal_distance(Geom::infinity()),
     _tangent (Geom::Point(0,0)),
     _source (SNAPSOURCE_UNDEFINED),
     _source_num (-1),
@@ -132,18 +233,112 @@ void Inkscape::SnappedPoint::getPointIfSnapped(Geom::Point &p) const
 }
 
 // search for the closest snapped point
+// This function give preference to the snapped points that are not in SNAPTARGET_ALIGNMENT_CATEGORY
+// ie. for example, a longer Corner to Corner snap will be given prefrence over 
+// a Corner to alignment snap with lesser snapDistance.
+//
+// Incase there is an alignment snap along with a distribution snap possible, this
+// function returns a new SnappedPoint that is are mix of the both
 bool getClosestSP(std::list<Inkscape::SnappedPoint> const &list, Inkscape::SnappedPoint &result)
 {
     bool success = false;
+    bool aligned_success = false;
+
+    Inkscape::SnappedPoint aligned;
 
     for (std::list<Inkscape::SnappedPoint>::const_iterator i = list.begin(); i != list.end(); ++i) {
-        if ((i == list.begin()) || (*i).getSnapDistance() < result.getSnapDistance()) {
+        bool alignment = (*i).getTarget() & Inkscape::SNAPTARGET_ALIGNMENT_CATEGORY;
+        if (i == list.begin()) {
+            result = *i;
+            success = !alignment;
+            aligned = *i;
+            aligned_success = alignment;
+        } else if (alignment) {
+            if (!aligned_success || (*i).getSnapDistance() <= aligned.getSnapDistance()) {
+                if ((*i).getSnapDistance() == aligned.getSnapDistance()) {
+                    if ((*i).getDistanceToAlignTarget() < aligned.getDistanceToAlignTarget()) {
+                        aligned = *i;
+                        aligned_success = true; 
+                    }
+                } else {
+                        aligned = *i;
+                        aligned_success = true; 
+                }
+           }
+        } else if (!success || (*i).getSnapDistance() < result.getSnapDistance()){
             result = *i;
             success = true;
         }
+        
     }
 
-    return success;
+    if (!success && aligned_success)
+        result = aligned;
+
+    // the following code merges an alignment snap and a distribution snap
+    if (success && aligned_success) {
+        bool align_intersection = aligned.getTarget() == Inkscape::SNAPTARGET_ALIGNMENT_INTERSECTION;
+        auto type = result.getTarget();
+
+        if (type & Inkscape::SNAPTARGET_DISTRIBUTION_CATEGORY) {
+            switch (type) {
+                case Inkscape::SNAPTARGET_DISTRIBUTION_X:
+                case Inkscape::SNAPTARGET_DISTRIBUTION_RIGHT:
+                case Inkscape::SNAPTARGET_DISTRIBUTION_LEFT:
+                    if (aligned.getPoint().y() == aligned.getAlignmentTarget()->y()) {
+                        result.setPoint({result.getPoint().x(), aligned.getPoint().y()});
+                        result.setAlignmentTargetType(Inkscape::SNAPTARGET_ALIGNMENT_BBOX_CORNER);
+                        result.setAlignmentTarget(aligned.getAlignmentTarget());
+
+                        if (align_intersection && abs(result.getPoint().x() - aligned.getAlignmentTarget2()->x()) <1e-4) {
+                            result.setPoint(aligned.getPoint());
+                            result.setAlignmentTarget2(aligned.getAlignmentTarget2());
+                            result.setAlignmentTargetType(aligned.getAlignmentTargetType());
+                        }
+                    }
+                    break;
+
+                case Inkscape::SNAPTARGET_DISTRIBUTION_Y:
+                case Inkscape::SNAPTARGET_DISTRIBUTION_UP:
+                case Inkscape::SNAPTARGET_DISTRIBUTION_DOWN:
+                    if (!align_intersection) {
+                        if (aligned.getPoint().x() == aligned.getAlignmentTarget()->x()) {
+                            result.setPoint({aligned.getPoint().x(), result.getPoint().y()});
+                            result.setAlignmentTargetType(aligned.getAlignmentTargetType());
+                            result.setAlignmentTarget(aligned.getAlignmentTarget());
+                        }
+                    } else if (aligned.getPoint().x() == aligned.getAlignmentTarget2()->x()) {
+                            result.setPoint({aligned.getPoint().x(), result.getPoint().y()});
+                            result.setAlignmentTargetType(Inkscape::SNAPTARGET_ALIGNMENT_BBOX_CORNER);
+                            result.setAlignmentTarget(aligned.getAlignmentTarget2());
+
+                            if (abs(result.getPoint().y() - aligned.getAlignmentTarget()->y()) <1e-4) {
+                                result.setPoint(aligned.getPoint());
+                                result.setAlignmentTarget2(aligned.getAlignmentTarget());
+                                result.setAlignmentTargetType(aligned.getAlignmentTargetType());
+                            }
+                    }
+                    break;
+
+                case Inkscape::SNAPTARGET_DISTRIBUTION_XY:
+                    if (Geom::L2(result.getPoint() - aligned.getPoint()) < 1e-4) {
+                        result.setPoint(aligned.getPoint());
+                        result.setAlignmentTargetType(aligned.getAlignmentTargetType());
+                        result.setAlignmentTarget(aligned.getAlignmentTarget());
+                        result.setAlignmentTarget2(aligned.getAlignmentTarget2());
+                    }
+                    break;
+
+                default:
+                    g_warning("getClosestSP(): unknown distribution snap target %i", result.getTarget());
+                    break;
+            }
+
+            return true;
+        }
+    }
+
+    return success ? success : aligned_success;
 }
 
 bool Inkscape::SnappedPoint::isOtherSnapBetter(Inkscape::SnappedPoint const &other_one, bool weighted) const

@@ -56,21 +56,21 @@ SPTSpan::SPTSpan() : SPItem() {
 SPTSpan::~SPTSpan() = default;
 
 void SPTSpan::build(SPDocument *doc, Inkscape::XML::Node *repr) {
-    this->readAttr( "x" );
-    this->readAttr( "y" );
-    this->readAttr( "dx" );
-    this->readAttr( "dy" );
-    this->readAttr( "rotate" );
+    this->readAttr(SPAttr::X);
+    this->readAttr(SPAttr::Y);
+    this->readAttr(SPAttr::DX);
+    this->readAttr(SPAttr::DY);
+    this->readAttr(SPAttr::ROTATE);
 
     // Strip sodipodi:role from SVG 2 flowed text.
     // this->role = SP_TSPAN_ROLE_UNSPECIFIED;
     SPText* text = dynamic_cast<SPText *>(parent);
     if (text && !(text->has_shape_inside()|| text->has_inline_size())) {
-        this->readAttr( "sodipodi:role" );
+        this->readAttr(SPAttr::SODIPODI_ROLE);
     }
 
     // We'll intercept "style" to strip "visibility" property (SVG 1.1 fallback for SVG 2 text) then pass it on.
-    this->readAttr( "style" );
+    this->readAttr(SPAttr::STYLE);
 
     SPItem::build(doc, repr);
 }
@@ -79,12 +79,12 @@ void SPTSpan::release() {
     SPItem::release();
 }
 
-void SPTSpan::set(SPAttributeEnum key, const gchar* value) {
+void SPTSpan::set(SPAttr key, const gchar* value) {
     if (this->attributes.readSingleAttribute(key, value, style, &viewport)) {
         this->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG);
     } else {
         switch (key) {
-            case SP_ATTR_SODIPODI_ROLE:
+            case SPAttr::SODIPODI_ROLE:
                 if (value && (!strcmp(value, "line") || !strcmp(value, "paragraph"))) {
                     this->role = SP_TSPAN_ROLE_LINE;
                 } else {
@@ -92,7 +92,7 @@ void SPTSpan::set(SPAttributeEnum key, const gchar* value) {
                 }
                 break;
                 
-            case SP_ATTR_STYLE:
+            case SPAttr::STYLE:
                 if (value) {
                     Glib::ustring style(value);
                     Glib::RefPtr<Glib::Regex> regex = Glib::Regex::create("visibility\\s*:\\s*hidden;*");
@@ -231,6 +231,10 @@ Inkscape::XML::Node* SPTSpan::write(Inkscape::XML::Document *xml_doc, Inkscape::
     return repr;
 }
 
+const char* SPTSpan::typeName() const {
+    return "text-data";
+}
+
 const char* SPTSpan::displayName() const {
     return _("Text Span");
 }
@@ -257,16 +261,16 @@ SPTextPath::~SPTextPath() {
 }
 
 void SPTextPath::build(SPDocument *doc, Inkscape::XML::Node *repr) {
-    this->readAttr( "x" );
-    this->readAttr( "y" );
-    this->readAttr( "dx" );
-    this->readAttr( "dy" );
-    this->readAttr( "rotate" );
-    this->readAttr( "startOffset" );
-    this->readAttr( "side" );
-    this->readAttr( "xlink:href" );
+    this->readAttr(SPAttr::X);
+    this->readAttr(SPAttr::Y);
+    this->readAttr(SPAttr::DX);
+    this->readAttr(SPAttr::DY);
+    this->readAttr(SPAttr::ROTATE);
+    this->readAttr(SPAttr::STARTOFFSET);
+    this->readAttr(SPAttr::SIDE);
+    this->readAttr(SPAttr::XLINK_HREF);
 
-    this->readAttr( "style");
+    this->readAttr(SPAttr::STYLE);
 
     SPItem::build(doc, repr);
 }
@@ -283,16 +287,16 @@ void SPTextPath::release() {
     SPItem::release();
 }
 
-void SPTextPath::set(SPAttributeEnum key, const gchar* value) {
+void SPTextPath::set(SPAttr key, const gchar* value) {
 
     if (this->attributes.readSingleAttribute(key, value, style, &viewport)) {
         this->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG);
     } else {
         switch (key) {
-            case SP_ATTR_XLINK_HREF:
+            case SPAttr::XLINK_HREF:
                 this->sourcePath->link((char*)value);
                 break;
-            case SP_ATTR_SIDE:
+            case SPAttr::SIDE:
                 if (!value) {
                     return;
                 }
@@ -306,7 +310,7 @@ void SPTextPath::set(SPAttributeEnum key, const gchar* value) {
                     side = SP_TEXT_PATH_SIDE_LEFT;
                 }
                 break;
-            case SP_ATTR_STARTOFFSET:
+            case SPAttr::STARTOFFSET:
                 this->startOffset.readOrUnset(value);
                 this->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG);
                 break;
@@ -370,7 +374,7 @@ void refresh_textpath_source(SPTextPath* tp)
             delete tp->originalPath;
         }
 
-        SPCurve* curve_copy;
+        std::unique_ptr<SPCurve> curve_copy;
         if (tp->side == SP_TEXT_PATH_SIDE_LEFT) {
             curve_copy = tp->sourcePath->originalPath->copy();
         } else {
@@ -381,8 +385,6 @@ void refresh_textpath_source(SPTextPath* tp)
         tp->originalPath = new Path;
         tp->originalPath->LoadPathVector(curve_copy->get_pathvector(), item->transform, true);
         tp->originalPath->ConvertWithBackData(0.01);
-
-        curve_copy->unref();
     }
 }
 
@@ -421,7 +423,7 @@ Inkscape::XML::Node* SPTextPath::write(Inkscape::XML::Document *xml_doc, Inkscap
         } else {
             /* FIXME: This logic looks rather undesirable if e.g. startOffset is to be
                in ems. */
-            sp_repr_set_svg_double(repr, "startOffset", this->startOffset.computed);
+            repr->setAttributeSvgDouble("startOffset", this->startOffset.computed);
         }
     }
 
@@ -518,8 +520,8 @@ void sp_textpath_to_text(SPObject *tp)
     Geom::Point midpoint;
     Geom::Point tangent;
     path->PointAndTangentAt(cut_pos[0].piece, cut_pos[0].t, midpoint, tangent);
-    sp_repr_set_svg_double(text->getRepr(), "x", midpoint[Geom::X]);
-    sp_repr_set_svg_double(text->getRepr(), "y", midpoint[Geom::Y]);
+    text->getRepr()->setAttributeSvgDouble("x", midpoint[Geom::X]);
+    text->getRepr()->setAttributeSvgDouble("y", midpoint[Geom::Y]);
 
     //remove textpath
     tp->deleteObject();

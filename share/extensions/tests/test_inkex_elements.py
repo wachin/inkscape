@@ -15,7 +15,7 @@ from inkex import (
 )
 from inkex.colors import Color
 from inkex.paths import Move, Line
-from inkex.utils import FragmentError, PY3
+from inkex.utils import FragmentError
 
 from .test_inkex_elements_base import SvgTestCase
 
@@ -24,7 +24,7 @@ class ElementTestCase(SvgTestCase):
     tag = 'svg'
 
     def setUp(self):
-        super(ElementTestCase, self).setUp()
+        super().setUp()
         self.elem = self.svg.getElement('//svg:{}'.format(self.tag))
 
     def test_print(self):
@@ -33,8 +33,7 @@ class ElementTestCase(SvgTestCase):
 
     def assertElement(self, elem, compare): # pylint: disable=invalid-name
         """Assert an element"""
-        if PY3:
-            self.assertEqual(elem.tostring(), compare)
+        self.assertEqual(elem.tostring(), compare)
 
 
 class PathElementTestCase(ElementTestCase):
@@ -243,7 +242,7 @@ class CircleTest(ElementTestCase):
     def test_new(self):
         """Test new circles"""
         elem = Circle.new((10, 10), 50)
-        self.assertElement(elem, b'<circle cx="10.0" cy="10.0" r="50"/>')
+        self.assertElement(elem, b'<circle cx="10.0" cy="10.0" r="50.0"/>')
         elem = Ellipse.new((10, 10), (15, 10))
         self.assertElement(elem, b'<ellipse cx="10.0" cy="10.0" rx="15.0" ry="10.0"/>')
 

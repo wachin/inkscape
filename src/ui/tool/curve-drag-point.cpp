@@ -27,10 +27,11 @@ bool CurveDragPoint::_segment_was_degenerate = false;
 
 CurveDragPoint::CurveDragPoint(PathManipulator &pm) :
     ControlPoint(pm._multi_path_manipulator._path_data.node_data.desktop, Geom::Point(), SP_ANCHOR_CENTER,
-                 CTRL_TYPE_INVISIPOINT,
+                 Inkscape::CANVAS_ITEM_CTRL_TYPE_INVISIPOINT,
                  invisible_cset, pm._multi_path_manipulator._path_data.dragpoint_group),
       _pm(pm)
 {
+    _canvas_item_ctrl->set_name("CanvasItemCtrl:CurveDragPoint");
     setVisible(false);
 }
 
@@ -162,6 +163,11 @@ bool CurveDragPoint::clicked(GdkEventButton *event)
         _pm._selection.clear();
         _pm._selection.insert(first.ptr());
         _pm._selection.insert(second.ptr());
+        if (held_control(*event)) {
+            _pm.setSegmentType(Inkscape::UI::SEGMENT_STRAIGHT);
+            _pm.update(true);
+            _pm._commit(_("Straighten segments"));
+        }
     }
     return true;
 }
@@ -169,7 +175,13 @@ bool CurveDragPoint::clicked(GdkEventButton *event)
 bool CurveDragPoint::doubleclicked(GdkEventButton *event)
 {
     if (event->button != 1 || !first || !first.next()) return false;
-    _insertNode(true);
+    if (held_control(*event)) {
+        _pm.deleteSegments();
+        _pm.update(true);
+        _pm._commit(_("Remove segment"));
+    } else {
+        _insertNode(true);
+    }
     return true;
 }
 
@@ -199,6 +211,10 @@ Glib::ustring CurveDragPoint::_getTip(unsigned state) const
     if (state_held_control(state) && state_held_alt(state)) {
         return C_("Path segment tip",
             "<b>Ctrl+Alt</b>: click to insert a node");
+    }
+    if (state_held_control(state)) {
+        return C_("Path segment tip",
+            "<b>Ctrl</b>: click to change line type");
     }
     if(_pm._isBSpline()){
         return C_("Path segment tip",

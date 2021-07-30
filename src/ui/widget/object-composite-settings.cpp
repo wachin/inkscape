@@ -25,7 +25,6 @@
 #include "style.h"
 #include "svg/css-ostringstream.h"
 #include "verbs.h"
-#include "display/sp-canvas.h"
 #include "object/filters/blend.h"
 #include "ui/widget/style-subject.h"
 
@@ -36,7 +35,8 @@ namespace UI {
 namespace Widget {
 
 ObjectCompositeSettings::ObjectCompositeSettings(unsigned int verb_code, char const *history_prefix, int flags)
-: _verb_code(verb_code),
+: Gtk::Box(Gtk::ORIENTATION_VERTICAL),
+  _verb_code(verb_code),
   _blend_tag(Glib::ustring(history_prefix) + ":blend"),
   _blur_tag(Glib::ustring(history_prefix) + ":blur"),
   _opacity_tag(Glib::ustring(history_prefix) + ":opacity"),
@@ -67,7 +67,6 @@ void ObjectCompositeSettings::setSubject(StyleSubject *subject) {
     if (subject) {
         _subject = subject;
         _subject_changed = _subject->connectChanged(sigc::mem_fun(*this, &ObjectCompositeSettings::_subjectChanged));
-        _subject->setDesktop(SP_ACTIVE_DESKTOP);
     }
 }
 
@@ -93,9 +92,6 @@ ObjectCompositeSettings::_blendBlurValueChanged()
     if (_blocked)
         return;
     _blocked = true;
-
-    // FIXME: fix for GTK breakage, see comment in SelectedStyle::on_opacity_changed; here it results in crash 1580903
-    //sp_canvas_force_full_redraw_after_interruptions(desktop->getCanvas(), 0);
 
     Geom::OptRect bbox = _subject->getBounds(SPItem::GEOMETRIC_BBOX);
     double radius;
@@ -129,10 +125,11 @@ ObjectCompositeSettings::_blendBlurValueChanged()
         }
 
         if (radius == 0 && item->style->filter.set
-            && filter_is_single_gaussian_blur(SP_FILTER(item->style->getFilter()))) {
+            && filter_is_single_gaussian_blur(item->style->getFilter())) {
             remove_filter(item, false);
         } else if (radius != 0) {
             SPFilter *filter = modify_filter_gaussian_blur_from_item(document, item, radius);
+            filter->update_filter_region(item);
             sp_style_set_property_url(item, "filter", filter, false);
         } 
         if (change_blend) { //we do blend so we need update display style
@@ -144,9 +141,6 @@ ObjectCompositeSettings::_blendBlurValueChanged()
 
     DocumentUndo::maybeDone(document, _blur_tag.c_str(), _verb_code,
                             _("Change blur/blend filter"));
-
-    // resume interruptibility
-    //sp_canvas_end_forced_full_redraws(desktop->getCanvas());
 
     _blocked = false;
 }
@@ -180,9 +174,6 @@ ObjectCompositeSettings::_opacityValueChanged()
     DocumentUndo::maybeDone(desktop->getDocument(), _opacity_tag.c_str(), _verb_code,
                             _("Change opacity"));
 
-    // resume interruptibility
-    //sp_canvas_end_forced_full_redraws(desktop->getCanvas());
-
     _blocked = false;
 }
 
@@ -212,9 +203,6 @@ void ObjectCompositeSettings::_isolationValueChanged()
     }
 
     DocumentUndo::maybeDone(desktop->getDocument(), _isolation_tag.c_str(), _verb_code, _("Change isolation"));
-
-    // resume interruptibility
-    // sp_canvas_end_forced_full_redraws(desktop->getCanvas());
 
     _blocked = false;
 }

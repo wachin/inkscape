@@ -10,8 +10,11 @@
  */
 
 #include "livepatheffect-add.h"
+
+#include <cmath>
+#include <glibmm/i18n.h>
+
 #include "desktop.h"
-#include "dialog.h"
 #include "io/resource.h"
 #include "live_effects/effect.h"
 #include "object/sp-clippath.h"
@@ -20,8 +23,8 @@
 #include "object/sp-path.h"
 #include "object/sp-shape.h"
 #include "preferences.h"
-#include <cmath>
-#include <glibmm/i18n.h>
+#include "ui/widget/canvas.h"
+#include "ui/themes.h"
 
 namespace Inkscape {
 namespace UI {
@@ -61,6 +64,49 @@ void sp_remove_fav(Glib::ustring effect)
     }
 }
 
+void sp_add_top_window_classes_callback(Gtk::Widget *widg)
+{
+    SPDesktop *desktop = SP_ACTIVE_DESKTOP;
+    if (desktop) {
+        Gtk::Widget *canvas = desktop->canvas;
+        Gtk::Window *toplevel_window = dynamic_cast<Gtk::Window *>(canvas->get_toplevel());
+        if (toplevel_window) {
+            Gtk::Window *current_window = dynamic_cast<Gtk::Window *>(widg);
+            if (!current_window) {
+                current_window = dynamic_cast<Gtk::Window *>(widg->get_toplevel());
+            }
+            if (current_window) {
+                if (toplevel_window->get_style_context()->has_class("dark")) {
+                    current_window->get_style_context()->add_class("dark");
+                    current_window->get_style_context()->remove_class("bright");
+                } else {
+                    current_window->get_style_context()->add_class("bright");
+                    current_window->get_style_context()->remove_class("dark");
+                }
+                if (toplevel_window->get_style_context()->has_class("symbolic")) {
+                    current_window->get_style_context()->add_class("symbolic");
+                    current_window->get_style_context()->remove_class("regular");
+                } else {
+                    current_window->get_style_context()->remove_class("symbolic");
+                    current_window->get_style_context()->add_class("regular");
+                }
+            }
+        }
+    }
+}
+
+void sp_add_top_window_classes(Gtk::Widget *widg)
+{
+    if (!widg) {
+        return;
+    }
+    if (!widg->get_realized()) {
+        widg->signal_realize().connect(sigc::bind(sigc::ptr_fun(&sp_add_top_window_classes_callback), widg));
+    } else {
+        sp_add_top_window_classes_callback(widg);
+    }
+}
+
 bool LivePathEffectAdd::mouseover(GdkEventCrossing *evt, GtkWidget *wdg)
 {
     GdkDisplay *display = gdk_display_get_default();
@@ -84,11 +130,11 @@ LivePathEffectAdd::LivePathEffectAdd()
     , _applied(false)
     , _showfavs(false)
 {
-    Glib::ustring gladefile = get_filename(Inkscape::IO::Resource::UIS, "dialog-livepatheffect-add.glade");
+    auto gladefile = get_filename_string(Inkscape::IO::Resource::UIS, "dialog-livepatheffect-add.glade");
     try {
         _builder = Gtk::Builder::create_from_file(gladefile);
     } catch (const Glib::Error &ex) {
-        g_warning("Glade file loading failed for filter effect dialog");
+        g_warning("Glade file loading failed for path effect dialog");
         return;
     }
     _builder->get_widget("LPEDialogSelector", _LPEDialogSelector);
@@ -108,8 +154,8 @@ LivePathEffectAdd::LivePathEffectAdd()
     _LPEDialogSelector->add_events(Gdk::POINTER_MOTION_MASK | Gdk::BUTTON_PRESS_MASK | Gdk::BUTTON_RELEASE_MASK |
                                    Gdk::ENTER_NOTIFY_MASK | Gdk::LEAVE_NOTIFY_MASK | Gdk::KEY_PRESS_MASK);
     _LPESelectorFlowBox->signal_set_focus_child().connect(sigc::mem_fun(*this, &LivePathEffectAdd::on_focus));
-    
-    gladefile = get_filename(Inkscape::IO::Resource::UIS, "dialog-livepatheffect-effect.glade");
+
+    gladefile = get_filename_string(Inkscape::IO::Resource::UIS, "dialog-livepatheffect-effect.glade");
     for (int i = 0; i < static_cast<int>(converter._length); ++i) {
         Glib::RefPtr<Gtk::Builder> builder_effect;
         try {
@@ -134,8 +180,8 @@ LivePathEffectAdd::LivePathEffectAdd()
             sigc::mem_fun(*this, &LivePathEffectAdd::mouseout), GTK_WIDGET(LPESelectorEffect->gobj())));
         Gtk::Label *LPEName;
         builder_effect->get_widget("LPEName", LPEName);
-        const Glib::ustring label = _(converter.get_label(data->id).c_str());
-        const Glib::ustring untranslated_label = converter.get_untranslated_label(data->id);
+        const Glib::ustring label = g_dpgettext2(nullptr, "path effect", converter.get_label(data->id).c_str());
+        const Glib::ustring untranslated_label = converter.get_label(data->id);
         if (untranslated_label == label) {
             LPEName->set_text(label);
         } else {
@@ -250,7 +296,7 @@ LivePathEffectAdd::LivePathEffectAdd()
             viewChanged(2);
     }
     Gtk::Widget *widg = dynamic_cast<Gtk::Widget *>(_LPEDialogSelector);
-    INKSCAPE.signal_change_theme.connect(sigc::bind(sigc::ptr_fun(sp_add_top_window_classes), widg));
+    INKSCAPE.themecontext->getChangeThemeSignal().connect(sigc::bind(sigc::ptr_fun(sp_add_top_window_classes), widg));
     sp_add_top_window_classes(widg);
 }
 const LivePathEffect::EnumEffectData<LivePathEffect::EffectType> *LivePathEffectAdd::getActiveData()
@@ -490,7 +536,7 @@ bool LivePathEffectAdd::on_filter(Gtk::FlowBoxChild *child)
         size_t s = childclass.find("LPEIndex", 0);
         if (s != -1) {
             childclass = childclass.erase(0, 8);
-            pos = std::stoi(childclass);
+            pos = std::stoi(childclass.raw());
         }
     }
     const LivePathEffect::EnumEffectData<LivePathEffect::EffectType> *data = &converter.data(pos);
@@ -502,7 +548,7 @@ bool LivePathEffectAdd::on_filter(Gtk::FlowBoxChild *child)
     } else if (_item_type == "path" && !converter.get_on_path(data->id)) {
         disable = true;
     }
-    
+
     if (!_has_clip && data->id == Inkscape::LivePathEffect::POWERCLIP) {
         disable = true;
     }
@@ -569,16 +615,16 @@ void LivePathEffectAdd::reload_effect_list()
     _LPESelectorFlowBox->invalidate_filter();
     if (_showfavs) {
         if (_visiblelpe == 0) {
-            _LPEInfo->set_text(_("You don't have any favorites yet, please disable the favorites star"));
+            _LPEInfo->set_text(_("You don't have any favorites yet. Click on the favorites star again to see all LPEs."));
             _LPEInfo->set_visible(true);
             _LPEInfo->get_style_context()->add_class("lpeinfowarn");
         } else {
-            _LPEInfo->set_text(_("This is your favorite effects"));
+            _LPEInfo->set_text(_("These are your favorite effects"));
             _LPEInfo->set_visible(true);
             _LPEInfo->get_style_context()->add_class("lpeinfowarn");
         }
     } else {
-        _LPEInfo->set_text(_("Your search do a empty result, please try again"));
+        _LPEInfo->set_text(_("Nothing found! Please try again with different search terms."));
         _LPEInfo->set_visible(false);
         _LPEInfo->get_style_context()->remove_class("lpeinfowarn");
     }
@@ -590,7 +636,7 @@ void LivePathEffectAdd::on_search()
     _LPESelectorFlowBox->invalidate_filter();
     if (_showfavs) {
         if (_visiblelpe == 0) {
-            _LPEInfo->set_text(_("Your search do a empty result, please try again"));
+            _LPEInfo->set_text(_("Nothing found! Please try again with different search terms."));
             _LPEInfo->set_visible(true);
             _LPEInfo->get_style_context()->add_class("lpeinfowarn");
         } else {
@@ -599,7 +645,7 @@ void LivePathEffectAdd::on_search()
         }
     } else {
         if (_visiblelpe == 0) {
-            _LPEInfo->set_text(_("Your search do a empty result, please try again"));
+            _LPEInfo->set_text(_("Nothing found! Please try again with different search terms."));
             _LPEInfo->set_visible(true);
             _LPEInfo->get_style_context()->add_class("lpeinfowarn");
         } else {

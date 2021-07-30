@@ -25,7 +25,7 @@
 #include "desktop.h"
 #include "object/sp-namedview.h"
 
-#include "display/sp-canvas.h"
+#include "ui/widget/canvas.h"  // To get window (perverse!)
 
 namespace Inkscape {
 namespace Extension {
@@ -48,9 +48,20 @@ ExecutionEnv::ExecutionEnv (Effect * effect, Inkscape::UI::View::View * doc, Imp
     _doc(doc),
     _docCache(docCache),
     _effect(effect),
-    _show_working(show_working),
-    _show_errors(show_errors)
+    _show_working(show_working)
 {
+    SPDesktop *desktop = (SPDesktop *)_doc;
+    SPDocument *document = _doc->doc();
+    if (document && desktop) {
+        // Temporarily prevent undo in this scope
+        Inkscape::DocumentUndo::ScopedInsensitive pauseUndo(document);
+        Inkscape::Selection *selection = desktop->getSelection();
+        if (selection) {
+            // Make sure all selected objects have an ID attribute
+            selection->enforceIds();
+        }
+    }
+
     genDocCache();
 
     return;
@@ -112,12 +123,13 @@ ExecutionEnv::createWorkingDialog () {
     }
 
     SPDesktop *desktop = (SPDesktop *)_doc;
-    GtkWidget *toplevel = gtk_widget_get_toplevel(GTK_WIDGET(desktop->canvas));
-    if (!toplevel || !gtk_widget_is_toplevel (toplevel))
+    Gtk::Widget *toplevel = desktop->getCanvas()->get_toplevel();
+    Gtk::Window *window = dynamic_cast<Gtk::Window *>(toplevel);
+    if (!window) {
         return;
-    Gtk::Window *window = Glib::wrap(GTK_WINDOW(toplevel), false);
+    }
 
-    gchar * dlgmessage = g_strdup_printf(_("'%s' working, please wait..."), _(_effect->get_name()));
+    gchar * dlgmessage = g_strdup_printf(_("'%s' working, please wait..."), _effect->get_name());
     _visibleDialog = new Gtk::MessageDialog(*window,
                                dlgmessage,
                                false, // use markup
@@ -163,7 +175,7 @@ ExecutionEnv::undo () {
 
 void
 ExecutionEnv::commit () {
-    DocumentUndo::done(_doc->doc(), SP_VERB_NONE, _(_effect->get_name()));
+    DocumentUndo::done(_doc->doc(), SP_VERB_NONE, _effect->get_name());
     Effect::set_last_effect(_effect);
     _effect->get_imp()->commitDocument();
     killDocCache();

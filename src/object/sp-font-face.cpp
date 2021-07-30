@@ -313,39 +313,39 @@ SPFontFace::~SPFontFace() = default;
 void SPFontFace::build(SPDocument *document, Inkscape::XML::Node *repr) {
 	SPObject::build(document, repr);
 
-	this->readAttr( "font-family" );
-	this->readAttr( "font-style" );
-	this->readAttr( "font-variant" );
-	this->readAttr( "font-weight" );
-	this->readAttr( "font-stretch" );
-	this->readAttr( "font-size" );
-	this->readAttr( "unicode-range" );
-	this->readAttr( "units-per-em" );
-	this->readAttr( "panose-1" );
-	this->readAttr( "stem-v" );
-	this->readAttr( "stem-h" );
-	this->readAttr( "slope" );
-	this->readAttr( "cap-height" );
-	this->readAttr( "x-height" );
-	this->readAttr( "accent-height" );
-	this->readAttr( "ascent" );
-	this->readAttr( "descent" );
-	this->readAttr( "widths" );
-	this->readAttr( "bbox" );
-	this->readAttr( "ideographic" );
-	this->readAttr( "alphabetic" );
-	this->readAttr( "mathematical" );
-	this->readAttr( "ranging" );
-	this->readAttr( "v-ideogaphic" );
-	this->readAttr( "v-alphabetic" );
-	this->readAttr( "v-mathematical" );
-	this->readAttr( "v-hanging" );
-	this->readAttr( "underline-position" );
-	this->readAttr( "underline-thickness" );
-	this->readAttr( "strikethrough-position" );
-	this->readAttr( "strikethrough-thickness" );
-	this->readAttr( "overline-position" );
-	this->readAttr( "overline-thickness" );
+	this->readAttr(SPAttr::FONT_FAMILY);
+	this->readAttr(SPAttr::FONT_STYLE);
+	this->readAttr(SPAttr::FONT_VARIANT);
+	this->readAttr(SPAttr::FONT_WEIGHT);
+	this->readAttr(SPAttr::FONT_STRETCH);
+	this->readAttr(SPAttr::FONT_SIZE);
+	this->readAttr(SPAttr::UNICODE_RANGE);
+	this->readAttr(SPAttr::UNITS_PER_EM);
+	this->readAttr(SPAttr::PANOSE_1);
+	this->readAttr(SPAttr::STEMV);
+	this->readAttr(SPAttr::STEMH);
+	this->readAttr(SPAttr::SLOPE);
+	this->readAttr(SPAttr::CAP_HEIGHT);
+	this->readAttr(SPAttr::X_HEIGHT);
+	this->readAttr(SPAttr::ACCENT_HEIGHT);
+	this->readAttr(SPAttr::ASCENT);
+	this->readAttr(SPAttr::DESCENT);
+	this->readAttr(SPAttr::WIDTHS);
+	this->readAttr(SPAttr::BBOX);
+	this->readAttr(SPAttr::IDEOGRAPHIC);
+	this->readAttr(SPAttr::ALPHABETIC);
+	this->readAttr(SPAttr::MATHEMATICAL);
+	this->readAttr(SPAttr::HANGING);
+	this->readAttr(SPAttr::V_IDEOGRAPHIC);
+	this->readAttr(SPAttr::V_ALPHABETIC);
+	this->readAttr(SPAttr::V_MATHEMATICAL);
+	this->readAttr(SPAttr::V_HANGING);
+	this->readAttr(SPAttr::UNDERLINE_POSITION);
+	this->readAttr(SPAttr::UNDERLINE_THICKNESS);
+	this->readAttr(SPAttr::STRIKETHROUGH_POSITION);
+	this->readAttr(SPAttr::STRIKETHROUGH_THICKNESS);
+	this->readAttr(SPAttr::OVERLINE_POSITION);
+	this->readAttr(SPAttr::OVERLINE_THICKNESS);
 }
 
 /**
@@ -371,14 +371,14 @@ void SPFontFace::release() {
 	SPObject::release();
 }
 
-void SPFontFace::set(SPAttributeEnum key, const gchar *value) {
+void SPFontFace::set(SPAttr key, const gchar *value) {
     std::vector<FontFaceStyleType> style;
     std::vector<FontFaceVariantType> variant;
     std::vector<FontFaceWeightType> weight;
     std::vector<FontFaceStretchType> stretch;
 
     switch (key) {
-        case SP_PROP_FONT_FAMILY:
+        case SPAttr::FONT_FAMILY:
             if (this->font_family) {
                 g_free(this->font_family);
             }
@@ -386,7 +386,7 @@ void SPFontFace::set(SPAttributeEnum key, const gchar *value) {
             this->font_family = g_strdup(value);
             this->requestModified(SP_OBJECT_MODIFIED_FLAG);
             break;
-        case SP_PROP_FONT_STYLE:
+        case SPAttr::FONT_STYLE:
             style = sp_read_fontFaceStyleType(value);
             
             if (this->font_style.size() != style.size()){
@@ -402,7 +402,7 @@ void SPFontFace::set(SPAttributeEnum key, const gchar *value) {
                 }
             }
             break;
-        case SP_PROP_FONT_VARIANT:
+        case SPAttr::FONT_VARIANT:
             variant = sp_read_fontFaceVariantType(value);
             
             if (this->font_variant.size() != variant.size()){
@@ -418,7 +418,7 @@ void SPFontFace::set(SPAttributeEnum key, const gchar *value) {
                 }
             }
             break;
-        case SP_PROP_FONT_WEIGHT:
+        case SPAttr::FONT_WEIGHT:
             weight = sp_read_fontFaceWeightType(value);
             
             if (this->font_weight.size() != weight.size()){
@@ -434,7 +434,7 @@ void SPFontFace::set(SPAttributeEnum key, const gchar *value) {
                 }
             }
             break;
-        case SP_PROP_FONT_STRETCH:
+        case SPAttr::FONT_STRETCH:
             stretch = sp_read_fontFaceStretchType(value);
             
             if (this->font_stretch.size() != stretch.size()){
@@ -450,7 +450,7 @@ void SPFontFace::set(SPAttributeEnum key, const gchar *value) {
                 }
             }
             break;
-        case SP_ATTR_UNITS_PER_EM:
+        case SPAttr::UNITS_PER_EM:
         {
             double number = value ? g_ascii_strtod(value, nullptr) : 0;
             
@@ -460,7 +460,7 @@ void SPFontFace::set(SPAttributeEnum key, const gchar *value) {
             }
             break;
         }
-        case SP_ATTR_STEMV:
+        case SPAttr::STEMV:
         {
             double number = value ? g_ascii_strtod(value, nullptr) : 0;
             
@@ -470,7 +470,7 @@ void SPFontFace::set(SPAttributeEnum key, const gchar *value) {
             }
             break;
         }
-        case SP_ATTR_STEMH:
+        case SPAttr::STEMH:
         {
             double number = value ? g_ascii_strtod(value, nullptr) : 0;
             
@@ -480,7 +480,7 @@ void SPFontFace::set(SPAttributeEnum key, const gchar *value) {
             }
             break;
         }
-        case SP_ATTR_SLOPE:
+        case SPAttr::SLOPE:
         {
             double number = value ? g_ascii_strtod(value, nullptr) : 0;
             
@@ -490,7 +490,7 @@ void SPFontFace::set(SPAttributeEnum key, const gchar *value) {
             }
             break;
         }
-        case SP_ATTR_CAP_HEIGHT:
+        case SPAttr::CAP_HEIGHT:
         {
             double number = value ? g_ascii_strtod(value, nullptr) : 0;
             
@@ -500,7 +500,7 @@ void SPFontFace::set(SPAttributeEnum key, const gchar *value) {
             }
             break;
         }
-        case SP_ATTR_X_HEIGHT:
+        case SPAttr::X_HEIGHT:
         {
             double number = value ? g_ascii_strtod(value, nullptr) : 0;
             
@@ -510,7 +510,7 @@ void SPFontFace::set(SPAttributeEnum key, const gchar *value) {
             }
             break;
         }
-        case SP_ATTR_ACCENT_HEIGHT:
+        case SPAttr::ACCENT_HEIGHT:
         {
             double number = value ? g_ascii_strtod(value, nullptr) : 0;
             
@@ -520,7 +520,7 @@ void SPFontFace::set(SPAttributeEnum key, const gchar *value) {
             }
             break;
         }
-        case SP_ATTR_ASCENT:
+        case SPAttr::ASCENT:
         {
             double number = value ? g_ascii_strtod(value, nullptr) : 0;
             
@@ -530,7 +530,7 @@ void SPFontFace::set(SPAttributeEnum key, const gchar *value) {
             }
             break;
         }
-        case SP_ATTR_DESCENT:
+        case SPAttr::DESCENT:
         {
             double number = value ? g_ascii_strtod(value, nullptr) : 0;
             
@@ -540,7 +540,7 @@ void SPFontFace::set(SPAttributeEnum key, const gchar *value) {
             }
             break;
         }
-        case SP_ATTR_IDEOGRAPHIC:
+        case SPAttr::IDEOGRAPHIC:
         {
             double number = value ? g_ascii_strtod(value, nullptr) : 0;
             
@@ -550,7 +550,7 @@ void SPFontFace::set(SPAttributeEnum key, const gchar *value) {
             }
             break;
         }
-        case SP_ATTR_ALPHABETIC:
+        case SPAttr::ALPHABETIC:
         {
             double number = value ? g_ascii_strtod(value, nullptr) : 0;
             
@@ -560,7 +560,7 @@ void SPFontFace::set(SPAttributeEnum key, const gchar *value) {
             }
             break;
         }
-        case SP_ATTR_MATHEMATICAL:
+        case SPAttr::MATHEMATICAL:
         {
             double number = value ? g_ascii_strtod(value, nullptr) : 0;
             
@@ -570,7 +570,7 @@ void SPFontFace::set(SPAttributeEnum key, const gchar *value) {
             }
             break;
         }
-        case SP_ATTR_HANGING:
+        case SPAttr::HANGING:
         {
             double number = value ? g_ascii_strtod(value, nullptr) : 0;
             
@@ -580,7 +580,7 @@ void SPFontFace::set(SPAttributeEnum key, const gchar *value) {
             }
             break;
         }
-        case SP_ATTR_V_IDEOGRAPHIC:
+        case SPAttr::V_IDEOGRAPHIC:
         {
             double number = value ? g_ascii_strtod(value, nullptr) : 0;
             
@@ -590,7 +590,7 @@ void SPFontFace::set(SPAttributeEnum key, const gchar *value) {
             }
             break;
         }
-        case SP_ATTR_V_ALPHABETIC:
+        case SPAttr::V_ALPHABETIC:
         {
             double number = value ? g_ascii_strtod(value, nullptr) : 0;
             
@@ -600,7 +600,7 @@ void SPFontFace::set(SPAttributeEnum key, const gchar *value) {
             }
             break;
         }
-        case SP_ATTR_V_MATHEMATICAL:
+        case SPAttr::V_MATHEMATICAL:
         {
             double number = value ? g_ascii_strtod(value, nullptr) : 0;
             
@@ -610,7 +610,7 @@ void SPFontFace::set(SPAttributeEnum key, const gchar *value) {
             }
             break;
         }
-        case SP_ATTR_V_HANGING:
+        case SPAttr::V_HANGING:
         {
             double number = value ? g_ascii_strtod(value, nullptr) : 0;
             
@@ -620,7 +620,7 @@ void SPFontFace::set(SPAttributeEnum key, const gchar *value) {
             }
             break;
         }
-        case SP_ATTR_UNDERLINE_POSITION:
+        case SPAttr::UNDERLINE_POSITION:
         {
             double number = value ? g_ascii_strtod(value, nullptr) : 0;
             
@@ -630,7 +630,7 @@ void SPFontFace::set(SPAttributeEnum key, const gchar *value) {
             }
             break;
         }
-        case SP_ATTR_UNDERLINE_THICKNESS:
+        case SPAttr::UNDERLINE_THICKNESS:
         {
             double number = value ? g_ascii_strtod(value, nullptr) : 0;
             
@@ -640,7 +640,7 @@ void SPFontFace::set(SPAttributeEnum key, const gchar *value) {
             }
             break;
         }
-        case SP_ATTR_STRIKETHROUGH_POSITION:
+        case SPAttr::STRIKETHROUGH_POSITION:
         {
             double number = value ? g_ascii_strtod(value, nullptr) : 0;
             
@@ -650,7 +650,7 @@ void SPFontFace::set(SPAttributeEnum key, const gchar *value) {
             }
             break;
         }
-        case SP_ATTR_STRIKETHROUGH_THICKNESS:
+        case SPAttr::STRIKETHROUGH_THICKNESS:
         {
             double number = value ? g_ascii_strtod(value, nullptr) : 0;
             
@@ -660,7 +660,7 @@ void SPFontFace::set(SPAttributeEnum key, const gchar *value) {
             }
             break;
         }
-        case SP_ATTR_OVERLINE_POSITION:
+        case SPAttr::OVERLINE_POSITION:
         {
             double number = value ? g_ascii_strtod(value, nullptr) : 0;
             
@@ -670,7 +670,7 @@ void SPFontFace::set(SPAttributeEnum key, const gchar *value) {
             }
             break;
         }
-        case SP_ATTR_OVERLINE_THICKNESS:
+        case SPAttr::OVERLINE_THICKNESS:
         {
             double number = value ? g_ascii_strtod(value, nullptr) : 0;
             
@@ -691,39 +691,39 @@ void SPFontFace::set(SPAttributeEnum key, const gchar *value) {
  */
 void SPFontFace::update(SPCtx *ctx, guint flags) {
     if (flags & (SP_OBJECT_MODIFIED_FLAG)) {
-        this->readAttr( "font-family" );
-        this->readAttr( "font-style" );
-        this->readAttr( "font-variant" );
-        this->readAttr( "font-weight" );
-        this->readAttr( "font-stretch" );
-        this->readAttr( "font-size" );
-        this->readAttr( "unicode-range" );
-        this->readAttr( "units-per-em" );
-        this->readAttr( "panose-1" );
-        this->readAttr( "stemv" );
-        this->readAttr( "stemh" );
-        this->readAttr( "slope" );
-        this->readAttr( "cap-height" );
-        this->readAttr( "x-height" );
-        this->readAttr( "accent-height" );
-        this->readAttr( "ascent" );
-        this->readAttr( "descent" );
-        this->readAttr( "widths" );
-        this->readAttr( "bbox" );
-        this->readAttr( "ideographic" );
-        this->readAttr( "alphabetic" );
-        this->readAttr( "mathematical" );
-        this->readAttr( "hanging" );
-        this->readAttr( "v-ideographic" );
-        this->readAttr( "v-alphabetic" );
-        this->readAttr( "v-mathematical" );
-        this->readAttr( "v-hanging" );
-        this->readAttr( "underline-position" );
-        this->readAttr( "underline-thickness" );
-        this->readAttr( "strikethrough-position" );
-        this->readAttr( "strikethrough-thickness" );
-        this->readAttr( "overline-position" );
-        this->readAttr( "overline-thickness" );
+        this->readAttr(SPAttr::FONT_FAMILY);
+        this->readAttr(SPAttr::FONT_STYLE);
+        this->readAttr(SPAttr::FONT_VARIANT);
+        this->readAttr(SPAttr::FONT_WEIGHT);
+        this->readAttr(SPAttr::FONT_STRETCH);
+        this->readAttr(SPAttr::FONT_SIZE);
+        this->readAttr(SPAttr::UNICODE_RANGE);
+        this->readAttr(SPAttr::UNITS_PER_EM);
+        this->readAttr(SPAttr::PANOSE_1);
+        this->readAttr(SPAttr::STEMV);
+        this->readAttr(SPAttr::STEMH);
+        this->readAttr(SPAttr::SLOPE);
+        this->readAttr(SPAttr::CAP_HEIGHT);
+        this->readAttr(SPAttr::X_HEIGHT);
+        this->readAttr(SPAttr::ACCENT_HEIGHT);
+        this->readAttr(SPAttr::ASCENT);
+        this->readAttr(SPAttr::DESCENT);
+        this->readAttr(SPAttr::WIDTHS);
+        this->readAttr(SPAttr::BBOX);
+        this->readAttr(SPAttr::IDEOGRAPHIC);
+        this->readAttr(SPAttr::ALPHABETIC);
+        this->readAttr(SPAttr::MATHEMATICAL);
+        this->readAttr(SPAttr::HANGING);
+        this->readAttr(SPAttr::V_IDEOGRAPHIC);
+        this->readAttr(SPAttr::V_ALPHABETIC);
+        this->readAttr(SPAttr::V_MATHEMATICAL);
+        this->readAttr(SPAttr::V_HANGING);
+        this->readAttr(SPAttr::UNDERLINE_POSITION);
+        this->readAttr(SPAttr::UNDERLINE_THICKNESS);
+        this->readAttr(SPAttr::STRIKETHROUGH_POSITION);
+        this->readAttr(SPAttr::STRIKETHROUGH_THICKNESS);
+        this->readAttr(SPAttr::OVERLINE_POSITION);
+        this->readAttr(SPAttr::OVERLINE_THICKNESS);
     }
 
     SPObject::update(ctx, flags);
@@ -737,39 +737,39 @@ Inkscape::XML::Node* SPFontFace::write(Inkscape::XML::Document *xml_doc, Inkscap
     }
 
     //TODO:
-    //sp_repr_set_svg_double(repr, "font-family", face->font_family);
-    //sp_repr_set_svg_double(repr, "font-style", face->font_style);
-    //sp_repr_set_svg_double(repr, "font-variant", face->font_variant);
-    //sp_repr_set_svg_double(repr, "font-weight", face->font_weight);
-    //sp_repr_set_svg_double(repr, "font-stretch", face->font_stretch);
-    //sp_repr_set_svg_double(repr, "font-size", face->font_size);
-    //sp_repr_set_svg_double(repr, "unicode-range", face->unicode_range);
-    sp_repr_set_svg_double(repr, "units-per-em", this->units_per_em);
-    //sp_repr_set_svg_double(repr, "panose-1", face->panose_1);
-    sp_repr_set_svg_double(repr, "stemv", this->stemv);
-    sp_repr_set_svg_double(repr, "stemh", this->stemh);
-    sp_repr_set_svg_double(repr, "slope", this->slope);
-    sp_repr_set_svg_double(repr, "cap-height", this->cap_height);
-    sp_repr_set_svg_double(repr, "x-height", this->x_height);
-    sp_repr_set_svg_double(repr, "accent-height", this->accent_height);
-    sp_repr_set_svg_double(repr, "ascent", this->ascent);
-    sp_repr_set_svg_double(repr, "descent", this->descent);
-    //sp_repr_set_svg_double(repr, "widths", face->widths);
-    //sp_repr_set_svg_double(repr, "bbox", face->bbox);
-    sp_repr_set_svg_double(repr, "ideographic", this->ideographic);
-    sp_repr_set_svg_double(repr, "alphabetic", this->alphabetic);
-    sp_repr_set_svg_double(repr, "mathematical", this->mathematical);
-    sp_repr_set_svg_double(repr, "hanging", this->hanging);
-    sp_repr_set_svg_double(repr, "v-ideographic", this->v_ideographic);
-    sp_repr_set_svg_double(repr, "v-alphabetic", this->v_alphabetic);
-    sp_repr_set_svg_double(repr, "v-mathematical", this->v_mathematical);
-    sp_repr_set_svg_double(repr, "v-hanging", this->v_hanging);
-    sp_repr_set_svg_double(repr, "underline-position", this->underline_position);
-    sp_repr_set_svg_double(repr, "underline-thickness", this->underline_thickness);
-    sp_repr_set_svg_double(repr, "strikethrough-position", this->strikethrough_position);
-    sp_repr_set_svg_double(repr, "strikethrough-thickness", this->strikethrough_thickness);
-    sp_repr_set_svg_double(repr, "overline-position", this->overline_position);
-    sp_repr_set_svg_double(repr, "overline-thickness", this->overline_thickness);
+    //repr->setAttributeSvgDouble("font-family", face->font_family);
+    //repr->setAttributeSvgDouble("font-style", face->font_style);
+    //repr->setAttributeSvgDouble("font-variant", face->font_variant);
+    //repr->setAttributeSvgDouble("font-weight", face->font_weight);
+    //repr->setAttributeSvgDouble("font-stretch", face->font_stretch);
+    //repr->setAttributeSvgDouble("font-size", face->font_size);
+    //repr->setAttributeSvgDouble("unicode-range", face->unicode_range);
+    repr->setAttributeSvgDouble("units-per-em", this->units_per_em);
+    //repr->setAttributeSvgDouble("panose-1", face->panose_1);
+    repr->setAttributeSvgDouble("stemv", this->stemv);
+    repr->setAttributeSvgDouble("stemh", this->stemh);
+    repr->setAttributeSvgDouble("slope", this->slope);
+    repr->setAttributeSvgDouble("cap-height", this->cap_height);
+    repr->setAttributeSvgDouble("x-height", this->x_height);
+    repr->setAttributeSvgDouble("accent-height", this->accent_height);
+    repr->setAttributeSvgDouble("ascent", this->ascent);
+    repr->setAttributeSvgDouble("descent", this->descent);
+    //repr->setAttributeSvgDouble("widths", face->widths);
+    //repr->setAttributeSvgDouble("bbox", face->bbox);
+    repr->setAttributeSvgDouble("ideographic", this->ideographic);
+    repr->setAttributeSvgDouble("alphabetic", this->alphabetic);
+    repr->setAttributeSvgDouble("mathematical", this->mathematical);
+    repr->setAttributeSvgDouble("hanging", this->hanging);
+    repr->setAttributeSvgDouble("v-ideographic", this->v_ideographic);
+    repr->setAttributeSvgDouble("v-alphabetic", this->v_alphabetic);
+    repr->setAttributeSvgDouble("v-mathematical", this->v_mathematical);
+    repr->setAttributeSvgDouble("v-hanging", this->v_hanging);
+    repr->setAttributeSvgDouble("underline-position", this->underline_position);
+    repr->setAttributeSvgDouble("underline-thickness", this->underline_thickness);
+    repr->setAttributeSvgDouble("strikethrough-position", this->strikethrough_position);
+    repr->setAttributeSvgDouble("strikethrough-thickness", this->strikethrough_thickness);
+    repr->setAttributeSvgDouble("overline-position", this->overline_position);
+    repr->setAttributeSvgDouble("overline-thickness", this->overline_thickness);
 
     if (repr != this->getRepr()) {
         // In all COPY_ATTR given below the XML tree is 

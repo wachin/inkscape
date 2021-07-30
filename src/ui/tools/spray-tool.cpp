@@ -23,6 +23,7 @@
 
 #include <numeric>
 #include <vector>
+#include <tuple>
 
 #include <gdk/gdkkeysyms.h>
 #include <glibmm/i18n.h>
@@ -42,29 +43,25 @@
 #include "message-context.h"
 #include "path-chemistry.h"
 #include "selection.h"
-#include "splivarot.h"
 #include "verbs.h"
 
 #include "display/cairo-utils.h"
-#include "display/canvas-arena.h"
 #include "display/curve.h"
 #include "display/drawing-context.h"
 #include "display/drawing.h"
-#include "display/sp-canvas.h"
+#include "display/control/canvas-item-bpath.h"
+#include "display/control/canvas-item-drawing.h"
 
 #include "helper/action.h"
 
 #include "object/box3d.h"
 #include "object/sp-item-transform.h"
 
-#include "ui/pixmaps/cursor-spray.xpm"
-
 #include "svg/svg.h"
 #include "svg/svg-color.h"
 
 #include "ui/toolbar/spray-toolbar.h"
 #include "ui/tools/spray-tool.h"
-#include "ui/dialog/dialog-manager.h"
 
 
 using Inkscape::DocumentUndo;
@@ -72,7 +69,7 @@ using Inkscape::DocumentUndo;
 #define DDC_RED_RGBA 0xff0000ff
 #define DYNA_MIN_WIDTH 1.0e-6
 
-// Disabled in 0.91 because of Bug #1274831 (crash, spraying an object 
+// Disabled in 0.91 because of Bug #1274831 (crash, spraying an object
 // with the mode: spray object in single path)
 // Please enable again when working on 1.0
 #define ENABLE_SPRAY_MODE_SINGLE_PATH
@@ -134,7 +131,7 @@ static void sp_spray_scale_rel(Geom::Point c, SPDesktop */*desktop*/, SPItem *it
 }
 
 SprayTool::SprayTool()
-    : ToolBase(cursor_spray_xpm, false)
+    : ToolBase("spray.svg", false)
     , pressure(TC_DEFAULT_PRESSURE)
     , dragging(false)
     , usepressurewidth(false)
@@ -180,12 +177,15 @@ SprayTool::SprayTool()
 }
 
 SprayTool::~SprayTool() {
-    object_set.clear();
+    if (!object_set.isEmpty()) {
+        object_set.clear();
+    }
+    desktop->getSelection()->restoreBackup();
     this->enableGrDrag(false);
     this->style_set_connection.disconnect();
 
     if (this->dilate_area) {
-        sp_canvas_item_destroy(this->dilate_area);
+        delete this->dilate_area;
         this->dilate_area = nullptr;
     }
 }
@@ -223,16 +223,10 @@ void SprayTool::setup() {
     ToolBase::setup();
 
     {
-        /* TODO: have a look at sp_dyna_draw_context_setup where the same is done.. generalize? at least make it an arcto! */
-        Geom::PathVector path = Geom::Path(Geom::Circle(0,0,1));
-
-        SPCurve *c = new SPCurve(path);
-
-        this->dilate_area = sp_canvas_bpath_new(this->desktop->getControls(), c);
-        c->unref();
-        sp_canvas_bpath_set_fill(SP_CANVAS_BPATH(this->dilate_area), 0x00000000,(SPWindRule)0);
-        sp_canvas_bpath_set_stroke(SP_CANVAS_BPATH(this->dilate_area), 0xff9900ff, 1.0, SP_STROKE_LINEJOIN_MITER, SP_STROKE_LINECAP_BUTT);
-        sp_canvas_item_hide(this->dilate_area);
+        dilate_area = new Inkscape::CanvasItemBpath(desktop->getCanvasControls());
+        dilate_area->set_stroke(0xff9900ff);
+        dilate_area->set_fill(0x0, SP_WIND_RULE_EVENODD);
+        dilate_area->hide();
     }
 
     this->is_drawing = false;
@@ -245,7 +239,7 @@ void SprayTool::setup() {
     if (prefs->getBool("/tools/spray/gradientdrag")) {
         this->enableGrDrag();
     }
-
+    desktop->getSelection()->setBackup();
     sp_event_context_read(this, "distrib");
     sp_event_context_read(this, "width");
     sp_event_context_read(this, "ratio");
@@ -356,7 +350,7 @@ static double get_width(SprayTool *tc)
 
 static double get_dilate_radius(SprayTool *tc)
 {
-    return 250 * get_width(tc)/SP_EVENT_CONTEXT(tc)->desktop->current_zoom();
+    return 250 * get_width(tc)/tc->getDesktop()->current_zoom();
 }
 
 static double get_path_mean(SprayTool *tc)
@@ -397,7 +391,7 @@ static double get_move_standard_deviation(SprayTool *tc)
  * @param[out]  angle : angle of the position of the sprayed object
  * @param[in]   a : mean
  * @param[in]   s : standard deviation
- * @param[in]   choice : 
+ * @param[in]   choice :
 
  */
 static void random_position(double &radius, double &angle, double &a, double &s, int /*choice*/)
@@ -412,7 +406,7 @@ static void random_position(double &radius, double &angle, double &a, double &s,
         radius_temp = NormalDistribution(a, s);
     }
     // Because we are in polar coordinates, a special treatment has to be done to the radius.
-    // Otherwise, positions taken from an uniform repartition on radius and angle will not seam to 
+    // Otherwise, positions taken from an uniform repartition on radius and angle will not seam to
     // be uniformily distributed on the disk (more at the center and less at the boundary).
     // We counter this effect with a 0.5 exponent. This is empiric.
     radius = pow(radius_temp, 0.5);
@@ -447,19 +441,25 @@ double randomize01(double val, double rand)
     return CLAMP(val, 0, 1); // this should be unnecessary with the above provisions, but just in case...
 }
 
-guint32 getPickerData(Geom::IntRect area){
-    SPDesktop *desktop = SP_ACTIVE_DESKTOP;
-    double R = 0, G = 0, B = 0, A = 0;
-    cairo_surface_t *s = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, area.width(), area.height());
-    sp_canvas_arena_render_surface(SP_CANVAS_ARENA(desktop->getDrawing()), s, area);
-    ink_cairo_surface_average_color(s, R, G, B, A);
-    cairo_surface_destroy(s);
-    //this can fix the bug #1511998 if confirmed 
-    if( A == 0 || A < 1e-6){
-        R = 1;
-        G = 1;
-        B = 1;
+static guint32 getPickerData(Geom::IntRect area, SPDesktop *desktop)
+{
+    Inkscape::CanvasItemDrawing *canvas_item_drawing = desktop->getCanvasDrawing();
+    Inkscape::Drawing *drawing = canvas_item_drawing->get_drawing();
+
+    // Ensure drawing up-to-date. (Is this really necessary?)
+    drawing->update();
+
+    // Get average color.
+    double R, G, B, A;
+    drawing->average_color(area, R, G, B, A);
+
+    //this can fix the bug #1511998 if confirmed
+    if ( A < 1e-6) {
+        R = 1.0;
+        G = 1.0;
+        B = 1.0;
     }
+
     return SP_RGBA32_F_COMPOSE(R, G, B, A);
 }
 
@@ -535,11 +535,11 @@ static bool fit_item(SPDesktop *desktop,
     double height_transformed = bbox_procesed->height();
     Geom::Point mid_point = desktop->d2w(bbox_procesed->midpoint() * desktop->doc2dt());
     Geom::IntRect area = Geom::IntRect::from_xywh(floor(mid_point[Geom::X]), floor(mid_point[Geom::Y]), 1, 1);
-    guint32 rgba = getPickerData(area);
+    guint32 rgba = getPickerData(area, desktop);
     guint32 rgba2 = 0xffffff00;
     Geom::Rect rect_sprayed(desktop->d2w(Geom::Point(bbox_left_main,bbox_top_main)), desktop->d2w(Geom::Point(bbox_right_main,bbox_bottom_main)));
     if (!rect_sprayed.hasZeroArea()) {
-        rgba2 = getPickerData(rect_sprayed.roundOutwards());
+        rgba2 = getPickerData(rect_sprayed.roundOutwards(), desktop);
     }
     if(pick_no_overlap) {
         if(rgba != rgba2) {
@@ -590,7 +590,7 @@ static bool fit_item(SPDesktop *desktop,
                 spray_origin = item_selected->getAttribute("inkscape:spray-origin");
             }
             if(strcmp(item_down_sharp, spray_origin) == 0 ||
-                (item_down->getAttribute("inkscape:spray-origin") && 
+                (item_down->getAttribute("inkscape:spray-origin") &&
                 strcmp(item_down->getAttribute("inkscape:spray-origin"),spray_origin) == 0 ))
             {
                 if(mode == SPRAY_MODE_ERASER) {
@@ -600,7 +600,7 @@ static bool fit_item(SPDesktop *desktop,
                         break;
                     }
                 } else if(no_overlap) {
-                    if(!(offset_width < 0 && offset_height < 0 && std::abs(bbox_left - bbox_left_main) > std::abs(offset_width) && 
+                    if(!(offset_width < 0 && offset_height < 0 && std::abs(bbox_left - bbox_left_main) > std::abs(offset_width) &&
                 std::abs(bbox_top - bbox_top_main) > std::abs(offset_height))){
                         if(!no_overlap && (picker || over_transparent || over_no_transparent)){
                             showHidden(items_down);
@@ -623,9 +623,9 @@ static bool fit_item(SPDesktop *desktop,
     if(picker || over_transparent || over_no_transparent){
         if(!no_overlap){
             doc->ensureUpToDate();
-            rgba = getPickerData(area);
+            rgba = getPickerData(area, desktop);
             if (!rect_sprayed.hasZeroArea()) {
-                rgba2 = getPickerData(rect_sprayed.roundOutwards());
+                rgba2 = getPickerData(rect_sprayed.roundOutwards(), desktop);
             }
         }
         if(pick_no_overlap){
@@ -887,7 +887,7 @@ static bool sp_spray_recursive(SPDesktop *desktop,
         SPBox3D *box = dynamic_cast<SPBox3D *>(item);
         if (box) {
             // convert 3D boxes to ordinary groups before spraying their shapes
-            item = box3d_convert_to_group(box);
+            item = box->convert_to_group();
             set->add(item);
         }
     }
@@ -979,7 +979,7 @@ static bool sp_spray_recursive(SPDesktop *desktop,
     } else if (mode == SPRAY_MODE_SINGLE_PATH) {
         long setSize = boost::distance(set->items());
         SPItem *parent_item = setSize > 0 ? set->items().front() : nullptr;    // Initial object
-        SPItem *unionResult = setSize > 1 ? *(++set->items().begin()) : nullptr;    // Previous union
+        SPItem *unionResult = setSize > 1 ? set->items().back() : nullptr;    // Previous union
         SPItem *item_copied = nullptr;    // Projected object
 
         if (parent_item) {
@@ -1005,7 +1005,7 @@ static bool sp_spray_recursive(SPDesktop *desktop,
                     item_copied = dynamic_cast<SPItem *>(new_obj);
 
                     // Move around the cursor
-                    Geom::Point move = (Geom::Point(cos(tilt)*cos(dp)*dr/(1-ratio)+sin(tilt)*sin(dp)*dr/(1+ratio), -sin(tilt)*cos(dp)*dr/(1-ratio)+cos(tilt)*sin(dp)*dr/(1+ratio)))+(p-a->midpoint()); 
+                    Geom::Point move = (Geom::Point(cos(tilt)*cos(dp)*dr/(1-ratio)+sin(tilt)*sin(dp)*dr/(1+ratio), -sin(tilt)*cos(dp)*dr/(1-ratio)+cos(tilt)*sin(dp)*dr/(1+ratio)))+(p-a->midpoint());
 
                     Geom::Point center = parent_item->getCenter();
                     sp_spray_scale_rel(center, desktop, item_copied, Geom::Scale(_scale, _scale));
@@ -1014,13 +1014,20 @@ static bool sp_spray_recursive(SPDesktop *desktop,
                     item_copied->move_rel(Geom::Translate(move * desktop->doc2dt().withoutTranslation()));
 
                     // Union and duplication
-                    set->clear();
-                    set->add(item_copied);
+                    ObjectSet object_set_tmp = *desktop->getSelection();
+                    object_set_tmp.clear();
+                    object_set_tmp.add(item_copied);
                     if (unionResult) { // No need to add the very first item (initialized with NULL).
-                        set->add(unionResult);
+                        object_set_tmp.add(unionResult);
                     }
-                    set->pathUnion(true);
+                    object_set_tmp.pathUnion(true);
                     set->add(parent_item);
+                    std::vector<SPItem*> tmpitems(object_set_tmp.items().begin(), object_set_tmp.items().end());
+                    for (auto item : tmpitems) {
+                        set->add(item);
+                    }
+                    object_set_tmp.clear();
+                    tmpitems.clear();
                     Inkscape::GC::release(copy);
                     did = true;
                 }
@@ -1114,7 +1121,7 @@ static bool sp_spray_recursive(SPDesktop *desktop,
 
 static bool sp_spray_dilate(SprayTool *tc, Geom::Point /*event_p*/, Geom::Point p, Geom::Point vector, bool reverse)
 {
-    SPDesktop *desktop = tc->desktop;
+    SPDesktop *desktop = tc->getDesktop();
     Inkscape::ObjectSet *set = tc->objectSet();
     if (set->isEmpty()) {
         return false;
@@ -1200,15 +1207,20 @@ static bool sp_spray_dilate(SprayTool *tc, Geom::Point /*event_p*/, Geom::Point 
 static void sp_spray_update_area(SprayTool *tc)
 {
     double radius = get_dilate_radius(tc);
-    Geom::Affine const sm ( Geom::Scale(radius/(1-tc->ratio), radius/(1+tc->ratio)) );
-    sp_canvas_item_affine_absolute(tc->dilate_area, (sm* Geom::Rotate(tc->tilt))* Geom::Translate(SP_EVENT_CONTEXT(tc)->desktop->point()));
-    sp_canvas_item_show(tc->dilate_area);
+    Geom::Affine const sm ( Geom::Scale(radius/(1-tc->ratio), radius/(1+tc->ratio)) *
+                            Geom::Rotate(tc->tilt) *
+                            Geom::Translate(tc->getDesktop()->point()));
+
+    Geom::PathVector path = Geom::Path(Geom::Circle(0,0,1)); // Unit circle centered at origin.
+    path *= sm;
+    tc->dilate_area->set_bpath(path);
+    tc->dilate_area->show();
 }
 
 static void sp_spray_switch_mode(SprayTool *tc, gint mode, bool with_shift)
 {
     // Select the button mode
-    auto tb = dynamic_cast<UI::Toolbar::SprayToolbar*>(SP_EVENT_CONTEXT(tc)->desktop->get_toolbar_by_name("SprayToolbar"));
+    auto tb = dynamic_cast<UI::Toolbar::SprayToolbar*>(tc->getDesktop()->get_toolbar_by_name("SprayToolbar"));
 
     if(tb) {
         tb->set_mode(mode);
@@ -1226,13 +1238,14 @@ bool SprayTool::root_handler(GdkEvent* event) {
 
     switch (event->type) {
         case GDK_ENTER_NOTIFY:
-            sp_canvas_item_show(this->dilate_area);
+            dilate_area->show();
             break;
         case GDK_LEAVE_NOTIFY:
-            sp_canvas_item_hide(this->dilate_area);
+            dilate_area->hide();
             break;
         case GDK_BUTTON_PRESS:
-            if (event->button.button == 1 && !this->space_panning) {
+            if (event->button.button == 1) {
+                desktop->getSelection()->restoreBackup();
                 if (Inkscape::have_viable_layer(desktop, defaultMessageContext()) == false) {
                     return TRUE;
                 }
@@ -1243,7 +1256,7 @@ bool SprayTool::root_handler(GdkEvent* event) {
 
                 sp_spray_extinput(this, event);
 
-                desktop->canvas->forceFullRedrawAfterInterruptions(3);
+                forced_redraws_start(3);
                 set_high_motion_precision();
                 this->is_drawing = true;
                 this->is_dilating = true;
@@ -1269,9 +1282,14 @@ bool SprayTool::root_handler(GdkEvent* event) {
 
             // Draw the dilating cursor
             double radius = get_dilate_radius(this);
-            Geom::Affine const sm (Geom::Scale(radius/(1-this->ratio), radius/(1+this->ratio)) );
-            sp_canvas_item_affine_absolute(this->dilate_area, (sm*Geom::Rotate(this->tilt))*Geom::Translate(desktop->w2d(motion_w)));
-            sp_canvas_item_show(this->dilate_area);
+            Geom::Affine const sm (Geom::Scale(radius/(1-this->ratio), radius/(1+this->ratio)) *
+                                   Geom::Rotate(this->tilt) *
+                                   Geom::Translate(desktop->w2d(motion_w)));
+
+            Geom::PathVector path = Geom::Path(Geom::Circle(0, 0, 1)); // Unit circle centered at origin.
+            path *= sm;
+            this->dilate_area->set_bpath(path);
+            this->dilate_area->show();
 
             guint num = 0;
             if (!desktop->selection->isEmpty()) {
@@ -1302,7 +1320,7 @@ bool SprayTool::root_handler(GdkEvent* event) {
                 desktop->setToolboxAdjustmentValue("population", this->population * 100);
                 Geom::Point const scroll_w(event->button.x, event->button.y);
                 Geom::Point const scroll_dt = desktop->point();;
-                
+
                 switch (event->scroll.direction) {
                     case GDK_SCROLL_DOWN:
                     case GDK_SCROLL_UP:
@@ -1312,15 +1330,15 @@ bool SprayTool::root_handler(GdkEvent* event) {
                         }
                         this->last_push = desktop->dt2doc(scroll_dt);
                         sp_spray_extinput(this, event);
-                        desktop->canvas->forceFullRedrawAfterInterruptions(3);
+                        forced_redraws_start(3);
                         this->is_drawing = true;
                         this->is_dilating = true;
                         this->has_dilated = false;
-                        if(this->is_dilating && !this->space_panning) {
+                        if(this->is_dilating) {
                             sp_spray_dilate(this, scroll_w, desktop->dt2doc(scroll_dt), Geom::Point(0,0), false);
                         }
                         this->has_dilated = true;
-                        
+
                         this->population = temp;
                         desktop->setToolboxAdjustmentValue("population", this->population * 100);
 
@@ -1335,16 +1353,16 @@ bool SprayTool::root_handler(GdkEvent* event) {
             }
             break;
         }
-        
+
         case GDK_BUTTON_RELEASE: {
             Geom::Point const motion_w(event->button.x, event->button.y);
             Geom::Point const motion_dt(desktop->w2d(motion_w));
 
-            desktop->canvas->endForcedFullRedraws();
+            forced_redraws_stop();
             set_high_motion_precision(false);
             this->is_drawing = false;
 
-            if (this->is_dilating && event->button.button == 1 && !this->space_panning) {
+            if (this->is_dilating && event->button.button == 1) {
                 if (!this->has_dilated) {
                     // If we did not rub, do a light tap
                     this->pressure = 0.03;
@@ -1362,13 +1380,13 @@ bool SprayTool::root_handler(GdkEvent* event) {
                                            SP_VERB_CONTEXT_SPRAY, _("Spray with clones"));
                         break;
                     case SPRAY_MODE_SINGLE_PATH:
-                        object_set.pathUnion(true);
                         desktop->getSelection()->add(object_set.objects().begin(), object_set.objects().end());
                         DocumentUndo::done(this->desktop->getDocument(),
                                            SP_VERB_CONTEXT_SPRAY, _("Spray in single path"));
                         break;
                 }
             }
+            desktop->getSelection()->clear();
             object_set.clear();
             break;
         }

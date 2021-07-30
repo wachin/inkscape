@@ -6,4 +6,3 @@ from inkex.tester import ComparisonMixin, TestCase
 class JessyInkEffectsBasicTest(ComparisonMixin, TestCase):
     effect_class = Video
     comparisons = [()]
-    python3_only = True

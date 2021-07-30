@@ -14,28 +14,9 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
-#include <gtkmm.h>
+class SPDesktopWidget;
 
-void ink_drag_setup(Gtk::Widget* win);
-
-static void ink_drag_data_received(GtkWidget *widget,
-                                     GdkDragContext *drag_context,
-                                     gint x, gint y,
-                                     GtkSelectionData *data,
-                                     guint info,
-                                     guint event_time,
-                                     gpointer user_data);
-static void ink_drag_motion( GtkWidget *widget,
-                               GdkDragContext *drag_context,
-                               gint x, gint y,
-                               GtkSelectionData *data,
-                               guint info,
-                               guint event_time,
-                               gpointer user_data );
-static void ink_drag_leave( GtkWidget *widget,
-                              GdkDragContext *drag_context,
-                              guint event_time,
-                              gpointer user_data );
+void ink_drag_setup(SPDesktopWidget *);
 
 #endif // SEEN_CANVAS_DRAG_AND_DROP_H
 

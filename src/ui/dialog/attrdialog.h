@@ -13,15 +13,16 @@
 #ifndef SEEN_UI_DIALOGS_ATTRDIALOG_H
 #define SEEN_UI_DIALOGS_ATTRDIALOG_H
 
-#include "desktop.h"
-#include "message.h"
 #include <gtkmm/dialog.h>
 #include <gtkmm/liststore.h>
 #include <gtkmm/popover.h>
 #include <gtkmm/scrolledwindow.h>
 #include <gtkmm/textview.h>
 #include <gtkmm/treeview.h>
-#include <ui/widget/panel.h>
+
+#include "desktop.h"
+#include "message.h"
+#include "ui/dialog/dialog-base.h"
 
 #define ATTR_DIALOG(obj) (dynamic_cast<Inkscape::UI::Dialog::AttrDialog*>((Inkscape::UI::Dialog::AttrDialog*)obj))
 
@@ -36,7 +37,7 @@ namespace Dialog {
  * This dialog allows to add, delete and modify XML attributes created in the
  * xml editor.
  */
-class AttrDialog : public UI::Widget::Panel
+class AttrDialog : public DialogBase
 {
 public:
     AttrDialog();
@@ -71,6 +72,10 @@ public:
     Glib::ustring valuepath;
     Glib::ustring valueediting;
 
+    // Text/comment nodes
+    Gtk::TextView *_content_tv;
+    Gtk::ScrolledWindow *_content_sw;
+
     /**
      * Status bar
      */
@@ -78,20 +83,17 @@ public:
     std::unique_ptr<Inkscape::MessageContext> _message_context;
 
     // Widgets
-    Gtk::VBox _mainBox;
+    Gtk::Box _mainBox;
     Gtk::ScrolledWindow _scrolledWindow;
     Gtk::ScrolledWindow _scrolled_text_view;
-    Gtk::HBox _buttonBox;
     Gtk::Button _buttonAddAttribute;
     // Variables - Inkscape
-    SPDesktop* _desktop;
     Inkscape::XML::Node* _repr;
-    Gtk::HBox status_box;
+    Gtk::Box status_box;
     Gtk::Label status;
     bool _updating;
 
     // Helper functions
-    void setDesktop(SPDesktop* desktop) override;
     void setRepr(Inkscape::XML::Node * repr);
     void setUndo(Glib::ustring const &event_description);
     /**

@@ -19,6 +19,7 @@ options:
 
     -?, --help
     -V, --version
+        --debug-info
         --system-data-directory
         --user-data-directory
 
@@ -31,6 +32,7 @@ options:
     -o, --export-filename=FILENAME
         --export-overwrite
         --export-type=TYPE[,TYPE]*
+        --export-extension=EXTENSION-ID
 
     -C, --export-area-page
     -D, --export-area-drawing
@@ -74,15 +76,17 @@ options:
 
 =head1 DESCRIPTION
 
-B<Inkscape> is a GUI editor for B<Scalable Vector Graphics (SVG)> format
-drawing files, with capabilities similar to B<Adobe Illustrator>,
-B<CorelDraw>, B<Xara Xtreme>, etc. Inkscape features include versatile
-shapes, bezier paths, freehand drawing, multi-line text, text on path,
-alpha blending, arbitrary affine transforms, gradient and pattern fills,
-node editing, many export and import formats including PNG and PDF,
-grouping, layers, live clones, and a lot more.  The interface is
-designed to be comfortable and efficient for skilled users, while
-remaining conformant to B<GNOME> standards so that users familiar with
+B<Inkscape> is a Free and open source vector graphics editor. It offers a rich
+set of features and is widely used for both artistic and technical
+illustrations such as cartoons, clip art, logos, typography, diagramming and
+flowcharting.
+It uses vector graphics to allow for sharp printouts and renderings at
+unlimited resolution and is not bound to a fixed number of pixels like raster
+graphics. Inkscape uses the standardized B<SVG> file format as its main format,
+which is supported by many other applications including web browsers.
+
+The interface is designed to be comfortable and efficient for skilled users,
+while remaining conformant to B<GNOME> standards so that users familiar with
 other GNOME applications can learn its interface rapidly.
 
 B<SVG> is a W3C standard XML format for 2D vector drawing. It allows
@@ -108,6 +112,12 @@ Shows a help message.
 =item B<-V>, B<--version>
 
 Shows the Inkscape version and build date.
+
+=item B<--debug-info>
+
+Prints technical information including Inkscape version, dependency versions and operating system.
+This Information is useful when debugging issues with Inkscape and should be included whenever
+filing a bug report.
 
 =item B<--system-data-directory>
 
@@ -179,8 +189,9 @@ Overwrites input file.
 
 =item B<--export-type>=I<TYPE[,TYPE]*>
 
-Specify the file type to export. Possible values: svg, png, ps, eps, pdf,
-emf, wmf, xaml. It is possible to export more than one file type at a time.
+Specify the file type to export. Possible values: svg, png, ps, eps, pdf, emf, wmf 
+and every file type for which an export extension exists. It is possible to export 
+more than one file type at a time.
 
 Note that PostScript does not support transparency, so any transparent
 objects in the original SVG will be automatically rasterized. Used fonts
@@ -188,6 +199,14 @@ are subset and embedded. The default export area is page; you can set it
 to drawing by L<--export-area-drawing>.
 
 Note that PDF format preserves the transparency in the original SVG.
+
+=item B<--export-extension>=I<EXTENSION-ID>
+
+Allows to specify an output extension that will be used for exporting, which
+is especially relevant if there is more than one export option for a 
+given file type. If set, the file extension in --export-filename and 
+--export-type may be omitted. Additionally, if set, only one file type 
+may be given in --export-type.
 
 =item B<-C>, B<--export-area-page>
 
@@ -330,7 +349,7 @@ command line will be used.
 
 Background color of exported PNG.  This may be any SVG supported color
 string, for example "#ff007f" or "rgb(255, 0, 128)".  If not set, then
-the page color set in Inkscape in the Document Options dialog will be
+the page color set in Inkscape in the Document Properties dialog will be
 used (stored in the pagecolor= attribute of sodipodi:namedview).
 
 
@@ -340,7 +359,7 @@ Opacity of the background of exported PNG.  This may be a value either
 between 0.0 and 1.0 (0.0 meaning full transparency, 1.0 full opacity) or
 greater than 1 up to 255 (255 meaning full opacity).  If not set and
 the -b option is not used, then the page opacity set in Inkscape in the
-Document Options dialog will be used (stored in the
+Document Properties dialog will be used (stored in the
 inkscape:pageopacity= attribute of sodipodi:namedview).  If not set but
 the -b option is used, then the value of 255 (full opacity) will be
 used.

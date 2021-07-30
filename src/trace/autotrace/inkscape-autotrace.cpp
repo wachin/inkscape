@@ -38,13 +38,13 @@ extern "C" {
 
 using Glib::ustring;
 
-static void updateGui()
-{
-    //## Allow the GUI to update
-    Gtk::Main::iteration(false); // at least once, non-blocking
-    while (Gtk::Main::events_pending())
-        Gtk::Main::iteration();
-}
+// static void updateGui()
+// {
+//     //## Allow the GUI to update
+//     Gtk::Main::iteration(false); // at least once, non-blocking
+//     while (Gtk::Main::events_pending())
+//         Gtk::Main::iteration();
+// }
 
 namespace Inkscape {
 
@@ -53,8 +53,15 @@ namespace Trace {
 namespace Autotrace {
 
 static guchar* to_3channels(GdkPixbuf* input) {
+    if (!input) {
+        return nullptr;
+    }
     int imgsize = gdk_pixbuf_get_height(input) * gdk_pixbuf_get_width(input);
     guchar *out = (guchar*)malloc(3 * imgsize);
+    if (!out) {
+        g_warning("Autotrace::to_3channels: can not allocate memory for %d pixel image.", imgsize);
+        return nullptr;
+    }
     int x=0;
     guchar* pix = gdk_pixbuf_get_pixels (input);
     int rs = gdk_pixbuf_get_rowstride (input);
@@ -63,7 +70,7 @@ static guchar* to_3channels(GdkPixbuf* input) {
             guchar alpha = *(pix + row * rs + col * 4 + 3);
             guchar white = 255 - alpha;
             for(int chan=0;chan<3;chan++) {
-                guchar *pnew = (pix + row * rs + col * 3 + chan);
+                // guchar *pnew = (pix + row * rs + col * 3 + chan);
                 guchar *pold = (pix + row * rs + col * 4 + chan);
                 out[x++] = (guchar)(((int)(*pold) * (int)alpha / 256) + white);
             }
@@ -93,10 +100,14 @@ AutotraceTracingEngine::~AutotraceTracingEngine() { at_fitting_opts_free(opts); 
 
 // TODO
 Glib::RefPtr<Gdk::Pixbuf> AutotraceTracingEngine::preview(Glib::RefPtr<Gdk::Pixbuf> thePixbuf) { 
-  //auto x = thePixbuf.copy(); 
-  guchar *pb = to_3channels(thePixbuf->gobj());
-  return Gdk::Pixbuf::create_from_data(pb, thePixbuf->get_colorspace(), false, 8, thePixbuf->get_width(), thePixbuf->get_height(), (thePixbuf->get_width()*3));
-
+    //auto x = thePixbuf.copy();
+    guchar *pb = to_3channels(thePixbuf->gobj());
+    if (!pb) {
+        return Glib::RefPtr<Gdk::Pixbuf>();
+    }
+    return Gdk::Pixbuf::create_from_data(pb, thePixbuf->get_colorspace(), false, 8, thePixbuf->get_width(),
+                                         thePixbuf->get_height(), (thePixbuf->get_width() * 3),
+                                         [](const guint8 *pb) { free(const_cast<guint8 *>(pb)); });
 }
 
 int test_cancel (void* keepGoing){return !(* ((int*)keepGoing));}
@@ -111,16 +122,20 @@ std::vector<TracingEngineResult> AutotraceTracingEngine::trace(Glib::RefPtr<Gdk:
 {
     GdkPixbuf *pb1 = pixbuf->gobj();
     guchar *pb = to_3channels(pb1);
+    if (!pb) {
+        return std::vector<TracingEngineResult>();
+    }
     
     at_bitmap *bitmap =
 //        at_bitmap_new(gdk_pixbuf_get_width(pb), gdk_pixbuf_get_height(pb), gdk_pixbuf_get_n_channels(pb));
 //    bitmap->bitmap = gdk_pixbuf_get_pixels(pb);
     at_bitmap_new(gdk_pixbuf_get_width(pb1), gdk_pixbuf_get_height(pb1), 3);
+    free(bitmap->bitmap); // should create at_bitmap with bitmap->bitmap = pb
     bitmap->bitmap = pb;
     
     at_splines_type *splines = at_splines_new_full(bitmap, opts, NULL, NULL, NULL, NULL, test_cancel, &keepGoing);
     // at_output_write_func wfunc = at_output_get_handler_by_suffix("svg");
-    at_spline_writer *wfunc = at_output_get_handler_by_suffix("svg");
+    // at_spline_writer *wfunc = at_output_get_handler_by_suffix("svg");
 
 
     int height = splines->height;

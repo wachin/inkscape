@@ -7,10 +7,12 @@
  */
 
 #include <vector>
-#include "live_effects/lpe-bendpath.h"
-#include "knot-holder-entity.h"
-#include "knotholder.h"
+
 #include "display/curve.h"
+#include "live_effects/lpe-bendpath.h"
+#include "ui/knot/knot-holder.h"
+#include "ui/knot/knot-holder-entity.h"
+
 // TODO due to internal breakage in glibmm headers, this must be last:
 #include <glibmm/i18n.h>
 
@@ -98,7 +100,9 @@ LPEBendPath::doBeforeEffect (SPLPEItem const* lpeitem)
 
 void LPEBendPath::transform_multiply(Geom::Affine const &postmul, bool /*set*/)
 {
-    bend_path.param_transform_multiply(postmul, false);
+    if (sp_lpe_item && sp_lpe_item->pathEffectsEnabled() && sp_lpe_item->optimizeTransforms()) {
+        bend_path.param_transform_multiply(postmul, false);
+    }
 }
 
 Geom::Piecewise<Geom::D2<Geom::SBasis> >
@@ -178,8 +182,8 @@ void
 LPEBendPath::addKnotHolderEntities(KnotHolder *knotholder, SPItem *item)
 {
     _knot_entity = new BeP::KnotHolderEntityWidthBendPath(this);
-    _knot_entity->create(nullptr, item, knotholder, Inkscape::CTRL_TYPE_LPE, _("Change the width"),
-                         SP_KNOT_SHAPE_CIRCLE);
+    _knot_entity->create(nullptr, item, knotholder, Inkscape::CANVAS_ITEM_CTRL_TYPE_LPE, "LPE:WidthBend",
+                         _("Change the width"));
     knotholder->add(_knot_entity);
     if (hide_knot) {
         _knot_entity->knot->hide();
@@ -212,8 +216,11 @@ KnotHolderEntityWidthBendPath::knot_set(Geom::Point const &p, Geom::Point const&
     } else {
         lpe->prop_scale.param_set_value(Geom::distance(s , ptA)/(lpe->original_height/2.0));
     }
+    if (!lpe->original_height) {
+        lpe->prop_scale.param_set_value(0);
+    }
     Inkscape::Preferences *prefs = Inkscape::Preferences::get();
-    prefs->setDouble("/live_effects/bend/width", lpe->prop_scale);
+    prefs->setDouble("/live_effects/bend_path/width", lpe->prop_scale);
 
     sp_lpe_item_update_patheffect (SP_LPE_ITEM(item), false, true);
 }

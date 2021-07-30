@@ -10,18 +10,8 @@ spinbutton {
     outline-style: none;
 }
 
-spinbutton entry {
-    padding-left: 2px;
-    padding-right: 0;
-}
-
 spinbutton undershoot {
     outline-style: none;
-}
-
-spinbutton entry {
-    padding-left: 2px;
-    padding-right: 0;
 }
 
 spinbutton undershoot {
@@ -51,13 +41,4 @@ spinbutton undershoot {
 .down {
     padding-left: 0;
     padding-right: 0;
-}
-
-#monoStrokeWidth,
-#fillEmptySpace,
-#SelectStatus,
-#CoordinateStatusX,
-#CoordinateStatusY,
-#DesktopMainTable spinbutton{
-    font-family: sans-serif;
 }

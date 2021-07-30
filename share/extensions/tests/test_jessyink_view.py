@@ -5,4 +5,3 @@ from inkex.tester import ComparisonMixin, TestCase
 class JessyInkEffectsBasicTest(ComparisonMixin, TestCase):
     effect_class = View
     comparisons = [('--id=r3', '--viewOrder=1')]
-    python3_only = True

@@ -33,10 +33,7 @@
 #include "object/sp-namedview.h"
 #include "object/sp-stop.h"
 
-#include "display/sp-ctrlline.h"
-
-#include "ui/pixmaps/cursor-gradient-add.xpm"
-#include "ui/pixmaps/cursor-gradient.xpm"
+#include "display/control/canvas-item-curve.h"
 
 #include "svg/css-ostringstream.h"
 
@@ -51,21 +48,21 @@ namespace Tools {
 static void sp_gradient_drag(GradientTool &rc, Geom::Point const pt, guint state, guint32 etime);
 
 const std::string& GradientTool::getPrefsPath() {
-	return GradientTool::prefsPath;
+   return GradientTool::prefsPath;
 }
 
 const std::string GradientTool::prefsPath = "/tools/gradient";
 
 
 GradientTool::GradientTool()
-    : ToolBase(cursor_gradient_xpm)
+    : ToolBase("gradient.svg")
     , cursor_addnode(false)
     , node_added(false)
 // TODO: Why are these connections stored as pointers?
     , selcon(nullptr)
     , subselcon(nullptr)
 {
-	// TODO: This value is overwritten in the root handler
+    // TODO: This value is overwritten in the root handler
     this->tolerance = 6;
 }
 
@@ -98,9 +95,8 @@ const gchar *gr_handle_descr [] = {
 };
 
 void GradientTool::selection_changed(Inkscape::Selection*) {
-    GradientTool *rc = (GradientTool *) this;
 
-    GrDrag *drag = rc->_grdrag;
+    GrDrag *drag = _grdrag;
     Inkscape::Selection *selection = this->desktop->getSelection();
     if (selection == nullptr) {
         return;
@@ -120,29 +116,29 @@ void GradientTool::selection_changed(Inkscape::Selection*) {
                 _("%s selected"),
                 //TRANSLATORS: Mind the space in front. This is part of a compound message
                 ngettext(" out of %d gradient handle"," out of %d gradient handles",n_tot),
-                ngettext(" on %d selected object"," on %d selected objects",n_obj),NULL);
-            rc->message_context->setF(Inkscape::NORMAL_MESSAGE,
-                                       message,_(gr_handle_descr[drag->singleSelectedDraggerSingleDraggableType()]), n_tot, n_obj);
+                ngettext(" on %d selected object"," on %d selected objects",n_obj),nullptr);
+            message_context->setF(Inkscape::NORMAL_MESSAGE,
+                                  message,_(gr_handle_descr[drag->singleSelectedDraggerSingleDraggableType()]), n_tot, n_obj);
         } else {
             gchar * message = g_strconcat(
                 //TRANSLATORS: This is a part of a compound message (out of two more indicating: grandint handle count & object count)
                 ngettext("One handle merging %d stop (drag with <b>Shift</b> to separate) selected",
                          "One handle merging %d stops (drag with <b>Shift</b> to separate) selected",drag->singleSelectedDraggerNumDraggables()),
                 ngettext(" out of %d gradient handle"," out of %d gradient handles",n_tot),
-                ngettext(" on %d selected object"," on %d selected objects",n_obj),NULL);
-            rc->message_context->setF(Inkscape::NORMAL_MESSAGE,message,drag->singleSelectedDraggerNumDraggables(), n_tot, n_obj);
+                ngettext(" on %d selected object"," on %d selected objects",n_obj),nullptr);
+            message_context->setF(Inkscape::NORMAL_MESSAGE,message,drag->singleSelectedDraggerNumDraggables(), n_tot, n_obj);
         }
     } else if (n_sel > 1) {
         //TRANSLATORS: The plural refers to number of selected gradient handles. This is part of a compound message (part two indicates selected object count)
         gchar * message = g_strconcat(ngettext("<b>%d</b> gradient handle selected out of %d","<b>%d</b> gradient handles selected out of %d",n_sel),
                                       //TRANSLATORS: Mind the space in front. (Refers to gradient handles selected). This is part of a compound message
-                                      ngettext(" on %d selected object"," on %d selected objects",n_obj),NULL);
-        rc->message_context->setF(Inkscape::NORMAL_MESSAGE,message, n_sel, n_tot, n_obj);
+                                      ngettext(" on %d selected object"," on %d selected objects",n_obj),nullptr);
+        message_context->setF(Inkscape::NORMAL_MESSAGE,message, n_sel, n_tot, n_obj);
     } else if (n_sel == 0) {
-        rc->message_context->setF(Inkscape::NORMAL_MESSAGE,
-                                   //TRANSLATORS: The plural refers to number of selected objects
-                                   ngettext("<b>No</b> gradient handles selected out of %d on %d selected object",
-                                            "<b>No</b> gradient handles selected out of %d on %d selected objects",n_obj), n_tot, n_obj);
+        message_context->setF(Inkscape::NORMAL_MESSAGE,
+                              //TRANSLATORS: The plural refers to number of selected objects
+                              ngettext("<b>No</b> gradient handles selected out of %d on %d selected object",
+                                       "<b>No</b> gradient handles selected out of %d on %d selected objects",n_obj), n_tot, n_obj);
     }
 }
 
@@ -159,14 +155,17 @@ void GradientTool::setup() {
     Inkscape::Selection *selection = this->desktop->getSelection();
 
     this->selcon = new sigc::connection(selection->connectChanged(
-    	sigc::mem_fun(this, &GradientTool::selection_changed)
+       sigc::mem_fun(this, &GradientTool::selection_changed)
     ));
 
-    this->subselcon = new sigc::connection(this->desktop->connectToolSubselectionChanged(
-    	sigc::hide(sigc::bind(
-    		sigc::mem_fun(this, &GradientTool::selection_changed),
-    		(Inkscape::Selection*)nullptr
-    	))
+    subselcon = new sigc::connection(desktop->connect_gradient_stop_selected(
+        [=](void* sender, SPStop* stop) {
+          selection_changed(nullptr);
+          if (stop) {
+             // sync stop selection:
+            _grdrag->selectByStop(stop, false, true);
+          }
+        }
     ));
 
     this->selection_changed(selection);
@@ -180,7 +179,7 @@ sp_gradient_context_select_next (ToolBase *event_context)
 
     GrDragger *d = drag->select_next();
 
-    event_context->desktop->scroll_to_point(d->point, 1.0);
+    event_context->getDesktop()->scroll_to_point(d->point, 1.0);
 }
 
 void
@@ -191,31 +190,24 @@ sp_gradient_context_select_prev (ToolBase *event_context)
 
     GrDragger *d = drag->select_prev();
 
-    event_context->desktop->scroll_to_point(d->point, 1.0);
+    event_context->getDesktop()->scroll_to_point(d->point, 1.0);
 }
 
-static bool
-sp_gradient_context_is_over_line (GradientTool *rc, SPItem *item, Geom::Point event_p)
+static SPItem*
+sp_gradient_context_is_over_curve (GradientTool *rc, Geom::Point event_p)
 {
-    SPDesktop *desktop = SP_EVENT_CONTEXT (rc)->desktop;
+    const SPDesktop *desktop = rc->getDesktop();
 
-    //Translate mouse point into proper coord system
+    //Translate mouse point into proper coord system: needed later.
     rc->mousepoint_doc = desktop->w2d(event_p);
 
-    if (SP_IS_CTRLLINE(item)) {
-        SPCtrlLine* line = SP_CTRLLINE(item);
-
-        Geom::LineSegment ls(line->s, line->e);
-        Geom::Point nearest = ls.pointAt(ls.nearestTime(rc->mousepoint_doc));
-        double dist_screen = Geom::L2 (rc->mousepoint_doc - nearest) * desktop->current_zoom();
-
-        double tolerance = (double) SP_EVENT_CONTEXT(rc)->tolerance;
-
-        bool close = (dist_screen < tolerance);
-
-        return close;
+    GrDrag *drag = rc->_grdrag;
+    for (auto curve : drag->item_curves) {
+        if (curve->contains(event_p, rc->tolerance)) {
+            return curve->get_item();
+        }
     }
-    return false;
+    return nullptr;
 }
 
 static std::vector<Geom::Point>
@@ -445,71 +437,44 @@ sp_gradient_context_add_stop_near_point (GradientTool *rc, SPItem *item,  Geom::
 {
     // item is the selected item. mouse_p the location in doc coordinates of where to add the stop
 
-    ToolBase *ec = SP_EVENT_CONTEXT(rc);
-    SPDesktop *desktop = SP_EVENT_CONTEXT (rc)->desktop;
+    const SPDesktop *desktop = rc->getDesktop();
 
-    double tolerance = (double) ec->tolerance;
+    double tolerance = (double) rc->tolerance;
 
-    SPStop *newstop = ec->get_drag()->addStopNearPoint (item, mouse_p, tolerance/desktop->current_zoom());
+    SPStop *newstop = rc->get_drag()->addStopNearPoint (item, mouse_p, tolerance/desktop->current_zoom());
 
     DocumentUndo::done(desktop->getDocument(), SP_VERB_CONTEXT_GRADIENT,
                        _("Add gradient stop"));
 
-    ec->get_drag()->updateDraggers();
-    ec->get_drag()->local_change = true;
-    ec->get_drag()->selectByStop(newstop);
+    rc->get_drag()->updateDraggers();
+    rc->get_drag()->local_change = true;
+    rc->get_drag()->selectByStop(newstop);
 }
 
 bool GradientTool::root_handler(GdkEvent* event) {
     static bool dragging;
 
     Inkscape::Selection *selection = desktop->getSelection();
-    Inkscape::Preferences *prefs = Inkscape::Preferences::get();
 
-    this->tolerance = prefs->getIntLimited("/options/dragtolerance/value", 0, 0, 100);
-    double const nudge = prefs->getDoubleLimited("/options/nudgedistance/value", 2, 0, 1000, "px"); // in px
+    Inkscape::Preferences *prefs = Inkscape::Preferences::get();
+    tolerance = prefs->getIntLimited("/options/dragtolerance/value", 0, 0, 100);
 
     GrDrag *drag = this->_grdrag;
     g_assert (drag);
 
     gint ret = FALSE;
 
-    auto move_handle = [&](int x_dir, int y_dir) {
-        gint mul = 1 + gobble_key_events(get_latin_keyval(&event->key), 0); // with any mask
-
-        if (MOD__SHIFT(event)) {
-            mul *= 10;
-        }
-
-        y_dir *= -desktop->yaxisdir();
-
-        if (MOD__ALT(event)) {
-            drag->selected_move_screen(mul * x_dir, mul * y_dir);
-        } else {
-            mul *= nudge;
-            drag->selected_move(mul * x_dir, mul * y_dir);
-        }
-    };
-
     switch (event->type) {
     case GDK_2BUTTON_PRESS:
         if ( event->button.button == 1 ) {
-            bool over_line = false;
-            SPCtrlLine *line = nullptr;
 
-            if (!drag->lines.empty()) {
-                for (std::vector<SPCtrlLine *>::const_iterator l = drag->lines.begin(); l != drag->lines.end() && (!over_line); ++l) {
-                    line = *l;
-                    over_line |= sp_gradient_context_is_over_line (this, (SPItem*) line, Geom::Point(event->motion.x, event->motion.y));
-                }
-            }
-
-            if (over_line) {
+            SPItem* item = sp_gradient_context_is_over_curve(this, Geom::Point(event->motion.x, event->motion.y));
+            if (item) {
                 // we take the first item in selection, because with doubleclick, the first click
                 // always resets selection to the single object under cursor
-                sp_gradient_context_add_stop_near_point(this, SP_ITEM(selection->items().front()), this->mousepoint_doc, event->button.time);
+                sp_gradient_context_add_stop_near_point(this, selection->items().front(), mousepoint_doc, event->button.time);
             } else {
-            	auto items= selection->items();
+               auto items= selection->items();
                 for (auto i = items.begin();i!=items.end();++i) {
                     SPItem *item = *i;
                     SPGradientType new_type = (SPGradientType) prefs->getInt("/tools/gradient/newgradient", SP_GRADIENT_TYPE_LINEAR);
@@ -529,7 +494,7 @@ bool GradientTool::root_handler(GdkEvent* event) {
         break;
 
     case GDK_BUTTON_PRESS:
-        if ( event->button.button == 1 && !this->space_panning ) {
+        if ( event->button.button == 1 ) {
             Geom::Point button_w(event->button.x, event->button.y);
 
             // save drag origin
@@ -564,7 +529,7 @@ bool GradientTool::root_handler(GdkEvent* event) {
         break;
 
     case GDK_MOTION_NOTIFY:
-        if (dragging && ( event->motion.state & GDK_BUTTON1_MASK ) && !this->space_panning) {
+        if (dragging && ( event->motion.state & GDK_BUTTON1_MASK )) {
             if ( this->within_tolerance
                  && ( abs( (gint) event->motion.x - this->xp ) < this->tolerance )
                  && ( abs( (gint) event->motion.y - this->yp ) < this->tolerance ) ) {
@@ -601,20 +566,14 @@ bool GradientTool::root_handler(GdkEvent* event) {
                 m.unSetup();
             }
 
-            bool over_line = false;
+            SPItem *item = sp_gradient_context_is_over_curve(this, Geom::Point(event->motion.x, event->motion.y));
 
-            if (!drag->lines.empty()) {
-                for (auto line : drag->lines) {
-                    over_line |= sp_gradient_context_is_over_line (this, (SPItem*) line, Geom::Point(event->motion.x, event->motion.y));
-                }
-            }
-
-            if (this->cursor_addnode && !over_line) {
-                this->cursor_shape = cursor_gradient_xpm;
+            if (this->cursor_addnode && !item) {
+                cursor_filename = "gradient.svg";
                 this->sp_event_context_update_cursor();
                 this->cursor_addnode = false;
-            } else if (!this->cursor_addnode && over_line) {
-                this->cursor_shape = cursor_gradient_add_xpm;
+            } else if (!this->cursor_addnode && item) {
+                cursor_filename = "gradient-add.svg";
                 this->sp_event_context_update_cursor();
                 this->cursor_addnode = true;
             }
@@ -624,20 +583,13 @@ bool GradientTool::root_handler(GdkEvent* event) {
     case GDK_BUTTON_RELEASE:
         this->xp = this->yp = 0;
 
-        if ( event->button.button == 1 && !this->space_panning ) {
-            bool over_line = false;
-            SPCtrlLine *line = nullptr;
+        if ( event->button.button == 1 ) {
 
-            if (!drag->lines.empty()) {
-                for (std::vector<SPCtrlLine *>::const_iterator l = drag->lines.begin(); l != drag->lines.end() && (!over_line); ++l) {
-                    line = *l;
-                    over_line = sp_gradient_context_is_over_line (this, (SPItem*) line, Geom::Point(event->motion.x, event->motion.y));
-                }
-            }
+            SPItem *item = sp_gradient_context_is_over_curve(this, Geom::Point(event->motion.x, event->motion.y));
 
             if ( (event->button.state & GDK_CONTROL_MASK) && (event->button.state & GDK_MOD1_MASK ) ) {
-                if (over_line && line) {
-                    sp_gradient_context_add_stop_near_point(this, line->item, this->mousepoint_doc, 0);
+                if (item) {
+                    sp_gradient_context_add_stop_near_point(this, item, this->mousepoint_doc, 0);
                     ret = TRUE;
                 }
             } else {
@@ -662,7 +614,7 @@ bool GradientTool::root_handler(GdkEvent* event) {
                         }
                     }
                 } else if (this->item_to_select) {
-                    if (over_line && line) {
+                    if (item) {
                         // Clicked on an existing gradient line, don't change selection. This stops
                         // possible change in selection during a double click with overlapping objects
                     } else {
@@ -741,42 +693,6 @@ bool GradientTool::root_handler(GdkEvent* event) {
             //TODO: make dragging escapable by Esc
             break;
 
-        case GDK_KEY_Left: // move handle left
-        case GDK_KEY_KP_Left:
-        case GDK_KEY_KP_4:
-            if (!MOD__CTRL(event)) { // not ctrl
-                move_handle(-1, 0);
-                ret = TRUE;
-            }
-            break;
-
-        case GDK_KEY_Up: // move handle up
-        case GDK_KEY_KP_Up:
-        case GDK_KEY_KP_8:
-            if (!MOD__CTRL(event)) { // not ctrl
-                move_handle(0, 1);
-                ret = TRUE;
-            }
-            break;
-
-        case GDK_KEY_Right: // move handle right
-        case GDK_KEY_KP_Right:
-        case GDK_KEY_KP_6:
-            if (!MOD__CTRL(event)) { // not ctrl
-                move_handle(1, 0);
-                ret = TRUE;
-            }
-            break;
-
-        case GDK_KEY_Down: // move handle down
-        case GDK_KEY_KP_Down:
-        case GDK_KEY_KP_2:
-            if (!MOD__CTRL(event)) { // not ctrl
-                move_handle(0, -1);
-                ret = TRUE;
-            }
-            break;
-
         case GDK_KEY_r:
         case GDK_KEY_R:
             if (MOD__SHIFT_ONLY(event)) {
@@ -809,6 +725,7 @@ bool GradientTool::root_handler(GdkEvent* event) {
             break;
 
         default:
+            ret = drag->key_press_handler(event);
             break;
         }
         break;
@@ -836,7 +753,7 @@ bool GradientTool::root_handler(GdkEvent* event) {
     }
 
     if (!ret) {
-    	ret = ToolBase::root_handler(event);
+       ret = ToolBase::root_handler(event);
     }
 
     return ret;
@@ -845,10 +762,9 @@ bool GradientTool::root_handler(GdkEvent* event) {
 // Creates a new linear or radial gradient.
 static void sp_gradient_drag(GradientTool &rc, Geom::Point const pt, guint /*state*/, guint32 etime)
 {
-    SPDesktop *desktop = SP_EVENT_CONTEXT(&rc)->desktop;
+    SPDesktop *desktop = rc.getDesktop();
     Inkscape::Selection *selection = desktop->getSelection();
     SPDocument *document = desktop->getDocument();
-    ToolBase *ec = SP_EVENT_CONTEXT(&rc);
 
     if (!selection->isEmpty()) {
         Inkscape::Preferences *prefs = Inkscape::Preferences::get();
@@ -856,16 +772,16 @@ static void sp_gradient_drag(GradientTool &rc, Geom::Point const pt, guint /*sta
         Inkscape::PaintTarget fill_or_stroke = (prefs->getInt("/tools/gradient/newfillorstroke", 1) != 0) ? Inkscape::FOR_FILL : Inkscape::FOR_STROKE;
 
         SPGradient *vector;
-        if (ec->item_to_select) {
+        if (rc.item_to_select) {
             // pick color from the object where drag started
-            vector = sp_gradient_vector_for_object(document, desktop, ec->item_to_select, fill_or_stroke);
+            vector = sp_gradient_vector_for_object(document, desktop, rc.item_to_select, fill_or_stroke);
         } else {
             // Starting from empty space:
             // Sort items so that the topmost comes last
-        	std::vector<SPItem*> items(selection->items().begin(), selection->items().end());
+           std::vector<SPItem*> items(selection->items().begin(), selection->items().end());
             sort(items.begin(),items.end(),sp_item_repr_compare_position_bool);
             // take topmost
-            vector = sp_gradient_vector_for_object(document, desktop, SP_ITEM(items.back()), fill_or_stroke);
+            vector = sp_gradient_vector_for_object(document, desktop, items.back(), fill_or_stroke);
         }
 
         // HACK: reset fill-opacity - that 0.75 is annoying; BUT remove this when we have an opacity slider for all tabs
@@ -889,14 +805,14 @@ static void sp_gradient_drag(GradientTool &rc, Geom::Point const pt, guint /*sta
             }
             (*i)->requestModified(SP_OBJECT_MODIFIED_FLAG);
         }
-        if (ec->_grdrag) {
-            ec->_grdrag->updateDraggers();
+        if (rc._grdrag) {
+            rc._grdrag->updateDraggers();
             // prevent regenerating draggers by selection modified signal, which sometimes
             // comes too late and thus destroys the knot which we will now grab:
-            ec->_grdrag->local_change = true;
+            rc._grdrag->local_change = true;
             // give the grab out-of-bounds values of xp/yp because we're already dragging
             // and therefore are already out of tolerance
-            ec->_grdrag->grabKnot (selection->items().front(),
+            rc._grdrag->grabKnot (selection->items().front(),
                                    type == SP_GRADIENT_TYPE_LINEAR? POINT_LG_END : POINT_RG_R1,
                                    -1, // ignore number (though it is always 1)
                                    fill_or_stroke, 99999, 99999, etime);

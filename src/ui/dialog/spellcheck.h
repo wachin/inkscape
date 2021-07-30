@@ -17,54 +17,56 @@
 # include "config.h"  // only include where actually required!
 #endif
 
-#include <vector>
-#include <set>
-
 #include <gtkmm/box.h>
 #include <gtkmm/button.h>
 #include <gtkmm/buttonbox.h>
 #include <gtkmm/comboboxtext.h>
+#include <gtkmm/liststore.h>
 #include <gtkmm/scrolledwindow.h>
 #include <gtkmm/separator.h>
-#include <gtkmm/liststore.h>
 #include <gtkmm/treeview.h>
-
-#include "ui/dialog/desktop-tracker.h"
-#include "ui/widget/panel.h"
+#include <set>
+#include <vector>
 
 #include "text-editing.h"
+#include "ui/dialog/dialog-base.h"
+#include "ui/widget/scrollprotected.h"
 
-#if HAVE_ASPELL
-#include <aspell.h>
-#endif  /* HAVE_ASPELL */
+#if WITH_GSPELL
+#include <gspell/gspell.h>
+#endif  /* WITH_GSPELL */
 
-class SPDesktop;
 class SPObject;
 class SPItem;
 class SPCanvasItem;
 
 namespace Inkscape {
 class Preferences;
+class CanvasItemRect;
 
 namespace UI {
 namespace Dialog {
 
+using LanguagePair = std::pair<std::string, std::string>;
+
 /**
  *
  * A dialog widget to checking spelling of text elements in the document
- * Uses ASpell and one of the languages set in the users preference file
+ * Uses gspell and one of the languages set in the users preference file
  *
  */
-class SpellCheck : public Widget::Panel {
+class SpellCheck : public DialogBase
+{
 public:
     SpellCheck ();
     ~SpellCheck () override;
 
     static SpellCheck &getInstance() { return *new SpellCheck(); }
 
-    static std::vector<std::string> get_available_langs();
+    static std::vector<LanguagePair> get_available_langs();
 
 private:
+    void documentReplaced() override;
 
     /**
      * Remove the highlight rectangle form the canvas
@@ -89,14 +91,9 @@ private:
     /**
      * Compare the visual bounds of 2 SPItems referred to by a and b
      */
-    static bool compareTextBboxes (gconstpointer a, gconstpointer b);
+    static bool compareTextBboxes(SPItem const *i1, SPItem const *i2);
     SPItem *getText (SPObject *root);
     void    nextText ();
-
-    /**
-     * Initialize the controls and aspell
-     */
-    bool    init (SPDesktop *desktop);
 
     /**
      * Cleanup after spellcheck is finished
@@ -167,26 +164,16 @@ private:
      */
     void onTreeSelectionChange();
 
-    /**
-     * Can be invoked for setting the desktop. Currently not used.
-     */
-    void setDesktop(SPDesktop *desktop) override;
-
-    /**
-     * Is invoked by the desktop tracker when the desktop changes.
-     */
-    void setTargetDesktop(SPDesktop *desktop);
-
     SPObject *_root;
 
-#if HAVE_ASPELL
-    AspellSpeller *_speller = nullptr;
-#endif  /* HAVE_ASPELL */
+#if WITH_GSPELL
+    GspellChecker *_checker = nullptr;
+#endif  /* WITH_GSPELL */
 
     /**
      * list of canvasitems (currently just rects) that mark misspelled things on canvas
      */
-    std::vector<SPCanvasItem *> _rects;
+    std::vector<Inkscape::CanvasItemRect *> _rects;
 
     /**
      * list of text objects we have already checked in this session
@@ -238,7 +225,7 @@ private:
 
     Inkscape::Preferences *_prefs;
 
-    std::vector<std::string> _langs;
+    std::vector<LanguagePair> _langs;
 
     /*
      *  Dialogs widgets
@@ -249,8 +236,8 @@ private:
     Gtk::TreeView       tree_view;
     Glib::RefPtr<Gtk::ListStore> model;
 
-    Gtk::HBox       suggestion_hbox;
-    Gtk::VBox       changebutton_vbox;
+    Gtk::Box        suggestion_hbox;
+    Gtk::Box        changebutton_vbox;
     Gtk::Button     accept_button;
     Gtk::Button     ignoreonce_button;
     Gtk::Button     ignore_button;
@@ -258,16 +245,12 @@ private:
     Gtk::Button     add_button;
     Gtk::Button     pref_button;
     Gtk::Label      dictionary_label;
-    Gtk::ComboBoxText dictionary_combo;
-    Gtk::HBox       dictionary_hbox;
+    Inkscape::UI::Widget::ScrollProtected<Gtk::ComboBoxText> dictionary_combo;
+    Gtk::Box        dictionary_hbox;
     Gtk::Separator  action_sep;
     Gtk::Button     stop_button;
     Gtk::Button     start_button;
     Gtk::ButtonBox  actionbutton_hbox;
-
-    SPDesktop *     desktop;
-    DesktopTracker  deskTrack;
-    sigc::connection desktopChangeConn;
 
     class TreeColumns : public Gtk::TreeModel::ColumnRecord
     {
@@ -280,9 +263,7 @@ private:
         Gtk::TreeModelColumn<Glib::ustring> suggestions;
     };
     TreeColumns tree_columns;
-
 };
-
 }
 }
 }

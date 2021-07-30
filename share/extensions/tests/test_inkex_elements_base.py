@@ -8,6 +8,7 @@ from lxml import etree
 from inkex.elements import (
     load_svg, ShapeElement, Group, Rectangle, Tspan, TextElement, Line,
 )
+from inkex.elements._base import NodeBasedLookup
 from inkex.transforms import Transform
 from inkex.styles import Style
 from inkex.utils import FragmentError
@@ -23,7 +24,7 @@ class SvgTestCase(TestCase):
     source_file = 'complextransform.test.svg'
 
     def setUp(self):
-        super(SvgTestCase, self).setUp()
+        super().setUp()
         self.svg = svg_file(self.data_file('svg', self.source_file))
 
 class OverridenElementTestCase(SvgTestCase):
@@ -60,6 +61,12 @@ class OverridenElementTestCase(SvgTestCase):
 
         for elem in grp:
             self.assertEqual(type(elem), Rectangle)
+
+    def test_class_lookup(self):
+        """Can we find element classes with simple xpaths"""
+        self.assertEqual(NodeBasedLookup.find_class('svg:rect'), Rectangle)
+        self.assertEqual(NodeBasedLookup.find_class('//svg:svg/svg:g'), Group)
+        self.assertRaises(KeyError, NodeBasedLookup.find_class, 'svg:g[layer]')
 
     def test_abstract_raises(self):
         """Abstract classes cannot be instantiated"""
@@ -222,6 +229,35 @@ class AttributeHandelingTestCase(SvgTestCase):
         self.assertEqual(self.svg.getElementByName('doesntexist'), None)
         self.assertEqual(self.svg.getElementByName('Key', 'rect'), None)
 
+    def test_insensitive(self):
+        """Element inkscape sensitivity"""
+        elem = self.svg.getElementByName('Key')
+        self.assertTrue(elem.is_sensitive())
+        elem.set_sensitive(False)
+        self.assertFalse(elem.is_sensitive())
+        self.assertEqual(elem.get('sodipodi:insensitive'), 'true')
+        elem.set_sensitive(True)
+        self.assertTrue(elem.is_sensitive())
+        self.assertEqual(elem.get('sodipodi:insensitive'), 'false')
+
+    def test_title_description(self):
+        """Adding a description to an element"""
+        def _content(elem):
+            return tuple(f"{child.TAG}:{child.text}" for child in elem)
+        self.svg.getElementById('K').title = "Before"
+        elem = self.svg.getElementById('L')
+        elem.desc = "Dancing"
+        elem.title = "Start"
+        self.svg.getElementById('G').title = "After"
+        # Title and Desc elements have been added
+        self.assertEqual(_content(elem), ('title:Start', 'desc:Dancing', 'line:None'))
+        # No extra elements created, no conflicts.
+        elem.title = "Stop"
+        self.assertEqual(_content(elem), ('title:Stop', 'desc:Dancing', 'line:None'))
+        # Deletion works too, try twice so we know it doesn't error on not-found
+        del elem.desc
+        del elem.desc
+        self.assertEqual(_content(elem), ('title:Stop', 'line:None'))
 
 class TransformationTestCase(SvgTestCase):
     """Test transformative functions"""

@@ -22,6 +22,7 @@
 
 #include "contextmenu.h"
 
+#include <glibmm/convert.h>
 #include <glibmm/i18n.h>
 #include <glibmm/miscutils.h>
 
@@ -39,10 +40,10 @@
 #include "selection.h"
 #include "selection-chemistry.h"
 #include "shortcuts.h"
+#include "verbs.h"
 
 #include "helper/action-context.h"
 #include "helper/action.h"
-#include "ui/icon-loader.h"
 
 #include "include/gtkmm_version.h"
 
@@ -56,9 +57,12 @@
 #include "object/sp-shape.h"
 #include "object/sp-text.h"
 
-#include "ui/dialog/dialog-manager.h"
+#include "ui/desktop/menu-icon-shift.h"
+//#include "ui/dialog/dialog-manager.h"
+#include "ui/dialog/dialog-container.h"
 #include "ui/dialog/layer-properties.h"
-#include "verbs.h"
+#include "ui/icon-loader.h"
+#include "ui/shortcuts.h"
 
 using Inkscape::DocumentUndo;
 
@@ -69,6 +73,8 @@ ContextMenu::ContextMenu(SPDesktop *desktop, SPItem *item) :
     MIGroup(),
     MIParent(_("Go to parent"))
 {
+    set_name("ContextMenu");
+
     _object = static_cast<SPObject *>(item);
     _desktop = desktop;
 
@@ -155,9 +161,8 @@ ContextMenu::ContextMenu(SPDesktop *desktop, SPItem *item) :
     }
 
     if ( group && group != _desktop->currentLayer() ) {
-        /* TRANSLATORS: #%1 is the id of the group e.g. <g id="#g7">, not a number. */
-        MIGroup.set_label (Glib::ustring::compose(_("Enter group #%1"), group->getId()));
-        MIGroup.set_data("group", group);
+        MIGroup.set_label (Glib::ustring::compose(_("Enter group %1"), group->defaultLabel()));
+        _MIGroup_group = group;
         MIGroup.signal_activate().connect(sigc::bind(sigc::mem_fun(*this, &ContextMenu::EnterGroup),&MIGroup));
         MIGroup.show();
         append(MIGroup);
@@ -177,7 +182,22 @@ ContextMenu::ContextMenu(SPDesktop *desktop, SPItem *item) :
         }
     }
 
-    signal_map().connect(sigc::mem_fun(*this, &ContextMenu::ShiftIcons));
+    // Install CSS to shift icons into the space reserved for toggles (i.e. check and radio items).
+    signal_map().connect(sigc::bind<Gtk::MenuShell *>(sigc::ptr_fun(shift_icons), this));
+
+    // Set the style and icon theme of the new menu based on the desktop
+    if (Gtk::Window *window = _desktop->getToplevel()) {
+        if (window->get_style_context()->has_class("dark")) {
+            get_style_context()->add_class("dark");
+        } else {
+            get_style_context()->add_class("bright");
+        }
+        if (prefs->getBool("/theme/symbolicIcons", false)) {
+            get_style_context()->add_class("symbolic");
+        } else {
+            get_style_context()->add_class("regular");
+        }
+    }
 }
 
 ContextMenu::~ContextMenu(void)
@@ -193,7 +213,7 @@ Gtk::SeparatorMenuItem* ContextMenu::AddSeparator()
 
 void ContextMenu::EnterGroup(Gtk::MenuItem* mi)
 {
-    _desktop->setCurrentLayer(reinterpret_cast<SPObject *>(mi->get_data("group")));
+    _desktop->setCurrentLayer(_MIGroup_group);
     _desktop->selection->clear();
 }
 
@@ -289,7 +309,7 @@ void ContextMenu::AppendItemFromVerb(Inkscape::Verb *verb, bool show_icon)
         // Now create the label and add it to the menu item (with mnemonic)
         auto const label = Gtk::manage(new Gtk::AccelLabel(action->name, true));
         label->set_xalign(0.0);
-        sp_shortcut_add_accelerator(GTK_WIDGET(item->gobj()), sp_shortcut_get_primary(verb));
+        Inkscape::Shortcuts::getInstance().add_accelerator(item, action->verb);
         label->set_accel_widget(*item);
 
         // If there is an image associated with the action, then we can add it as an icon for the menu item
@@ -536,7 +556,7 @@ void ContextMenu::SelectSameObjectType()
 void ContextMenu::ItemProperties()
 {
     _desktop->selection->set(_item);
-    _desktop->_dlg_mgr->showDialog("ObjectProperties");
+    _desktop->getContainer()->new_dialog(SP_VERB_DIALOG_ITEM);
 }
 
 void ContextMenu::ItemSelectThis()
@@ -571,7 +591,7 @@ void ContextMenu::ItemCreateLink()
     Inkscape::DocumentUndo::done(object->document, SP_VERB_NONE, _("Create link"));
 
     _desktop->selection->set(SP_ITEM(object));
-    _desktop->_dlg_mgr->showDialog("ObjectAttributes");
+    _desktop->getContainer()->new_dialog(SP_VERB_DIALOG_ATTR);
 }
 
 void ContextMenu::SetMask()
@@ -655,7 +675,7 @@ void ContextMenu::MakeAnchorMenu()
 
 void ContextMenu::AnchorLinkProperties()
 {
-    _desktop->_dlg_mgr->showDialog("ObjectAttributes");
+    _desktop->getContainer()->new_dialog(SP_VERB_DIALOG_ATTR);
 }
 
 void ContextMenu::AnchorLinkFollow()
@@ -736,7 +756,7 @@ void ContextMenu::MakeImageMenu ()
 
 void ContextMenu::ImageProperties()
 {
-    _desktop->_dlg_mgr->showDialog("ObjectAttributes");
+    _desktop->getContainer()->new_dialog(SP_VERB_DIALOG_ATTR);
 }
 
 Glib::ustring ContextMenu::getImageEditorName(bool is_svg) {
@@ -771,8 +791,8 @@ void ContextMenu::ImageEdit()
     GError* errThing = nullptr;
     Glib::ustring bmpeditor = getImageEditorName();
     Glib::ustring cmdline = bmpeditor;
-    Glib::ustring name;
-    Glib::ustring fullname;
+    std::string name;
+    std::string fullname;
 
 #ifdef _WIN32
     // g_spawn_command_line_sync parsing is done according to Unix shell rules,
@@ -802,7 +822,7 @@ void ContextMenu::ImageEdit()
 
         if (strncmp (href,"file:",5) == 0) {
         // URI to filename conversion
-          name = g_filename_from_uri(href, nullptr, nullptr);
+          name = Glib::filename_from_uri(href);
         } else {
           name.append(href);
         }
@@ -840,8 +860,7 @@ void ContextMenu::ImageEdit()
 
 void ContextMenu::ImageTraceBitmap()
 {
-    INKSCAPE.dialogs_unhide();
-    _desktop->_dlg_mgr->showDialog("Trace");
+    _desktop->getContainer()->new_dialog(SP_VERB_SELECTION_TRACE);
 }
 
 void ContextMenu::ImageEmbed()
@@ -891,7 +910,7 @@ void ContextMenu::FillSettings()
         _desktop->selection->set(_item);
     }
 
-    _desktop->_dlg_mgr->showDialog("FillAndStroke");
+    _desktop->getContainer()->new_dialog(SP_VERB_DIALOG_FILL_STROKE);
 }
 
 void ContextMenu::MakeTextMenu ()
@@ -910,7 +929,7 @@ void ContextMenu::MakeTextMenu ()
     mi->show();
     insert(*mi,positionOfLastDialog++);
 
-#if HAVE_ASPELL
+#if WITH_GSPELL
     /* Spellcheck dialog */
     mi = Gtk::manage(new Gtk::MenuItem(_("Check Spellin_g..."), true));
     mi->signal_activate().connect(sigc::mem_fun(*this, &ContextMenu::SpellcheckSettings));
@@ -925,75 +944,18 @@ void ContextMenu::TextSettings ()
         _desktop->selection->set(_item);
     }
 
-    _desktop->_dlg_mgr->showDialog("TextFont");
+    _desktop->getContainer()->new_dialog(SP_VERB_DIALOG_TEXT);
 }
 
 void ContextMenu::SpellcheckSettings ()
 {
-#if HAVE_ASPELL
+#if WITH_GSPELL
     if (_desktop->selection->isEmpty()) {
         _desktop->selection->set(_item);
     }
 
-    _desktop->_dlg_mgr->showDialog("SpellCheck");
+    _desktop->getContainer()->new_dialog(SP_VERB_DIALOG_SPELLCHECK);
 #endif
-}
-
-void ContextMenu::ShiftIcons()
-{
-    static auto provider = Gtk::CssProvider::create();
-    static bool provider_added = false;
-
-    Gtk::MenuItem *menuitem = nullptr;
-    Gtk::Box *content = nullptr;
-    Gtk::Image *icon = nullptr;
-
-    static int current_shift = 0;
-    int calculated_shift = 0;
-
-    // install CssProvider for our custom styles
-    if (!provider_added) {
-        auto const screen = Gdk::Screen::get_default();
-        Gtk::StyleContext::add_provider_for_screen(screen, provider, GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
-        provider_added = true;
-    }
-
-    // get the first MenuItem with an image (i.e. "ImageMenuItem" as named below)
-    std::vector<Gtk::Widget *> children = get_children();
-    for (auto child: children) {
-        if (child->get_name() == "ImageMenuItem") {
-            menuitem = static_cast<Gtk::MenuItem *>(child);
-            content = static_cast<Gtk::Box *>(menuitem->get_child());
-            icon = static_cast<Gtk::Image *>(content->get_children()[0]);
-            break;
-        }
-    }
-
-    // calculate how far we have to shift the icon to fit it into the empty space between menuitem and its content
-    if (icon) {
-        auto allocation_menuitem = menuitem->get_allocation();
-        auto allocation_icon = icon->get_allocation();
-
-        if (menuitem->get_direction() == Gtk::TEXT_DIR_RTL) {
-            calculated_shift = allocation_menuitem.get_width() - allocation_icon.get_x() - allocation_icon.get_width();
-        } else {
-            calculated_shift = -allocation_icon.get_x();
-        }
-    }
-
-    // install CSS to shift icon, use a threshold to avoid overly frequent updates
-    // (gtk's own calculations for the reserved space are off by a few pixels if there is no check/radio item in a menu)
-    if (calculated_shift && std::abs(current_shift - calculated_shift) > 2) {
-        current_shift = calculated_shift;
-
-        std::string css_str;
-        if (menuitem->get_direction() == Gtk::TEXT_DIR_RTL) {
-            css_str = "#ImageMenuItem image {margin-right:" + std::to_string(-calculated_shift) + "px;}";
-        } else {
-            css_str = "#ImageMenuItem image {margin-left:" + std::to_string(calculated_shift) + "px;}";
-        }
-        provider->load_from_data(css_str);
-    }
 }
 
 /*

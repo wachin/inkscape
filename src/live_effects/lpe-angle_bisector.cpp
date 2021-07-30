@@ -12,8 +12,9 @@
 #include "live_effects/lpe-angle_bisector.h"
 #include "2geom/sbasis-to-bezier.h"
 
-#include "knot-holder-entity.h"
-#include "knotholder.h"
+#include "ui/knot/knot-holder.h"
+#include "ui/knot/knot-holder-entity.h"
+
 // TODO due to internal breakage in glibmm headers, this must be last:
 #include <glibmm/i18n.h>
 
@@ -79,12 +80,14 @@ void
 LPEAngleBisector::addKnotHolderEntities(KnotHolder *knotholder, SPDesktop *desktop, SPItem *item) {
     {
         KnotHolderEntity *e = new AB::KnotHolderEntityLeftEnd(this);
-e->create(desktop, item, knotholder, Inkscape::CTRL_TYPE_LPE, _("Adjust the \"left\" end of the bisector"));
-knotholder->add(e);
+        e->create(desktop, item, knotholder, Inkscape::CANVAS_ITEM_CTRL_TYPE_LPE, "LPE:LeftEnd",
+                  _("Adjust the \"left\" end of the bisector"));
+        knotholder->add(e);
     }
     {
         KnotHolderEntity *e = new AB::KnotHolderEntityRightEnd(this);
-        e->create(desktop, item, knotholder, Inkscape::CTRL_TYPE_LPE, _("Adjust the \"right\" end of the bisector"));
+        e->create(desktop, item, knotholder, Inkscape::CANVAS_ITEM_CTRL_TYPE_LPE, "LPE:RightEnd",
+                  _("Adjust the \"right\" end of the bisector"));
         knotholder->add(e);
     }
 };

@@ -23,7 +23,7 @@
 #include "seltrans.h"
 #include "snap.h"
 
-#include "display/sodipodi-ctrlrect.h"
+#include "display/control/canvas-item-rect.h"
 
 #include "object/sp-namedview.h"
 
@@ -36,9 +36,6 @@
 #include "ui/tools/node-tool.h"
 
 
-// FIXME BRAIN DAMAGE WARNING: this is a global variable in select-context.cpp
-// It should be moved to a header
-extern GdkPixbuf *handles[];
 GType sp_select_context_get_type();
 
 namespace Inkscape {
@@ -81,21 +78,20 @@ double snap_increment_degrees() {
 } // anonymous namespace
 
 ControlPoint::ColorSet TransformHandle::thandle_cset = {
-    {0x000000ff, 0x000000ff},
-    {0x00ff6600, 0x000000ff},
-    {0x00ff6600, 0x000000ff},
+    {0x000000ff, 0x000000ff},  // normal fill, stroke
+    {0x00ff66ff, 0x000000ff},  // mouseover fill, stroke
+    {0x00ff66ff, 0x000000ff},  // clicked fill, stroke
     //
-    {0x000000ff, 0x000000ff},
-    {0x00ff6600, 0x000000ff},
-    {0x00ff6600, 0x000000ff}
+    {0x000000ff, 0x000000ff},  // normal fill, stroke when selected
+    {0x00ff66ff, 0x000000ff},  // mouseover fill, stroke when selected
+    {0x00ff66ff, 0x000000ff}   // clicked fill, stroke when selected
 };
 
-TransformHandle::TransformHandle(TransformHandleSet &th, SPAnchorType anchor, Glib::RefPtr<Gdk::Pixbuf> pb) :
-    ControlPoint(th._desktop, Geom::Point(), anchor,
-                 pb,
-                 thandle_cset, th._transform_handle_group),
-    _th(th)
+TransformHandle::TransformHandle(TransformHandleSet &th, SPAnchorType anchor, Inkscape::CanvasItemCtrlType type)
+    : ControlPoint(th._desktop, Geom::Point(), anchor, type, thandle_cset, th._transform_handle_group)
+    , _th(th)
 {
+    _canvas_item_ctrl->set_name("CanvasItemCtrl:TransformHandle");
     setVisible(false);
 }
 
@@ -201,8 +197,8 @@ void TransformHandle::ungrabbed(GdkEventButton *)
 
 class ScaleHandle : public TransformHandle {
 public:
-    ScaleHandle(TransformHandleSet &th, SPAnchorType anchor, Glib::RefPtr<Gdk::Pixbuf> pb)
-        : TransformHandle(th, anchor, pb)
+    ScaleHandle(TransformHandleSet &th, SPAnchorType anchor, Inkscape::CanvasItemCtrlType type)
+        : TransformHandle(th, anchor, type)
     {}
 protected:
     Glib::ustring _getTip(unsigned state) const override {
@@ -245,7 +241,7 @@ class ScaleCornerHandle : public ScaleHandle {
 public:
 
     ScaleCornerHandle(TransformHandleSet &th, unsigned corner, unsigned d_corner) :
-        ScaleHandle(th, corner_to_anchor(d_corner), _corner_to_pixbuf(d_corner)),
+        ScaleHandle(th, corner_to_anchor(d_corner), Inkscape::CANVAS_ITEM_CTRL_TYPE_ADJ_HANDLE),
         _corner(corner)
     {}
 
@@ -309,18 +305,6 @@ protected:
 
 private:
 
-    static Glib::RefPtr<Gdk::Pixbuf> _corner_to_pixbuf(unsigned c) {
-        //sp_select_context_get_type();
-        switch (c % 2) {
-            case 0:
-                return Glib::wrap(handles[1], true);
-                break;
-            default:
-                return Glib::wrap(handles[0], true);
-                break;
-        }
-    }
-
     Geom::Point _sc_center;
     Geom::Point _sc_opposite;
     unsigned _corner;
@@ -332,7 +316,7 @@ private:
 class ScaleSideHandle : public ScaleHandle {
 public:
     ScaleSideHandle(TransformHandleSet &th, unsigned side, unsigned d_side)
-        : ScaleHandle(th, side_to_anchor(d_side), _side_to_pixbuf(side))
+        : ScaleHandle(th, side_to_anchor(d_side), Inkscape::CANVAS_ITEM_CTRL_TYPE_ADJ_HANDLE)
         , _side(side)
     {}
 protected:
@@ -392,14 +376,9 @@ protected:
             ? COMMIT_MOUSE_SCALE_UNIFORM
             : COMMIT_MOUSE_SCALE;
     }
+
 private:
-    static Glib::RefPtr<Gdk::Pixbuf> _side_to_pixbuf(unsigned c) {
-        //sp_select_context_get_type();
-        switch (c % 2) {
-        case 0: return Glib::wrap(handles[3], true);
-        default: return Glib::wrap(handles[2], true);
-        }
-    }
+
     Geom::Point _sc_center;
     Geom::Point _sc_opposite;
     unsigned _side;
@@ -411,7 +390,7 @@ private:
 class RotateHandle : public TransformHandle {
 public:
     RotateHandle(TransformHandleSet &th, unsigned corner, unsigned d_corner)
-        : TransformHandle(th, corner_to_anchor(d_corner), _corner_to_pixbuf(d_corner))
+        : TransformHandle(th, corner_to_anchor(d_corner), Inkscape::CANVAS_ITEM_CTRL_TYPE_ADJ_ROTATE)
         , _corner(corner)
     {}
 protected:
@@ -474,15 +453,6 @@ protected:
     bool _hasDragTips() const override { return true; }
 
 private:
-    static Glib::RefPtr<Gdk::Pixbuf> _corner_to_pixbuf(unsigned c) {
-        //sp_select_context_get_type();
-        switch (c % 4) {
-        case 0: return Glib::wrap(handles[7], true);
-        case 1: return Glib::wrap(handles[6], true);
-        case 2: return Glib::wrap(handles[5], true);
-        default: return Glib::wrap(handles[4], true);
-        }
-    }
     Geom::Point _rot_center;
     Geom::Point _rot_opposite;
     unsigned _corner;
@@ -493,7 +463,7 @@ double RotateHandle::_last_angle = 0;
 class SkewHandle : public TransformHandle {
 public:
     SkewHandle(TransformHandleSet &th, unsigned side, unsigned d_side)
-        : TransformHandle(th, side_to_anchor(d_side), _side_to_pixbuf(side))
+        : TransformHandle(th, side_to_anchor(d_side), Inkscape::CANVAS_ITEM_CTRL_TYPE_ADJ_SKEW)
         , _side(side)
     {}
 
@@ -620,15 +590,6 @@ protected:
 
 private:
 
-    static Glib::RefPtr<Gdk::Pixbuf> _side_to_pixbuf(unsigned s) {
-        //sp_select_context_get_type();
-        switch (s % 4) {
-        case 0: return Glib::wrap(handles[10], true);
-        case 1: return Glib::wrap(handles[9], true);
-        case 2: return Glib::wrap(handles[8], true);
-        default: return Glib::wrap(handles[11], true);
-        }
-    }
     Geom::Point _skew_center;
     Geom::Point _skew_opposite;
     unsigned _side;
@@ -643,7 +604,7 @@ class RotationCenter : public ControlPoint {
 public:
     RotationCenter(TransformHandleSet &th) :
         ControlPoint(th._desktop, Geom::Point(), SP_ANCHOR_CENTER,
-                     _get_pixbuf(),
+                     Inkscape::CANVAS_ITEM_CTRL_TYPE_ADJ_CENTER,
                      _center_cset, th._transform_handle_group),
         _th(th)
     {
@@ -675,27 +636,22 @@ protected:
 
 private:
 
-    static Glib::RefPtr<Gdk::Pixbuf> _get_pixbuf() {
-        //sp_select_context_get_type();
-        return Glib::wrap(handles[12], true);
-    }
-
     static ColorSet _center_cset;
     TransformHandleSet &_th;
 };
 
 ControlPoint::ColorSet RotationCenter::_center_cset = {
-    {0x00000000, 0x000000ff},
-    {0x00000000, 0xff0000b0},
-    {0x00000000, 0xff0000b0},
+    {0x000000ff, 0x000000ff},  // normal fill, stroke
+    {0x00ff66ff, 0x000000ff},  // mouseover fill, stroke
+    {0x00ff66ff, 0x000000ff},  // clicked fill, stroke
     //
-    {0x00000000, 0x000000ff},
-    {0x00000000, 0xff0000b0},
-    {0x00000000, 0xff0000b0}    
+    {0x000000ff, 0x000000ff},  // normal fill, stroke when selected
+    {0x00ff66ff, 0x000000ff},  // mouseover fill, stroke when selected
+    {0x00ff66ff, 0x000000ff}   // clicked fill, stroke when selected
 };
 
 
-TransformHandleSet::TransformHandleSet(SPDesktop *d, SPCanvasGroup *th_group)
+TransformHandleSet::TransformHandleSet(SPDesktop *d, Inkscape::CanvasItemGroup *th_group)
     : Manipulator(d)
     , _active(nullptr)
     , _transform_handle_group(th_group)
@@ -703,10 +659,10 @@ TransformHandleSet::TransformHandleSet(SPDesktop *d, SPCanvasGroup *th_group)
     , _in_transform(false)
     , _visible(true)
 {
-    _trans_outline = static_cast<CtrlRect*>(sp_canvas_item_new(_desktop->getControls(),
-        SP_TYPE_CTRLRECT, nullptr));
-    sp_canvas_item_hide(_trans_outline);
-    _trans_outline->setDashed(true);
+    _trans_outline = new Inkscape::CanvasItemRect(_desktop->getCanvasControls());
+    _trans_outline->set_name("CanvasItemRect:Transform");
+    _trans_outline->hide();
+    _trans_outline->set_dashed(true);
 
     bool y_inverted = !d->is_yaxisdown();
     for (unsigned i = 0; i < 4; ++i) {
@@ -761,7 +717,7 @@ void TransformHandleSet::setVisible(bool v)
 void TransformHandleSet::setBounds(Geom::Rect const &r, bool preserve_center)
 {
     if (_in_transform) {
-        _trans_outline->setRectangle(r);
+        _trans_outline->set_rect(r);
     } else {
         for (unsigned i = 0; i < 4; ++i) {
             _scale_corners[i]->move(r.corner(i));
@@ -793,13 +749,13 @@ void TransformHandleSet::_setActiveHandle(ControlPoint *th)
     _in_transform = true;
     // hide all handles except the active one
     _updateVisibility(false);
-    sp_canvas_item_show(_trans_outline);
+    _trans_outline->show();
 }
 
 void TransformHandleSet::_clearActiveHandle()
 {
     // This can only be called from handles, so they had to be visible before _setActiveHandle
-    sp_canvas_item_hide(_trans_outline);
+    _trans_outline->hide();
     _active = nullptr;
     _in_transform = false;
     _updateVisibility(_visible);
@@ -809,9 +765,12 @@ void TransformHandleSet::_updateVisibility(bool v)
 {
     if (v) {
         Geom::Rect b = bounds();
-        Geom::Point handle_size(
-            gdk_pixbuf_get_width(handles[0]) / _desktop->current_zoom(),
-            gdk_pixbuf_get_height(handles[0]) / _desktop->current_zoom());
+
+        // Roughly estimate handle size.
+        Inkscape::Preferences *prefs = Inkscape::Preferences::get();
+        int handle_index = prefs->getIntLimited("/options/grabsize/value", 3, 1, 15);
+        int handle_size = handle_index * 2 + 1; // Handle pixmaps are actually larger but that's to allow space when handle is rotated.
+
         Geom::Point bp = b.dimensions();
 
         // do not scale when the bounding rectangle has zero width or height
@@ -829,20 +788,21 @@ void TransformHandleSet::_updateVisibility(bool v)
             Geom::Dim2 d = static_cast<Geom::Dim2>(i);
             Geom::Dim2 otherd = static_cast<Geom::Dim2>((i+1)%2);
             show_scale_side[i] = (_mode == MODE_SCALE);
-            show_scale_side[i] &= (show_scale ? bp[d] >= handle_size[d]
+            show_scale_side[i] &= (show_scale ? bp[d] >= handle_size
                 : !Geom::are_near(bp[otherd], 0));
-            show_skew[i] = (show_rotate && bp[d] >= handle_size[d]
+            show_skew[i] = (show_rotate && bp[d] >= handle_size
                 && !Geom::are_near(bp[otherd], 0));
         }
+
         for (unsigned i = 0; i < 4; ++i) {
             _scale_corners[i]->setVisible(show_scale);
             _rot_corners[i]->setVisible(show_rotate);
             _scale_sides[i]->setVisible(show_scale_side[i%2]);
             _skew_sides[i]->setVisible(show_skew[i%2]);
         }
-        // show rotation center if there is enough space (?)
-        _center->setVisible(show_rotate /*&& bp[Geom::X] > handle_size[Geom::X]
-            && bp[Geom::Y] > handle_size[Geom::Y]*/);
+
+        // show rotation center
+        _center->setVisible(show_rotate);
     } else {
         for (auto & _handle : _handles) {
             if (_handle != _active)

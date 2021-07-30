@@ -32,9 +32,14 @@
 #include "object/sp-text.h"
 
 #include "xml/sp-css-attr.h"
+// this is only to flatten nonzero fillrule
+#include "livarot/Path.h"
+#include "livarot/Shape.h"
 
 // TODO due to internal breakage in glibmm headers, this must be last:
 #include <glibmm/i18n.h>
+
+typedef FillRule FillRuleFlatten;
 
 namespace Inkscape {
 namespace LivePathEffect {
@@ -57,7 +62,8 @@ LPEMirrorSymmetry::LPEMirrorSymmetry(LivePathEffectObject *lpeobject) :
     fuse_paths(_("Fuse paths"), _("Fuse original path and mirror image into a single path"), "fuse_paths", &wr, this, false),
     oposite_fuse(_("Fuse opposite sides"), _("Picks the part on the other side of the mirror line as the original."), "oposite_fuse", &wr, this, false),
     split_items(_("Split elements"), _("Split original and mirror image into separate paths, so each can have its own style."), "split_items", &wr, this, false),
-    start_point(_("Mirror line start"), _("Start point of mirror line"), "start_point", &wr, this, _("Adjust start point of of mirror line")),
+    split_open(_("Keep open paths on split"), _("Do not automatically close paths along the split line."), "split_open", &wr, this, false),
+    start_point(_("Mirror line start"), _("Start point of mirror line"), "start_point", &wr, this, _("Adjust start point of mirror line")),
     end_point(_("Mirror line end"), _("End point of mirror line"), "end_point", &wr, this, _("Adjust end point of mirror line")),
     center_point(_("Mirror line mid"), _("Center point of mirror line"), "center_point", &wr, this, _("Adjust center point of mirror line"))
 {
@@ -67,6 +73,7 @@ LPEMirrorSymmetry::LPEMirrorSymmetry(LivePathEffectObject *lpeobject) :
     registerParameter(&fuse_paths);
     registerParameter(&oposite_fuse);
     registerParameter(&split_items);
+    registerParameter(&split_open);
     registerParameter(&start_point);
     registerParameter(&end_point);
     registerParameter(&center_point);
@@ -82,21 +89,19 @@ LPEMirrorSymmetry::~LPEMirrorSymmetry()
 = default;
 
 void
-LPEMirrorSymmetry::doAfterEffect (SPLPEItem const* lpeitem)
+LPEMirrorSymmetry::doAfterEffect (SPLPEItem const* lpeitem, SPCurve *curve)
 {
     SPDocument *document = getSPDoc();
     if (!document) {
         return;
     }
     container = dynamic_cast<SPObject *>(sp_lpe_item->parent);
-    Inkscape::XML::Node *root = document->getReprRoot();
 
     if (split_items && !discard_orig_path) {
         Geom::Line ls((Geom::Point)start_point, (Geom::Point)end_point);
         Geom::Affine m = Geom::reflection (ls.vector(), (Geom::Point)start_point);
         m *= sp_lpe_item->transform;
-        toMirror(m, reset);
-        reset = false;
+        toMirror(m);
     } else {
         processObjects(LPE_ERASE);
         items.clear();
@@ -108,7 +113,7 @@ LPEMirrorSymmetry::newWidget()
 {
     // use manage here, because after deletion of Effect object, others might
     // still be pointing to this widget.
-    Gtk::VBox *vbox = Gtk::manage(new Gtk::VBox(Effect::newWidget()));
+    Gtk::Box *vbox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL));
 
     vbox->set_border_width(5);
     vbox->set_homogeneous(false);
@@ -119,7 +124,7 @@ LPEMirrorSymmetry::newWidget()
             Parameter *param = *it;
             Gtk::Widget *widg = dynamic_cast<Gtk::Widget *>(param->param_newWidget());
             Glib::ustring *tip = param->param_getTooltip();
-            if (widg) {
+            if (widg && param->param_key != "split_open") {
                 vbox->pack_start(*widg, true, true, 2);
                 if (tip) {
                     widg->set_tooltip_text(*tip);
@@ -132,8 +137,8 @@ LPEMirrorSymmetry::newWidget()
 
         ++it;
     }
-    Gtk::HBox * hbox = Gtk::manage(new Gtk::HBox(false,0));
-    Gtk::HBox * hbox2 = Gtk::manage(new Gtk::HBox(false,0));
+    Gtk::Box * hbox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL,0));
+    Gtk::Box * hbox2 = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL,0));
     Gtk::Button * center_vert_button = Gtk::manage(new Gtk::Button(Glib::ustring(_("Vertical center"))));
     center_vert_button->signal_clicked().connect(sigc::mem_fun (*this,&LPEMirrorSymmetry::centerVert));
     center_vert_button->set_size_request(110,20);
@@ -193,10 +198,12 @@ LPEMirrorSymmetry::doBeforeEffect (SPLPEItem const* lpeitem)
         if (mode == MT_Y) {
             point_a = Geom::Point(boundingbox_X.min(),center_point[Y]);
             point_b = Geom::Point(boundingbox_X.max(),center_point[Y]);
+            center_point.param_setValue(Geom::middle_point((Geom::Point)point_a, (Geom::Point)point_b));
         }
         if (mode == MT_X) {
             point_a = Geom::Point(center_point[X],boundingbox_Y.min());
             point_b = Geom::Point(center_point[X],boundingbox_Y.max());
+            center_point.param_setValue(Geom::middle_point((Geom::Point)point_a, (Geom::Point)point_b));
         }
         if ((Geom::Point)start_point == (Geom::Point)end_point) {
             start_point.param_setValue(point_a);
@@ -239,7 +246,7 @@ LPEMirrorSymmetry::doBeforeEffect (SPLPEItem const* lpeitem)
         } else if ( mode == MT_V){
             SPDocument *document = getSPDoc();
             if (document) {
-                Geom::Affine transform = i2anc_affine(SP_OBJECT(lpeitem), nullptr).inverse();
+                Geom::Affine transform = i2anc_affine(lpeitem, nullptr).inverse();
                 Geom::Point sp = Geom::Point(document->getWidth().value("px")/2.0, 0) * transform;
                 start_point.param_setValue(sp);
                 Geom::Point ep = Geom::Point(document->getWidth().value("px")/2.0, document->getHeight().value("px")) * transform;
@@ -249,7 +256,7 @@ LPEMirrorSymmetry::doBeforeEffect (SPLPEItem const* lpeitem)
         } else { //horizontal page
             SPDocument *document = getSPDoc();
             if (document) {
-                Geom::Affine transform = i2anc_affine(SP_OBJECT(lpeitem), nullptr).inverse();
+                Geom::Affine transform = i2anc_affine(lpeitem, nullptr).inverse();
                 Geom::Point sp = Geom::Point(0, document->getHeight().value("px")/2.0) * transform;
                 start_point.param_setValue(sp);
                 Geom::Point ep = Geom::Point(document->getWidth().value("px"), document->getHeight().value("px")/2.0) * transform;
@@ -265,9 +272,9 @@ void LPEMirrorSymmetry::cloneStyle(SPObject *orig, SPObject *dest)
 {
     dest->getRepr()->setAttribute("style", orig->getRepr()->attribute("style"));
     for (auto iter : orig->style->properties()) {
-        if (iter->style_src != SP_STYLE_SRC_UNSET) {
+        if (iter->style_src != SPStyleSrc::UNSET) {
             auto key = iter->id();
-            if (key != SP_PROP_FONT && key != SP_ATTR_D && key != SP_PROP_MARKER) {
+            if (key != SPAttr::FONT && key != SPAttr::D && key != SPAttr::MARKER) {
                 const gchar *attr = orig->getRepr()->attribute(iter->name().c_str());
                 if (attr) {
                     dest->getRepr()->setAttribute(iter->name(), attr);
@@ -278,13 +285,13 @@ void LPEMirrorSymmetry::cloneStyle(SPObject *orig, SPObject *dest)
 }
 
 void
-LPEMirrorSymmetry::cloneD(SPObject *orig, SPObject *dest, bool reset)
+LPEMirrorSymmetry::cloneD(SPObject *orig, SPObject *dest)
 {
     SPDocument *document = getSPDoc();
     if (!document) {
         return;
     }
-    Inkscape::XML::Document *xml_doc = document->getReprDoc();
+
     if ( SP_IS_GROUP(orig) && SP_IS_GROUP(dest) && SP_GROUP(orig)->getItemCount() == SP_GROUP(dest)->getItemCount() ) {
         if (reset) {
             cloneStyle(orig, dest);
@@ -293,7 +300,7 @@ LPEMirrorSymmetry::cloneD(SPObject *orig, SPObject *dest, bool reset)
         size_t index = 0;
         for (auto & child : childs) {
             SPObject *dest_child = dest->nthChild(index);
-            cloneD(child, dest_child, reset);
+            cloneD(child, dest_child);
             index++;
         }
         return;
@@ -306,7 +313,7 @@ LPEMirrorSymmetry::cloneD(SPObject *orig, SPObject *dest, bool reset)
         size_t index = 0;
         for (auto &child : SP_TEXT(orig)->children) {
             SPObject *dest_child = dest->nthChild(index);
-            cloneD(&child, dest_child, reset);
+            cloneD(&child, dest_child);
             index++;
         }
     }
@@ -314,12 +321,9 @@ LPEMirrorSymmetry::cloneD(SPObject *orig, SPObject *dest, bool reset)
     SPShape * shape =  SP_SHAPE(orig);
     SPPath * path =  SP_PATH(dest);
     if (path && shape) {
-        SPCurve *c = shape->getCurve();
+        SPCurve const *c = shape->curve();
         if (c) {
-            gchar *str = sp_svg_write_path(c->get_pathvector());
-            dest->getRepr()->setAttribute("d", str);
-            g_free(str);
-            c->unref();
+            dest->getRepr()->setAttribute("d", sp_svg_write_path(c->get_pathvector()));
         } else {
             dest->getRepr()->removeAttribute("d");
         }
@@ -356,7 +360,7 @@ LPEMirrorSymmetry::createPathBase(SPObject *elemref) {
 }
 
 void
-LPEMirrorSymmetry::toMirror(Geom::Affine transform, bool reset)
+LPEMirrorSymmetry::toMirror(Geom::Affine transform)
 {
     SPDocument *document = getSPDoc();
     if (!document) {
@@ -376,12 +380,12 @@ LPEMirrorSymmetry::toMirror(Geom::Affine transform, bool reset)
         phantom->setAttribute("id", elemref_id);
         reset = true;
         elemref = container->appendChildRepr(phantom);
+        elemref->parent->reorder(elemref, sp_lpe_item);
         Inkscape::GC::release(phantom);
     }
-    cloneD(SP_OBJECT(sp_lpe_item), elemref, reset);
-    gchar *str = sp_svg_transform_write(transform);
-    elemref->getRepr()->setAttribute("transform" , str);
-    g_free(str);
+    cloneD(sp_lpe_item, elemref);
+    reset = false;
+    elemref->getRepr()->setAttributeOrRemoveIfEmpty("transform", sp_svg_transform_write(transform));
     if (elemref->parent != container) {
         Inkscape::XML::Node *copy = phantom->duplicate(xml_doc);
         copy->setAttribute("id", elemref_id);
@@ -395,7 +399,8 @@ LPEMirrorSymmetry::toMirror(Geom::Affine transform, bool reset)
 void
 LPEMirrorSymmetry::resetStyles(){
     reset = true;
-    doAfterEffect_impl(sp_lpe_item);
+    sp_lpe_item_update_patheffect(sp_lpe_item, false, false);
+    reset = false;
 }
 
 
@@ -409,13 +414,20 @@ LPEMirrorSymmetry::doOnVisibilityToggled(SPLPEItem const* /*lpeitem*/)
 void
 LPEMirrorSymmetry::doOnRemove (SPLPEItem const* /*lpeitem*/)
 {
-    //set "keep paths" hook on sp-lpe-item.cpp
-    if (keep_paths) {
-        processObjects(LPE_TO_OBJECTS);
-        items.clear();
-        return;
+    std::vector<SPLPEItem *> lpeitems = getCurrrentLPEItems();
+    if (lpeitems.size() == 1) {
+        sp_lpe_item = lpeitems[0];
+        if (!sp_lpe_item->path_effects_enabled) {
+            return;
+        }
+        //set "keep paths" hook on sp-lpe-item.cpp
+        if (keep_paths) {
+            processObjects(LPE_TO_OBJECTS);
+            items.clear();
+            return;
+        }
+        processObjects(LPE_ERASE);
     }
-    processObjects(LPE_ERASE);
 }
 
 void
@@ -434,9 +446,32 @@ LPEMirrorSymmetry::doOnApply (SPLPEItem const* lpeitem)
     end_point.param_update_default(point_b);
     center_point.param_setValue(point_c, true);
     previous_center = center_point;
-    SPLPEItem * splpeitem = const_cast<SPLPEItem *>(lpeitem);
+    //we bump to 1.1 because previous 1.0.2 take no effect because a bug on 1.0.2
+    lpeversion.param_setValue("1.1", true);
 }
 
+static void
+sp_flatten(Geom::PathVector &pathvector, FillRuleFlatten fillkind)
+{
+    Path *orig = new Path;
+    orig->LoadPathVector(pathvector);
+    Shape *theShape = new Shape;
+    Shape *theRes = new Shape;
+    orig->ConvertWithBackData (1.0);
+    orig->Fill (theShape, 0);
+    theRes->ConvertToShape (theShape, FillRule(fillkind));
+    Path *originaux[1];
+    originaux[0] = orig;
+    Path *res = new Path;
+    theRes->ConvertToForme (res, 1, originaux, true);
+
+    delete theShape;
+    delete theRes;
+    char *res_d = res->svg_dump_path ();
+    delete res;
+    delete orig;
+    pathvector  = sp_svg_read_pathv(res_d);
+}
 
 Geom::PathVector
 LPEMirrorSymmetry::doEffect_path (Geom::PathVector const & path_in)
@@ -491,10 +526,6 @@ LPEMirrorSymmetry::doEffect_path (Geom::PathVector const & path_in)
                 crossed.push_back(c.ta);
             }
             std::sort(crossed.begin(), crossed.end());
-            bool swamped = false;
-            if (crossed.size()) {
-                swamped = crossed[0] > crossed[crossed.size() - 1];
-            }
             for (unsigned int i = 0; i < crossed.size(); i++) {
                 double time_end = crossed[i];
                 if (time_start != time_end && time_end - time_start > Geom::EPSILON) {
@@ -514,8 +545,6 @@ LPEMirrorSymmetry::doEffect_path (Geom::PathVector const & path_in)
                                     portion.setFinal(portion.initialPoint());
                                     portion.close();
                                 }
-                            } else if (path_it.closed() && swamped) {
-                                portion.close();
                             }
                             tmp_pathvector.push_back(portion);
                         }
@@ -543,7 +572,7 @@ LPEMirrorSymmetry::doEffect_path (Geom::PathVector const & path_in)
                             tmp_pathvector.push_back(portion);
                         } else {
                             if (cs.size() > 1 && tmp_pathvector.size() > 0 && tmp_pathvector[0].size() > 0 ) {
-                                if (swamped || !split_items) {
+                                if (!split_items) {
                                     portion.setFinal(tmp_pathvector[0].initialPoint());
                                     portion.setInitial(tmp_pathvector[0].finalPoint());
                                 } else {
@@ -555,15 +584,27 @@ LPEMirrorSymmetry::doEffect_path (Geom::PathVector const & path_in)
                             } else {
                                 tmp_pathvector.push_back(portion);
                             }
-                            tmp_pathvector[0].close();
+                            if (lpeversion.param_getSVGValue() < "1.1") {
+                                tmp_pathvector[0].close();
+                            }
                         }
                         portion.clear();
                     }
                 }
             }
+            if (!split_open && lpeversion.param_getSVGValue() >= "1.1" && original.closed()) {
+                for (auto &path : tmp_pathvector) {
+                    if (!path.closed()) {
+                        path.close();
+                    }
+                }
+                sp_flatten(tmp_pathvector, fill_oddEven);
+            }
             if (cs.size() == 0 && position == 1) {
                 tmp_pathvector.push_back(original);
-                tmp_pathvector.push_back(original * m);
+                if (!split_items) {
+                    tmp_pathvector.push_back(original * m);
+                }
             }
             path_out.insert(path_out.end(), tmp_pathvector.begin(), tmp_pathvector.end());
             tmp_pathvector.clear();

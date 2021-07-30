@@ -21,10 +21,10 @@
 Test the svg interface for inkscape extensions.
 """
 from inkex.transforms import Vector2d
-from inkex.utils import addNS
 from inkex import Guide
 from inkex.tester import TestCase
 from inkex.tester.svg import svg, svg_file, uu_svg
+from inkex import addNS
 
 class BasicSvgTest(TestCase):
     """Basic svg tests"""
@@ -418,7 +418,7 @@ class UserUnitTest(TestCase):
     def test_uutounit_identity(self):
         """If the input and output units are the same, the input and output
            values should exactly be the same, too."""
-        self.assertFromUserUnit('pc', 9.87654321, 'pc', 9.87654)
+        self.assertFromUserUnit('pc', 9.87654321, 'pc', 9.87654321)
 
     def test_uutounit_unknown_unit(self):
         """Demonstrate that passing an unknown unit string to uutounit()"""

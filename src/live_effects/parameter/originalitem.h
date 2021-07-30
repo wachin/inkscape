@@ -30,7 +30,6 @@ public:
     Gtk::Widget * param_newWidget() override;
 
 protected:
-
     void on_select_original_button_click();
 
 private:

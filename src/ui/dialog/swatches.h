@@ -11,7 +11,7 @@
 #ifndef SEEN_DIALOGS_SWATCHES_H
 #define SEEN_DIALOGS_SWATCHES_H
 
-#include "ui/widget/panel.h"
+#include "ui/dialog/dialog-base.h"
 
 namespace Gtk {
     class Menu;
@@ -23,6 +23,10 @@ namespace Inkscape {
 namespace UI {
 
 class PreviewHolder;
+
+namespace Widget {
+    class ColorPalette;
+}
 
 namespace Dialog {
 
@@ -38,16 +42,15 @@ class DocTrack;
  * the "/embedded/swatches/" is the horizontal color swatches at the bottom
  * of window.
  */
-class SwatchesPanel : public Inkscape::UI::Widget::Panel
+class SwatchesPanel : public DialogBase
 {
 public:
     SwatchesPanel(gchar const* prefsPath = "/dialogs/swatches");
     ~SwatchesPanel() override;
 
+    void documentReplaced() override;
     static SwatchesPanel& getInstance();
-
-    void setDesktop( SPDesktop* desktop ) override;
-    virtual SPDesktop* getDesktop() {return _currentDesktop;}
+    static std::vector<SwatchPage*> getSwatchSets();
 
     virtual int getSelectedIndex() {return _currentIndex;} // temporary
 
@@ -55,7 +58,6 @@ protected:
     static void handleGradientsChange(SPDocument *document);
 
     virtual void _updateFromSelection();
-    virtual void _setDocument( SPDocument *document );
     virtual void _rebuild();
 
     virtual std::vector<SwatchPage*> _getSwatchSets() const;
@@ -73,8 +75,7 @@ private:
     ColorItem* _clear;
     ColorItem* _remove;
     int _currentIndex;
-    SPDesktop*  _currentDesktop;
-    SPDocument* _currentDocument;
+    Inkscape::UI::Widget::ColorPalette* _palette;
 
     void _regItem(Gtk::MenuItem* item, int id);
 
@@ -83,9 +84,6 @@ private:
     void _wrapToggled(Gtk::CheckMenuItem *toggler);
 
     Gtk::Menu       *_menu;
-
-    sigc::connection _documentConnection;
-    sigc::connection _selChanged;
 
     friend class DocTrack;
 };

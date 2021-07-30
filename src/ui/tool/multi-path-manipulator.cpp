@@ -32,7 +32,6 @@
 #include "ui/tool/multi-path-manipulator.h"
 #include "ui/tool/path-manipulator.h"
 
-
 namespace Inkscape {
 namespace UI {
 
@@ -88,7 +87,7 @@ void find_join_iterators(ControlPointSelection &sel, IterPairList &pairs)
     }
 }
 
-/** After this function, first should be at the end of path and second at the beginnning.
+/** After this function, first should be at the end of path and second at the beginning.
  * @returns True if the nodes are in the same subpath */
 bool prepare_join(IterPair &join_iters)
 {
@@ -358,6 +357,14 @@ void MultiPathManipulator::duplicateNodes()
     _done(_("Duplicate nodes"));
 }
 
+void MultiPathManipulator::copySelectedPath(Geom::PathBuilder *builder)
+{
+    if (_selection.empty())
+        return;
+    invokeForAll(&PathManipulator::copySelectedPath, builder);
+    _done(_("Copy nodes"));
+}
+
 void MultiPathManipulator::joinNodes()
 {
     if (_selection.empty()) return;
@@ -566,6 +573,11 @@ void MultiPathManipulator::updateHandles()
     invokeForAll(&PathManipulator::updateHandles);
 }
 
+void MultiPathManipulator::updatePaths()
+{
+    invokeForAll(&PathManipulator::updatePath);
+}
+
 bool MultiPathManipulator::event(Inkscape::UI::Tools::ToolBase *event_context, GdkEvent *event)
 {
     _tracker.event(event);
@@ -759,7 +771,6 @@ bool MultiPathManipulator::event(Inkscape::UI::Tools::ToolBase *event_context, G
         }
         break;
     case GDK_MOTION_NOTIFY:
-        combine_motion_events(_desktop->canvas, event->motion, 0);
         for (auto & i : _mmap) {
             if (i.second->event(event_context, event)) return true;
         }

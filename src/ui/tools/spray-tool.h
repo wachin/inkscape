@@ -23,11 +23,13 @@
 
 #include <2geom/point.h>
 #include "ui/tools/tool-base.h"
+#include "object/object-set.h"
 
 #define SP_SPRAY_CONTEXT(obj) (dynamic_cast<Inkscape::UI::Tools::SprayTool*>((Inkscape::UI::Tools::ToolBase*)obj))
 #define SP_IS_SPRAY_CONTEXT(obj) (dynamic_cast<const Inkscape::UI::Tools::SprayTool*>((const Inkscape::UI::Tools::ToolBase*)obj) != NULL)
 
 namespace Inkscape {
+  class CanvasItemBpath;
   namespace UI {
       namespace Dialog {
           class Dialog;
@@ -60,7 +62,6 @@ public:
     ~SprayTool() override;
 
     //ToolBase event_context;
-    //Inkscape::UI::Dialog::Dialog *dialog_option;//Attribut de type SprayOptionClass, localisé dans scr/ui/dialog    
     /* extended input data */
     gdouble pressure;
 
@@ -81,7 +82,7 @@ public:
     double scale;
     double mean;
     double standard_deviation;
-   
+
     gint distrib;
 
     gint mode;
@@ -91,7 +92,7 @@ public:
     bool is_dilating;
     bool has_dilated;
     Geom::Point last_push;
-    SPCanvasItem *dilate_area;
+    Inkscape::CanvasItemBpath *dilate_area;
     bool no_overlap;
     bool picker;
     bool pick_center;

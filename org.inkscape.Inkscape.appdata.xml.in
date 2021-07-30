@@ -11,9 +11,10 @@
   <summary>Vector Graphics Editor</summary>
   <description>
     <p>
-      An Open Source vector graphics editor, with capabilities similar to
-      Illustrator, CorelDraw, or Xara X, using the W3C standard Scalable Vector
-      Graphics (SVG) file format.
+      A Free and open source vector graphics editor. It offers a rich set of features and is widely used for both artistic and technical illustrations such as cartoons, clip art, logos, typography, diagramming and flowcharting.
+    </p>
+    <p>
+      It uses vector graphics to allow for sharp printouts and renderings at unlimited resolution and is not bound to a fixed number of pixels like raster graphics. Inkscape uses the standardized SVG file format as its main format, which is supported by many other applications including web browsers.
     </p>
     <p>
       Inkscape supports many advanced SVG features (markers, clones, alpha blending,
@@ -39,27 +40,14 @@
     </screenshot>
   </screenshots>
   <releases>
-        <release version="1.0.2" date="2021-01-17">
+    <release version="1.1-alpha" date="2021-01-17">
       <description>
-        <p>Inkscape 1.0.2</p>
+        <p>Inkscape 1.1-alpha</p>
         <ul>
-          <li>More granular controls for canvas zooming and rotation</li>
-          <li>Fixes extensions popping up when a clipboard manager was used</li>
-          <li>Several crashes fixed</li>
+          <li>Alpha release</li>
         </ul>
       </description>
-      <url>http://wiki.inkscape.org/wiki/index.php/Release_notes/1.0.2</url>
-    </release>
-    <release version="1.0.1" date="2020-09-07">
-      <description>
-        <p>Inkscape 1.0.1</p>
-        <ul>
-	  <li>Selectors/CSS dialog added</li>
-          <li>Experimental Scribus export extension</li>
-          <li>Various bugs and crashes fixed</li>
-        </ul>
-      </description>
-      <url>http://wiki.inkscape.org/wiki/index.php/Release_notes/1.0.1</url>
+      <url>http://wiki.inkscape.org/wiki/index.php/Release_notes/1.1</url>
     </release>
     <release version="1.0" date="2020-05-01">
       <description>

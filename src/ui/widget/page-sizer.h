@@ -51,16 +51,15 @@ public:
     /**
      * Main constructor.  Use this one.
      */
-    PaperSize(const Glib::ustring &nameArg,
-	          double smallerArg,
-	          double largerArg,
-			  Inkscape::Util::Unit const *unitArg)
-	    {
-	    name    = nameArg;
-	    smaller = smallerArg;
-	    larger  = largerArg;
-	    unit    = unitArg;
-	    }
+    PaperSize(Glib::ustring nameArg,
+              double smallerArg,
+              double largerArg,
+              Inkscape::Util::Unit const *unitArg)
+        : name(std::move(nameArg))
+        , smaller(smallerArg)
+        , larger(largerArg)
+        , unit(unitArg)
+        {}
 
     /**
      * Copy constructor
@@ -128,7 +127,7 @@ private:
  * A compound widget that allows the user to select the desired
  * page size.  This widget is used in DocumentPreferences 
  */ 
-class PageSizer : public Gtk::VBox
+class PageSizer : public Gtk::Box
 {
 public:
 
@@ -186,8 +185,6 @@ protected:
     void fire_fit_canvas_to_selection_or_drawing();
     
     //### The Paper Size selection list
-    Gtk::HBox _paperSizeListBox;
-    Gtk::Label _paperSizeListLabel;
     class PaperSizeColumns : public Gtk::TreeModel::ColumnRecord
         {
         public:
@@ -207,7 +204,7 @@ protected:
     sigc::connection    _paper_size_list_connection;
     
     //### Portrait or landscape orientation
-    Gtk::HBox           _orientationBox;
+    Gtk::Box            _orientationBox;
     Gtk::Label          _orientationLabel;
     Gtk::RadioButton    _portraitButton;
     Gtk::RadioButton    _landscapeButton;

@@ -132,7 +132,7 @@ public:
             _document = desktop->getDocument(); 
     };
     ObjectSet(SPDocument* doc): _desktop(nullptr), _document(doc) {};
-    ObjectSet(): _desktop(nullptr), _document(nullptr) {};
+    ObjectSet(): _desktop(nullptr), _document(nullptr) {}; // Used in spray-tool.h.
     virtual ~ObjectSet();
     
     void setDocument(SPDocument* doc){
@@ -153,10 +153,7 @@ public:
      *
      * @param the xml node of the item to add
      */
-    void add(XML::Node *repr) {
-        if(document() && repr)
-            add(document()->getObjectById(repr->attribute("id")));
-    }
+    void add(XML::Node *repr);
 
     /**  Add items from an STL iterator range to the selection.
      *  \param from the begin iterator
@@ -167,7 +164,7 @@ public:
         for(auto it = from; it != to; ++it) {
             _add(*it);
         }
-        _emitSignals();
+        _emitChanged();
     }
 
     /**
@@ -192,10 +189,7 @@ public:
      * @param obj the object to select
      */
     void set(SPObject *object, bool persist_selection_context = false);
-    void set(XML::Node *repr) {
-        if(document() && repr)
-            set(document()->getObjectById(repr->attribute("id")));
-    }
+    void set(XML::Node *repr);
     /**
      * Unselects all selected objects.
      */
@@ -274,6 +268,11 @@ public:
     XML::Node *singleRepr();
 
     /**
+     * The top-most item, or NULL if the selection is empty.
+     */
+    XML::Node *topRepr() const;
+
+    /**
      * Selects exactly the specified objects.
      *
      * @param objs the objects to select
@@ -286,11 +285,30 @@ public:
     }
     
     /**
-     * Selects exactly the specified objects.
+     * Attempt to select all the items between two child items. Must have the same parent.
+     *
+     * @param obj_a - The first item, doesn't have to appear first in the list.
+     * @param obj_b - The last item, doesn't have to appear last in the list (optional)
+     *                If selection already contains one item, will select from-to that.
+     *
+     * @returns the number of items added.
+     */
+    int setBetween(SPObject *obj_a, SPObject *obj_b = nullptr);
+
+    /**
+     * Selects the objects with the same IDs as those in `list`.
+     *
+     * @todo How about adding `setIdList(std::vector<Glib::ustring> const &list)`
      * 
      * @param list the repr list to add
      */
     void setReprList(std::vector<XML::Node*> const &list);
+
+    /**
+     * Assign IDs to selected objects that don't have an ID attribute
+     * Checks if the object's id attribute is NULL. If it is, assign it a unique ID
+     */
+    void enforceIds();
 
     /**
      * Adds the specified objects to selection, without deselecting first.
@@ -305,7 +323,7 @@ public:
                 add(obj, true);
             }
         }
-        _emitSignals();
+        _emitChanged();
     }
 
     /** Returns the bounding rectangle of the selection. */
@@ -325,7 +343,7 @@ public:
     /**
      * Returns the rotation/skew center of the selection.
      */
-    boost::optional<Geom::Point> center() const;
+    std::optional<Geom::Point> center() const;
 
     /** Returns a list of all perspectives which have a 3D box in the current selection.
        (these may also be nested in groups) */
@@ -375,7 +393,7 @@ public:
     void cloneOriginalPathLPE(bool allow_transforms = false);
     Inkscape::XML::Node* group();
     void popFromGroup();
-    void ungroup();
+    void ungroup(bool skip_undo = false);
     
     //z-order management
     //in selection-chemistry.cpp
@@ -388,6 +406,7 @@ public:
     void toNextLayer(bool skip_undo = false);
     void toPrevLayer(bool skip_undo = false);
     void toLayer(SPObject *layer, bool skip_undo = false);
+    void toLayer(SPObject *layer, bool skip_undo, Inkscape::XML::Node *after);
 
     //clipboard management
     //in selection-chemistry.cpp
@@ -405,6 +424,11 @@ public:
     void toCurves(bool skip_undo = false);
     void toLPEItems();
     void pathReverse();
+
+    // path operations
+    // in path/path-object-set.cpp
+    bool strokesToPaths(bool legacy = false, bool skip_undo = false);
+    bool simplifyPaths(bool skip_undo = false);
 
     // Boolean operations
     // in splivarot.cpp
@@ -454,11 +478,12 @@ public:
     void getExportHints(Glib::ustring &filename, float *xdpi, float *ydpi);
     bool fitCanvas(bool with_margins, bool skip_undo = false);
     void swapFillStroke();
+    void fillBetweenMany();
 
 protected:
     virtual void _connectSignals(SPObject* object) {};
     virtual void _releaseSignals(SPObject* object) {};
-    virtual void _emitSignals() {};
+    virtual void _emitChanged(bool persist_selection_context = false) {}
     void _add(SPObject* object);
     void _clear();
     void _remove(SPObject* object);

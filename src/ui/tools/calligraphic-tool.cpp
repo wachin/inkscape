@@ -24,51 +24,46 @@
 
 #define noDYNA_DRAW_VERBOSE
 
-#include <gtk/gtk.h>
-#include <gdk/gdkkeysyms.h>
-#include <glibmm/i18n.h>
-#include <string>
-#include <cstring>
-#include <numeric>
+#include "ui/tools/calligraphic-tool.h"
 
-#include <2geom/pathvector.h>
 #include <2geom/bezier-utils.h>
 #include <2geom/circle.h>
+#include <2geom/pathvector.h>
+#include <cstring>
+#include <gdk/gdkkeysyms.h>
+#include <glibmm/i18n.h>
+#include <gtk/gtk.h>
+#include <numeric>
+#include <string>
 
 #include "context-fns.h"
 #include "desktop-events.h"
 #include "desktop-style.h"
 #include "desktop.h"
+#include "display/control/canvas-item-bpath.h"
+#include "display/control/canvas-item-drawing.h" // ctx
+#include "display/curve.h"
+#include "display/drawing.h"
 #include "document-undo.h"
 #include "document.h"
-#include "inkscape.h"
-#include "message-context.h"
-#include "selection.h"
-#include "splivarot.h"
-#include "verbs.h"
-
-#include "display/cairo-utils.h"
-#include "display/canvas-arena.h"
-#include "display/canvas-bpath.h"
-#include "display/curve.h"
-#include "display/sp-canvas.h"
-
 #include "include/macros.h"
-
+#include "inkscape.h"
+#include "livarot/Path.h"
 #include "livarot/Shape.h"
-
+#include "message-context.h"
 #include "object/sp-shape.h"
 #include "object/sp-text.h"
-
-#include "ui/pixmaps/cursor-calligraphy.xpm"
-
+#include "path/path-util.h"
+#include "selection.h"
 #include "svg/svg.h"
-
-
-#include "ui/tools/calligraphic-tool.h"
 #include "ui/tools/freehand-base.h"
+#include "util/units.h"
+#include "verbs.h"
 
 using Inkscape::DocumentUndo;
+using Inkscape::Util::Quantity;
+using Inkscape::Util::Unit;
+using Inkscape::Util::unit_table;
 
 #define DDC_RED_RGBA 0xff0000ff
 
@@ -84,8 +79,6 @@ namespace Inkscape {
 namespace UI {
 namespace Tools {
 
-static void add_cap(SPCurve *curve, Geom::Point const &from, Geom::Point const &to, double rounding);
-
 const std::string& CalligraphicTool::getPrefsPath() {
 	return CalligraphicTool::prefsPath;
 }
@@ -94,7 +87,7 @@ const std::string& CalligraphicTool::getPrefsPath() {
 const std::string CalligraphicTool::prefsPath = "/tools/calligraphic";
 
 CalligraphicTool::CalligraphicTool()
-    : DynamicBase(cursor_calligraphy_xpm)
+    : DynamicBase("calligraphy.svg")
     , keep_selected(true)
     , hatch_spacing(0)
     , hatch_spacing_step(0)
@@ -103,7 +96,6 @@ CalligraphicTool::CalligraphicTool()
     , hatch_last_nearest(Geom::Point(0,0))
     , hatch_last_pointer(Geom::Point(0,0))
     , hatch_escaped(false)
-    , hatch_area(nullptr)
     , just_started_drawing(false)
     , trace_bg(false)
 {
@@ -115,41 +107,31 @@ CalligraphicTool::CalligraphicTool()
 
 CalligraphicTool::~CalligraphicTool() {
     if (this->hatch_area) {
-        sp_canvas_item_destroy(this->hatch_area);
-        this->hatch_area = nullptr;
+        delete this->hatch_area;
     }
 }
 
 void CalligraphicTool::setup() {
     DynamicBase::setup();
 
-    this->accumulated = new SPCurve();
-    this->currentcurve = new SPCurve();
+    this->accumulated.reset(new SPCurve());
+    this->currentcurve.reset(new SPCurve());
 
-    this->cal1 = new SPCurve();
-    this->cal2 = new SPCurve();
+    this->cal1.reset(new SPCurve());
+    this->cal2.reset(new SPCurve());
 
-    this->currentshape = sp_canvas_item_new(this->desktop->getSketch(), SP_TYPE_CANVAS_BPATH, nullptr);
-    sp_canvas_bpath_set_fill(SP_CANVAS_BPATH(this->currentshape), DDC_RED_RGBA, SP_WIND_RULE_EVENODD);
-    sp_canvas_bpath_set_stroke(SP_CANVAS_BPATH(this->currentshape), 0x00000000, 1.0, SP_STROKE_LINEJOIN_MITER, SP_STROKE_LINECAP_BUTT);
+    currentshape = new Inkscape::CanvasItemBpath(desktop->getCanvasSketch());
+    currentshape->set_stroke(0x0);
+    currentshape->set_fill(DDC_RED_RGBA, SP_WIND_RULE_EVENODD);
 
     /* fixme: Cannot we cascade it to root more clearly? */
-    g_signal_connect(G_OBJECT(this->currentshape), "event", G_CALLBACK(sp_desktop_root_handler), this->desktop);
+    currentshape->connect_event(sigc::bind(sigc::ptr_fun(sp_desktop_root_handler), desktop));
 
-    {
-        /* TODO: have a look at DropperTool::setup where the same is done.. generalize? */
-        Geom::PathVector path = Geom::Path(Geom::Circle(0,0,1));
-
-        SPCurve *c = new SPCurve(path);
-
-        this->hatch_area = sp_canvas_bpath_new(this->desktop->getControls(), c, true);
-
-        c->unref();
-
-        sp_canvas_bpath_set_fill(SP_CANVAS_BPATH(this->hatch_area), 0x00000000,(SPWindRule)0);
-        sp_canvas_bpath_set_stroke(SP_CANVAS_BPATH(this->hatch_area), 0x0000007f, 1.0, SP_STROKE_LINEJOIN_MITER, SP_STROKE_LINECAP_BUTT);
-        sp_canvas_item_hide(this->hatch_area);
-    }
+    hatch_area = new Inkscape::CanvasItemBpath(desktop->getCanvasControls());
+    hatch_area->set_fill(0x0, SP_WIND_RULE_EVENODD);
+    hatch_area->set_stroke(0x0000007f);
+    hatch_area->set_pickable(false);
+    hatch_area->hide();
 
     sp_event_context_read(this, "mass");
     sp_event_context_read(this, "wiggle");
@@ -290,7 +272,7 @@ bool CalligraphicTool::apply(Geom::Point p) {
         // 1b. fixed dc->angle (absolutely flat nib):
         a1 = ( this->angle / 180.0 ) * M_PI;
     }
-    a1 *= -this->desktop->yaxisdir();
+    a1 *= -desktop->yaxisdir();
     a1 = fmod(a1, M_PI);
     if (a1 > 0.5*M_PI) {
         a1 -= M_PI;
@@ -356,18 +338,25 @@ void CalligraphicTool::brush() {
 
     // get the real brush point, not the same as pointer (affected by hatch tracking and/or mass
     // drag)
-    Geom::Point brush = this->getViewPoint(this->cur);
-    Geom::Point brush_w = SP_EVENT_CONTEXT(this)->desktop->d2w(brush);
+    Geom::Point brush = getViewPoint(this->cur);
+    Geom::Point brush_w = desktop->d2w(brush);
 
     double trace_thick = 1;
     if (this->trace_bg) {
-        // pick single pixel
-        double R, G, B, A;
+        // Trace background, use single pixel under brush.
         Geom::IntRect area = Geom::IntRect::from_xywh(brush_w.floor(), Geom::IntPoint(1, 1));
-        cairo_surface_t *s = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, 1, 1);
-        sp_canvas_arena_render_surface(SP_CANVAS_ARENA(this->desktop->getDrawing()), s, area);
-        ink_cairo_surface_average_color_premul(s, R, G, B, A);
-        cairo_surface_destroy(s);
+
+        Inkscape::CanvasItemDrawing *canvas_item_drawing = desktop->getCanvasDrawing();
+        Inkscape::Drawing *drawing = canvas_item_drawing->get_drawing();
+
+        // Ensure drawing up-to-date. (Is this really necessary?)
+        drawing->update();
+
+        // Get average color.
+        double R, G, B, A;
+        drawing->average_color(area, R, G, B, A);
+
+        // Convert to thickness.
         double max = MAX (MAX (R, G), B);
         double min = MIN (MIN (R, G), B);
         double L = A * (max + min)/2 + (1 - A); // blend with white bg
@@ -405,7 +394,7 @@ void CalligraphicTool::brush() {
 
     double dezoomify_factor = 0.05 * 1000;
     if (!this->abs_width) {
-        dezoomify_factor /= SP_EVENT_CONTEXT(this)->desktop->current_zoom();
+        dezoomify_factor /= desktop->current_zoom();
     }
 
     Geom::Point del_left = dezoomify_factor * (width + tremble_left) * this->ang;
@@ -429,28 +418,31 @@ void CalligraphicTool::cancel() {
     this->dragging = false;
     this->is_drawing = false;
 
-    sp_canvas_item_ungrab(SP_CANVAS_ITEM(desktop->acetate));
+    ungrabCanvasEvents();
 
-	/* Remove all temporary line segments */
-    for (auto i:this->segments)
-        sp_canvas_item_destroy(SP_CANVAS_ITEM(i));
+    /* Remove all temporary line segments */
+    for (auto segment :this->segments) {
+        delete segment;
+    }
     this->segments.clear();
 
-	/* reset accumulated curve */
-	this->accumulated->reset();
-	this->clear_current();
+    /* reset accumulated curve */
+    this->accumulated->reset();
+    this->clear_current();
 
-	if (this->repr) {
-		this->repr = nullptr;
-	}
+    if (this->repr) {
+        this->repr = nullptr;
+    }
 }
 
 bool CalligraphicTool::root_handler(GdkEvent* event) {
     gint ret = FALSE;
+    Inkscape::Preferences *prefs = Inkscape::Preferences::get();
+    Unit const *unit = unit_table.getUnit(prefs->getString("/tools/calligraphic/unit"));
 
     switch (event->type) {
         case GDK_BUTTON_PRESS:
-            if (event->button.button == 1 && !this->space_panning) {
+            if (event->button.button == 1) {
                 if (Inkscape::have_viable_layer(desktop, defaultMessageContext()) == false) {
                     return TRUE;
                 }
@@ -464,17 +456,11 @@ bool CalligraphicTool::root_handler(GdkEvent* event) {
                 /* initialize first point */
                 this->npoints = 0;
 
-                sp_canvas_item_grab(SP_CANVAS_ITEM(desktop->acetate),
-                                    ( GDK_KEY_PRESS_MASK |
-                                      GDK_BUTTON_RELEASE_MASK |
-                                      GDK_POINTER_MOTION_MASK |
-                                      GDK_BUTTON_PRESS_MASK ),
-                                    nullptr,
-                                    event->button.time);
+                grabCanvasEvents();
 
                 ret = TRUE;
 
-                desktop->canvas->forceFullRedrawAfterInterruptions(3);
+                forced_redraws_start(3);
                 set_high_motion_precision();
                 this->is_drawing = true;
                 this->just_started_drawing = true;
@@ -516,7 +502,7 @@ bool CalligraphicTool::root_handler(GdkEvent* event) {
                     pointer = motion_dt * motion_to_curve;
 
                     // calculate the nearest point on the guide path
-                    boost::optional<Path::cut_position> position = get_nearest_position_on_Path(this->hatch_livarot_path, pointer);
+                    std::optional<Path::cut_position> position = get_nearest_position_on_Path(this->hatch_livarot_path, pointer);
                     nearest = get_point_on_Path(this->hatch_livarot_path, position->piece, position->t);
 
 
@@ -531,7 +517,7 @@ bool CalligraphicTool::root_handler(GdkEvent* event) {
                 }
             }
 
-            if ( this->is_drawing && (event->motion.state & GDK_BUTTON1_MASK) && !this->space_panning) {
+            if ( this->is_drawing && (event->motion.state & GDK_BUTTON1_MASK)) {
                 this->dragging = TRUE;
 
                 if (event->motion.state & GDK_CONTROL_MASK && this->hatch_item) { // hatching
@@ -686,42 +672,58 @@ bool CalligraphicTool::root_handler(GdkEvent* event) {
                 ret = TRUE;
             }
 
+            Geom::PathVector path = Geom::Path(Geom::Circle(0,0,1)); // Unit circle centered at origin.
+
             // Draw the hatching circle if necessary
             if (event->motion.state & GDK_CONTROL_MASK) {
                 if (this->hatch_spacing == 0 && hatch_dist != 0) {
                     // Haven't set spacing yet: gray, center free, update radius live
+
                     Geom::Point c = desktop->w2d(motion_w);
                     Geom::Affine const sm (Geom::Scale(hatch_dist, hatch_dist) * Geom::Translate(c));
-                    sp_canvas_item_affine_absolute(this->hatch_area, sm);
-                    sp_canvas_bpath_set_stroke(SP_CANVAS_BPATH(this->hatch_area), 0x7f7f7fff, 1.0, SP_STROKE_LINEJOIN_MITER, SP_STROKE_LINECAP_BUTT);
-                    sp_canvas_item_show(this->hatch_area);
-                } else if (this->dragging && !this->hatch_escaped) {
-                    // Tracking: green, center snapped, fixed radius
-                    Geom::Point c = motion_dt;
-                    Geom::Affine const sm (Geom::Scale(this->hatch_spacing, this->hatch_spacing) * Geom::Translate(c));
-                    sp_canvas_item_affine_absolute(this->hatch_area, sm);
-                    sp_canvas_bpath_set_stroke(SP_CANVAS_BPATH(this->hatch_area), 0x00FF00ff, 1.0, SP_STROKE_LINEJOIN_MITER, SP_STROKE_LINECAP_BUTT);
-                    sp_canvas_item_show(this->hatch_area);
-                } else if (this->dragging && this->hatch_escaped) {
-                    // Tracking escaped: red, center free, fixed radius
-                    Geom::Point c = motion_dt;
-                    Geom::Affine const sm (Geom::Scale(this->hatch_spacing, this->hatch_spacing) * Geom::Translate(c));
+                    path *= sm;
 
-                    sp_canvas_item_affine_absolute(this->hatch_area, sm);
-                    sp_canvas_bpath_set_stroke(SP_CANVAS_BPATH(this->hatch_area), 0xFF0000ff, 1.0, SP_STROKE_LINEJOIN_MITER, SP_STROKE_LINECAP_BUTT);
-                    sp_canvas_item_show(this->hatch_area);
+                    hatch_area->set_bpath(path, true);
+                    hatch_area->set_stroke(0x7f7f7fff);
+                    hatch_area->show();
+
+                } else if (this->dragging && !this->hatch_escaped && hatch_dist != 0) {
+                    // Tracking: green, center snapped, fixed radius
+
+                    Geom::Point c = motion_dt;
+                    Geom::Affine const sm (Geom::Scale(this->hatch_spacing, this->hatch_spacing) * Geom::Translate(c));
+                    path *= sm;
+
+                    hatch_area->set_bpath(path, true);
+                    hatch_area->set_stroke(0x00FF00ff);
+                    hatch_area->show();
+
+                } else if (this->dragging && this->hatch_escaped && hatch_dist != 0) {
+                    // Tracking escaped: red, center free, fixed radius
+
+                    Geom::Point c = motion_dt;
+                    Geom::Affine const sm (Geom::Scale(this->hatch_spacing, this->hatch_spacing) * Geom::Translate(c));
+                    path *= sm;
+
+                    hatch_area->set_bpath(path, true);
+                    hatch_area->set_stroke(0xff0000ff);
+                    hatch_area->show();
+
                 } else {
                     // Not drawing but spacing set: gray, center snapped, fixed radius
+
                     Geom::Point c = (nearest + this->hatch_spacing * hatch_unit_vector) * motion_to_curve.inverse();
-                    if (!std::isnan(c[Geom::X]) && !std::isnan(c[Geom::Y])) {
+                    if (!std::isnan(c[Geom::X]) && !std::isnan(c[Geom::Y]) && this->hatch_spacing!=0) {
                         Geom::Affine const sm (Geom::Scale(this->hatch_spacing, this->hatch_spacing) * Geom::Translate(c));
-                        sp_canvas_item_affine_absolute(this->hatch_area, sm);
-                        sp_canvas_bpath_set_stroke(SP_CANVAS_BPATH(this->hatch_area), 0x7f7f7fff, 1.0, SP_STROKE_LINEJOIN_MITER, SP_STROKE_LINECAP_BUTT);
-                        sp_canvas_item_show(this->hatch_area);
+                        path *= sm;
+
+                        hatch_area->set_bpath(path, true);
+                        hatch_area->set_stroke(0x7f7f7fff);
+                        hatch_area->show();
                     }
                 }
             } else {
-                sp_canvas_item_hide(this->hatch_area);
+                hatch_area->hide();
             }
         }
         break;
@@ -732,19 +734,21 @@ bool CalligraphicTool::root_handler(GdkEvent* event) {
         Geom::Point const motion_w(event->button.x, event->button.y);
         Geom::Point const motion_dt(desktop->w2d(motion_w));
 
-        sp_canvas_item_ungrab(SP_CANVAS_ITEM(desktop->acetate));
-        desktop->canvas->endForcedFullRedraws();
+        ungrabCanvasEvents();
+
+        forced_redraws_stop();
         set_high_motion_precision(false);
         this->is_drawing = false;
 
-        if (this->dragging && event->button.button == 1 && !this->space_panning) {
+        if (this->dragging && event->button.button == 1) {
             this->dragging = FALSE;
 
             this->apply(motion_dt);
 
             /* Remove all temporary line segments */
-            for (auto i:this->segments)
-                sp_canvas_item_destroy(SP_CANVAS_ITEM(i));
+            for (auto segment : this->segments) {
+                delete segment;
+            }
             this->segments.clear();
 
             /* Create object */
@@ -783,8 +787,8 @@ bool CalligraphicTool::root_handler(GdkEvent* event) {
 
             this->message_context->clear();
             ret = TRUE;
-        } else if (!this->dragging && event->button.button == 1 && !this->space_panning){
-            spdc_create_single_dot(this, this->desktop->w2d(motion_w), "/tools/calligraphic", event->button.state);
+        } else if (!this->dragging && event->button.button == 1){
+            spdc_create_single_dot(this, desktop->w2d(motion_w), "/tools/calligraphic", event->button.state);
         }
         break;
     }
@@ -814,7 +818,7 @@ bool CalligraphicTool::root_handler(GdkEvent* event) {
         case GDK_KEY_Right:
         case GDK_KEY_KP_Right:
             if (!MOD__CTRL_ONLY(event)) {
-                this->width += 0.01;
+                this->width = Quantity::convert(this->width, "px", unit) + 0.01;
                 if (this->width > 1.0)
                     this->width = 1.0;
                 sp_ddc_update_toolbox (desktop, "calligraphy-width", this->width * 100); // the same spinbutton is for alt+x
@@ -824,16 +828,16 @@ bool CalligraphicTool::root_handler(GdkEvent* event) {
         case GDK_KEY_Left:
         case GDK_KEY_KP_Left:
             if (!MOD__CTRL_ONLY(event)) {
-                this->width -= 0.01;
-                if (this->width < 0.01)
-                    this->width = 0.01;
+                this->width = Quantity::convert(this->width, "px", unit) - 0.01;
+                if (this->width < 0.00001)
+                    this->width = 0.00001;
                 sp_ddc_update_toolbox (desktop, "calligraphy-width", this->width * 100);
                 ret = TRUE;
             }
             break;
         case GDK_KEY_Home:
         case GDK_KEY_KP_Home:
-            this->width = 0.01;
+            this->width = 0.00001;
             sp_ddc_update_toolbox (desktop, "calligraphy-width", this->width * 100);
             ret = TRUE;
             break;
@@ -900,11 +904,13 @@ bool CalligraphicTool::root_handler(GdkEvent* event) {
 
 void CalligraphicTool::clear_current() {
     /* reset bpath */
-    sp_canvas_bpath_set_bpath(SP_CANVAS_BPATH(this->currentshape), nullptr);
+    this->currentshape->set_bpath(nullptr);
+
     /* reset curve */
     this->currentcurve->reset();
     this->cal1->reset();
     this->cal2->reset();
+
     /* reset points */
     this->npoints = 0;
 }
@@ -928,10 +934,7 @@ void CalligraphicTool::set_to_accumulated(bool unionize, bool subtract) {
         }
 
         Geom::PathVector pathv = this->accumulated->get_pathvector() * desktop->dt2doc();
-        gchar *str = sp_svg_write_path(pathv);
-        g_assert( str != nullptr );
-        this->repr->setAttribute("d", str);
-        g_free(str);
+        this->repr->setAttribute("d", sp_svg_write_path(pathv));
 
         if (unionize) {
             desktop->getSelection()->add(this->repr);
@@ -971,7 +974,7 @@ void CalligraphicTool::set_to_accumulated(bool unionize, bool subtract) {
 }
 
 static void
-add_cap(SPCurve *curve,
+add_cap(SPCurve &curve,
         Geom::Point const &from,
         Geom::Point const &to,
         double rounding)
@@ -981,7 +984,7 @@ add_cap(SPCurve *curve,
         double mag = Geom::L2(vel);
 
         Geom::Point v = mag * Geom::rot90( to - from ) / Geom::L2( to - from );
-        curve->curveto(from + v, to + v, to);
+        curve.curveto(from + v, to + v, to);
     }
 }
 
@@ -999,11 +1002,9 @@ bool CalligraphicTool::accumulate() {
 		return false; // failure
 	}
 
-	SPCurve *rev_cal2 = this->cal2->create_reverse();
+        auto rev_cal2 = this->cal2->create_reverse();
 
 	if ((rev_cal2->get_segment_count() <= 0) || rev_cal2->first_path()->closed()) {
-		rev_cal2->unref();
-
 		this->cal1->reset();
 		this->cal2->reset();
 
@@ -1017,17 +1018,15 @@ bool CalligraphicTool::accumulate() {
 
 	this->accumulated->reset(); /*  Is this required ?? */
 
-	this->accumulated->append(this->cal1, false);
+	this->accumulated->append(*cal1);
 
-	add_cap(this->accumulated, dc_cal1_lastseg->finalPoint(), rev_cal2_firstseg->initialPoint(), this->cap_rounding);
+	add_cap(*accumulated, dc_cal1_lastseg->finalPoint(), rev_cal2_firstseg->initialPoint(), cap_rounding);
 
-	this->accumulated->append(rev_cal2, true);
+	this->accumulated->append(*rev_cal2, true);
 
-	add_cap(this->accumulated, rev_cal2_lastseg->finalPoint(), dc_cal1_firstseg->initialPoint(), this->cap_rounding);
+	add_cap(*accumulated, rev_cal2_lastseg->finalPoint(), dc_cal1_firstseg->initialPoint(), cap_rounding);
 
 	this->accumulated->closepath();
-
-	rev_cal2->unref();
 
 	this->cal1->reset();
 	this->cal2->reset();
@@ -1100,10 +1099,10 @@ void CalligraphicTool::fit_and_split(bool release) {
                 }
                 // FIXME: dc->segments is always NULL at this point??
                 if (this->segments.empty()) { // first segment
-                    add_cap(this->currentcurve, b2[0], b1[0], this->cap_rounding);
+                    add_cap(*currentcurve, b2[0], b1[0], cap_rounding);
                 }
                 this->currentcurve->closepath();
-                sp_canvas_bpath_set_bpath(SP_CANVAS_BPATH(this->currentshape), this->currentcurve, true);
+                currentshape->set_bpath(currentcurve.get(), true);
             }
 
             /* Current calligraphic */
@@ -1135,25 +1134,18 @@ void CalligraphicTool::fit_and_split(bool release) {
         if (!release) {
             g_assert(!this->currentcurve->is_empty());
 
-            SPCanvasItem *cbp = sp_canvas_item_new(desktop->getSketch(),
-                                                   SP_TYPE_CANVAS_BPATH,
-                                                   nullptr);
-            SPCurve *curve = this->currentcurve->copy();
-            sp_canvas_bpath_set_bpath(SP_CANVAS_BPATH (cbp), curve, true);
-            curve->unref();
-
             guint32 fillColor = sp_desktop_get_color_tool (desktop, "/tools/calligraphic", true);
-            //guint32 strokeColor = sp_desktop_get_color_tool (desktop, "/tools/calligraphic", false);
             double opacity = sp_desktop_get_master_opacity_tool (desktop, "/tools/calligraphic");
             double fillOpacity = sp_desktop_get_opacity_tool (desktop, "/tools/calligraphic", true);
-            //double strokeOpacity = sp_desktop_get_opacity_tool (desktop, "/tools/calligraphic", false);
-            sp_canvas_bpath_set_fill(SP_CANVAS_BPATH(cbp), ((fillColor & 0xffffff00) | SP_COLOR_F_TO_U(opacity*fillOpacity)), SP_WIND_RULE_EVENODD);
-            //on second thougtht don't do stroke yet because we don't have stoke-width yet and because stoke appears between segments while drawing
-            //sp_canvas_bpath_set_stroke(SP_CANVAS_BPATH(cbp), ((strokeColor & 0xffffff00) | SP_COLOR_F_TO_U(opacity*strokeOpacity)), 1.0, SP_STROKE_LINEJOIN_MITER, SP_STROKE_LINECAP_BUTT);
-            sp_canvas_bpath_set_stroke(SP_CANVAS_BPATH(cbp), 0x00000000, 1.0, SP_STROKE_LINEJOIN_MITER, SP_STROKE_LINECAP_BUTT);
+            guint fill = (fillColor & 0xffffff00) | SP_COLOR_F_TO_U(opacity*fillOpacity);
+
+            auto cbp = new Inkscape::CanvasItemBpath(desktop->getCanvasSketch(), currentcurve.get(), true);
+            cbp->set_fill(fill, SP_WIND_RULE_EVENODD);
+            cbp->set_stroke(0x0);
+
             /* fixme: Cannot we cascade it to root more clearly? */
-            g_signal_connect(G_OBJECT(cbp), "event", G_CALLBACK(sp_desktop_root_handler), desktop);
-            
+            cbp->connect_event(sigc::bind(sigc::ptr_fun(sp_desktop_root_handler), desktop));
+
             this->segments.push_back(cbp);
         }
 
@@ -1179,11 +1171,11 @@ void CalligraphicTool::draw_temporary_box() {
     }
 
     if (this->npoints >= 2) {
-        add_cap(this->currentcurve, this->point1[this->npoints-1], this->point2[this->npoints-1], this->cap_rounding);
+        add_cap(*currentcurve, point1[npoints - 1], point2[npoints - 1], cap_rounding);
     }
 
     this->currentcurve->closepath();
-    sp_canvas_bpath_set_bpath(SP_CANVAS_BPATH(this->currentshape), this->currentcurve, true);
+    currentshape->set_bpath(currentcurve.get(), true);
 }
 
 }

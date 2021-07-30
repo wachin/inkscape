@@ -11,6 +11,7 @@
  */
 
 #include "inkscape.h"
+#include "snap-enums.h"
 
 Inkscape::SnapPreferences::SnapPreferences() :
     _snap_enabled_globally(true),
@@ -21,6 +22,8 @@ Inkscape::SnapPreferences::SnapPreferences() :
 {
     // Check for powers of two; see the comments in snap-enums.h
     g_assert((SNAPTARGET_BBOX_CATEGORY != 0) && !(SNAPTARGET_BBOX_CATEGORY & (SNAPTARGET_BBOX_CATEGORY - 1)));
+    g_assert((SNAPTARGET_DISTRIBUTION_CATEGORY != 0) && !(SNAPTARGET_DISTRIBUTION_CATEGORY & (SNAPTARGET_DISTRIBUTION_CATEGORY - 1)));
+    g_assert((SNAPTARGET_ALIGNMENT_CATEGORY != 0) && !(SNAPTARGET_ALIGNMENT_CATEGORY & (SNAPTARGET_ALIGNMENT_CATEGORY - 1)));
     g_assert((SNAPTARGET_NODE_CATEGORY != 0) && !(SNAPTARGET_NODE_CATEGORY & (SNAPTARGET_NODE_CATEGORY - 1)));
     g_assert((SNAPTARGET_DATUMS_CATEGORY != 0) && !(SNAPTARGET_DATUMS_CATEGORY & (SNAPTARGET_DATUMS_CATEGORY - 1)));
     g_assert((SNAPTARGET_OTHERS_CATEGORY != 0) && !(SNAPTARGET_OTHERS_CATEGORY & (SNAPTARGET_OTHERS_CATEGORY - 1)));
@@ -45,7 +48,9 @@ void Inkscape::SnapPreferences::_mapTargetToArrayIndex(Inkscape::SnapTargetType 
     if (target == SNAPTARGET_BBOX_CATEGORY ||
             target == SNAPTARGET_NODE_CATEGORY ||
             target == SNAPTARGET_OTHERS_CATEGORY ||
-            target == SNAPTARGET_DATUMS_CATEGORY) {
+            target == SNAPTARGET_DATUMS_CATEGORY ||
+            target == SNAPTARGET_ALIGNMENT_CATEGORY ||
+            target == SNAPTARGET_DISTRIBUTION_CATEGORY) {
         // These main targets should be handled separately, because otherwise we might call isTargetSnappable()
         // for them (to check whether the corresponding group is on) which would lead to an infinite recursive loop
         always_on = (target == SNAPTARGET_DATUMS_CATEGORY);
@@ -114,6 +119,16 @@ void Inkscape::SnapPreferences::_mapTargetToArrayIndex(Inkscape::SnapTargetType 
                 g_warning("Snap-preferences warning: Undefined snap target (#%i)", target);
                 break;
         }
+        return;
+    }
+
+    if (target & SNAPTARGET_ALIGNMENT_CATEGORY) {
+        group_on = isTargetSnappable(SNAPTARGET_ALIGNMENT_CATEGORY);
+        return;
+    }
+
+    if (target & SNAPTARGET_DISTRIBUTION_CATEGORY) {
+        group_on = isTargetSnappable(SNAPTARGET_DISTRIBUTION_CATEGORY);
         return;
     }
 
@@ -295,6 +310,23 @@ Inkscape::SnapTargetType Inkscape::SnapPreferences::source2target(Inkscape::Snap
             return SNAPTARGET_NODE_CATEGORY;
         case SNAPSOURCE_GRID_PITCH:
             return SNAPTARGET_GRID;
+
+
+        case SNAPSOURCE_ALIGNMENT_CATEGORY:
+            return SNAPTARGET_ALIGNMENT_CATEGORY;
+        case SNAPSOURCE_ALIGNMENT_BBOX_CORNER:
+            return SNAPTARGET_ALIGNMENT_BBOX_CORNER;
+        case SNAPSOURCE_ALIGNMENT_BBOX_MIDPOINT:
+            return SNAPTARGET_ALIGNMENT_BBOX_EDGE_MIDPOINT;
+        case SNAPSOURCE_ALIGNMENT_BBOX_EDGE_MIDPOINT:
+            return SNAPTARGET_ALIGNMENT_BBOX_EDGE_MIDPOINT;
+        case SNAPSOURCE_ALIGNMENT_PAGE_CENTER:
+            return SNAPTARGET_ALIGNMENT_PAGE_CENTER;
+        case SNAPSOURCE_ALIGNMENT_PAGE_CORNER:
+            return SNAPTARGET_ALIGNMENT_PAGE_CORNER;
+        case Inkscape::SNAPSOURCE_ALIGNMENT_HANDLE:
+            return SNAPTARGET_ALIGNMENT_HANDLE;
+
         default:
             g_warning("Mapping of snap source to snap target undefined");
             return SNAPTARGET_UNDEFINED;

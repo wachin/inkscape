@@ -20,7 +20,7 @@
 #include "event-log.h"
 #include <2geom/transforms.h>
 
-#include "display/canvas-grid.h"
+#include "display/control/canvas-grid.h"
 #include "util/units.h"
 #include "svg/svg-color.h"
 #include "xml/repr.h"
@@ -30,6 +30,7 @@
 #include "desktop-events.h"
 #include "enums.h"
 #include "ui/monitor.h"
+#include "ui/dialog/dialog-container.h"
 
 #include "sp-guide.h"
 #include "sp-item-group.h"
@@ -74,6 +75,7 @@ SPNamedView::SPNamedView() : SPObjectGroup(), snap_manager(this) {
     this->page_size_units = nullptr;
     this->pagecolor = 0;
     this->cx = 0;
+    this->rotation = 0;
     this->pageshadow = 0;
     this->window_width = 0;
     this->window_height = 0;
@@ -183,69 +185,75 @@ static void sp_namedview_generate_old_grid(SPNamedView * /*nv*/, SPDocument *doc
         repr->removeAttribute("gridempopacity");
         repr->removeAttribute("gridempspacing");
 
-//        SPDocumentUndo::done(doc, SP_VERB_DIALOG_NAMEDVIEW, _("Create new grid from pre0.46 grid settings"));
+//        SPDocumentUndo::done(doc, SP_VERB_DIALOG_DOCPROPERTIES, _("Create new grid from pre0.46 grid settings"));
     }
 }
 
 void SPNamedView::build(SPDocument *document, Inkscape::XML::Node *repr) {
     SPObjectGroup::build(document, repr);
 
-    this->readAttr( "inkscape:document-units" );
-    this->readAttr( "units" );
-    this->readAttr( "viewonly" );
-    this->readAttr( "showguides" );
-    this->readAttr( "showgrid" );
-    this->readAttr( "gridtolerance" );
-    this->readAttr( "guidetolerance" );
-    this->readAttr( "objecttolerance" );
-    this->readAttr( "guidecolor" );
-    this->readAttr( "guideopacity" );
-    this->readAttr( "guidehicolor" );
-    this->readAttr( "guidehiopacity" );
-    this->readAttr( "showborder" );
-    this->readAttr( "inkscape:showpageshadow" );
-    this->readAttr( "borderlayer" );
-    this->readAttr( "bordercolor" );
-    this->readAttr( "borderopacity" );
-    this->readAttr( "pagecolor" );
-    this->readAttr( "inkscape:pagecheckerboard" );
-    this->readAttr( "inkscape:pageopacity" );
-    this->readAttr( "inkscape:pageshadow" );
-    this->readAttr( "inkscape:zoom" );
-    this->readAttr( "inkscape:cx" );
-    this->readAttr( "inkscape:cy" );
-    this->readAttr( "inkscape:window-width" );
-    this->readAttr( "inkscape:window-height" );
-    this->readAttr( "inkscape:window-x" );
-    this->readAttr( "inkscape:window-y" );
-    this->readAttr( "inkscape:window-maximized" );
-    this->readAttr( "inkscape:snap-global" );
-    this->readAttr( "inkscape:snap-bbox" );
-    this->readAttr( "inkscape:snap-nodes" );
-    this->readAttr( "inkscape:snap-others" );
-    this->readAttr( "inkscape:snap-from-guide" );
-    this->readAttr( "inkscape:snap-center" );
-    this->readAttr( "inkscape:snap-smooth-nodes" );
-    this->readAttr( "inkscape:snap-midpoints" );
-    this->readAttr( "inkscape:snap-object-midpoints" );
-    this->readAttr( "inkscape:snap-text-baseline" );
-    this->readAttr( "inkscape:snap-bbox-edge-midpoints" );
-    this->readAttr( "inkscape:snap-bbox-midpoints" );
-    this->readAttr( "inkscape:snap-to-guides" );
-    this->readAttr( "inkscape:snap-grids" );
-    this->readAttr( "inkscape:snap-intersection-paths" );
-    this->readAttr( "inkscape:object-paths" );
-    this->readAttr( "inkscape:snap-perpendicular" );
-    this->readAttr( "inkscape:snap-tangential" );
-    this->readAttr( "inkscape:snap-path-clip" );
-    this->readAttr( "inkscape:snap-path-mask" );
-    this->readAttr( "inkscape:object-nodes" );
-    this->readAttr( "inkscape:bbox-paths" );
-    this->readAttr( "inkscape:bbox-nodes" );
-    this->readAttr( "inkscape:snap-page" );
-    this->readAttr( "inkscape:current-layer" );
-    this->readAttr( "inkscape:connector-spacing" );
-    this->readAttr( "inkscape:lockguides" );
+    this->readAttr(SPAttr::INKSCAPE_DOCUMENT_UNITS);
+    this->readAttr(SPAttr::UNITS);
+    this->readAttr(SPAttr::VIEWONLY);
+    this->readAttr(SPAttr::SHOWGUIDES);
+    this->readAttr(SPAttr::SHOWGRIDS);
+    this->readAttr(SPAttr::GRIDTOLERANCE);
+    this->readAttr(SPAttr::GUIDETOLERANCE);
+    this->readAttr(SPAttr::OBJECTTOLERANCE);
+    this->readAttr(SPAttr::ALIGNMENTTOLERANCE);
+    this->readAttr(SPAttr::DISTRIBUTIONTOLERANCE);
+    this->readAttr(SPAttr::GUIDECOLOR);
+    this->readAttr(SPAttr::GUIDEOPACITY);
+    this->readAttr(SPAttr::GUIDEHICOLOR);
+    this->readAttr(SPAttr::GUIDEHIOPACITY);
+    this->readAttr(SPAttr::SHOWBORDER);
+    this->readAttr(SPAttr::SHOWPAGESHADOW);
+    this->readAttr(SPAttr::BORDERLAYER);
+    this->readAttr(SPAttr::BORDERCOLOR);
+    this->readAttr(SPAttr::BORDEROPACITY);
+    this->readAttr(SPAttr::PAGECOLOR);
+    this->readAttr(SPAttr::INKSCAPE_PAGECHECKERBOARD);
+    this->readAttr(SPAttr::INKSCAPE_PAGEOPACITY);
+    this->readAttr(SPAttr::INKSCAPE_PAGESHADOW);
+    this->readAttr(SPAttr::INKSCAPE_ZOOM);
+    this->readAttr(SPAttr::INKSCAPE_ROTATION);
+    this->readAttr(SPAttr::INKSCAPE_CX);
+    this->readAttr(SPAttr::INKSCAPE_CY);
+    this->readAttr(SPAttr::INKSCAPE_WINDOW_WIDTH);
+    this->readAttr(SPAttr::INKSCAPE_WINDOW_HEIGHT);
+    this->readAttr(SPAttr::INKSCAPE_WINDOW_X);
+    this->readAttr(SPAttr::INKSCAPE_WINDOW_Y);
+    this->readAttr(SPAttr::INKSCAPE_WINDOW_MAXIMIZED);
+    this->readAttr(SPAttr::INKSCAPE_SNAP_GLOBAL);
+    this->readAttr(SPAttr::INKSCAPE_SNAP_BBOX);
+    this->readAttr(SPAttr::INKSCAPE_SNAP_NODE);
+    this->readAttr(SPAttr::INKSCAPE_SNAP_OTHERS);
+    this->readAttr(SPAttr::INKSCAPE_SNAP_FROM_GUIDE);
+    this->readAttr(SPAttr::INKSCAPE_SNAP_ROTATION_CENTER);
+    this->readAttr(SPAttr::INKSCAPE_SNAP_NODE_SMOOTH);
+    this->readAttr(SPAttr::INKSCAPE_SNAP_LINE_MIDPOINT);
+    this->readAttr(SPAttr::INKSCAPE_SNAP_OBJECT_MIDPOINT);
+    this->readAttr(SPAttr::INKSCAPE_SNAP_TEXT_BASELINE);
+    this->readAttr(SPAttr::INKSCAPE_SNAP_BBOX_EDGE_MIDPOINT);
+    this->readAttr(SPAttr::INKSCAPE_SNAP_BBOX_MIDPOINT);
+    this->readAttr(SPAttr::INKSCAPE_SNAP_GUIDE);
+    this->readAttr(SPAttr::INKSCAPE_SNAP_GRID);
+    this->readAttr(SPAttr::INKSCAPE_SNAP_PATH_INTERSECTION);
+    this->readAttr(SPAttr::INKSCAPE_SNAP_PATH);
+    this->readAttr(SPAttr::INKSCAPE_SNAP_PERP);
+    this->readAttr(SPAttr::INKSCAPE_SNAP_TANG);
+    this->readAttr(SPAttr::INKSCAPE_SNAP_PATH_CLIP);
+    this->readAttr(SPAttr::INKSCAPE_SNAP_PATH_MASK);
+    this->readAttr(SPAttr::INKSCAPE_SNAP_NODE_CUSP);
+    this->readAttr(SPAttr::INKSCAPE_SNAP_BBOX_EDGE);
+    this->readAttr(SPAttr::INKSCAPE_SNAP_BBOX_CORNER);
+    this->readAttr(SPAttr::INKSCAPE_SNAP_PAGE_BORDER);
+    this->readAttr(SPAttr::INKSCAPE_SNAP_ALIGNMENT);
+    this->readAttr(SPAttr::INKSCAPE_SNAP_ALIGNMENT_SELF);
+    this->readAttr(SPAttr::INKSCAPE_SNAP_DISTRIBUTION);
+    this->readAttr(SPAttr::INKSCAPE_CURRENT_LAYER);
+    this->readAttr(SPAttr::INKSCAPE_CONNECTOR_SPACING);
+    this->readAttr(SPAttr::INKSCAPE_LOCKGUIDES);
 
     /* Construct guideline list */
     for (auto& o: children) {
@@ -255,7 +263,7 @@ void SPNamedView::build(SPDocument *document, Inkscape::XML::Node *repr) {
             //g_object_set(G_OBJECT(g), "color", nv->guidecolor, "hicolor", nv->guidehicolor, NULL);
             g->setColor(this->guidecolor);
             g->setHiColor(this->guidehicolor);
-            g->readAttr( "inkscape:color" );
+            g->readAttr(SPAttr::INKSCAPE_COLOR);
         }
     }
 
@@ -273,15 +281,15 @@ void SPNamedView::release() {
     SPObjectGroup::release();
 }
 
-void SPNamedView::set(SPAttributeEnum key, const gchar* value) {
+void SPNamedView::set(SPAttr key, const gchar* value) {
     Inkscape::Preferences *prefs = Inkscape::Preferences::get();
     bool global_snapping = prefs->getBool("/options/snapdefault/value", true);
     switch (key) {
-    case SP_ATTR_VIEWONLY:
+    case SPAttr::VIEWONLY:
             this->editable = (!value);
             this->requestModified(SP_OBJECT_MODIFIED_FLAG);
             break;
-    case SP_ATTR_SHOWGUIDES:
+    case SPAttr::SHOWGUIDES:
             if (!value) { // show guides if not specified, for backwards compatibility
                 this->showguides = TRUE;
             } else {
@@ -290,7 +298,7 @@ void SPNamedView::set(SPAttributeEnum key, const gchar* value) {
             sp_namedview_setup_guides(this);
             this->requestModified(SP_OBJECT_MODIFIED_FLAG);
             break;
-    case SP_ATTR_SHOWGRIDS:
+    case SPAttr::SHOWGRIDS:
             if (!value) { // don't show grids if not specified, for backwards compatibility
                 this->grids_visible = false;
             } else {
@@ -298,19 +306,27 @@ void SPNamedView::set(SPAttributeEnum key, const gchar* value) {
             }
             this->requestModified(SP_OBJECT_MODIFIED_FLAG);
             break;
-    case SP_ATTR_GRIDTOLERANCE:
+    case SPAttr::GRIDTOLERANCE:
             this->snap_manager.snapprefs.setGridTolerance(value ? g_ascii_strtod(value, nullptr) : 10000);
             this->requestModified(SP_OBJECT_MODIFIED_FLAG);
             break;
-    case SP_ATTR_GUIDETOLERANCE:
+    case SPAttr::GUIDETOLERANCE:
             this->snap_manager.snapprefs.setGuideTolerance(value ? g_ascii_strtod(value, nullptr) : 20);
             this->requestModified(SP_OBJECT_MODIFIED_FLAG);
             break;
-    case SP_ATTR_OBJECTTOLERANCE:
+    case SPAttr::OBJECTTOLERANCE:
             this->snap_manager.snapprefs.setObjectTolerance(value ? g_ascii_strtod(value, nullptr) : 20);
             this->requestModified(SP_OBJECT_MODIFIED_FLAG);
             break;
-    case SP_ATTR_GUIDECOLOR:
+    case SPAttr::ALIGNMENTTOLERANCE:
+            this->snap_manager.snapprefs.setAlignementTolerance(value ? g_ascii_strtod(value, nullptr) : 5);
+            this->requestModified(SP_OBJECT_MODIFIED_FLAG);
+            break;
+    case SPAttr::DISTRIBUTIONTOLERANCE:
+            this->snap_manager.snapprefs.setDistributionTolerance(value ? g_ascii_strtod(value, nullptr) : 5);
+            this->requestModified(SP_OBJECT_MODIFIED_FLAG);
+            break;
+    case SPAttr::GUIDECOLOR:
             this->guidecolor = (this->guidecolor & 0xff) | (DEFAULTGUIDECOLOR & 0xffffff00);
 
             if (value) {
@@ -319,23 +335,23 @@ void SPNamedView::set(SPAttributeEnum key, const gchar* value) {
 
             for(auto guide : this->guides) {
                 guide->setColor(this->guidecolor);
-                guide->readAttr("inkscape:color");
+                guide->readAttr(SPAttr::INKSCAPE_COLOR);
             }
 
             this->requestModified(SP_OBJECT_MODIFIED_FLAG);
             break;
-    case SP_ATTR_GUIDEOPACITY:
+    case SPAttr::GUIDEOPACITY:
             this->guidecolor = (this->guidecolor & 0xffffff00) | (DEFAULTGUIDECOLOR & 0xff);
             sp_nv_read_opacity(value, &this->guidecolor);
 
             for(auto guide : this->guides) {
                 guide->setColor(this->guidecolor);
-                guide->readAttr("inkscape:color");
+                guide->readAttr(SPAttr::INKSCAPE_COLOR);
             }
 
             this->requestModified(SP_OBJECT_MODIFIED_FLAG);
             break;
-    case SP_ATTR_GUIDEHICOLOR:
+    case SPAttr::GUIDEHICOLOR:
             this->guidehicolor = (this->guidehicolor & 0xff) | (DEFAULTGUIDEHICOLOR & 0xffffff00);
 
             if (value) {
@@ -347,7 +363,7 @@ void SPNamedView::set(SPAttributeEnum key, const gchar* value) {
 
             this->requestModified(SP_OBJECT_MODIFIED_FLAG);
             break;
-    case SP_ATTR_GUIDEHIOPACITY:
+    case SPAttr::GUIDEHIOPACITY:
             this->guidehicolor = (this->guidehicolor & 0xffffff00) | (DEFAULTGUIDEHICOLOR & 0xff);
             sp_nv_read_opacity(value, &this->guidehicolor);
             for(auto guide : this->guides) {
@@ -356,185 +372,201 @@ void SPNamedView::set(SPAttributeEnum key, const gchar* value) {
 
             this->requestModified(SP_OBJECT_MODIFIED_FLAG);
             break;
-    case SP_ATTR_SHOWBORDER:
+    case SPAttr::SHOWBORDER:
             this->showborder = (value) ? sp_str_to_bool (value) : TRUE;
             this->requestModified(SP_OBJECT_MODIFIED_FLAG);
             break;
-    case SP_ATTR_BORDERLAYER:
+    case SPAttr::BORDERLAYER:
             this->borderlayer = SP_BORDER_LAYER_BOTTOM;
             if (value && !strcasecmp(value, "true")) this->borderlayer = SP_BORDER_LAYER_TOP;
             this->requestModified(SP_OBJECT_MODIFIED_FLAG);
             break;
-    case SP_ATTR_BORDERCOLOR:
+    case SPAttr::BORDERCOLOR:
             this->bordercolor = (this->bordercolor & 0xff) | (DEFAULTBORDERCOLOR & 0xffffff00);
             if (value) {
                 this->bordercolor = (this->bordercolor & 0xff) | sp_svg_read_color (value, this->bordercolor);
             }
             this->requestModified(SP_OBJECT_MODIFIED_FLAG);
             break;
-    case SP_ATTR_BORDEROPACITY:
+    case SPAttr::BORDEROPACITY:
             this->bordercolor = (this->bordercolor & 0xffffff00) | (DEFAULTBORDERCOLOR & 0xff);
             sp_nv_read_opacity(value, &this->bordercolor);
             this->requestModified(SP_OBJECT_MODIFIED_FLAG);
             break;
-    case SP_ATTR_PAGECOLOR:
+    case SPAttr::PAGECOLOR:
             this->pagecolor = (this->pagecolor & 0xff) | (DEFAULTPAGECOLOR & 0xffffff00);
             if (value) {
                 this->pagecolor = (this->pagecolor & 0xff) | sp_svg_read_color(value, this->pagecolor);
             }
             this->requestModified(SP_OBJECT_MODIFIED_FLAG);
             break;
-    case SP_ATTR_INKSCAPE_PAGECHECKERBOARD:
+    case SPAttr::INKSCAPE_PAGECHECKERBOARD:
             this->pagecheckerboard = (value) ? sp_str_to_bool (value) : false;
             this->requestModified(SP_OBJECT_MODIFIED_FLAG);
             break;
-    case SP_ATTR_INKSCAPE_PAGEOPACITY:
+    case SPAttr::INKSCAPE_PAGEOPACITY:
             this->pagecolor = (this->pagecolor & 0xffffff00) | (DEFAULTPAGECOLOR & 0xff);
             sp_nv_read_opacity(value, &this->pagecolor);
             this->requestModified(SP_OBJECT_MODIFIED_FLAG);
             break;
-    case SP_ATTR_INKSCAPE_PAGESHADOW:
+    case SPAttr::INKSCAPE_PAGESHADOW:
             this->pageshadow = value? atoi(value) : 2; // 2 is the default
             this->requestModified(SP_OBJECT_MODIFIED_FLAG);
             break;
-    case SP_ATTR_SHOWPAGESHADOW:
+    case SPAttr::SHOWPAGESHADOW:
             this->showpageshadow = (value) ? sp_str_to_bool(value) : TRUE;
             this->requestModified(SP_OBJECT_MODIFIED_FLAG);
             break;
-    case SP_ATTR_INKSCAPE_ZOOM:
+    case SPAttr::INKSCAPE_ZOOM:
             this->zoom = value ? g_ascii_strtod(value, nullptr) : 0; // zero means not set
             this->requestModified(SP_OBJECT_MODIFIED_FLAG);
             break;
-    case SP_ATTR_INKSCAPE_CX:
+    case SPAttr::INKSCAPE_ROTATION:
+            this->rotation = value ? g_ascii_strtod(value, nullptr) : 0; // zero means not set
+            this->requestModified(SP_OBJECT_MODIFIED_FLAG);
+            break;
+    case SPAttr::INKSCAPE_CX:
             this->cx = value ? g_ascii_strtod(value, nullptr) : HUGE_VAL; // HUGE_VAL means not set
             this->requestModified(SP_OBJECT_MODIFIED_FLAG);
             break;
-    case SP_ATTR_INKSCAPE_CY:
+    case SPAttr::INKSCAPE_CY:
             this->cy = value ? g_ascii_strtod(value, nullptr) : HUGE_VAL; // HUGE_VAL means not set
             this->requestModified(SP_OBJECT_MODIFIED_FLAG);
             break;
-    case SP_ATTR_INKSCAPE_WINDOW_WIDTH:
+    case SPAttr::INKSCAPE_WINDOW_WIDTH:
             this->window_width = value? atoi(value) : -1; // -1 means not set
             this->requestModified(SP_OBJECT_MODIFIED_FLAG);
             break;
-    case SP_ATTR_INKSCAPE_WINDOW_HEIGHT:
+    case SPAttr::INKSCAPE_WINDOW_HEIGHT:
             this->window_height = value ? atoi(value) : -1; // -1 means not set
             this->requestModified(SP_OBJECT_MODIFIED_FLAG);
             break;
-    case SP_ATTR_INKSCAPE_WINDOW_X:
+    case SPAttr::INKSCAPE_WINDOW_X:
             this->window_x = value ? atoi(value) : 0;
             this->requestModified(SP_OBJECT_MODIFIED_FLAG);
             break;
-    case SP_ATTR_INKSCAPE_WINDOW_Y:
+    case SPAttr::INKSCAPE_WINDOW_Y:
             this->window_y = value ? atoi(value) : 0;
             this->requestModified(SP_OBJECT_MODIFIED_FLAG);
             break;
-    case SP_ATTR_INKSCAPE_WINDOW_MAXIMIZED:
+    case SPAttr::INKSCAPE_WINDOW_MAXIMIZED:
             this->window_maximized = value ? atoi(value) : 0;
             this->requestModified(SP_OBJECT_MODIFIED_FLAG);
             break;
-    case SP_ATTR_INKSCAPE_SNAP_GLOBAL:
+    case SPAttr::INKSCAPE_SNAP_GLOBAL:
             this->snap_manager.snapprefs.setSnapEnabledGlobally(value ? sp_str_to_bool(value) : global_snapping);
             this->requestModified(SP_OBJECT_MODIFIED_FLAG);
             break;
-    case SP_ATTR_INKSCAPE_SNAP_BBOX:
+    case SPAttr::INKSCAPE_SNAP_BBOX:
             this->snap_manager.snapprefs.setTargetSnappable(Inkscape::SNAPTARGET_BBOX_CATEGORY, value ? sp_str_to_bool(value) : FALSE);
             this->requestModified(SP_OBJECT_MODIFIED_FLAG);
             break;
-    case SP_ATTR_INKSCAPE_SNAP_NODE:
+    case SPAttr::INKSCAPE_SNAP_NODE:
             this->snap_manager.snapprefs.setTargetSnappable(Inkscape::SNAPTARGET_NODE_CATEGORY, value ? sp_str_to_bool(value) : TRUE);
             this->requestModified(SP_OBJECT_MODIFIED_FLAG);
             break;
-    case SP_ATTR_INKSCAPE_SNAP_OTHERS:
+    case SPAttr::INKSCAPE_SNAP_OTHERS:
             this->snap_manager.snapprefs.setTargetSnappable(Inkscape::SNAPTARGET_OTHERS_CATEGORY, value ? sp_str_to_bool(value) : TRUE);
             this->requestModified(SP_OBJECT_MODIFIED_FLAG);
             break;
-    case SP_ATTR_INKSCAPE_SNAP_ROTATION_CENTER:
+    case SPAttr::INKSCAPE_SNAP_ROTATION_CENTER:
             this->snap_manager.snapprefs.setTargetSnappable(Inkscape::SNAPTARGET_ROTATION_CENTER, value ? sp_str_to_bool(value) : FALSE);
             this->requestModified(SP_OBJECT_MODIFIED_FLAG);
             break;
-    case SP_ATTR_INKSCAPE_SNAP_GRID:
+    case SPAttr::INKSCAPE_SNAP_GRID:
             this->snap_manager.snapprefs.setTargetSnappable(Inkscape::SNAPTARGET_GRID, value ? sp_str_to_bool(value) : TRUE);
             this->requestModified(SP_OBJECT_MODIFIED_FLAG);
             break;
-    case SP_ATTR_INKSCAPE_SNAP_GUIDE:
+    case SPAttr::INKSCAPE_SNAP_GUIDE:
             this->snap_manager.snapprefs.setTargetSnappable(Inkscape::SNAPTARGET_GUIDE, value ? sp_str_to_bool(value) : TRUE);
             this->requestModified(SP_OBJECT_MODIFIED_FLAG);
             break;
-    case SP_ATTR_INKSCAPE_SNAP_NODE_SMOOTH:
+    case SPAttr::INKSCAPE_SNAP_NODE_SMOOTH:
             this->snap_manager.snapprefs.setTargetSnappable(Inkscape::SNAPTARGET_NODE_SMOOTH, value ? sp_str_to_bool(value) : FALSE);
             this->requestModified(SP_OBJECT_MODIFIED_FLAG);
             break;
-    case SP_ATTR_INKSCAPE_SNAP_LINE_MIDPOINT:
+    case SPAttr::INKSCAPE_SNAP_LINE_MIDPOINT:
             this->snap_manager.snapprefs.setTargetSnappable(Inkscape::SNAPTARGET_LINE_MIDPOINT, value ? sp_str_to_bool(value) : FALSE);
             this->requestModified(SP_OBJECT_MODIFIED_FLAG);
             break;
-    case SP_ATTR_INKSCAPE_SNAP_OBJECT_MIDPOINT:
+    case SPAttr::INKSCAPE_SNAP_OBJECT_MIDPOINT:
             this->snap_manager.snapprefs.setTargetSnappable(Inkscape::SNAPTARGET_OBJECT_MIDPOINT, value ? sp_str_to_bool(value) : FALSE);
             this->requestModified(SP_OBJECT_MODIFIED_FLAG);
             break;
-    case SP_ATTR_INKSCAPE_SNAP_TEXT_BASELINE:
+    case SPAttr::INKSCAPE_SNAP_TEXT_BASELINE:
             this->snap_manager.snapprefs.setTargetSnappable(Inkscape::SNAPTARGET_TEXT_BASELINE, value ? sp_str_to_bool(value) : FALSE);
             this->requestModified(SP_OBJECT_MODIFIED_FLAG);
             break;
-    case SP_ATTR_INKSCAPE_SNAP_BBOX_EDGE_MIDPOINT:
+    case SPAttr::INKSCAPE_SNAP_BBOX_EDGE_MIDPOINT:
             this->snap_manager.snapprefs.setTargetSnappable(Inkscape::SNAPTARGET_BBOX_EDGE_MIDPOINT, value ? sp_str_to_bool(value) : FALSE);
             this->requestModified(SP_OBJECT_MODIFIED_FLAG);
             break;
-    case SP_ATTR_INKSCAPE_SNAP_BBOX_MIDPOINT:
+    case SPAttr::INKSCAPE_SNAP_BBOX_MIDPOINT:
             this->snap_manager.snapprefs.setTargetSnappable(Inkscape::SNAPTARGET_BBOX_MIDPOINT, value ? sp_str_to_bool(value) : FALSE);
             this->requestModified(SP_OBJECT_MODIFIED_FLAG);
             break;
-    case SP_ATTR_INKSCAPE_SNAP_PATH_INTERSECTION:
+    case SPAttr::INKSCAPE_SNAP_PATH_INTERSECTION:
             this->snap_manager.snapprefs.setTargetSnappable(Inkscape::SNAPTARGET_PATH_INTERSECTION, value ? sp_str_to_bool(value) : FALSE);
             this->requestModified(SP_OBJECT_MODIFIED_FLAG);
             break;
-    case SP_ATTR_INKSCAPE_SNAP_PATH:
+    case SPAttr::INKSCAPE_SNAP_PATH:
             this->snap_manager.snapprefs.setTargetSnappable(Inkscape::SNAPTARGET_PATH, value ? sp_str_to_bool(value) : FALSE);
             this->requestModified(SP_OBJECT_MODIFIED_FLAG);
             break;
-    case SP_ATTR_INKSCAPE_SNAP_PERP:
+    case SPAttr::INKSCAPE_SNAP_PERP:
             this->snap_manager.snapprefs.setSnapPerp(value ? sp_str_to_bool(value) : FALSE);
             this->requestModified(SP_OBJECT_MODIFIED_FLAG);
             break;
-    case SP_ATTR_INKSCAPE_SNAP_TANG:
+    case SPAttr::INKSCAPE_SNAP_TANG:
             this->snap_manager.snapprefs.setSnapTang(value ? sp_str_to_bool(value) : FALSE);
             this->requestModified(SP_OBJECT_MODIFIED_FLAG);
             break;
-    case SP_ATTR_INKSCAPE_SNAP_PATH_CLIP:
+    case SPAttr::INKSCAPE_SNAP_PATH_CLIP:
             this->snap_manager.snapprefs.setTargetSnappable(Inkscape::SNAPTARGET_PATH_CLIP, value ? sp_str_to_bool(value) : FALSE);
             this->requestModified(SP_OBJECT_MODIFIED_FLAG);
             break;
-    case SP_ATTR_INKSCAPE_SNAP_PATH_MASK:
+    case SPAttr::INKSCAPE_SNAP_PATH_MASK:
             this->snap_manager.snapprefs.setTargetSnappable(Inkscape::SNAPTARGET_PATH_MASK, value ? sp_str_to_bool(value) : FALSE);
             this->requestModified(SP_OBJECT_MODIFIED_FLAG);
             break;
-    case SP_ATTR_INKSCAPE_SNAP_NODE_CUSP:
+    case SPAttr::INKSCAPE_SNAP_NODE_CUSP:
             this->snap_manager.snapprefs.setTargetSnappable(Inkscape::SNAPTARGET_NODE_CUSP, value ? sp_str_to_bool(value) : TRUE);
             this->requestModified(SP_OBJECT_MODIFIED_FLAG);
             break;
-    case SP_ATTR_INKSCAPE_SNAP_BBOX_EDGE:
+    case SPAttr::INKSCAPE_SNAP_BBOX_EDGE:
             this->snap_manager.snapprefs.setTargetSnappable(Inkscape::SNAPTARGET_BBOX_EDGE, value ? sp_str_to_bool(value) : FALSE);
             this->requestModified(SP_OBJECT_MODIFIED_FLAG);
             break;
-    case SP_ATTR_INKSCAPE_SNAP_BBOX_CORNER:
+    case SPAttr::INKSCAPE_SNAP_BBOX_CORNER:
             this->snap_manager.snapprefs.setTargetSnappable(Inkscape::SNAPTARGET_BBOX_CORNER, value ? sp_str_to_bool(value) : FALSE);
             this->requestModified(SP_OBJECT_MODIFIED_FLAG);
             break;
-    case SP_ATTR_INKSCAPE_SNAP_PAGE_BORDER:
+    case SPAttr::INKSCAPE_SNAP_PAGE_BORDER:
             this->snap_manager.snapprefs.setTargetSnappable(Inkscape::SNAPTARGET_PAGE_BORDER, value ? sp_str_to_bool(value) : FALSE);
             this->requestModified(SP_OBJECT_MODIFIED_FLAG);
             break;
-    case SP_ATTR_INKSCAPE_CURRENT_LAYER:
+    case SPAttr::INKSCAPE_SNAP_ALIGNMENT:
+            this->snap_manager.snapprefs.setTargetSnappable(Inkscape::SNAPTARGET_ALIGNMENT_CATEGORY, value ? sp_str_to_bool(value) : TRUE);
+            this->requestModified(SP_OBJECT_MODIFIED_FLAG);
+            break;
+    case SPAttr::INKSCAPE_SNAP_ALIGNMENT_SELF:
+            this->snap_manager.snapprefs.setTargetSnappable(Inkscape::SNAPTARGET_ALIGNMENT_HANDLE, value ? sp_str_to_bool(value) : FALSE);
+            this->requestModified(SP_OBJECT_MODIFIED_FLAG);
+            break;
+    case SPAttr::INKSCAPE_SNAP_DISTRIBUTION:
+            this->snap_manager.snapprefs.setTargetSnappable(Inkscape::SNAPTARGET_DISTRIBUTION_CATEGORY, value ? sp_str_to_bool(value) : FALSE);
+            this->requestModified(SP_OBJECT_MODIFIED_FLAG);
+            break;
+    case SPAttr::INKSCAPE_CURRENT_LAYER:
             this->default_layer_id = value ? g_quark_from_string(value) : 0;
             this->requestModified(SP_OBJECT_MODIFIED_FLAG);
             break;
-    case SP_ATTR_INKSCAPE_CONNECTOR_SPACING:
+    case SPAttr::INKSCAPE_CONNECTOR_SPACING:
             this->connector_spacing = value ? g_ascii_strtod(value, nullptr) :
                     defaultConnSpacing;
             this->requestModified(SP_OBJECT_MODIFIED_FLAG);
             break;
-    case SP_ATTR_INKSCAPE_DOCUMENT_UNITS: {
+    case SPAttr::INKSCAPE_DOCUMENT_UNITS: {
             /* The default display unit if the document doesn't override this: e.g. for files saved as
              * `plain SVG', or non-inkscape files, or files created by an inkscape 0.40 &
              * earlier.
@@ -566,7 +598,7 @@ void SPNamedView::set(SPAttributeEnum key, const gchar* value) {
             this->requestModified(SP_OBJECT_MODIFIED_FLAG);
             break;
     }
-    case SP_ATTR_UNITS: {
+    case SPAttr::UNITS: {
         // Only used in "Custom size" section of Document Properties dialog
             Inkscape::Util::Unit const *new_unit = nullptr;
 
@@ -590,7 +622,7 @@ void SPNamedView::set(SPAttributeEnum key, const gchar* value) {
             this->requestModified(SP_OBJECT_MODIFIED_FLAG);
             break;
     }
-    case SP_ATTR_INKSCAPE_LOCKGUIDES:
+    case SPAttr::INKSCAPE_LOCKGUIDES:
             this->lockguides = value ? sp_str_to_bool(value) : FALSE;
             this->lockGuides();
             this->requestModified(SP_OBJECT_MODIFIED_FLAG);
@@ -647,28 +679,27 @@ void SPNamedView::child_added(Inkscape::XML::Node *child, Inkscape::XML::Node *r
         sp_namedview_add_grid(this, child, nullptr);
     } else {
         SPObject *no = this->document->getObjectByRepr(child);
-        if ( !SP_IS_OBJECT(no) ) {
+        if (!no) {
             return;
         }
 
-        if (SP_IS_GUIDE(no)) {
-            SPGuide *g = (SPGuide *) no;
+        if (auto g = dynamic_cast<SPGuide *>(no)) {
             this->guides.push_back(g);
 
             //g_object_set(G_OBJECT(g), "color", this->guidecolor, "hicolor", this->guidehicolor, NULL);
             g->setColor(this->guidecolor);
             g->setHiColor(this->guidehicolor);
-            g->readAttr("inkscape:color");
+            g->readAttr(SPAttr::INKSCAPE_COLOR);
 
             if (this->editable) {
                 for(auto view : this->views) {
-                    g->SPGuide::showSPGuide(view->guides, (GCallback) sp_dt_guide_event);
+                    g->SPGuide::showSPGuide(view->getCanvasGuides());
 
                     if (view->guides_active) {
                         g->sensitize(view->getCanvas(), TRUE);
                     }
 
-                    sp_namedview_show_single_guide(SP_GUIDE(g), this->showguides);
+                    sp_namedview_show_single_guide(g, this->showguides);
                 }
             }
         }
@@ -687,9 +718,9 @@ void SPNamedView::remove_child(Inkscape::XML::Node *child) {
     } else {
         for(std::vector<SPGuide *>::iterator it=this->guides.begin();it!=this->guides.end();++it ) {
             if ( (*it)->getRepr() == child ) {
-                this->guides.erase(it); 
+                this->guides.erase(it);
                 break;
-            }   
+            }
         }
     }
 
@@ -713,7 +744,9 @@ Inkscape::XML::Node* SPNamedView::write(Inkscape::XML::Document *xml_doc, Inksca
 void SPNamedView::show(SPDesktop *desktop)
 {
     for(auto guide : this->guides) {
-        guide->showSPGuide( desktop->guides, (GCallback) sp_dt_guide_event);
+
+        guide->showSPGuide( desktop->getCanvasGuides() );
+
         if (desktop->guides_active) {
             guide->sensitize(desktop->getCanvas(), TRUE);
         }
@@ -745,7 +778,6 @@ void sp_namedview_window_from_document(SPDesktop *desktop)
     int window_geometry = prefs->getInt("/options/savewindowgeometry/value", PREFS_WINDOW_GEOMETRY_NONE);
     int default_size = prefs->getInt("/options/defaultwindowsize/value", PREFS_WINDOW_SIZE_NATURAL);
     bool new_document = (nv->window_width <= 0) || (nv->window_height <= 0);
-    bool show_dialogs = true;
 
     // restore window size and position stored with the document
     Gtk::Window *win = desktop->getToplevel();
@@ -759,7 +791,7 @@ void sp_namedview_window_from_document(SPDesktop *desktop)
         gint full = prefs->getBool("/desktop/geometry/fullscreen");
         gint maxed = prefs->getBool("/desktop/geometry/maximized");
         if (pw>0 && ph>0) {
-            
+
             Gdk::Rectangle monitor_geometry = Inkscape::UI::get_monitor_geometry_at_point(px, py);
             pw = std::min(pw, monitor_geometry.get_width());
             ph = std::min(ph, monitor_geometry.get_height());
@@ -777,13 +809,14 @@ void sp_namedview_window_from_document(SPDesktop *desktop)
         win->maximize();
     } else {
         const int MIN_WINDOW_SIZE = 600;
-        int w = 0;
-        int h = 0;
+
+        int w = prefs->getInt("/template/base/inkscape:window-width", 0);
+        int h = prefs->getInt("/template/base/inkscape:window-height", 0);
         bool move_to_screen = false;
         if (window_geometry == PREFS_WINDOW_GEOMETRY_FILE && !new_document) {
             Gdk::Rectangle monitor_geometry = Inkscape::UI::get_monitor_geometry_at_point(nv->window_x, nv->window_y);
             w = MIN(monitor_geometry.get_width(), nv->window_width);
-            h = MIN(monitor_geometry.get_height(), nv->window_height);      
+            h = MIN(monitor_geometry.get_height(), nv->window_height);
             move_to_screen = true;
         } else if (default_size == PREFS_WINDOW_SIZE_LARGE) {
             Gdk::Rectangle monitor_geometry = Inkscape::UI::get_monitor_geometry_at_window(win->get_window());
@@ -805,18 +838,6 @@ void sp_namedview_window_from_document(SPDesktop *desktop)
             }
         }
         if ((w > 0) && (h > 0)) {
-#ifndef _WIN32
-            gint dx= 0;
-            gint dy = 0;
-            gint dw = 0;
-            gint dh = 0;
-            desktop->getWindowGeometry(dx, dy, dw, dh);
-            if ((w != dw) || (h != dh)) {
-                // Don't show dialogs when window is initially resized on OSX/Linux due to gdl dock bug
-                // This will happen on sp_desktop_widget_size_allocate
-                show_dialogs = FALSE;
-            }
-#endif
             desktop->setWindowSize(w, h);
             if (move_to_screen) {
                 desktop->setWindowPosition(Geom::Point(nv->window_x, nv->window_y));
@@ -826,10 +847,6 @@ void sp_namedview_window_from_document(SPDesktop *desktop)
 
     // Cancel any history of transforms up to this point (must be before call to zoom).
     desktop->clear_transform_history();
-
-    if (show_dialogs) {
-        desktop->show_dialogs();
-    }
 }
 
 /*
@@ -841,9 +858,18 @@ void sp_namedview_zoom_and_view_from_document(SPDesktop *desktop)
     if (nv->zoom != 0 && nv->zoom != HUGE_VAL && !std::isnan(nv->zoom)
         && nv->cx != HUGE_VAL && !std::isnan(nv->cx)
         && nv->cy != HUGE_VAL && !std::isnan(nv->cy)) {
-        desktop->zoom_absolute_center_point( Geom::Point(nv->cx, nv->cy), nv->zoom );
+        desktop->zoom_absolute( Geom::Point(nv->cx, nv->cy), nv->zoom, false );
     } else if (desktop->getDocument()) { // document without saved zoom, zoom to its page
         desktop->zoom_page();
+    }
+    if (nv->rotation != 0 && nv->rotation != HUGE_VAL && !std::isnan(nv->rotation)) {
+        Geom::Point p;
+        if (nv->cx != HUGE_VAL && !std::isnan(nv->cx) && nv->cy != HUGE_VAL && !std::isnan(nv->cy)) {
+            p = Geom::Point(nv->cx, nv->cy);
+        }else{
+            p = desktop->current_center();
+        }
+        desktop->rotate_absolute_keep_point(p, nv->rotation * M_PI / 180.0);
     }
 }
 
@@ -851,17 +877,6 @@ void SPNamedView::writeNewGrid(SPDocument *document,int gridtype)
 {
     g_assert(this->getRepr() != nullptr);
     Inkscape::CanvasGrid::writeNewGridToRepr(this->getRepr(),document,static_cast<Inkscape::GridType>(gridtype));
-}
-
-bool SPNamedView::getSnapGlobal() const
-{
-    return this->snap_manager.snapprefs.getSnapEnabledGlobally();
-}
-
-void SPNamedView::setSnapGlobal(bool v)
-{
-    g_assert(this->getRepr() != nullptr);
-    sp_repr_set_boolean(this->getRepr(), "inkscape:snap-global", v);
 }
 
 void sp_namedview_update_layers_from_document (SPDesktop *desktop)
@@ -889,7 +904,7 @@ void sp_namedview_update_layers_from_document (SPDesktop *desktop)
     }
 
     // FIXME: find a better place to do this
-    desktop->event_log->updateUndoVerbs();
+    document->get_event_log()->updateUndoVerbs();
 }
 
 void sp_namedview_document_from_window(SPDesktop *desktop)
@@ -899,26 +914,28 @@ void sp_namedview_document_from_window(SPDesktop *desktop)
     bool save_geometry_in_file = window_geometry == PREFS_WINDOW_GEOMETRY_FILE;
     bool save_viewport_in_file = prefs->getBool("/options/savedocviewport/value", true);
     Inkscape::XML::Node *view = desktop->namedview->getRepr();
-    Geom::Rect const r = desktop->get_display_area();
 
     // saving window geometry is not undoable
     bool saved = DocumentUndo::getUndoSensitive(desktop->getDocument());
     DocumentUndo::setUndoSensitive(desktop->getDocument(), false);
 
     if (save_viewport_in_file) {
-        sp_repr_set_svg_double(view, "inkscape:zoom", desktop->current_zoom());
-        sp_repr_set_svg_double(view, "inkscape:cx", r.midpoint()[Geom::X]);
-        sp_repr_set_svg_double(view, "inkscape:cy", r.midpoint()[Geom::Y]);
+        view->setAttributeSvgDouble("inkscape:zoom", desktop->current_zoom());
+        double rotation = ::round(desktop->current_rotation() * 180.0 / M_PI);
+        view->setAttributeSvgNonDefaultDouble("inkscape:rotation", rotation, 0.0);
+        Geom::Point center = desktop->current_center();
+        view->setAttributeSvgDouble("inkscape:cx", center.x());
+        view->setAttributeSvgDouble("inkscape:cy", center.y());
     }
 
     if (save_geometry_in_file) {
         gint w, h, x, y;
         desktop->getWindowGeometry(x, y, w, h);
-        sp_repr_set_int(view, "inkscape:window-width", w);
-        sp_repr_set_int(view, "inkscape:window-height", h);
-        sp_repr_set_int(view, "inkscape:window-x", x);
-        sp_repr_set_int(view, "inkscape:window-y", y);
-        sp_repr_set_int(view, "inkscape:window-maximized", desktop->is_maximized());
+        view->setAttributeInt("inkscape:window-width", w);
+        view->setAttributeInt("inkscape:window-height", h);
+        view->setAttributeInt("inkscape:window-x", x);
+        view->setAttributeInt("inkscape:window-y", y);
+        view->setAttributeInt("inkscape:window-maximized", desktop->is_maximized());
     }
 
     view->setAttribute("inkscape:current-layer", desktop->currentLayer()->getId());
@@ -935,6 +952,30 @@ void SPNamedView::hide(SPDesktop const *desktop)
         guide->hideSPGuide(desktop->getCanvas());
     }
     views.erase(std::remove(views.begin(),views.end(),desktop),views.end());
+}
+
+/**
+ * Set an attribute in the named view to the value in this preference, or use the fallback.
+ *
+ * @param attribute - The svg namedview attribute to set.
+ * @param preference - The preference to find the value from (optional)
+ * @param fallback - The fallback to use if preference not set or not found. (optional)
+ */
+void SPNamedView::setDefaultAttribute(std::string attribute, std::string preference, std::string fallback)
+{
+    if (!getAttribute(attribute.c_str())) {
+        std::string value = "";
+        if (!preference.empty()) {
+            Inkscape::Preferences *prefs = Inkscape::Preferences::get();
+            value = prefs->getString(preference);
+        }
+        if (value.empty() && !fallback.empty()) {
+            value = fallback;
+        }
+        if (!value.empty()) {
+            setAttribute(attribute, value);
+        }
+    }
 }
 
 void SPNamedView::activateGuides(void* desktop, bool active)
@@ -978,18 +1019,13 @@ static void sp_namedview_lock_single_guide(SPGuide* guide, bool locked)
 
 void sp_namedview_toggle_guides(SPDocument *doc, SPNamedView *namedview)
 {
-    unsigned int v;
     Inkscape::XML::Node *repr = namedview->getRepr();
-    unsigned int set = sp_repr_get_boolean(repr, "showguides", &v);
-    if (!set) { // hide guides if not specified, for backwards compatibility
-        v = FALSE;
-    } else {
-        v = !v;
-    }
+    bool v = repr->getAttributeBoolean("showguides", true);
+    v = !v;
 
     bool saved = DocumentUndo::getUndoSensitive(doc);
     DocumentUndo::setUndoSensitive(doc, false);
-    sp_repr_set_boolean(repr, "showguides", v);
+    repr->setAttributeBoolean("showguides", v);
     DocumentUndo::setUndoSensitive(doc, saved);
     SPDesktop *desktop = SP_ACTIVE_DESKTOP;
     if (desktop) {
@@ -1003,18 +1039,13 @@ void sp_namedview_toggle_guides(SPDocument *doc, SPNamedView *namedview)
 
 void sp_namedview_guides_toggle_lock(SPDocument *doc, SPNamedView * namedview)
 {
-    unsigned int v;
     Inkscape::XML::Node *repr = namedview->getRepr();
-    unsigned int set = sp_repr_get_boolean(repr, "inkscape:lockguides", &v);
-    if (!set) { // hide guides if not specified, for backwards compatibility
-        v = true;
-    } else {
-        v = !v;
-    }
+    bool v = repr->getAttributeBoolean("inkscape:lockguides", false);
+    v = !v;
 
     bool saved = DocumentUndo::getUndoSensitive(doc);
     DocumentUndo::setUndoSensitive(doc, false);
-    sp_repr_set_boolean(repr, "inkscape:lockguides", v);
+    repr->setAttributeBoolean("inkscape:lockguides", v);
     sp_namedview_lock_guides(namedview);
     DocumentUndo::setUndoSensitive(doc, saved);
     doc->setModifiedSinceSave();
@@ -1029,7 +1060,7 @@ void sp_namedview_show_grids(SPNamedView * namedview, bool show, bool dirty_docu
 
     bool saved = DocumentUndo::getUndoSensitive(doc);
     DocumentUndo::setUndoSensitive(doc, false);
-    sp_repr_set_boolean(repr, "showgrid", namedview->grids_visible);
+    repr->setAttributeBoolean("showgrid", namedview->grids_visible);
     DocumentUndo::setUndoSensitive(doc, saved);
 
     /* we don't want the document to get dirty on startup; that's when
@@ -1041,9 +1072,7 @@ void sp_namedview_show_grids(SPNamedView * namedview, bool show, bool dirty_docu
 
 gchar const *SPNamedView::getName() const
 {
-    SPException ex;
-    SP_EXCEPTION_INIT(&ex);
-    return this->getAttribute("id", &ex);
+    return this->getAttribute("id");
 }
 
 guint SPNamedView::getViewCount()
@@ -1116,20 +1145,15 @@ SPNamedView const *sp_document_namedview(SPDocument const *document, const gchar
 void SPNamedView::setGuides(bool v)
 {
     g_assert(this->getRepr() != nullptr);
-    sp_repr_set_boolean(this->getRepr(), "showguides", v);
-    sp_repr_set_boolean(this->getRepr(), "inkscape:guide-bbox", v);
+    this->getRepr()->setAttributeBoolean("showguides", v);
+    this->getRepr()->setAttributeBoolean("inkscape:guide-bbox", v);
 }
 
 bool SPNamedView::getGuides()
 {
     g_assert(this->getRepr() != nullptr);
-    unsigned int v;
-    unsigned int set = sp_repr_get_boolean(this->getRepr(), "showguides", &v);
-    if (!set) { // show guides if not specified, for backwards compatibility
-        v = TRUE;
-    }
-
-    return v;
+    // show guides if not specified, for backwards compatibility
+    return this->getRepr()->getAttributeBoolean("showguides", true);
 }
 
 void SPNamedView::lockGuides()
@@ -1163,7 +1187,7 @@ double SPNamedView::getMarginLength(gchar const * const key,
         return 0.0;
     }
     if (*margin_units == *percent) {
-        return (use_width)? width * value : height * value; 
+        return (use_width)? width * value : height * value;
     }
     if (!margin_units->compatibleWith(return_units)) {
         return 0.0;

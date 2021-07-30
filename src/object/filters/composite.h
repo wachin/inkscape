@@ -18,7 +18,7 @@
 #define SP_IS_FECOMPOSITE(obj) (dynamic_cast<const SPFeComposite*>((SPObject*)obj) != NULL)
 
 enum FeCompositeOperator {
-    // Default value is 'over', but let's distinquish specifying the
+    // Default value is 'over', but let's distinguish specifying the
     // default and implicitly using the default
     COMPOSITE_DEFAULT,
     COMPOSITE_OVER,              /* Source Over */
@@ -54,7 +54,7 @@ protected:
     void build(SPDocument* doc, Inkscape::XML::Node* repr) override;
 	void release() override;
 
-	void set(SPAttributeEnum key, const gchar* value) override;
+	void set(SPAttr key, const gchar* value) override;
 
 	void update(SPCtx* ctx, unsigned int flags) override;
 

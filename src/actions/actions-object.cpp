@@ -20,6 +20,7 @@
 
 #include "inkscape.h"             // Inkscape::Application
 #include "selection.h"            // Selection
+#include "path/path-simplify.h"
 
 
 // No sanity checking is done... should probably add.
@@ -107,44 +108,74 @@ object_to_path(InkscapeApplication *app)
     auto document  = app->get_active_document();
     selection->setDocument(document);
 
-    selection->toCurves();
+    selection->toCurves();  // TODO: Rename toPaths()
+}
+
+
+void
+object_stroke_to_path(InkscapeApplication *app)
+{
+    auto selection = app->get_active_selection();
+
+    // We should not have to do this!
+    auto document  = app->get_active_document();
+    selection->setDocument(document);
+
+    selection->strokesToPaths();
+}
+
+
+void
+object_simplify_path(InkscapeApplication *app)
+{
+    auto selection = app->get_active_selection();
+
+    // We should not have to do this!
+    auto document  = app->get_active_document();
+    selection->setDocument(document);
+
+    selection->simplifyPaths();
 }
 
 
 std::vector<std::vector<Glib::ustring>> raw_data_object =
 {
-    {"object-set-attribute",      "ObjectSetAttribute",      "Object",     N_("Set or update an attribute on selected objects. Usage: object-set-attribute:attribute name, attribute value;")},
-    {"object-set-property",       "ObjectSetProperty",       "Object",     N_("Set or update a property on selected objects. Usage: object-set-property:property name, property value;")},
-    {"object-unlink-clones",      "ObjectUnlinkClones",      "Object",     N_("Unlink clones and symbols.")                          },
-    {"object-to-path",            "ObjectToPath",            "Object",     N_("Convert shapes to paths.")                            },
+    // clang-format off
+    {"app.object-set-attribute",      N_("Set Attribute"),         "Object",     N_("Set or update an attribute of selected objects; usage: object-set-attribute:attribute name, attribute value;")},
+    {"app.object-set-property",       N_("Set Property"),          "Object",     N_("Set or update a property on selected objects; usage: object-set-property:property name, property value;")},
+    {"app.object-unlink-clones",      N_("Unlink Clones"),         "Object",     N_("Unlink clones and symbols")                          },
+    {"app.object-to-path",            N_("Object To Path"),        "Object",     N_("Convert shapes to paths")                            },
+    {"app.object-stroke-to-path",     N_("Stroke to Path"),        "Object",     N_("Convert strokes to paths")                           },
+    {"app.object-simplify-path",      N_("Simplify Path"),         "Object",     N_("Simplify paths, reducing node counts")               }
+    // clang-format on
 };
 
-template<class T>
 void
-add_actions_object(ConcreteInkscapeApplication<T>* app)
+add_actions_object(InkscapeApplication* app)
 {
     Glib::VariantType Bool(  Glib::VARIANT_TYPE_BOOL);
     Glib::VariantType Int(   Glib::VARIANT_TYPE_INT32);
     Glib::VariantType Double(Glib::VARIANT_TYPE_DOUBLE);
     Glib::VariantType String(Glib::VARIANT_TYPE_STRING);
 
+    auto *gapp = app->gio_app();
+
     // Debian 9 has 2.50.0
 #if GLIB_CHECK_VERSION(2, 52, 0)
 
-    app->add_action_with_parameter( "object-set-attribute",     String, sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&object_set_attribute),      app));
-    app->add_action_with_parameter( "object-set-property",      String, sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&object_set_property),       app));
-    app->add_action(                "object-unlink-clones",             sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&object_unlink_clones),      app));
-    app->add_action(                "object-to-path",                   sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&object_to_path),            app));
+    // clang-format off
+    gapp->add_action_with_parameter( "object-set-attribute",     String, sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&object_set_attribute),      app));
+    gapp->add_action_with_parameter( "object-set-property",      String, sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&object_set_property),       app));
+    gapp->add_action(                "object-unlink-clones",             sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&object_unlink_clones),      app));
+    gapp->add_action(                "object-to-path",                   sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&object_to_path),            app));
+    gapp->add_action(                "object-stroke-to-path",            sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&object_stroke_to_path),     app));
+    gapp->add_action(                "object-simplify-path",             sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&object_simplify_path),      app));
+    // clang-format on
 
 #endif
 
     app->get_action_extra_data().add_data(raw_data_object);
 }
-
-
-template void add_actions_object(ConcreteInkscapeApplication<Gio::Application>* app);
-template void add_actions_object(ConcreteInkscapeApplication<Gtk::Application>* app);
-
 
 
 /*

@@ -61,6 +61,7 @@
 #include "live_effects/lpe-show_handles.h"
 #include "live_effects/lpe-simplify.h"
 #include "live_effects/lpe-sketch.h"
+#include "live_effects/lpe-slice.h"
 #include "live_effects/lpe-spiro.h"
 #include "live_effects/lpe-tangent_to_curve.h"
 #include "live_effects/lpe-taperstroke.h"
@@ -75,11 +76,9 @@
 #include "xml/sp-css-attr.h"
 
 #include "display/curve.h"
-#include "knotholder.h"
 #include "message-stack.h"
 #include "path-chemistry.h"
 #include "ui/icon-loader.h"
-#include "ui/tools-switch.h"
 #include "ui/tools/node-tool.h"
 #include "ui/tools/pen-tool.h"
 
@@ -98,782 +97,743 @@ namespace LivePathEffect {
 
 const EnumEffectData<EffectType> LPETypeData[] = {
     // {constant defined in effect-enum.h, N_("name of your effect"), "name of your effect in SVG"}
+    // please sync order with effect-enum.h
 /* 0.46 */
     {
-        BEND_PATH
-        , N_("Bend") //label
-        , "bend_path" //key
-        , "bend-path" //icon
-        , "Bend" //untranslated name
-        , N_("Bend an object along the curvature of another path") //description
-        , true  //on_path
-        , true  //on_shape
-        , true  //on_group
-        , false //on_image
-        , false //on_text
-        , false //experimental
+        BEND_PATH,
+        NC_("path effect", "Bend") ,//label
+        "bend_path" ,//key
+        "bend-path" ,//icon
+        N_("Bend an object along the curvature of another path") ,//description
+        true  ,//on_path
+        true  ,//on_shape
+        true  ,//on_group
+        false ,//on_image
+        false ,//on_text
+        false ,//experimental
     },
     {
-        GEARS
-        , N_("Gears") //label
-        , "gears" //key
-        , "gears" //icon
-        , "Gears" //untranslated name
-        , N_("Create interlocking, configurable gears based on the nodes of a path") //description
-        , true  //on_path
-        , true  //on_shape
-        , true  //on_group
-        , false //on_image
-        , false //on_text
-        , false //experimental
+        GEARS,
+        NC_("path effect", "Gears") ,//label
+        "gears" ,//key
+        "gears" ,//icon
+        N_("Create interlocking, configurable gears based on the nodes of a path") ,//description
+        true  ,//on_path
+        true  ,//on_shape
+        true  ,//on_group
+        false ,//on_image
+        false ,//on_text
+        false ,//experimental
     },
     {
-        PATTERN_ALONG_PATH
-        , N_("Pattern Along Path") //label
-        , "skeletal" //key
-        , "skeletal" //icon
-        , "Pattern Along Path" //untranslated name
-        , N_("Place one or more copies of another path along the path") //description
-        , true  //on_path
-        , true  //on_shape
-        , true  //on_group
-        , false //on_image
-        , false //on_text
-        , false //experimental
+        PATTERN_ALONG_PATH,
+        NC_("path effect", "Pattern Along Path") ,//label
+        "skeletal" ,//key
+        "skeletal" ,//icon
+        N_("Place one or more copies of another path along the path") ,//description
+        true  ,//on_path
+        true  ,//on_shape
+        true  ,//on_group
+        false ,//on_image
+        false ,//on_text
+        false ,//experimental
     }, // for historic reasons, this effect is called skeletal(strokes) in Inkscape:SVG
     {
-        CURVE_STITCH
-        , N_("Stitch Sub-Paths") //label
-        , "curvestitching" //key
-        , "curvestitching" //icon
-        , "Stitch Sub-Paths" //untranslated name
-        , N_("Draw perpendicular lines between subpaths of a path, like rungs of a ladder") //description
-        , true  //on_path
-        , false //on_shape
-        , true //on_group
-        , false //on_image
-        , false //on_text
-        , false //experimental
+        CURVE_STITCH,
+        NC_("path effect", "Stitch Sub-Paths") ,//label
+        "curvestitching" ,//key
+        "curvestitching" ,//icon
+        N_("Draw perpendicular lines between subpaths of a path, like rungs of a ladder") ,//description
+        true  ,//on_path
+        false ,//on_shape
+        true ,//on_group
+        false ,//on_image
+        false ,//on_text
+        false ,//experimental
     },
 /* 0.47 */
     {
-        VONKOCH
-        , N_("VonKoch") //label
-        , "vonkoch" //key
-        , "vonkoch" //icon
-        , "VonKoch" //untranslated name
-        , N_("Create VonKoch fractal") //description
-        , true  //on_path
-        , true  //on_shape
-        , true  //on_group
-        , false //on_image
-        , false //on_text
-        , false //experimental
+        VONKOCH,
+        NC_("path effect", "VonKoch") ,//label
+        "vonkoch" ,//key
+        "vonkoch" ,//icon
+        N_("Create VonKoch fractal") ,//description
+        true  ,//on_path
+        true  ,//on_shape
+        true  ,//on_group
+        false ,//on_image
+        false ,//on_text
+        false ,//experimental
     },
     {
-        KNOT
-        , N_("Knot") //label
-        , "knot" //key
-        , "knot" //icon
-        , "Knot" //untranslated name
-        , N_("Create gaps in self-intersections, as in Celtic knots") //description
-        , true  //on_path
-        , true  //on_shape
-        , true  //on_group
-        , false //on_image
-        , false //on_text
-        , false //experimental
+        KNOT,
+        NC_("path effect", "Knot") ,//label
+        "knot" ,//key
+        "knot" ,//icon
+        N_("Create gaps in self-intersections, as in Celtic knots") ,//description
+        true  ,//on_path
+        true  ,//on_shape
+        true  ,//on_group
+        false ,//on_image
+        false ,//on_text
+        false ,//experimental
     },
     {
-        CONSTRUCT_GRID
-        , N_("Construct grid") //label
-        , "construct_grid" //key
-        , "construct-grid" //icon
-        , "Construct grid" //untranslated name
-        , N_("Create a (perspective) grid from a 3-node path") //description
-        , true  //on_path
-        , true  //on_shape
-        , true  //on_group
-        , false //on_image
-        , false //on_text
-        , false //experimental
+        CONSTRUCT_GRID,
+        NC_("path effect", "Construct grid") ,//label
+        "construct_grid" ,//key
+        "construct-grid" ,//icon
+        N_("Create a (perspective) grid from a 3-node path") ,//description
+        true  ,//on_path
+        true  ,//on_shape
+        true  ,//on_group
+        false ,//on_image
+        false ,//on_text
+        false ,//experimental
     },
     {
-        SPIRO
-        , N_("Spiro spline") //label
-        , "spiro" //key
-        , "spiro" //icon
-        , "Spiro spline" //untranslated name
-        , N_("Make the path curl like wire, using Spiro B-Splines. This effect is usually used directly on the canvas with the Spiro mode of the drawing tools.") //description
-        , true  //on_path
-        , false //on_shape
-        , false //on_group
-        , false //on_image
-        , false //on_text
-        , false //experimental
+        SPIRO,
+        NC_("path effect", "Spiro spline") ,//label
+        "spiro" ,//key
+        "spiro" ,//icon
+        N_("Make the path curl like wire, using Spiro B-Splines. This effect is usually used directly on the canvas with the Spiro mode of the drawing tools.") ,//description
+        true  ,//on_path
+        false ,//on_shape
+        false ,//on_group
+        false ,//on_image
+        false ,//on_text
+        false ,//experimental
     },
     {
-        ENVELOPE
-        , N_("Envelope Deformation") //label
-        , "envelope" //key
-        , "envelope" //icon
-        , "Envelope Deformation" //untranslated name
-        , N_("Adjust the shape of an object by transforming paths on its four sides") //description
-        , true  //on_path
-        , true  //on_shape
-        , true  //on_group
-        , false //on_image
-        , false //on_text
-        , false //experimental
+        ENVELOPE,
+        NC_("path effect", "Envelope Deformation") ,//label
+        "envelope" ,//key
+        "envelope" ,//icon
+        N_("Adjust the shape of an object by transforming paths on its four sides") ,//description
+        true  ,//on_path
+        true  ,//on_shape
+        true  ,//on_group
+        false ,//on_image
+        false ,//on_text
+        false ,//experimental
     },
     {
-        INTERPOLATE
-        , N_("Interpolate Sub-Paths") //label
-        , "interpolate" //key
-        , "interpolate" //icon
-        , "Interpolate Sub-Paths" //untranslated name
-        , N_("Create a stepwise transition between the 2 subpaths of a path") //description
-        , true  //on_path
-        , false //on_shape
-        , false //on_group
-        , false //on_image
-        , false //on_text
-        , false //experimental
+        INTERPOLATE,
+        NC_("path effect", "Interpolate Sub-Paths") ,//label
+        "interpolate" ,//key
+        "interpolate" ,//icon
+        N_("Create a stepwise transition between the 2 subpaths of a path") ,//description
+        true  ,//on_path
+        false ,//on_shape
+        false ,//on_group
+        false ,//on_image
+        false ,//on_text
+        false ,//experimental
     },
     {
-        ROUGH_HATCHES
-        , N_("Hatches (rough)") //label
-        , "rough_hatches" //key
-        , "rough-hatches" //icon
-        , "Hatches (rough)" //untranslated name
-        , N_("Fill the object with adjustable hatching") //description
-        , true  //on_path
-        , true  //on_shape
-        , true  //on_group
-        , false //on_image
-        , false //on_text
-        , false //experimental
+        ROUGH_HATCHES,
+        NC_("path effect", "Hatches (rough)") ,//label
+        "rough_hatches" ,//key
+        "rough-hatches" ,//icon
+        N_("Fill the object with adjustable hatching") ,//description
+        true  ,//on_path
+        true  ,//on_shape
+        true  ,//on_group
+        false ,//on_image
+        false ,//on_text
+        false ,//experimental
     },
     {
-        SKETCH
-        , N_("Sketch") //label
-        , "sketch" //key
-        , "sketch" //icon
-        , "Sketch" //untranslated name
-        , N_("Draw multiple short strokes along the path, as in a pencil sketch") //description
-        , true  //on_path
-        , true  //on_shape
-        , true  //on_group
-        , false //on_image
-        , false //on_text
-        , false //experimental
+        SKETCH,
+        NC_("path effect", "Sketch") ,//label
+        "sketch" ,//key
+        "sketch" ,//icon
+        N_("Draw multiple short strokes along the path, as in a pencil sketch") ,//description
+        true  ,//on_path
+        true  ,//on_shape
+        true  ,//on_group
+        false ,//on_image
+        false ,//on_text
+        false ,//experimental
     },
     {
-        RULER
-        , N_("Ruler") //label
-        , "ruler" //key
-        , "ruler" //icon
-        , "Ruler" //untranslated name
-        , N_("Add ruler marks to the object in adjustable intervals, using the object's stroke style.") //description
-        , true  //on_path
-        , true  //on_shape
-        , true  //on_group
-        , false //on_image
-        , false //on_text
-        , false //experimental
+        RULER,
+        NC_("path effect", "Ruler") ,//label
+        "ruler" ,//key
+        "ruler" ,//icon
+        N_("Add ruler marks to the object in adjustable intervals, using the object's stroke style.") ,//description
+        true  ,//on_path
+        true  ,//on_shape
+        true  ,//on_group
+        false ,//on_image
+        false ,//on_text
+        false ,//experimental
     },
 /* 0.91 */
     {
-        POWERSTROKE
-        , N_("Power stroke") //label
-        , "powerstroke" //key
-        , "powerstroke" //icon
-        , "Power stroke" //untranslated name
-        , N_("Create calligraphic strokes and control their variable width and curvature. This effect can also be used directly on the canvas with a pressure sensitive stylus and the Pencil tool.") //description
-        , true  //on_path
-        , true  //on_shape
-        , false //on_group
-        , false //on_image
-        , false //on_text
-        , false //experimental
+        POWERSTROKE,
+        NC_("path effect", "Power stroke") ,//label
+        "powerstroke" ,//key
+        "powerstroke" ,//icon
+        N_("Create calligraphic strokes and control their variable width and curvature. This effect can also be used directly on the canvas with a pressure sensitive stylus and the Pencil tool.") ,//description
+        true  ,//on_path
+        true  ,//on_shape
+        false ,//on_group
+        false ,//on_image
+        false ,//on_text
+        false ,//experimental
     },
     {
-        CLONE_ORIGINAL
-        , N_("Clone original") //label
-        , "clone_original" //key
-        , "clone-original" //icon
-        , "Clone original" //untranslated name
-        , N_("Let an object take on the shape, fill, stroke and/or other attributes of another object.") //description
-        , true  //on_path
-        , true  //on_shape
-        , true  //on_group
-        , false //on_image
-        , false //on_text
-        , false //experimental
+        CLONE_ORIGINAL,
+        NC_("path effect", "Clone original") ,//label
+        "clone_original" ,//key
+        "clone-original" ,//icon
+        N_("Let an object take on the shape, fill, stroke and/or other attributes of another object.") ,//description
+        true  ,//on_path
+        true  ,//on_shape
+        true  ,//on_group
+        false ,//on_image
+        false ,//on_text
+        false ,//experimental
     },
 /* 0.92 */
     {
-        SIMPLIFY
-        , N_("Simplify") //label
-        , "simplify" //key
-        , "simplify" //icon
-        , "Simplify" //untranslated name
-        , N_("Smoothen and simplify a object. This effect is also available in the Pencil tool's tool controls.") //description
-        , true  //on_path
-        , true  //on_shape
-        , true  //on_group
-        , false //on_image
-        , false //on_text
-        , false //experimental
+        SIMPLIFY,
+        NC_("path effect", "Simplify") ,//label
+        "simplify" ,//key
+        "simplify" ,//icon
+        N_("Smoothen and simplify a object. This effect is also available in the Pencil tool's tool controls.") ,//description
+        true  ,//on_path
+        true  ,//on_shape
+        true  ,//on_group
+        false ,//on_image
+        false ,//on_text
+        false ,//experimental
     },
     {
-        LATTICE2
-        , N_("Lattice Deformation 2") //label
-        , "lattice2" //key
-        , "lattice2" //icon
-        , "Lattice Deformation 2" //untranslated name
-        , N_("Warp an object's shape based on a 5x5 grid") //description
-        , true  //on_path
-        , true  //on_shape
-        , true  //on_group
-        , false //on_image
-        , false //on_text
-        , false //experimental
+        LATTICE2,
+        NC_("path effect", "Lattice Deformation 2") ,//label
+        "lattice2" ,//key
+        "lattice2" ,//icon
+        N_("Warp an object's shape based on a 5x5 grid") ,//description
+        true  ,//on_path
+        true  ,//on_shape
+        true  ,//on_group
+        false ,//on_image
+        false ,//on_text
+        false ,//experimental
     },
     {
-        PERSPECTIVE_ENVELOPE
-        , N_("Perspective/Envelope") //label
-        , "perspective-envelope" //key wrong key with "-" retain because historic
-        , "perspective-envelope" //icon
-        , "Perspective/Envelope" //untranslated name
-        , N_("Transform the object to fit into a shape with four corners, either by stretching it or creating the illusion of a 3D-perspective") //description
-        , true  //on_path
-        , true  //on_shape
-        , true  //on_group
-        , false //on_image
-        , false //on_text
-        , false //experimental
+        PERSPECTIVE_ENVELOPE,
+        NC_("path effect", "Perspective/Envelope") ,//label
+        "perspective-envelope" ,//key wrong key with "-" retain because historic
+        "perspective-envelope" ,//icon
+        N_("Transform the object to fit into a shape with four corners, either by stretching it or creating the illusion of a 3D-perspective") ,//description
+        true  ,//on_path
+        true  ,//on_shape
+        true  ,//on_group
+        false ,//on_image
+        false ,//on_text
+        false ,//experimental
     },
     {
-        INTERPOLATE_POINTS
-        , N_("Interpolate points") //label
-        , "interpolate_points" //key
-        , "interpolate-points" //icon
-        , "Interpolate points" //untranslated name
-        , N_("Connect the nodes of the object (e.g. corresponding to data points) by different types of lines.") //description
-        , true  //on_path
-        , true  //on_shape
-        , true  //on_group
-        , false //on_image
-        , false //on_text
-        , false //experimental
+        INTERPOLATE_POINTS,
+        NC_("path effect", "Interpolate points") ,//label
+        "interpolate_points" ,//key
+        "interpolate-points" ,//icon
+        N_("Connect the nodes of the object (e.g. corresponding to data points) by different types of lines.") ,//description
+        true  ,//on_path
+        true  ,//on_shape
+        true  ,//on_group
+        false ,//on_image
+        false ,//on_text
+        false ,//experimental
     },
     {
-        TRANSFORM_2PTS
-        , N_("Transform by 2 points") //label
-        , "transform_2pts" //key
-        , "transform-2pts" //icon
-        , "Transform by 2 points" //untranslated name
-        , N_("Scale, stretch and rotate an object by two handles") //description
-        , true  //on_path
-        , true  //on_shape
-        , true  //on_group
-        , false //on_image
-        , false //on_text
-        , false //experimental
+        TRANSFORM_2PTS,
+        NC_("path effect", "Transform by 2 points") ,//label
+        "transform_2pts" ,//key
+        "transform-2pts" ,//icon
+        N_("Scale, stretch and rotate an object by two handles") ,//description
+        true  ,//on_path
+        true  ,//on_shape
+        true  ,//on_group
+        false ,//on_image
+        false ,//on_text
+        false ,//experimental
     },
     {
-        SHOW_HANDLES
-        , N_("Show handles") //label
-        , "show_handles" //key
-        , "show-handles" //icon
-        , "Show handles" //untranslated name
-        , N_("Draw the handles and nodes of objects (replaces the original styling with a black stroke)") //description
-        , true  //on_path
-        , true  //on_shape
-        , true  //on_group
-        , false //on_image
-        , false //on_text
-        , false //experimental
+        SHOW_HANDLES,
+        NC_("path effect", "Show handles") ,//label
+        "show_handles" ,//key
+        "show-handles" ,//icon
+        N_("Draw the handles and nodes of objects (replaces the original styling with a black stroke)") ,//description
+        true  ,//on_path
+        true  ,//on_shape
+        true  ,//on_group
+        false ,//on_image
+        false ,//on_text
+        false ,//experimental
     },
     {
-        ROUGHEN
-        , N_("Roughen") //label
-        , "roughen" //key
-        , "roughen" //icon
-        , "Roughen" //untranslated name
-        , N_("Roughen an object by adding and randomly shifting new nodes") //description
-        , true  //on_path
-        , true  //on_shape
-        , true  //on_group
-        , false //on_image
-        , false //on_text
-        , false //experimental
+        ROUGHEN,
+        NC_("path effect", "Roughen") ,//label
+        "roughen" ,//key
+        "roughen" ,//icon
+        N_("Roughen an object by adding and randomly shifting new nodes") ,//description
+        true  ,//on_path
+        true  ,//on_shape
+        true  ,//on_group
+        false ,//on_image
+        false ,//on_text
+        false ,//experimental
     },
     {
-        BSPLINE
-        , N_("BSpline") //label
-        , "bspline" //key
-        , "bspline" //icon
-        , "BSpline" //untranslated name
-        , N_("Create a BSpline that molds into the path's corners. This effect is usually used directly on the canvas with the BSpline mode of the drawing tools.") //description
-        , true  //on_path
-        , false //on_shape
-        , false //on_group
-        , false //on_image
-        , false //on_text
-        , false //experimental
+        BSPLINE,
+        NC_("path effect", "BSpline") ,//label
+        "bspline" ,//key
+        "bspline" ,//icon
+        N_("Create a BSpline that molds into the path's corners. This effect is usually used directly on the canvas with the BSpline mode of the drawing tools.") ,//description
+        true  ,//on_path
+        false ,//on_shape
+        false ,//on_group
+        false ,//on_image
+        false ,//on_text
+        false ,//experimental
     },
     {
-        JOIN_TYPE
-        , N_("Join type") //label
-        , "join_type" //key
-        , "join-type" //icon
-        , "Join type" //untranslated name
-        , N_("Select among various join types for a object's corner nodes (mitre, rounded, extrapolated arc, ...)") //description
-        , true  //on_path
-        , true  //on_shape
-        , true  //on_group
-        , false //on_image
-        , false //on_text
-        , false //experimental
+        JOIN_TYPE,
+        NC_("path effect", "Join type") ,//label
+        "join_type" ,//key
+        "join-type" ,//icon
+        N_("Select among various join types for a object's corner nodes (mitre, rounded, extrapolated arc, ...)") ,//description
+        true  ,//on_path
+        true  ,//on_shape
+        true  ,//on_group
+        false ,//on_image
+        false ,//on_text
+        false ,//experimental
     },
     {
-        TAPER_STROKE
-        , N_("Taper stroke") //label
-        , "taper_stroke" //key
-        , "taper-stroke" //icon
-        , "Taper stroke" //untranslated name
-        , N_("Let the path's ends narrow down to a tip") //description
-        , true  //on_path
-        , true  //on_shape
-        , false //on_group
-        , false //on_image
-        , false //on_text
-        , false //experimental
+        TAPER_STROKE,
+        NC_("path effect", "Taper stroke") ,//label
+        "taper_stroke" ,//key
+        "taper-stroke" ,//icon
+        N_("Let the path's ends narrow down to a tip") ,//description
+        true  ,//on_path
+        true  ,//on_shape
+        false ,//on_group
+        false ,//on_image
+        false ,//on_text
+        false ,//experimental
     },
     {
-        MIRROR_SYMMETRY
-        , N_("Mirror symmetry") //label
-        , "mirror_symmetry" //key
-        , "mirror-symmetry" //icon
-        , "Mirror symmetry" //untranslated name
-        , N_("Mirror an object along a movable axis, or around the page center. The mirrored copy can be styled independently.") //description
-        , true  //on_path
-        , true  //on_shape
-        , true  //on_group
-        , false //on_image
-        , false //on_text
-        , false //experimental
+        MIRROR_SYMMETRY,
+        NC_("path effect", "Mirror symmetry") ,//label
+        "mirror_symmetry" ,//key
+        "mirror-symmetry" ,//icon
+        N_("Mirror an object along a movable axis, or around the page center. The mirrored copy can be styled independently.") ,//description
+        true  ,//on_path
+        true  ,//on_shape
+        true  ,//on_group
+        false ,//on_image
+        false ,//on_text
+        false ,//experimental
     },
     {
-        COPY_ROTATE
-        , N_("Rotate copies") //label
-        , "copy_rotate" //key
-        , "copy-rotate" //icon
-        , "Rotate copies" //untranslated name
-        , N_("Create multiple rotated copies of an object, as in a kaleidoscope. The copies can be styled independently.") //description
-        , true  //on_path
-        , true  //on_shape
-        , true  //on_group
-        , false //on_image
-        , false //on_text
-        , false //experimental
+        COPY_ROTATE,
+        NC_("path effect", "Rotate copies") ,//label
+        "copy_rotate" ,//key
+        "copy-rotate" ,//icon
+        N_("Create multiple rotated copies of an object, as in a kaleidoscope. The copies can be styled independently.") ,//description
+        true  ,//on_path
+        true  ,//on_shape
+        true  ,//on_group
+        false ,//on_image
+        false ,//on_text
+        false ,//experimental
     },
 /* Ponyscape -> Inkscape 0.92*/
     {
-        ATTACH_PATH
-        , N_("Attach path") //label
-        , "attach_path" //key
-        , "attach-path" //icon
-        , "Attach path" //untranslated name
-        , N_("Glue the current path's ends to a specific position on one or two other paths") //description
-        , true  //on_path
-        , true  //on_shape
-        , true  //on_group
-        , false //on_image
-        , false //on_text
-        , false //experimental
+        ATTACH_PATH,
+        NC_("path effect", "Attach path") ,//label
+        "attach_path" ,//key
+        "attach-path" ,//icon
+        N_("Glue the current path's ends to a specific position on one or two other paths") ,//description
+        true  ,//on_path
+        true  ,//on_shape
+        true  ,//on_group
+        false ,//on_image
+        false ,//on_text
+        false ,//experimental
     },
     {
-        FILL_BETWEEN_STROKES
-        , N_("Fill between strokes") //label
-        , "fill_between_strokes" //key
-        , "fill-between-strokes" //icon
-        , "Fill between strokes" //untranslated name
-        , N_("Turn the path into a fill between two other open paths (e.g. between two paths with PowerStroke applied to them)") //description
-        , true  //on_path
-        , true  //on_shape
-        , true  //on_group
-        , false //on_image
-        , false //on_text
-        , false //experimental
+        FILL_BETWEEN_STROKES,
+        NC_("path effect", "Fill between strokes") ,//label
+        "fill_between_strokes" ,//key
+        "fill-between-strokes" ,//icon
+        N_("Turn the path into a fill between two other open paths (e.g. between two paths with PowerStroke applied to them)") ,//description
+        true  ,//on_path
+        true  ,//on_shape
+        true  ,//on_group
+        false ,//on_image
+        false ,//on_text
+        false ,//experimental
     },
     {
-        FILL_BETWEEN_MANY
-        , N_("Fill between many") //label
-        , "fill_between_many" //key
-        , "fill-between-many" //icon
-        , "Fill between many" //untranslated name
-        , N_("Turn the path into a fill between multiple other open paths (e.g. between paths with PowerStroke applied to them)") //description
-        , true  //on_path
-        , true  //on_shape
-        , true  //on_group
-        , false //on_image
-        , false //on_text
-        , false //experimental
+        FILL_BETWEEN_MANY,
+        NC_("path effect", "Fill between many") ,//label
+        "fill_between_many" ,//key
+        "fill-between-many" ,//icon
+        N_("Turn the path into a fill between multiple other open paths (e.g. between paths with PowerStroke applied to them)") ,//description
+        true  ,//on_path
+        true  ,//on_shape
+        true  ,//on_group
+        false ,//on_image
+        false ,//on_text
+        false ,//experimental
     },
     {
-        ELLIPSE_5PTS
-        , N_("Ellipse by 5 points") //label
-        , "ellipse_5pts" //key
-        , "ellipse-5pts" //icon
-        , "Ellipse by 5 points" //untranslated name
-        , N_("Create an ellipse from 5 nodes on its circumference") //description
-        , true  //on_path
-        , true  //on_shape
-        , false //on_group
-        , false //on_image
-        , false //on_text
-        , false //experimental
+        ELLIPSE_5PTS,
+        NC_("path effect", "Ellipse by 5 points") ,//label
+        "ellipse_5pts" ,//key
+        "ellipse-5pts" ,//icon
+        N_("Create an ellipse from 5 nodes on its circumference") ,//description
+        true  ,//on_path
+        true  ,//on_shape
+        false ,//on_group
+        false ,//on_image
+        false ,//on_text
+        false ,//experimental
     },
     {
-        BOUNDING_BOX
-        , N_("Bounding Box") //label
-        , "bounding_box" //key
-        , "bounding-box" //icon
-        , "Bounding Box" //untranslated name
-        , N_("Turn the path into a bounding box that entirely encompasses another path") //description
-        , true  //on_path
-        , true  //on_shape
-        , true  //on_group
-        , false //on_image
-        , false //on_text
-        , false //experimental
+        BOUNDING_BOX,
+        NC_("path effect", "Bounding Box") ,//label
+        "bounding_box" ,//key
+        "bounding-box" ,//icon
+        N_("Turn the path into a bounding box that entirely encompasses another path") ,//description
+        true  ,//on_path
+        true  ,//on_shape
+        true  ,//on_group
+        false ,//on_image
+        false ,//on_text
+        false ,//experimental
     },
 /* 1.0 */
     {
-        MEASURE_SEGMENTS
-        , N_("Measure Segments") //label
-        , "measure_segments" //key
-        , "measure-segments" //icon
-        , "Measure Segments" //untranslated name
-        , N_("Add dimensioning for distances between nodes, optionally with projection and many other configuration options") //description
-        , true  //on_path
-        , true  //on_shape
-        , false //on_group
-        , false //on_image
-        , false //on_text
-        , false //experimental
+        MEASURE_SEGMENTS,
+        NC_("path effect", "Measure Segments") ,//label
+        "measure_segments" ,//key
+        "measure-segments" ,//icon
+        N_("Add dimensioning for distances between nodes, optionally with projection and many other configuration options") ,//description
+        true  ,//on_path
+        true  ,//on_shape
+        false ,//on_group
+        false ,//on_image
+        false ,//on_text
+        false ,//experimental
     },
     {
-        FILLET_CHAMFER
-        , N_("Corners (Fillet/Chamfer)") //label
-        , "fillet_chamfer" //key
-        , "fillet-chamfer" //icon
-        , "Corners (Fillet/Chamfer)" //untranslated name
-        , N_("Adjust the shape of a path's corners, rounding them to a specified radius, or cutting them off") //description
-        , true  //on_path
-        , true  //on_shape
-        , false //on_group
-        , false //on_image
-        , false //on_text
-        , false //experimental
+        FILLET_CHAMFER,
+        NC_("path effect", "Corners (Fillet/Chamfer)") ,//label
+        "fillet_chamfer" ,//key
+        "fillet-chamfer" ,//icon
+        N_("Adjust the shape of a path's corners, rounding them to a specified radius, or cutting them off") ,//description
+        true  ,//on_path
+        true  ,//on_shape
+        false ,//on_group
+        false ,//on_image
+        false ,//on_text
+        false ,//experimental
     },
     {
-        BOOL_OP
-        , N_("Boolean operation") //label
-        , "bool_op" //key
-        , "experimental" //icon
-        , "Boolean operation" //untranslated name
-        , N_("Cut, union, subtract, intersect and divide a path non-destructively with another path") //description
-        , true  //on_path
-        , true  //on_shape
-        , true //on_group
-        , false //on_image
-        , false //on_text
-        , true //experimental
+        POWERCLIP,
+        NC_("path effect", "Power clip") ,//label
+        "powerclip" ,//key
+        "powerclip" ,//icon
+        N_("Invert, hide or flatten a clip (apply like a Boolean operation)") ,//description
+        true  ,//on_path
+        true  ,//on_shape
+        true  ,//on_group
+        false ,//on_image
+        false ,//on_text
+        false ,//experimental
     },
     {
-        POWERCLIP
-        , N_("Power clip") //label
-        , "powerclip" //key
-        , "powerclip" //icon
-        , "Power clip" //untranslated name
-        , N_("Invert, hide or flatten a clip (apply like a Boolean operation)") //description
-        , true  //on_path
-        , true  //on_shape
-        , true  //on_group
-        , false //on_image
-        , false //on_text
-        , false //experimental
+        POWERMASK,
+        NC_("path effect", "Power mask") ,//label
+        "powermask" ,//key
+        "powermask" ,//icon
+        N_("Invert or hide a mask, or use its negative") ,//description
+        true  ,//on_path
+        true  ,//on_shape
+        true  ,//on_group
+        false ,//on_image
+        false ,//on_text
+        false ,//experimental
     },
     {
-        POWERMASK
-        , N_("Power mask") //label
-        , "powermask" //key
-        , "powermask" //icon
-        , "Power mask" //untranslated name
-        , N_("Invert or hide a mask, or use its negative") //description
-        , true  //on_path
-        , true  //on_shape
-        , true  //on_group
-        , false //on_image
-        , false //on_text
-        , false //experimental
+        PTS2ELLIPSE,
+        NC_("path effect", "Ellipse from points") ,//label
+        "pts2ellipse" ,//key
+        "pts2ellipse" ,//icon
+        N_("Draw a circle, ellipse, arc or slice based on the nodes of a path") ,//description
+        true  ,//on_path
+        true  ,//on_shape
+        true  ,//on_group
+        false ,//on_image
+        false ,//on_text
+        false ,//experimental
     },
     {
-        PTS2ELLIPSE
-        , N_("Ellipse from points") //label
-        , "pts2ellipse" //key
-        , "pts2ellipse" //icon
-        , "Ellipse from points" //untranslated name
-        , N_("Draw a circle, ellipse, arc or slice based on the nodes of a path") //description
-        , true  //on_path
-        , true  //on_shape
-        , true  //on_group
-        , false //on_image
-        , false //on_text
-        , false //experimental
+        OFFSET,
+        NC_("path effect", "Offset") ,//label
+        "offset" ,//key
+        "offset" ,//icon
+        N_("Offset the path, optionally keeping cusp corners cusp") ,//description
+        true  ,//on_path
+        true  ,//on_shape
+        true ,//on_group
+        false ,//on_image
+        false ,//on_text
+        false ,//experimental
     },
     {
-        OFFSET
-        , N_("Offset") //label
-        , "offset" //key
-        , "offset" //icon
-        , "Offset" //untranslated name
-        , N_("Offset the path, optionally keeping cusp corners cusp") //description
-        , true  //on_path
-        , true  //on_shape
-        , true //on_group
-        , false //on_image
-        , false //on_text
-        , false //experimental
+        DASHED_STROKE,
+        NC_("path effect", "Dashed Stroke") ,//label
+        "dashed_stroke" ,//key
+        "dashed-stroke" ,//icon
+        N_("Add a dashed stroke whose dashes end exactly on a node, optionally with the same number of dashes per path segment") ,//description
+        true  ,//on_path
+        true  ,//on_shape
+        true  ,//on_group
+        false ,//on_image
+        false ,//on_text
+        false ,//experimental
+    },
+    /* 1.1 */
+    {
+        BOOL_OP,
+        NC_("path effect", "Boolean operation") ,//label
+        "bool_op" ,//key
+        "bool-op" ,//icon
+        N_("Cut, union, subtract, intersect and divide a path non-destructively with another path") ,//description
+        true  ,//on_path
+        true  ,//on_shape
+        true ,//on_group
+        false ,//on_image
+        false ,//on_text
+        false ,//experimental
     },
     {
-        DASHED_STROKE
-        , N_("Dashed Stroke") //label
-        , "dashed_stroke" //key
-        , "dashed-stroke" //icon
-        , "Dashed Stroke" //untranslated name
-        , N_("Add a dashed stroke whose dashes end exactly on a node, optionally with the same number of dashes per path segment") //description
-        , true  //on_path
-        , true  //on_shape
-        , true  //on_group
-        , false //on_image
-        , false //on_text
-        , false //experimental
+        SLICE,
+        NC_("path effect", "Slice") ,//label
+        "slice" ,//key
+        "slice" ,//icon
+        N_("Slices the item into parts. It can also be applied multiple times.") ,//description
+        true  ,//on_path
+        true  ,//on_shape
+        true ,//on_group
+        false ,//on_image
+        false ,//on_text
+        false ,//experimental
+    },
+    // VISIBLE experimental LPE
+    {
+        ANGLE_BISECTOR,
+        NC_("path effect", "Angle bisector") ,//label
+        "angle_bisector" ,//key
+        "experimental" ,//icon
+        N_("Draw a line that halves the angle between the first three nodes of the path") ,//description
+        true  ,//on_path
+        true  ,//on_shape
+        true  ,//on_group
+        false ,//on_image
+        false ,//on_text
+        true ,//experimental
     },
     {
-        ANGLE_BISECTOR
-        , N_("Angle bisector") //label
-        , "angle_bisector" //key
-        , "experimental" //icon
-        , "Angle bisector" //untranslated name
-        , N_("Draw a line that halves the angle between the first three nodes of the path") //description
-        , true  //on_path
-        , true  //on_shape
-        , true  //on_group
-        , false //on_image
-        , false //on_text
-        , true //experimental
+        CIRCLE_WITH_RADIUS,
+        NC_("path effect", "Circle (by center and radius)") ,//label
+        "circle_with_radius" ,//key
+        "experimental" ,//icon
+        N_("Draw a circle, where the first node of the path is the center, and the last determines its radius") ,//description
+        true  ,//on_path
+        true  ,//on_shape
+        true  ,//on_group
+        false ,//on_image
+        false ,//on_text
+        true ,//experimental
     },
     {
-        CIRCLE_WITH_RADIUS
-        , N_("Circle (by center and radius)") //label
-        , "circle_with_radius" //key
-        , "experimental" //icon
-        , "Circle (by center and radius)" //untranslated name
-        , N_("Draw a circle, where the first node of the path is the center, and the last determines its radius") //description
-        , true  //on_path
-        , true  //on_shape
-        , true  //on_group
-        , false //on_image
-        , false //on_text
-        , true //experimental
+        CIRCLE_3PTS,
+        NC_("path effect", "Circle by 3 points") ,//label
+        "circle_3pts" ,//key
+        "experimental" ,//icon
+        N_("Draw a circle whose circumference passes through the first three nodes of the path") ,//description
+        true  ,//on_path
+        true  ,//on_shape
+        true  ,//on_group
+        false ,//on_image
+        false ,//on_text
+        true ,//experimental
     },
     {
-        CIRCLE_3PTS
-        , N_("Circle by 3 points") //label
-        , "circle_3pts" //key
-        , "experimental" //icon
-        , "Circle by 3 points" //untranslated name
-        , N_("Draw a circle whose circumference passes through the first three nodes of the path") //description
-        , true  //on_path
-        , true  //on_shape
-        , true  //on_group
-        , false //on_image
-        , false //on_text
-        , true //experimental
+        EXTRUDE,
+        NC_("path effect", "Extrude") ,//label
+        "extrude" ,//key
+        "experimental" ,//icon
+        N_("Extrude the path, creating a face for each path segment") ,//description
+        true  ,//on_path
+        true  ,//on_shape
+        true  ,//on_group
+        false ,//on_image
+        false ,//on_text
+        true ,//experimental
     },
     {
-        EXTRUDE
-        , N_("Extrude") //label
-        , "extrude" //key
-        , "experimental" //icon
-        , "Extrude" //untranslated name
-        , N_("Extrude the path, creating a face for each path segment") //description
-        , true  //on_path
-        , true  //on_shape
-        , true  //on_group
-        , false //on_image
-        , false //on_text
-        , true //experimental
+        LINE_SEGMENT,
+        NC_("path effect", "Line Segment") ,//label
+        "line_segment" ,//key
+        "experimental" ,//icon
+        N_("Draw a straight line that connects the first and last node of a path") ,//description
+        true  ,//on_path
+        true  ,//on_shape
+        true  ,//on_group
+        false ,//on_image
+        false ,//on_text
+        true ,//experimental
     },
     {
-        LINE_SEGMENT
-        , N_("Line Segment") //label
-        , "line_segment" //key
-        , "experimental" //icon
-        , "Line Segment" //untranslated name
-        , N_("Draw a straight line that connects the first and last node of a path") //description
-        , true  //on_path
-        , true  //on_shape
-        , true  //on_group
-        , false //on_image
-        , false //on_text
-        , true //experimental
+        PARALLEL,
+        NC_("path effect", "Parallel") ,//label
+        "parallel" ,//key
+        "experimental" ,//icon
+        N_("Create a draggable line that will always be parallel to a two-node path") ,//description
+        true  ,//on_path
+        true  ,//on_shape
+        true  ,//on_group
+        false ,//on_image
+        false ,//on_text
+        true ,//experimental
     },
     {
-        PARALLEL
-        , N_("Parallel") //label
-        , "parallel" //key
-        , "experimental" //icon
-        , "Parallel" //untranslated name
-        , N_("Create a draggable line that will always be parallel to a two-node path") //description
-        , true  //on_path
-        , true  //on_shape
-        , true  //on_group
-        , false //on_image
-        , false //on_text
-        , true //experimental
+        PERP_BISECTOR,
+        NC_("path effect", "Perpendicular bisector") ,//label
+        "perp_bisector" ,//key
+        "experimental" ,//icon
+        N_("Draw a perpendicular line in the middle of the (imaginary) line that connects the start and end nodes") ,//description
+        true  ,//on_path
+        true  ,//on_shape
+        true  ,//on_group
+        false ,//on_image
+        false ,//on_text
+        true ,//experimental
     },
     {
-        PERP_BISECTOR
-        , N_("Perpendicular bisector") //label
-        , "perp_bisector" //key
-        , "experimental" //icon
-        , "Perpendicular bisector" //untranslated name
-        , N_("Draw a perpendicular line in the middle of the (imaginary) line that connects the start and end nodes") //description
-        , true  //on_path
-        , true  //on_shape
-        , true  //on_group
-        , false //on_image
-        , false //on_text
-        , true //experimental
-    },
-    {
-        TANGENT_TO_CURVE
-        , N_("Tangent to curve") //label
-        , "tangent_to_curve" //key
-        , "experimental" //icon
-        , "Tangent to curve" //untranslated name
-        , N_("Draw a tangent with variable length and additional angle that can be moved along the path") //description
-        , true  //on_path
-        , true  //on_shape
-        , true  //on_group
-        , false //on_image
-        , false //on_text
-        , true //experimental
+        TANGENT_TO_CURVE,
+        NC_("path effect", "Tangent to curve") ,//label
+        "tangent_to_curve" ,//key
+        "experimental" ,//icon
+        N_("Draw a tangent with variable length and additional angle that can be moved along the path") ,//description
+        true  ,//on_path
+        true  ,//on_shape
+        true  ,//on_group
+        false ,//on_image
+        false ,//on_text
+        true ,//experimental
     },
 #ifdef LPE_ENABLE_TEST_EFFECTS
     {
-        DOEFFECTSTACK_TEST
-        , N_("doEffect stack test") //label
-        , "doeffectstacktest" //key
-        , "experimental" //icon
-        , "doEffect stack test" //untranslated name
-        , N_("Test LPE") //description
-        , true  //on_path
-        , true  //on_shape
-        , true  //on_group
-        , false //on_image
-        , false //on_text
-        , true //experimental
+        DOEFFECTSTACK_TEST,
+        NC_("path effect", "doEffect stack test") ,//label
+        "doeffectstacktest" ,//key
+        "experimental" ,//icon
+        N_("Test LPE") ,//description
+        true  ,//on_path
+        true  ,//on_shape
+        true  ,//on_group
+        false ,//on_image
+        false ,//on_text
+        true ,//experimental
     },
     {
-        DYNASTROKE
-        , N_("Dynamic stroke") //label
-        , "dynastroke" //key
-        , "experimental" //icon
-        , "Dynamic stroke" //untranslated name
-        , N_("Create calligraphic strokes with variably shaped ends, making use of a parameter for the brush angle") //description
-        , true  //on_path
-        , true  //on_shape
-        , true  //on_group
-        , false //on_image
-        , false //on_text
-        , true //experimental
+        DYNASTROKE,
+        NC_("path effect", "Dynamic stroke") ,//label
+        "dynastroke" ,//key
+        "experimental" ,//icon
+        N_("Create calligraphic strokes with variably shaped ends, making use of a parameter for the brush angle") ,//description
+        true  ,//on_path
+        true  ,//on_shape
+        true  ,//on_group
+        false ,//on_image
+        false ,//on_text
+        true ,//experimental
     },
     {
-        LATTICE
-        , N_("Lattice Deformation") //label
-        , "lattice" //key
-        , "experimental" //icon
-        , "Lattice Deformation" //untranslated name
-        , N_("Deform an object using a 4x4 grid") //description
-        , true  //on_path
-        , true  //on_shape
-        , true  //on_group
-        , false //on_image
-        , false //on_text
-        , true //experimental
+        LATTICE,
+        NC_("path effect", "Lattice Deformation") ,//label
+        "lattice" ,//key
+        "experimental" ,//icon
+        N_("Deform an object using a 4x4 grid") ,//description
+        true  ,//on_path
+        true  ,//on_shape
+        true  ,//on_group
+        false ,//on_image
+        false ,//on_text
+        true ,//experimental
     },
     {
-        PATH_LENGTH
-        , N_("Path length") //label
-        , "path_length" //key
-        , "experimental" //icon
-        , "Path length" //untranslated name
-        , N_("Display the total length of a (curved) path") //description
-        , true  //on_path
-        , true  //on_shape
-        , true  //on_group
-        , false //on_image
-        , false //on_text
-        , true //experimental
+        PATH_LENGTH,
+        NC_("path effect", "Path length") ,//label
+        "path_length" ,//key
+        "experimental" ,//icon
+        N_("Display the total length of a (curved) path") ,//description
+        true  ,//on_path
+        true  ,//on_shape
+        true  ,//on_group
+        false ,//on_image
+        false ,//on_text
+        true ,//experimental
     },
     {
-        RECURSIVE_SKELETON
-        , N_("Recursive skeleton") //label
-        , "recursive_skeleton" //key
-        , "experimental" //icon
-        , "Recursive skeleton" //untranslated name
-        , N_("Draw a path recursively") //description
-        , true  //on_path
-        , true  //on_shape
-        , true  //on_group
-        , false //on_image
-        , false //on_text
-        , true //experimental
+        RECURSIVE_SKELETON,
+        NC_("path effect", "Recursive skeleton") ,//label
+        "recursive_skeleton" ,//key
+        "experimental" ,//icon
+        N_("Draw a path recursively") ,//description
+        true  ,//on_path
+        true  ,//on_shape
+        true  ,//on_group
+        false ,//on_image
+        false ,//on_text
+        true ,//experimental
     },
     {
-        TEXT_LABEL
-        , N_("Text label") //label
-        , "text_label" //key
-        , "experimental" //icon
-        , "Text label" //untranslated name
-        , N_("Add a label for the object") //description
-        , true  //on_path
-        , true  //on_shape
-        , true  //on_group
-        , false //on_image
-        , false //on_text
-        , true //experimental
+        TEXT_LABEL,
+        NC_("path effect", "Text label") ,//label
+        "text_label" ,//key
+        "experimental" ,//icon
+        N_("Add a label for the object") ,//description
+        true  ,//on_path
+        true  ,//on_shape
+        true  ,//on_group
+        false ,//on_image
+        false ,//on_text
+        true ,//experimental
     },
     {
-        EMBRODERY_STITCH
-        , N_("Embroidery stitch") //label
-        , "embrodery_stitch" //key
-        , "embrodery-stitch" //icon
-        , "Embroidery stitch" //untranslated name
-        , N_("Embroidery stitch") //description
-        , true  //on_path
-        , true  //on_shape
-        , true  //on_group
-        , false //on_image
-        , false //on_text
-        , false //experimental
+        EMBRODERY_STITCH,
+        NC_("path effect", "Embroidery stitch") ,//label
+        "embrodery_stitch" ,//key
+        "embrodery-stitch" ,//icon
+        N_("Embroidery stitch") ,//description
+        true  ,//on_path
+        true  ,//on_shape
+        true  ,//on_group
+        false ,//on_image
+        false ,//on_text
+        false ,//experimental
     },
 #endif
 
@@ -1064,6 +1024,9 @@ Effect::New(EffectType lpenr, LivePathEffectObject *lpeobj)
         case DASHED_STROKE:
             neweffect = static_cast<Effect *>(new LPEDashedStroke(lpeobj));
             break;
+        case SLICE:
+            neweffect = static_cast<Effect *>(new LPESlice(lpeobj));
+            break;
         default:
             g_warning("LivePathEffect::Effect::New called with invalid patheffect type (%d)", lpenr);
             neweffect = nullptr;
@@ -1108,10 +1071,11 @@ Effect::Effect(LivePathEffectObject *lpeobject)
       show_orig_path(false),
       keep_paths(false),
       is_load(true),
+      on_remove_all(false),
       lpeobj(lpeobject),
       concatenate_before_pwd2(false),
       sp_lpe_item(nullptr),
-      current_zoom(1),
+      current_zoom(0),
       refresh_widgets(false),
       current_shape(nullptr),
       provides_own_flash_paths(true), // is automatically set to false if providesOwnFlashPaths() is not overridden
@@ -1122,7 +1086,6 @@ Effect::Effect(LivePathEffectObject *lpeobject)
     registerParameter( dynamic_cast<Parameter *>(&is_visible) );
     registerParameter( dynamic_cast<Parameter *>(&lpeversion) );
     is_visible.widget_is_visible = false;
-    current_zoom = 0.0;
 }
 
 Effect::~Effect() = default;
@@ -1141,6 +1104,19 @@ Effect::effectType() const {
     return lpeobj->effecttype;
 }
 
+std::vector<SPLPEItem *> 
+Effect::getCurrrentLPEItems() const {
+    std::vector<SPLPEItem *> result;
+    auto hreflist = getLPEObj()->hrefList;
+    for (auto item : hreflist) {
+        SPLPEItem * lpeitem = dynamic_cast<SPLPEItem *>(item);
+        if (lpeitem) {
+            result.push_back(lpeitem);
+        }
+    }
+    return result;
+}
+
 /**
  * Is performed a single time when the effect is freshly applied to a path
  */
@@ -1156,14 +1132,48 @@ Effect::setCurrentZoom(double cZ)
 }
 
 /**
- * Overrided function to apply transforms for example to powerstrole, jointtype or tapperstroke
+ * Overridden function to apply transforms for example to powerstroke, jointtype or tapperstroke
  */
 void Effect::transform_multiply(Geom::Affine const &postmul, bool /*set*/) {}
+
+/**
+ * @param lpeitem The item being transformed
+ *
+ * @pre effect is referenced by lpeitem
+ *
+ * FIXME Probably only makes sense if this effect is referenced by exactly one
+ * item (`this->lpeobj->hrefList` contains exactly one element)?
+ */
+void Effect::transform_multiply(Geom::Affine const &postmul, SPLPEItem *lpeitem)
+{
+    assert("pre: effect is referenced by lpeitem" &&
+           std::any_of(lpeobj->hrefList.begin(), lpeobj->hrefList.end(),
+                       [lpeitem](SPObject *obj) { return lpeitem == dynamic_cast<SPLPEItem *>(obj); }));
+
+    // FIXME Is there a way to eliminate the raw Effect::sp_lpe_item pointer?
+    sp_lpe_item = lpeitem;
+
+    transform_multiply(postmul, false);
+}
 
 void
 Effect::setSelectedNodePoints(std::vector<Geom::Point> sNP)
 {
     selectedNodesPoints = sNP;
+}
+
+/**
+ * The lpe is on clipboard
+ */
+bool Effect::isOnClipboard()
+{
+    SPDocument *document = getSPDoc();
+    if (!document) {
+        return false;
+    }
+    Inkscape::XML::Node *root = document->getReprRoot();
+    Inkscape::XML::Node *clipnode = sp_repr_lookup_name(root, "inkscape:clipboard", 1);
+    return clipnode != nullptr;
 }
 
 bool
@@ -1191,31 +1201,30 @@ Effect::processObjects(LPEAction lpe_action)
     if (!document) {
         return;
     }
+    sp_lpe_item = dynamic_cast<SPLPEItem *>(*getLPEObj()->hrefList.begin());
+    if (!document || !sp_lpe_item) {
+        return;
+    }
+    sp_lpe_item_enable_path_effects(sp_lpe_item, false);
     for (auto id : items) {
-        if (id.empty()) {
-            return;
-        }
         SPObject *elemref = nullptr;
         if ((elemref = document->getObjectById(id.c_str()))) {
             Inkscape::XML::Node * elemnode = elemref->getRepr();
             std::vector<SPItem*> item_list;
-            item_list.push_back(SP_ITEM(elemref));
+            auto item = dynamic_cast<SPItem *>(elemref);
+            item_list.push_back(item);
             std::vector<Inkscape::XML::Node*> item_to_select;
             std::vector<SPItem*> item_selected;
             SPCSSAttr *css;
             Glib::ustring css_str;
-            SPItem *item = SP_ITEM(elemref);
             switch (lpe_action){
             case LPE_TO_OBJECTS:
                 if (item->isHidden()) {
                     item->deleteObject(true);
                 } else {
-                    if (elemnode->attribute("inkscape:path-effect")) {
-                        sp_item_list_to_curves(item_list, item_selected, item_to_select);
-                    }
                     elemnode->removeAttribute("sodipodi:insensitive");
-                    if (!SP_IS_DEFS(SP_ITEM(elemref)->parent)) {
-                        SP_ITEM(elemref)->moveTo(SP_ITEM(sp_lpe_item), false);
+                    if (!SP_IS_DEFS(item->parent)) {
+                        item->moveTo(sp_lpe_item, false);
                     }
                 }
                 break;
@@ -1244,6 +1253,7 @@ Effect::processObjects(LPEAction lpe_action)
     if (lpe_action == LPE_ERASE || lpe_action == LPE_TO_OBJECTS) {
         items.clear();
     }
+    sp_lpe_item_enable_path_effects(sp_lpe_item, true);
 }
 
 /**
@@ -1254,10 +1264,18 @@ Effect::doBeforeEffect (SPLPEItem const*/*lpeitem*/)
 {
     //Do nothing for simple effects
 }
-
-void Effect::doAfterEffect (SPLPEItem const* /*lpeitem*/)
+/**
+ * Is performed at the end of the LPE only one time per "lpeitem"
+ * in paths/shapes is called in middle of the effect so we add the
+ * "curve" param to allow updates in the LPE results at this stage
+ * for groups dont need to send "curve" parameter because is applied 
+ * when the LPE process finish, we can update LPE results without "curve" parameter
+ * @param lpeitem the element that has this LPE
+ * @param curve the curve to pass when in mode path or shape
+ */
+void Effect::doAfterEffect (SPLPEItem const* /*lpeitem*/, SPCurve *curve)
 {
-    is_load = false;
+    //Do nothing for simple effects
 }
 
 void Effect::doOnException(SPLPEItem const * /*lpeitem*/)
@@ -1274,9 +1292,9 @@ void Effect::doOnVisibilityToggled(SPLPEItem const* /*lpeitem*/)
 {
 }
 //secret impl methods (shhhh!)
-void Effect::doAfterEffect_impl(SPLPEItem const *lpeitem)
+void Effect::doAfterEffect_impl(SPLPEItem const *lpeitem, SPCurve *curve)
 {
-    doAfterEffect(lpeitem);
+    doAfterEffect(lpeitem, curve);
     is_load = false;
     is_applied = false;
 }
@@ -1284,11 +1302,16 @@ void Effect::doOnApply_impl(SPLPEItem const* lpeitem)
 {
     sp_lpe_item = const_cast<SPLPEItem *>(lpeitem);
     is_applied = true;
+    // we can override "lpeversion" value in each LPE using doOnApply
+    // this allow to handle legacy LPE and some times update to newest definitions
+    // In BBB Martin, Mc and Jabiertxof make decision 
+    // to only update this value per each LPE when changes.
+    // and use the Inkscape release version that has this new LPE change
+    // LPE without lpeversion are created in an inkscape lower than 1.0
+    lpeversion.param_setValue("1", true);
     doOnApply(lpeitem);
     setReady();
     has_exception = false;
-    lpeversion.param_setValue("1", true); // we can override this value in each LPE to major versions I dont want to
-                                          // repeat inkscape versioning
 }
 
 void Effect::doBeforeEffect_impl(SPLPEItem const* lpeitem)
@@ -1296,32 +1319,6 @@ void Effect::doBeforeEffect_impl(SPLPEItem const* lpeitem)
     sp_lpe_item = const_cast<SPLPEItem *>(lpeitem);
     doBeforeEffect(lpeitem);
     update_helperpath();
-}
-
-/**
- * Effects can have a parameter path set before they are applied by accepting a nonzero number of
- * mouse clicks. This method activates the pen context, which waits for the specified number of
- * clicks. Override Effect::acceptsNumClicks() to return the number of expected mouse clicks.
- */
-void
-Effect::doAcceptPathPreparations(SPLPEItem *lpeitem)
-{
-    // switch to pen context
-    SPDesktop *desktop = SP_ACTIVE_DESKTOP; // TODO: Is there a better method to find the item's desktop?
-    if (!tools_isactive(desktop, TOOLS_FREEHAND_PEN)) {
-        tools_switch(desktop, TOOLS_FREEHAND_PEN);
-    }
-
-    Inkscape::UI::Tools::ToolBase *ec = desktop->event_context;
-    Inkscape::UI::Tools::PenTool *pc = SP_PEN_CONTEXT(ec);
-    pc->expecting_clicks_for_LPE = this->acceptsNumClicks();
-    pc->waiting_LPE = this;
-    pc->waiting_item = lpeitem;
-    pc->polylines_only = true;
-
-    ec->desktop->messageStack()->flash(Inkscape::INFORMATION_MESSAGE,
-        g_strdup_printf(_("Please specify a parameter path for the LPE '%s' with %d mouse clicks"),
-                        getName().c_str(), acceptsNumClicks()));
 }
 
 void
@@ -1459,6 +1456,12 @@ Effect::addHandles(KnotHolder *knotholder, SPItem *item) {
     // add handles provided by the effect's parameters (if any)
     for (auto & p : param_vector) {
         p->addKnotHolderEntities(knotholder, item);
+    }    
+    if (is_load) {
+        SPLPEItem *lpeitem = dynamic_cast<SPLPEItem *>(item);
+        if (lpeitem) {
+            sp_lpe_item_update_patheffect(lpeitem, false, false);
+        }
     }
 }
 
@@ -1480,7 +1483,10 @@ Effect::getCanvasIndicators(SPLPEItem const* lpeitem)
     for (auto & p : param_vector) {
         p->addCanvasIndicators(lpeitem, hp_vec);
     }
-
+    Geom::Affine scale = lpeitem->i2doc_affine();
+    for (auto &path : hp_vec) {
+        path *= scale;
+    }
     return hp_vec;
 }
 
@@ -1498,7 +1504,13 @@ Effect::addCanvasIndicators(SPLPEItem const*/*lpeitem*/, std::vector<Geom::PathV
  */
 void
 Effect::update_helperpath() {
-    Inkscape::UI::Tools::sp_update_helperpath();
+    SPDesktop *desktop = SP_ACTIVE_DESKTOP;
+    if (desktop) {
+        Inkscape::UI::Tools::NodeTool *nt = dynamic_cast<Inkscape::UI::Tools::NodeTool*>(desktop->event_context);
+        if (nt) {
+            Inkscape::UI::Tools::sp_update_helperpath(desktop);
+        }
+    }
 }
 
 /**
@@ -1508,7 +1520,7 @@ Gtk::Widget *
 Effect::newWidget()
 {
     // use manage here, because after deletion of Effect object, others might still be pointing to this widget.
-    Gtk::VBox * vbox = Gtk::manage( new Gtk::VBox() );
+    Gtk::Box * vbox = Gtk::manage( new Gtk::Box(Gtk::ORIENTATION_VERTICAL) );
 
     vbox->set_border_width(5);
 
@@ -1556,7 +1568,7 @@ Effect::defaultParamSet()
 {
     // use manage here, because after deletion of Effect object, others might still be pointing to this widget.
     Inkscape::Preferences *prefs = Inkscape::Preferences::get();
-    Gtk::VBox * vbox_expander = Gtk::manage( new Gtk::VBox() );
+    Gtk::Box * vbox_expander = Gtk::manage( new Gtk::Box(Gtk::ORIENTATION_VERTICAL) );
     Glib::ustring effectname = (Glib::ustring)Inkscape::LivePathEffect::LPETypeConverter.get_label(effectType());
     Glib::ustring effectkey = (Glib::ustring)Inkscape::LivePathEffect::LPETypeConverter.get_key(effectType());
     std::vector<Parameter *>::iterator it = param_vector.begin();
@@ -1566,6 +1578,10 @@ Effect::defaultParamSet()
             has_params = true;
             Parameter * param = *it;
             const gchar * key   = param->param_key.c_str();
+            if (g_strcmp0(key, "lpeversion") == 0) {
+                ++it;
+                continue;
+            }
             const gchar * label = param->param_label.c_str();
             Glib::ustring value = param->param_getSVGValue();
             Glib::ustring defvalue  = param->param_getDefaultSVGValue();
@@ -1575,23 +1591,23 @@ Effect::defaultParamSet()
             pref_path += key;
             bool valid = prefs->getEntry(pref_path).isValid();
             const gchar * set_or_upd;
-            Glib::ustring def = Glib::ustring(_("<b>Default value:</b> ")) + defvalue + Glib::ustring("\n");
-            Glib::ustring ove = Glib::ustring(_("<b>Default value overridden:</b> ")) + Glib::ustring(prefs->getString(pref_path)) + Glib::ustring("\n");
+            Glib::ustring def = Glib::ustring(_("<b>Default value:</b> ")) + defvalue;
+            Glib::ustring ove = Glib::ustring(_("<b>Default value overridden:</b> "));
             if (valid) {
                 set_or_upd = _("Update");
-                def = Glib::ustring(_("<b>Default value:</b> <s>")) + defvalue + Glib::ustring("</s>\n");
+                def = "";
             } else {
                 set_or_upd = _("Set");
-                ove = Glib::ustring(_("<b>Default value overridden:</b> None\n"));
+                ove = "";
             }
-            Gtk::HBox * vbox_param = Gtk::manage( new Gtk::HBox(true) );
-            Gtk::HBox *namedicon = Gtk::manage(new Gtk::HBox(true));
+            Gtk::Box * vbox_param = Gtk::manage( new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL) );
+            Gtk::Box *namedicon = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL));
             Gtk::Label *parameter_label = Gtk::manage(new Gtk::Label(label, Gtk::ALIGN_START));
             parameter_label->set_use_markup(true);
             parameter_label->set_use_underline(true);
             parameter_label->set_ellipsize(Pango::ELLIPSIZE_END);
             Glib::ustring tooltip = Glib::ustring("<b>") + parameter_label->get_text() + Glib::ustring("</b>\n") +
-                                    param->param_tooltip + Glib::ustring("\n\n");
+                                    param->param_tooltip + Glib::ustring("\n");
             Gtk::Image *info = sp_get_icon_image("info", 20);
             Gtk::EventBox *infoeventbox = Gtk::manage(new Gtk::EventBox());
             infoeventbox->add(*info);
@@ -1609,8 +1625,10 @@ Effect::defaultParamSet()
             if (!valid) {
                 unset->set_sensitive(false);
             }
-            vbox_param->pack_start(*set, true, true, 2);
-            vbox_param->pack_start(*unset, true, true, 2);
+            unset->set_size_request (90, -1);
+            set->set_size_request (90, -1);
+            vbox_param->pack_end(*unset, false, true, 2);
+            vbox_param->pack_end(*set, false, true, 2);
 
             vbox_expander->pack_start(*vbox_param, true, true, 2);
         }
@@ -1648,9 +1666,8 @@ void Effect::setDefaultParam(Glib::ustring pref_path, Glib::ustring tooltip, Par
     gchar * label = _("Update");
     set->set_label((Glib::ustring)label);
     unset->set_sensitive(true);
-    Glib::ustring def = Glib::ustring(_("<b>Default value:</b> <s>")) + defvalue + Glib::ustring("</s>\n");
-    Glib::ustring ove = Glib::ustring(_("<b>Default value overridden:</b> ")) + value + Glib::ustring("\n");
-    info->set_tooltip_markup((tooltip + def + ove).c_str());
+    Glib::ustring ove = Glib::ustring(_("<b>Default value overridden:</b> ")) + value;
+    info->set_tooltip_markup((tooltip + ove).c_str());
 }
 
 void Effect::unsetDefaultParam(Glib::ustring pref_path, Glib::ustring tooltip, Parameter *param, Gtk::Image *info,
@@ -1663,9 +1680,8 @@ void Effect::unsetDefaultParam(Glib::ustring pref_path, Glib::ustring tooltip, P
     gchar * label = _("Set");
     set->set_label((Glib::ustring)label);
     unset->set_sensitive(false);
-    Glib::ustring def = Glib::ustring(_("<b>Default value:</b> ")) + defvalue + Glib::ustring("\n");
-    Glib::ustring ove = Glib::ustring(_("<b>Default value overridden:</b> None\n"));
-    info->set_tooltip_markup((tooltip + def + ove).c_str());
+    Glib::ustring def = Glib::ustring(_("<b>Default value:</b> Default"));
+    info->set_tooltip_markup((tooltip + def).c_str());
 }
 
 Inkscape::XML::Node *Effect::getRepr()
