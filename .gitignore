@@ -1,5 +1,54 @@
-# Archivos ocultos de Dolphin
-.directory
+doxygen_warnings.log
+doxygen/
+gtest/
+build
+share/inkscape
+share/*/*.h
 
-# Archivos ocultos de WPS Office
-*.~
+inkscape_devel_*.snap
+inkscape_devel_source.tar.bz2
+
+*.pyc
+*.old
+*.swp
+*~
+*.rej
+.vscode
+*.kdev4
+.uuid
+.clangd/
+.cache
+compile_commands.json
+
+# Snap packaging specific rules
+/snap/.snapcraft/
+/parts/
+/stage/
+/prime/
+
+/*.snap
+/*_source.tar.bz2
+
+# CMake stuff
+CMakeFiles/
+Makefile
+cmake_install.cmake
+CMakeCache.txt
+CPackConfig.cmake
+CPackSourceConfig.cmake
+cmake_uninstall.cmake
+
+# Translations
+po/*.gmo
+
+# Generated Man pages
+man/*.1
+man/*.pod
+man/*.tmp
+
+# Generated C files
+src/helper/sp-marshal.*
+
+# Ctags
+tags
+
