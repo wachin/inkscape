@@ -1,0 +1,124 @@
+Source: inkscape
+Section: graphics
+Priority: optional
+Maintainer: Inkscape developers <inkscape-devel@lists.inkscape.org> 
+Uploaders: Ted Gould <ted@gould.cx>,
+           Bryce Harrington <bryce@bryceharrington.org>,
+           Marc Jeanmougin <marc.jeanmougin@telecom-paris.fr>,
+           Washington Indacochea Delgado <wachin.id@gmail.com>
+Build-Depends:
+ ragel,
+ aspell,
+ bash-completion,
+ gnome-pkg-tools,
+ debhelper,
+ dh-python,
+ build-essential,
+ cmake,
+ intltool,
+ pkg-config,
+ python3-dev,
+ libtool,
+ software-properties-common,
+ libart-2.0-dev,
+ libaspell-dev,
+ libgspell-1-dev,
+ libblas3,
+ liblapack3,
+ libboost-dev,
+ libboost-filesystem-dev,
+ libboost-python-dev,
+ libboost-stacktrace-dev,
+ libcdr-dev,
+ libdouble-conversion-dev,
+ libgc-dev,
+ libgdl-3-dev,
+ libdbus-1-dev,
+ libdbus-glib-1-dev,
+ libglib2.0-dev,
+ libgsl-dev,
+ libgtest-dev,
+ libgtk-3-dev,
+ libgtkmm-3.0-dev,
+ libgtksourceview-4-dev,
+ libgtkspell3-3-dev,
+ libhunspell-dev,
+ libjemalloc-dev,
+ liblcms2-dev,
+ libmagick++-dev,
+ libpango1.0-dev,
+ libpng-dev,
+ libpoppler-glib-dev,
+ libpoppler-private-dev,
+ libpotrace-dev,
+ libreadline-dev,
+ librevenge-dev,
+ libsigc++-2.0-dev,
+ libsoup2.4-dev,
+ libvisio-dev,
+ libwpg-dev,
+ libxml-parser-perl,
+ libxml2-dev,
+ libxslt1-dev,
+ pkg-config,
+ python3-lxml,
+ zlib1g-dev,
+ google-mock,
+ imagemagick,
+ fonts-dejavu,
+ aspell,
+ imagemagick,
+ perlmagick,
+ libwmf-bin,
+ perlmagick,
+ python3-lxml,
+ python3-bs4,
+ python3-cachecontrol,
+ python3-numpy,
+ python3-scour,
+ python3-cssselect,
+ python3-packaging,
+ python3-gi,
+ python3-gi-cairo,
+ python3-appdirs,
+ gir1.2-gtk-3.0,
+ ruby,
+ libsvg-perl,
+ libxml-xql-perl,
+ transfig,
+ python3-serial,
+ pstoedit
+Build-Conflicts:
+ libpng12-dev
+Standards-Version: 3.9.8
+Homepage: https://inkscape.org/
+Vcs-Browser: https://gitlab.com/inkscape/inkscape
+Vcs-git: https://gitlab.com/inkscape/inkscape.git
+
+Package: inkscape
+Architecture: any
+Depends:
+ ${misc:Depends},
+ ${python3:Depends},
+ ${shlibs:Depends},
+Recommends:
+ adwaita-icon-theme
+Suggests:
+ dia | dia-gnome
+Conflicts: inkscape-trunk, lib2geom1.1.0, lib2geom1.2.0, lib2geom1.3.0
+Description: vector-based drawing program
+ Inkscape is an illustration editor which has everything you need to create
+ professional-quality computer art.  You can use it to make diagrams and 
+ illustrations, technical drawings, web graphics, clip art, icons and logos.
+ A collection of hands-on tutorials show you how to combine lines, shapes, and
+ text of different styles to build up a picture.
+ .
+ A selection of powerful vector graphics editing tools comes as standard. There
+ is excellent support for paths, gradients, layers, alpha transparency, and 
+ text flow control. An extensive library of filters allows you to apply 
+ realistic effects, and extensions allow you to work with bitmaps, barcodes 
+ and printing marks, amongst other things.
+ .
+ Most of the common vector formats are supported, including PDF, Adobe 
+ Illustrator and AutoCAD files, and it has unrivalled support for the SVG web 
+ graphics standard.

@@ -1,0 +1,40 @@
+#!/usr/bin/make -f
+# -*- makefile -*-
+# debian/rules  for inkscape derived from a sample 
+# provided by Joey Hess via dh_make.
+
+# Uncomment this to turn on verbose mode.
+export DH_VERBOSE=1
+
+export DEB_BUILD_MAINT_OPTIONS=hardening=+all
+
+# Drop the --parallel flag as soon as we bump to compat 10
+# We can do this once we drop support for Ubuntu Xenial and earlier
+%:
+	dh $@ \
+		--buildsystem cmake \
+		--parallel          \
+		--with bash-completion,gnome
+
+override_dh_gnome_clean:
+	dh_gnome_clean --no-control
+
+# No need for autoreconf in CMake builds
+override_dh_autoreconf:
+
+
+override_dh_auto_test:
+	@# this is not run in parallel just because I'm too lazy to parse DEB_BUILD_OPTIONS
+	# $(MAKE) -C obj-$(DEB_HOST_GNU_TYPE) tests
+	# some tests are not parallel-safe, since they try to look at the same file
+	# dh_auto_test -a --no-parallel
+	echo "skip tests because gtest is bad on bionic. Uncomment the above in 2028."
+
+override_dh_auto_configure:
+	dh_auto_configure -- \
+		-DCMAKE_BUILD_TYPE=RelWithDebInfo
+
+# Don't run scour, there is no need for it at all, and the defaults are not
+# appropriate for Inkscape's SVGs
+# https://bugs.launchpad.net/ubuntu/+source/inkscape/+bug/1638373
+override_dh_scour:
