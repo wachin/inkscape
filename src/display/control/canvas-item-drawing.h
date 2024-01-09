@@ -21,54 +21,43 @@
 
 
 #include "canvas-item.h"
-#include "display/drawing-item.h" // Only for ctx... which should be remove (it's the same as _affine!).
 
 namespace Inkscape {
-
-class CachePref2Observer;
 
 class Drawing;
 class DrawingItem;
 class Updatecontext;
 
-class CanvasItemGroup; // A canvas control that contains other canvas controls.
-
-class CanvasItemDrawing : public CanvasItem {
-
+class CanvasItemDrawing final : public CanvasItem
+{
 public:
     CanvasItemDrawing(CanvasItemGroup *group);
-    ~CanvasItemDrawing() override;
-
-
-    // Geometry
-    UpdateContext get_context() { return _ctx; } // TODO Remove this as ctx only contains affine.
-
-    void update(Geom::Affine const &affine) override;
-    double closest_distance_to(Geom::Point const &p);
 
     // Selection
     bool contains(Geom::Point const &p, double tolerance = 0) override;
 
     // Display
-    void render(Inkscape::CanvasItemBuffer *buf) override;
-    Inkscape::Drawing * get_drawing() { return _drawing; }
+    Inkscape::Drawing *get_drawing() { return _drawing.get(); }
 
     // Drawing items
     void set_active(Inkscape::DrawingItem *active) { _active_item = active; }
     Inkscape::DrawingItem *get_active() { return _active_item; }
 
     // Events
-    bool handle_event(GdkEvent* event) override;
+    bool handle_event(GdkEvent *event) override;
     void set_sticky(bool sticky) { _sticky = sticky; }
+    void set_pick_outline(bool pick_outline) { _pick_outline = pick_outline; }
 
     // Signals
-    sigc::connection connect_drawing_event(sigc::slot<bool, GdkEvent*, Inkscape::DrawingItem *> slot) {
+    sigc::connection connect_drawing_event(sigc::slot<bool (GdkEvent*, Inkscape::DrawingItem *)> slot) {
         return _drawing_event_signal.connect(slot);
     }
 
 protected:
+    ~CanvasItemDrawing() override = default;
 
-    // Geometry
+    void _update(bool propagate) override;
+    void _render(Inkscape::CanvasItemBuffer &buf) const override;
 
     // Selection
     Geom::Point _c;
@@ -77,20 +66,17 @@ protected:
     Inkscape::DrawingItem *_picked_item = nullptr;
 
     // Display
-    Inkscape::Drawing *_drawing;
-    Inkscape::UpdateContext _ctx;  // TODO Remove this... it's the same as _affine!
+    std::unique_ptr<Inkscape::Drawing> _drawing;
+    Geom::Affine _drawing_affine;
 
     // Events
     bool _cursor = false;
     bool _sticky = false; // Pick anything, even if hidden.
-
-    // Properties
-    CachePref2Observer *_observer = nullptr;
+    bool _pick_outline = false;
 
     // Signals
-    sigc::signal<bool, GdkEvent*, Inkscape::DrawingItem *> _drawing_event_signal;
+    sigc::signal<bool (GdkEvent*, Inkscape::DrawingItem *)> _drawing_event_signal;
 };
-
 
 } // namespace Inkscape
 

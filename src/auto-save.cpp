@@ -27,6 +27,7 @@
 #include "xml/repr.h"
 
 #ifdef _WIN32
+#include <process.h>
 typedef int uid_t;
 #define getuid() 0
 #endif
@@ -81,7 +82,7 @@ AutoSave::save()
     Glib::RefPtr<Gio::File> dir_file = Gio::File::create_for_path(autosave_dir);
     if (!dir_file->query_exists()) {
         if (!dir_file->make_directory_with_parents()) {
-            std::cerr << "InkscapeApplication::document_autosave: Failed to create autosave directory: " << Glib::filename_to_utf8(autosave_dir) << std::endl;
+            std::cerr << "InkscapeApplication::document_autosave: Failed to create autosave directory: " << autosave_dir << std::endl;
             return true;
         }
     }

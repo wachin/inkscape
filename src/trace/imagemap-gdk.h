@@ -7,44 +7,21 @@
  * Copyright (C) 2013 Authors
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
-#ifndef __GRAYMAP_GDK_H__
-#define __GRAYMAP_GDK_H__
+#ifndef INKSCAPE_TRACE_IMAGEMAP_GDK_H
+#define INKSCAPE_TRACE_IMAGEMAP_GDK_H
 
-#ifndef TRUE
-#define TRUE  1
-#endif
-
-#ifndef FALSE
-#define FALSE 0
-#endif
-
+#include <gdkmm/pixbuf.h>
 #include "imagemap.h"
 
-#include <gdk-pixbuf/gdk-pixbuf.h>
+namespace Inkscape {
+namespace Trace {
 
-/*#########################################################################
-### I M A G E    M A P --- GDK
-#########################################################################*/
+GrayMap gdkPixbufToGrayMap(Glib::RefPtr<Gdk::Pixbuf> const &);
+Glib::RefPtr<Gdk::Pixbuf> grayMapToGdkPixbuf(GrayMap const &);
+RgbMap gdkPixbufToRgbMap(Glib::RefPtr<Gdk::Pixbuf> const &);
+Glib::RefPtr<Gdk::Pixbuf> indexedMapToGdkPixbuf(IndexedMap const &);
 
+} // namespace Trace
+} // namespace Inkscape
 
-
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-GrayMap *gdkPixbufToGrayMap(GdkPixbuf *buf);
-GdkPixbuf *grayMapToGdkPixbuf(GrayMap *grayMap);
-RgbMap *gdkPixbufToRgbMap(GdkPixbuf *buf);
-GdkPixbuf *indexedMapToGdkPixbuf(IndexedMap *iMap);
-
-
-#ifdef __cplusplus
-}
-#endif
-
-
-#endif /* __GRAYMAP_GDK_H__ */
-
-/*#########################################################################
-### E N D    O F    F I L E
-#########################################################################*/
+#endif // INKSCAPE_TRACE_IMAGEMAP_GDK_H

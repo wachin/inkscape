@@ -26,7 +26,6 @@
 #include <glib.h>
 
 #include "xml/composite-node-observer.h"
-#include "xml/node-event-vector.h"
 #include "debug/event-tracker.h"
 #include "debug/simple-event.h"
 
@@ -40,7 +39,7 @@ void CompositeNodeObserver::notifyChildAdded(Node &node, Node &child, Node *prev
     for (auto & iter : _active)
     {
         if (!iter.marked) {
-            iter.observer.notifyChildAdded(node, child, prev);
+            iter.observer->notifyChildAdded(node, child, prev);
         }
     }
     _finishIteration();
@@ -53,7 +52,7 @@ void CompositeNodeObserver::notifyChildRemoved(Node &node, Node &child,
     for (auto & iter : _active)
     {
         if (!iter.marked) {
-            iter.observer.notifyChildRemoved(node, child, prev);
+            iter.observer->notifyChildRemoved(node, child, prev);
         }
     }
     _finishIteration();
@@ -67,7 +66,7 @@ void CompositeNodeObserver::notifyChildOrderChanged(Node &node, Node &child,
     for (auto & iter : _active)
     {
         if (!iter.marked) {
-            iter.observer.notifyChildOrderChanged(node, child, old_prev, new_prev);
+            iter.observer->notifyChildOrderChanged(node, child, old_prev, new_prev);
         }
     }
     _finishIteration();
@@ -81,7 +80,7 @@ void CompositeNodeObserver::notifyContentChanged(
     for (auto & iter : _active)
     {
         if (!iter.marked) {
-            iter.observer.notifyContentChanged(node, old_content, new_content);
+            iter.observer->notifyContentChanged(node, old_content, new_content);
         }
     }
     _finishIteration();
@@ -95,7 +94,7 @@ void CompositeNodeObserver::notifyAttributeChanged(
     for (auto & iter : _active)
     {
         if (!iter.marked) {
-            iter.observer.notifyAttributeChanged(node, name, old_value, new_value);
+            iter.observer->notifyAttributeChanged(node, name, old_value, new_value);
         }
     }
     _finishIteration();
@@ -106,7 +105,7 @@ void CompositeNodeObserver::notifyElementNameChanged(Node& node, GQuark old_name
     _startIteration();
     for (auto& iter : _active) {
         if (!iter.marked) {
-            iter.observer.notifyElementNameChanged(node, old_name, new_name);
+            iter.observer->notifyElementNameChanged(node, old_name, new_name);
         }
     }
     _finishIteration();
@@ -114,66 +113,10 @@ void CompositeNodeObserver::notifyElementNameChanged(Node& node, GQuark old_name
 
 void CompositeNodeObserver::add(NodeObserver &observer) {
     if (_iterating) {
-        _pending.emplace_back(observer);
+        _pending.emplace_back(&observer);
     } else {
-        _active.emplace_back(observer);
+        _active.emplace_back(&observer);
     }
-}
-
-namespace {
-
-class VectorNodeObserver : public NodeObserver, public GC::Managed<> {
-public:
-    VectorNodeObserver(NodeEventVector const &v, void *d)
-    : vector(v), data(d) {}
-
-    NodeEventVector const &vector;
-    void * const data;
-
-    void notifyChildAdded(Node &node, Node &child, Node *prev) override {
-        if (vector.child_added) {
-            vector.child_added(&node, &child, prev, data);
-        }
-    }
-
-    void notifyChildRemoved(Node &node, Node &child, Node *prev) override {
-        if (vector.child_removed) {
-            vector.child_removed(&node, &child, prev, data);
-        }
-    }
-
-    void notifyChildOrderChanged(Node &node, Node &child, Node *old_prev, Node *new_prev) override {
-        if (vector.order_changed) {
-            vector.order_changed(&node, &child, old_prev, new_prev, data);
-        }
-    }
-
-    void notifyContentChanged(Node &node, Util::ptr_shared old_content, Util::ptr_shared new_content) override {
-        if (vector.content_changed) {
-            vector.content_changed(&node, old_content, new_content, data);
-        }
-    }
-
-    void notifyAttributeChanged(Node &node, GQuark name, Util::ptr_shared old_value, Util::ptr_shared new_value) override {
-        if (vector.attr_changed) {
-            vector.attr_changed(&node, g_quark_to_string(name), old_value, new_value, false, data);
-        }
-    }
-
-    void notifyElementNameChanged(Node& node, GQuark old_name, GQuark new_name) override {
-        if (vector.element_name_changed) {
-            vector.element_name_changed(&node, g_quark_to_string(old_name), g_quark_to_string(new_name), data);
-        }
-    }
-};
-
-}
-
-void CompositeNodeObserver::addListener(NodeEventVector const &vector,
-                                        void *data)
-{
-    Debug::EventTracker<Debug::SimpleEvent<Debug::Event::XML> > tracker("add-listener");
-    add(*(new VectorNodeObserver(vector, data)));
 }
 
 namespace {
@@ -194,7 +137,7 @@ template <typename Predicate>
 bool mark_one(ObserverRecordList &observers, unsigned &marked_count,
               Predicate p)
 {
-    ObserverRecordList::iterator found=std::find_if(
+    auto found = std::find_if(
         observers.begin(), observers.end(),
         unmarked_record_satisfying<Predicate>(p)
     );
@@ -212,13 +155,19 @@ template <typename Predicate>
 bool remove_one(ObserverRecordList &observers, unsigned &/*marked_count*/,
                 Predicate p)
 {
-    ObserverRecordList::iterator found = std::find_if(
+    auto found = std::find_if(
         observers.begin(), observers.end(),
         unmarked_record_satisfying<Predicate>(p)
     );
 
     if ( found != observers.end() ) {
-        observers.erase(found);
+        // for O(1) removal
+        if (observers.size() > 3) {
+            *found = std::move(observers.back());
+            observers.pop_back();
+        } else {
+            observers.erase(found);
+        }
         return true;
     } else {
         return false;
@@ -232,7 +181,8 @@ void remove_all_marked(ObserverRecordList &observers, unsigned &marked_count)
     if (marked_count) {
         g_assert(!observers.empty());
 
-        observers.remove_if(is_marked);
+        auto newEnd = std::remove_if(observers.begin(), observers.end(), is_marked);
+        observers.erase(newEnd, observers.end());
         marked_count = 0;
     }
 }
@@ -243,7 +193,9 @@ void CompositeNodeObserver::_finishIteration() {
     if (!--_iterating) {
         remove_all_marked(_active, _active_marked);
         remove_all_marked(_pending, _pending_marked);
-        _active.splice(_active.end(), std::move(_pending));
+        _active.insert(_active.end(), _pending.begin(), _pending.end());
+        _pending.clear();
+
         g_assert(_pending.empty());
     }
 }
@@ -251,49 +203,17 @@ void CompositeNodeObserver::_finishIteration() {
 namespace {
 
 struct eql_observer {
-    NodeObserver const &observer;
-    eql_observer(NodeObserver const &o) : observer(o) {}
-    bool operator()(NodeObserver const &other) {
-        return &observer == &other;
+    NodeObserver const *observer;
+    eql_observer(NodeObserver const *o) : observer(o) {}
+    bool operator()(NodeObserver const *other) {
+        return observer == other;
     }
 };
 
 }
 
 void CompositeNodeObserver::remove(NodeObserver &observer) {
-    eql_observer p(observer);
-    if (_iterating) {
-        mark_one(_active, _active_marked, p) ||
-        mark_one(_pending, _pending_marked, p);
-    } else {
-        remove_one(_active, _active_marked, p) ||
-        remove_one(_pending, _pending_marked, p);
-    }
-}
-
-namespace {
-
-struct vector_data_matches {
-    void * const data;
-    vector_data_matches(void *d) : data(d) {}
-    
-    bool operator()(NodeObserver const &observer) {
-        VectorNodeObserver const *vo=dynamic_cast<VectorNodeObserver const *>(&observer);
-        bool OK = false;
-        if (vo) {
-            if (vo && vo->data == data) {
-                OK = true;
-            }
-        }
-        return OK;
-    }
-};
-
-}
-
-void CompositeNodeObserver::removeListenerByData(void *data) {
-    Debug::EventTracker<Debug::SimpleEvent<Debug::Event::XML> > tracker("remove-listener-by-data");
-    vector_data_matches p(data);
+    eql_observer p(&observer);
     if (_iterating) {
         mark_one(_active, _active_marked, p) ||
         mark_one(_pending, _pending_marked, p);
@@ -303,10 +223,8 @@ void CompositeNodeObserver::removeListenerByData(void *data) {
     }
 }
     
-}
-
-}
-
+} // namespace XML
+} // namespace Inkscape
 /*
   Local Variables:
   mode:c++

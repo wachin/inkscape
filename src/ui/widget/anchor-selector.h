@@ -26,7 +26,7 @@ private:
 	int                _selection;
 	Gtk::Grid          _container;
 
-	sigc::signal<void> _selectionChanged;
+	sigc::signal<void ()> _selectionChanged;
 
 	void setupButton(const Glib::ustring &icon, Gtk::ToggleButton &button);
 	void btn_activated(int index);
@@ -36,7 +36,7 @@ public:
 	int getHorizontalAlignment() { return _selection % 3; }
 	int getVerticalAlignment() { return _selection / 3; }
 
-	sigc::signal<void> &on_selectionChanged() { return _selectionChanged; }
+	sigc::signal<void ()> &on_selectionChanged() { return _selectionChanged; }
 
 	void setAlignment(int horizontal, int vertical);
 

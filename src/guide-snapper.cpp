@@ -49,7 +49,7 @@ Inkscape::GuideSnapper::LineList Inkscape::GuideSnapper::_getSnapLines(Geom::Poi
     std::vector<SPGuide *> guides = _snapmanager->getNamedView()->guides;
     for(auto guide : guides) {
         if (guide != guide_to_ignore) {
-            s.push_back(std::pair<Geom::Point, Geom::Point>(guide->getNormal(), guide->getPoint()));
+            s.emplace_back(guide->getNormal(), guide->getPoint());
         }
     }
 

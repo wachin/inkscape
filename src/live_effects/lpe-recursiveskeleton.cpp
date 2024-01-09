@@ -33,8 +33,7 @@ LPERecursiveSkeleton::LPERecursiveSkeleton(LivePathEffectObject *lpeobject) :
 
 }
 
-LPERecursiveSkeleton::~LPERecursiveSkeleton()
-= default;
+LPERecursiveSkeleton::~LPERecursiveSkeleton() = default;
 
 
 Geom::Piecewise<Geom::D2<Geom::SBasis> >

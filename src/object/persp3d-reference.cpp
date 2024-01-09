@@ -35,7 +35,7 @@ Persp3DReference::~Persp3DReference()
 bool
 Persp3DReference::_acceptObject(SPObject *obj) const
 {
-    return SP_IS_PERSP3D(obj) && URIReference::_acceptObject(obj);
+    return is<Persp3D>(obj) && URIReference::_acceptObject(obj);
 ;
     /* effic: Don't bother making this an inline function: _acceptObject is a virtual function,
        typically called from a context where the runtime type is not known at compile time. */
@@ -77,8 +77,8 @@ static void
 persp3dreference_href_changed(SPObject */*old_ref*/, SPObject */*ref*/, Persp3DReference *persp3dref)
 {
     persp3dref->quit_listening();
-    Persp3D *refobj = SP_PERSP3D(persp3dref->getObject());
-    if ( refobj ) {
+
+    if (auto refobj = persp3dref->getObject()) {
         persp3dref->start_listening(refobj);
     }
 

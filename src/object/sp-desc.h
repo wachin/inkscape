@@ -15,15 +15,14 @@
 
 #include "sp-object.h"
 
-class SPDesc : public SPObject {
+class SPDesc final : public SPObject {
 public:
 	SPDesc();
 	~SPDesc() override;
+    int tag() const override { return tag_of<decltype(*this)>; }
 
 protected:
 	Inkscape::XML::Node* write(Inkscape::XML::Document* doc, Inkscape::XML::Node* repr, unsigned int flags) override;
 };
-
-MAKE_SP_OBJECT_TYPECHECK_FUNCTIONS(SP_IS_DESC, SPDesc)
 
 #endif

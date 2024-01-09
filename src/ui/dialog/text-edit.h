@@ -21,11 +21,16 @@
 
 #include <glibmm/refptr.h>
 
+#include "helper/auto-connection.h"
+
 #include "ui/dialog/dialog-base.h"
 #include "ui/widget/frame.h"
 
 #include "ui/widget/font-selector.h"
 #include "ui/widget/font-variants.h"
+
+#include "util/action-accel.h"
+#include "util/font-collections.h"
 
 namespace Gtk {
 class Box;
@@ -38,7 +43,7 @@ class TextView;
 }
 
 class SPItem;
-class font_instance;
+class FontInstance;
 class SPCSSAttr;
 
 namespace Inkscape {
@@ -63,14 +68,7 @@ public:
     void selectionChanged(Selection *selection) override;
     void selectionModified(Selection *selection, guint flags) override;
 
-    /**
-     * Helper function which returns a new instance of the dialog.
-     * getInstance is needed by the dialog manager (Inkscape::UI::Dialog::DialogManager).
-     */
-    static TextEdit &getInstance() { return *new TextEdit(); }
-
 protected:
-
     /**
      * Callback for pressing the default button.
      */
@@ -80,6 +78,11 @@ protected:
      * Callback for pressing the apply button.
      */
     void onApply ();
+
+    /**
+     * Function to list the font collections in the popover menu.
+     */
+    void display_font_collections();
 
     /**
      * Called whenever something 'changes' on canvas.
@@ -92,6 +95,12 @@ protected:
     void onReadSelection (gboolean style, gboolean content);
 
     /**
+     * This function would disable undo and redo if the text_view widget is in focus
+     * It is to fix the issue: https://gitlab.com/inkscape/inkscape/-/issues/744
+     */
+    bool captureUndo(GdkEventKey *event);
+
+    /**
      * Callback invoked when the user modifies the text of the selected text object.
      *
      * onTextChange is responsible for initiating the commands after the user
@@ -102,6 +111,12 @@ protected:
      */
     void onChange ();
     void onFontFeatures (Gtk::Widget * widgt, int pos);
+
+    // Callback to handle changes in the search entry.
+    void on_search_entry_changed();
+    void on_reset_button_pressed();
+    void change_font_count_label();
+    void on_fcm_button_clicked();
 
     /**
      * Callback invoked when the user modifies the font through the dialog or the tools control bar.
@@ -143,6 +158,18 @@ private:
      */
 
     // Tab 1: Font ---------------------- //
+    Gtk::Box *settings_and_filters_box;
+    Gtk::MenuButton *filter_menu_button;
+    Gtk::Button *reset_button;
+    Gtk::SearchEntry *search_entry;
+    Gtk::Label *font_count_label;
+    Gtk::Popover *filter_popover;
+    Gtk::Box *popover_box;
+    Gtk::Frame *frame;
+    Gtk::Label *frame_label;
+    Gtk::Button *collection_editor_button;
+    Gtk::ListBox *collections_list;
+
     Inkscape::UI::Widget::FontSelector font_selector;
     Inkscape::UI::Widget::FontVariations font_variations;
     Gtk::Label *preview_label;  // Share with variants tab?
@@ -165,15 +192,16 @@ private:
     sigc::connection selectModifiedConn;
     sigc::connection fontChangedConn;
     sigc::connection fontFeaturesChangedConn;
+    auto_connection fontCollectionsChangedSelection;
+    auto_connection fontCollectionsUpdate;
 
     // Other
     double selected_fontsize;
     bool blocked;
     const Glib::ustring samplephrase;
 
-
-    TextEdit(TextEdit const &d) = delete;
-    TextEdit operator=(TextEdit const &d) = delete;
+    // Track undo and redo keyboard shortcuts
+    Util::ActionAccel _undo, _redo;
 };
 
 } //namespace Dialog

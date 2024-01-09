@@ -32,22 +32,19 @@
 namespace Inkscape {
 namespace Filters {
 
-class FilterSkeleton : public FilterPrimitive {
+class FilterSkeleton : public FilterPrimitive
+{
 public:
     FilterSkeleton();
-    static FilterPrimitive *create();
-    virtual ~FilterSkeleton();
+    ~FilterSkeleton() override;
 
-    virtual void render_cairo(FilterSlot &slot);
-
-private:
-
+    void render_cairo(FilterSlot &slot) const override;
 };
 
-} /* namespace Filters */
-} /* namespace Inkscape */
+} // namespace Filters
+} // namespace Inkscape
 
-#endif /* __NR_FILTER_SKELETON_H__ */
+#endif // SEEN_NR_FILTER_SKELETON_H
 /*
   Local Variables:
   mode:c++

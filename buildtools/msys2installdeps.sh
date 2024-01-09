@@ -1,13 +1,20 @@
 #!/usr/bin/env bash
 # -------------------------------------------------------------------------------
-# This script installs all dependencies required for building Inkscape with MSYS2
-#   execute it once on an MSYS shell, i.e.
-#    - use the "MSYS2 MSYS" shortcut in the start menu or
-#    - run "msys2.exe" in MSYS2's installation folder
+# This script installs all dependencies required for building Inkscape with MSYS2.
+#
+# See https://wiki.inkscape.org/wiki/Compiling_Inkscape_on_Windows_with_MSYS2 for
+# detailed instructions.
+#
+# The following instructions assume you are building for the standard x86_64 processor architecture,
+# which means that you use the UCRT64 variant of msys2.
+# Else, replace UCRT64 with the appropriate variant for your architecture.
+#
+# To run this script, execute it once on an UCRT64 shell, i.e.
+#    - use the "MSYS2 UCRT64" shortcut in the start menu or
+#    - run "ucrt64.exe" in MSYS2's installation folder
 #
 # MSYS2 and installed libraries can be updated later by executing
-#   pacman -Syu --ignore=mingw-w64-*-imagemagick
-# in an MSYS shell
+#   pacman -Syu
 # -------------------------------------------------------------------------------
 
 # select if you want to build 32-bit (i686), 64-bit (x86_64), or both
@@ -17,6 +24,15 @@ case "$MSYSTEM" in
     ;;
   MINGW64)
     ARCH=mingw-w64-x86_64
+    ;;
+  UCRT64)
+    ARCH=mingw-w64-ucrt-x86_64
+    ;;
+  CLANG64)
+    ARCH=mingw-w64-clang-x86_64
+    ;;
+  CLANGARM64)
+    ARCH=mingw-w64-clang-aarch64
     ;;
   *)
     ARCH={mingw-w64-i686,mingw-w64-x86_64}
@@ -36,8 +52,11 @@ eval pacman -S $PACMAN_OPTIONS \
 git \
 base-devel \
 $ARCH-toolchain \
+$ARCH-autotools \
 $ARCH-cmake \
-$ARCH-ninja
+$ARCH-meson \
+$ARCH-ninja \
+$ARCH-ccache
 
 # install Inkscape dependencies (required)
 eval pacman -S $PACMAN_OPTIONS \
@@ -47,6 +66,7 @@ $ARCH-gsl \
 $ARCH-libxslt \
 $ARCH-boost \
 $ARCH-gtk3 \
+$ARCH-gtk-doc \
 $ARCH-gtkmm3 \
 $ARCH-libsoup
 
@@ -59,22 +79,10 @@ $ARCH-libvisio \
 $ARCH-libwpg \
 $ARCH-aspell \
 $ARCH-aspell-en \
-$ARCH-gspell
-
-# install ImageMagick (as Inkscape requires old version ImageMagick 6 we have to specify it explicitly)
-# to prevent future updates:
-#     add the line
-#        "IgnorePkg = mingw-w64-*-imagemagick"
-#     to
-#        "C:\msys64\etc\pacman.conf"
-#     or (always!) run pacman with the additional command line switch
-#        --ignore=mingw-w64-*-imagemagick
-for arch in $(eval echo $ARCH); do
-  wget -nv https://gitlab.com/ede123/bintray/-/raw/master/${arch}-imagemagick-6.9.10.69-1-any.pkg.tar.xz \
-    && pacman -U $PACMAN_OPTIONS ${arch}-imagemagick-6.9.10.69-1-any.pkg.tar.xz \
-    && rm  ${arch}-imagemagick-6.9.10.69-1-any.pkg.tar.xz
-done
-
+$ARCH-gspell \
+$ARCH-gtksourceview4 \
+$ARCH-graphicsmagick \
+$ARCH-libjxl
 
 # install Python and modules used by Inkscape
 eval pacman -S $PACMAN_OPTIONS \
@@ -88,11 +96,15 @@ $ARCH-python-six \
 $ARCH-python-gobject \
 $ARCH-python-pyserial \
 $ARCH-python-coverage \
+$ARCH-python-packaging \
+$ARCH-python-zstandard \
 $ARCH-scour
 
-# install modules needed by extensions manager
+# install modules needed by extensions manager and clipart importer
 eval pacman -S $PACMAN_OPTIONS \
 $ARCH-python-appdirs \
+$ARCH-python-beautifulsoup4 \
+$ARCH-python-filelock \
 $ARCH-python-msgpack \
 $ARCH-python-lockfile \
 $ARCH-python-cachecontrol \
@@ -112,5 +124,46 @@ for arch in $(eval echo $ARCH); do
     mingw-w64-x86_64)
       #/mingw64/bin/pip3 install --upgrade ${PACKAGES}
       ;;
+    mingw-w64-ucrt-x86_64)
+      #/ucrt64/bin/pip3 install --upgrade ${PACKAGES}
+      ;;
+    mingw-w64-clang-x86_64)
+      #/clang64/bin/pip3 install --upgrade ${PACKAGES}
+      ;;
+    mingw-w64-clang-aarch64)
+      #/clangarm64/bin/pip3 install --upgrade ${PACKAGES}
+      ;;
   esac
 done
+
+
+# gettext hack - to remove once gettext has the match
+function hack_libintl(){
+f=/$1/include/libintl.h
+sed -i '/^extern int sprintf/a #ifdef __cplusplus\nnamespace std { using ::libintl_sprintf; }\n#endif' $f
+cat $f
+}
+
+case "$MSYSTEM" in
+  MINGW32)
+    hack_libintl mingw32
+    ;;
+  MINGW64)
+    hack_libintl mingw64
+    ;;
+  UCRT64)
+    hack_libintl ucrt64
+    ;;
+  CLANG64)
+    hack_libintl clang64
+    ;;
+  CLANGARM64)
+    hack_libintl clangarm64
+    ;;
+  *)
+    hack_libintl mingw32
+    hack_libintl mingw64
+    ;;
+esac
+
+echo "Done :-)"

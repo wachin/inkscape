@@ -21,12 +21,12 @@
 #include "document-undo.h"
 #include "message-stack.h"
 #include "node.h"
-#include "verbs.h"
 
 #include "live_effects/lpeobject.h"
 
 #include "object/sp-path.h"
 
+#include "ui/icon-names.h"
 #include "ui/tool/control-point-selection.h"
 #include "ui/tool/event-utils.h"
 #include "ui/tool/multi-path-manipulator.h"
@@ -38,7 +38,6 @@ namespace UI {
 namespace {
 
 struct hash_nodelist_iterator
-    : public std::unary_function<NodeList::iterator, std::size_t>
 {
     std::size_t operator()(NodeList::iterator i) const {
         return std::hash<NodeList::iterator::pointer>()(&*i);
@@ -182,8 +181,8 @@ void MultiPathManipulator::setItems(std::set<ShapeRecord> const &s)
 
     // add newly selected items
     for (const auto & r : shapes) {
-        LivePathEffectObject *lpobj = dynamic_cast<LivePathEffectObject *>(r.object);
-        if (!SP_IS_PATH(r.object) && !lpobj) continue;
+        auto lpobj = cast<LivePathEffectObject>(r.object);
+        if (!is<SPPath>(r.object) && !lpobj) continue;
         std::shared_ptr<PathManipulator> newpm(new PathManipulator(*this, (SPPath*) r.object,
             r.edit_transform, _getOutlineColor(r.role, r.object), r.lpe_key));
         newpm->showHandles(_show_handles);
@@ -435,10 +434,14 @@ void MultiPathManipulator::breakNodes()
     _done(_("Break nodes"), true);
 }
 
-void MultiPathManipulator::deleteNodes(bool keep_shape)
+void MultiPathManipulator::deleteNodes(bool keep_shape) {
+    deleteNodes(keep_shape ? NodeDeleteMode::curve_fit : NodeDeleteMode::line_segment);
+}
+
+void MultiPathManipulator::deleteNodes(NodeDeleteMode mode)
 {
     if (_selection.empty()) return;
-    invokeForAll(&PathManipulator::deleteNodes, keep_shape);
+    invokeForAll(&PathManipulator::deleteNodes, mode);
     _doneWithCleanup(_("Delete nodes"), true);
 }
 
@@ -476,10 +479,10 @@ void MultiPathManipulator::deleteSegments()
     _doneWithCleanup("Delete segments", true);
 }
 
-void MultiPathManipulator::alignNodes(Geom::Dim2 d)
+void MultiPathManipulator::alignNodes(Geom::Dim2 d, AlignTargetNode target)
 {
     if (_selection.empty()) return;
-    _selection.align(d);
+    _selection.align(d, target);
     if (d == Geom::X) {
         _done("Align nodes to a horizontal line");
     } else {
@@ -690,12 +693,13 @@ bool MultiPathManipulator::event(Inkscape::UI::Tools::ToolBase *event_context, G
             } else {
                 Inkscape::Preferences *prefs = Inkscape::Preferences::get();
                 bool del_preserves_shape = prefs->getBool("/tools/nodes/delete_preserves_shape", true);
+                //MK: how can multi-path-manipulator know it is dealing with a bspline if it's checking tool mode???
+                /*
                 // pass keep_shape = true when:
                 // a) del preserves shape, and control is not pressed
                 // b) ctrl+del preserves shape (del_preserves_shape is false), and control is pressed
                 // Hence xor
                 guint mode = prefs->getInt("/tools/freehand/pen/freehand-mode", 0);
-
                 //if the trace is bspline ( mode 2)
                 if(mode==2){
                     //  is this correct ?
@@ -705,8 +709,12 @@ bool MultiPathManipulator::event(Inkscape::UI::Tools::ToolBase *event_context, G
                         deleteNodes(true);
                     }
                 } else {
-                    deleteNodes(del_preserves_shape ^ held_control(event->key));
-                }
+                */
+                auto mode =
+                    held_control(event->key) ?
+                        (del_preserves_shape ? NodeDeleteMode::inverse_auto : NodeDeleteMode::curve_fit) :
+                        (del_preserves_shape ? NodeDeleteMode::automatic : NodeDeleteMode::line_segment);
+                deleteNodes(mode);
 
                 // Delete any selected gradient nodes as well
                 event_context->deleteSelectedDrag(held_control(event->key));
@@ -844,9 +852,9 @@ void MultiPathManipulator::_commit(CommitEvent cps)
     _selection.signal_update.emit();
     invokeForAll(&PathManipulator::writeXML);
     if (key) {
-        DocumentUndo::maybeDone(_desktop->getDocument(), key, SP_VERB_CONTEXT_NODE, reason);
+        DocumentUndo::maybeDone(_desktop->getDocument(), key, reason, INKSCAPE_ICON("tool-node-editor"));
     } else {
-        DocumentUndo::done(_desktop->getDocument(), SP_VERB_CONTEXT_NODE, reason);
+        DocumentUndo::done(_desktop->getDocument(), reason, INKSCAPE_ICON("tool-node-editor"));
     }
     signal_coords_changed.emit();
 }
@@ -855,7 +863,7 @@ void MultiPathManipulator::_commit(CommitEvent cps)
 void MultiPathManipulator::_done(gchar const *reason, bool alert_LPE) {
     invokeForAll(&PathManipulator::update, alert_LPE);
     invokeForAll(&PathManipulator::writeXML);
-    DocumentUndo::done(_desktop->getDocument(), SP_VERB_CONTEXT_NODE, reason);
+    DocumentUndo::done(_desktop->getDocument(), reason, INKSCAPE_ICON("tool-node-editor"));
     signal_coords_changed.emit();
 }
 
@@ -880,7 +888,7 @@ guint32 MultiPathManipulator::_getOutlineColor(ShapeRole role, SPObject *object)
         return prefs->getColor("/tools/nodes/lpe_param_color", 0x009000ff);
     case SHAPE_ROLE_NORMAL:
     default:
-        return SP_ITEM(object)->highlight_color();
+        return prefs->getColor("/tools/nodes/highlight_color", 0xff0000ff);;
     }
 }
 

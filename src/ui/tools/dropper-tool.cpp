@@ -26,7 +26,7 @@
 #include "preferences.h"
 #include "selection.h"
 #include "style.h"
-#include "verbs.h"
+#include "page-manager.h"
 
 #include "display/curve.h"
 #include "display/drawing.h"
@@ -40,6 +40,7 @@
 #include "svg/svg-color.h"
 
 #include "ui/cursor-utils.h"
+#include "ui/icon-names.h"
 #include "ui/tools/dropper-tool.h"
 #include "ui/widget/canvas.h"
 
@@ -49,23 +50,10 @@ namespace Inkscape {
 namespace UI {
 namespace Tools {
 
-const std::string& DropperTool::getPrefsPath() {
-	return DropperTool::prefsPath;
-}
-
-const std::string DropperTool::prefsPath = "/tools/dropper";
-
-DropperTool::DropperTool()
-    : ToolBase("dropper-pick-fill.svg")
+DropperTool::DropperTool(SPDesktop *desktop)
+    : ToolBase(desktop, "/tools/dropper", "dropper-pick-fill.svg")
 {
-}
-
-DropperTool::~DropperTool() = default;
-
-void DropperTool::setup() {
-    ToolBase::setup();
-
-    area = new Inkscape::CanvasItemBpath(desktop->getCanvasControls());
+    area = make_canvasitem<CanvasItemBpath>(desktop->getCanvasControls());
     area->set_stroke(0x0000007f);
     area->set_fill(0x0, SP_WIND_RULE_EVENODD);
     area->hide();
@@ -81,17 +69,11 @@ void DropperTool::setup() {
     }
 }
 
-void DropperTool::finish() {
+DropperTool::~DropperTool()
+{
     this->enableGrDrag(false);
 
     ungrabCanvasEvents();
-
-    if (this->area) {
-        delete this->area;
-        this->area = nullptr;
-    }
-
-    ToolBase::finish();
 }
 
 /**
@@ -154,8 +136,8 @@ bool DropperTool::root_handler(GdkEvent* event) {
     // Only if dropping mode enabled and object's color is set.
     // Otherwise dropping mode disabled.
     if(this->dropping) {
-	Inkscape::Selection *selection = desktop->getSelection();
-	g_assert(selection);
+        Inkscape::Selection *selection = _desktop->getSelection();
+        g_assert(selection);
         guint32 apply_color;
         bool apply_set = false;
         for (auto& obj: selection->objects()) {
@@ -222,15 +204,15 @@ bool DropperTool::root_handler(GdkEvent* event) {
                     }
                     this->radius = rw;
 
-                    Geom::Point const cd = desktop->w2d(this->centre);
-                    Geom::Affine const w2dt = desktop->w2d();
+                    Geom::Point const cd = _desktop->w2d(this->centre);
+                    Geom::Affine const w2dt = _desktop->w2d();
                     const double scale = rw * w2dt.descrim();
                     Geom::Affine const sm( Geom::Scale(scale, scale) * Geom::Translate(cd) );
 
                     // Show circle on canvas
                     Geom::PathVector path = Geom::Path(Geom::Circle(0, 0, 1)); // Unit circle centered at origin.
                     path *= sm;
-                    this->area->set_bpath(path);
+                    this->area->set_bpath(std::move(path));
                     this->area->show();
 
                     /* Get buffer */
@@ -245,22 +227,19 @@ bool DropperTool::root_handler(GdkEvent* event) {
                     pick_area = Geom::IntRect::from_xywh(floor(event->button.x), floor(event->button.y), 1, 1);
                 }
 
-                Inkscape::CanvasItemDrawing *canvas_item_drawing = desktop->getCanvasDrawing();
+                Inkscape::CanvasItemDrawing *canvas_item_drawing = _desktop->getCanvasDrawing();
                 Inkscape::Drawing *drawing = canvas_item_drawing->get_drawing();
-
-                // Ensure drawing up-to-date. (Is this really necessary?)
-                drawing->update();
 
                 // Get average color.
                 double R, G, B, A;
-                drawing->average_color(pick_area, R, G, B, A);
+                drawing->averageColor(pick_area, R, G, B, A);
 
                 if (pick == SP_DROPPER_PICK_VISIBLE) {
                     // compose with page color
-                    guint32 bg = desktop->getNamedView()->pagecolor;
-                    R = R + (SP_RGBA32_R_F(bg)) * (1 - A);
-                    G = G + (SP_RGBA32_G_F(bg)) * (1 - A);
-                    B = B + (SP_RGBA32_B_F(bg)) * (1 - A);
+                    auto bg = _desktop->getDocument()->getPageManager().getDefaultBackgroundColor();
+                    R = R + bg[0] * (1 - A);
+                    G = G + bg[1] * (1 - A);
+                    B = B + bg[2] * (1 - A);
                     A = 1.0;
                 } else {
                     // un-premultiply color channels
@@ -300,13 +279,13 @@ bool DropperTool::root_handler(GdkEvent* event) {
 
                 ungrabCanvasEvents();
 
-                Inkscape::Selection *selection = desktop->getSelection();
+                Inkscape::Selection *selection = _desktop->getSelection();
                 g_assert(selection);
                 std::vector<SPItem *> old_selection(selection->items().begin(), selection->items().end());
                 if(this->dropping) {
 		    Geom::Point const button_w(event->button.x, event->button.y);
 		    // remember clicked item, disregarding groups, honoring Alt
-		    this->item_to_select = sp_event_context_find_item (desktop, button_w, event->button.state & GDK_MOD1_MASK, TRUE);
+		    this->item_to_select = sp_event_context_find_item (_desktop, button_w, event->button.state & GDK_MOD1_MASK, TRUE);
 
                     // Change selected object to object under cursor
                     if (this->item_to_select) {
@@ -323,17 +302,16 @@ bool DropperTool::root_handler(GdkEvent* event) {
                     onetimepick_signal.emit(&picked_color);
                     onetimepick_signal.clear();
                     // Do this last as it destroys the picker tool.
-                    sp_toggle_dropper(desktop);
+                    sp_toggle_dropper(_desktop);
                     return true;
                 }
 
                 // do the actual color setting
-                sp_desktop_set_color(desktop, picked_color, false, !this->stroke);
+                sp_desktop_set_color(_desktop, picked_color, false, !this->stroke);
 
                 // REJON: set aux. toolbar input to hex color!
-                if (!(desktop->getSelection()->isEmpty())) {
-                    DocumentUndo::done(desktop->getDocument(), SP_VERB_CONTEXT_DROPPER,
-                                       _("Set picked color"));
+                if (!(_desktop->getSelection()->isEmpty())) {
+                    DocumentUndo::done(_desktop->getDocument(), _("Set picked color"), INKSCAPE_ICON("color-picker"));
                 }
                 if(this->dropping) {
                     selection->setList(old_selection);
@@ -356,8 +334,8 @@ bool DropperTool::root_handler(GdkEvent* event) {
             }
             break;
           case GDK_KEY_Escape:
-            desktop->getSelection()->clear();
-            break;
+              _desktop->getSelection()->clear();
+              break;
         }
         break;
     }
@@ -383,13 +361,14 @@ bool DropperTool::root_handler(GdkEvent* event) {
     g_free(alpha);
 
     // Set the right cursor for the mode and apply the special Fill color
-    cursor_filename = (this->dropping ? (this->stroke ? "dropper-drop-stroke.svg" : "dropper-drop-fill.svg") :
+    _cursor_filename = (this->dropping ? (this->stroke ? "dropper-drop-stroke.svg" : "dropper-drop-fill.svg") :
                                         (this->stroke ? "dropper-pick-stroke.svg" : "dropper-pick-fill.svg") );
 
     // We do this ourselves to get color correct.
-    auto display = desktop->getCanvas()->get_display();
-    auto window = desktop->getCanvas()->get_window();
-    load_svg_cursor(display, window, cursor_filename, get_color(invert));
+    auto display = _desktop->getCanvas()->get_display();
+    auto window = _desktop->getCanvas()->get_window();
+    auto cursor = load_svg_cursor(display, window, _cursor_filename, get_color(invert));
+    window->set_cursor(cursor);
 
     if (!ret) {
     	ret = ToolBase::root_handler(event);

@@ -36,14 +36,12 @@
 #include "document-undo.h"
 #include "mod360.h"
 #include "selection.h"
-#include "verbs.h"
 
 #include "object/sp-ellipse.h"
 #include "object/sp-namedview.h"
 
 #include "ui/icon-names.h"
 #include "ui/tools/arc-tool.h"
-#include "ui/uxmanager.h"
 #include "ui/widget/canvas.h"
 #include "ui/widget/combo-tool-item.h"
 #include "ui/widget/label-tool-item.h"
@@ -53,33 +51,20 @@
 
 #include "widgets/widget-sizes.h"
 
-#include "xml/node-event-vector.h"
-
 using Inkscape::UI::Widget::UnitTracker;
-using Inkscape::UI::UXManager;
 using Inkscape::DocumentUndo;
 using Inkscape::Util::Quantity;
 using Inkscape::Util::unit_table;
 
-
-static Inkscape::XML::NodeEventVector arc_tb_repr_events = {
-    nullptr, /* child_added */
-    nullptr, /* child_removed */
-    Inkscape::UI::Toolbar::ArcToolbar::event_attr_changed,
-    nullptr, /* content_changed */
-    nullptr  /* order_changed */
-};
-
 namespace Inkscape {
 namespace UI {
 namespace Toolbar {
-ArcToolbar::ArcToolbar(SPDesktop *desktop) :
-        Toolbar(desktop),
-        _tracker(new UnitTracker(Inkscape::Util::UNIT_TYPE_LINEAR)),
-        _freeze(false),
-        _repr(nullptr)
+ArcToolbar::ArcToolbar(SPDesktop *desktop)
+    : Toolbar(desktop)
+    , _tracker(new UnitTracker(Inkscape::Util::UNIT_TYPE_LINEAR))
 {
-    _tracker->setActiveUnit(desktop->getNamedView()->display_units);
+    auto init_units = desktop->getNamedView()->display_units;
+    _tracker->setActiveUnit(init_units);
     auto prefs = Inkscape::Preferences::get();
 
     {
@@ -92,6 +77,8 @@ ArcToolbar::ArcToolbar(SPDesktop *desktop) :
     {
         std::vector<double> values = {1, 2, 3, 5, 10, 20, 50, 100, 200, 500};
         auto rx_val = prefs->getDouble("/tools/shapes/arc/rx", 0);
+        rx_val = Quantity::convert(rx_val, "px", init_units);
+
         _rx_adj = Gtk::Adjustment::create(rx_val, 0, 1e6, SPIN_STEP, SPIN_PAGE_STEP);
         _rx_item = Gtk::manage(new UI::Widget::SpinButtonToolItem("arc-rx", _("Rx:"), _rx_adj));
         _rx_item->set_tooltip_text(_("Horizontal radius of the circle, ellipse, or arc"));
@@ -109,6 +96,8 @@ ArcToolbar::ArcToolbar(SPDesktop *desktop) :
     {
         std::vector<double> values = {1, 2, 3, 5, 10, 20, 50, 100, 200, 500};
         auto ry_val = prefs->getDouble("/tools/shapes/arc/ry", 0);
+        ry_val = Quantity::convert(ry_val, "px", init_units);
+
         _ry_adj = Gtk::Adjustment::create(ry_val, 0, 1e6, SPIN_STEP, SPIN_PAGE_STEP);
         _ry_item = Gtk::manage(new UI::Widget::SpinButtonToolItem("arc-ry", _("Ry:"), _ry_adj));
         _ry_item->set_tooltip_text(_("Vertical radius of the circle, ellipse, or arc"));
@@ -217,7 +206,7 @@ ArcToolbar::ArcToolbar(SPDesktop *desktop) :
 ArcToolbar::~ArcToolbar()
 {
     if(_repr) {
-        _repr->removeListenerByData(this);
+        _repr->removeObserver(*this);
         GC::release(_repr);
         _repr = nullptr;
     }
@@ -265,9 +254,9 @@ ArcToolbar::value_changed(Glib::RefPtr<Gtk::Adjustment>&  adj,
     auto itemlist= selection->items();
     for(auto i=itemlist.begin();i!=itemlist.end();++i){
         SPItem *item = *i;
-        if (SP_IS_GENERICELLIPSE(item)) {
+        if (is<SPGenericEllipse>(item)) {
 
-            SPGenericEllipse *ge = SP_GENERICELLIPSE(item);
+            auto ge = cast<SPGenericEllipse>(item);
 
             if (!strcmp(value_name, "rx")) {
                 ge->setVisibleRx(Quantity::convert(adj->get_value(), unit, "px"));
@@ -284,8 +273,7 @@ ArcToolbar::value_changed(Glib::RefPtr<Gtk::Adjustment>&  adj,
     }
 
     if (modmade) {
-        DocumentUndo::done(_desktop->getDocument(), SP_VERB_CONTEXT_ARC,
-                           _("Ellipse: Change radius"));
+        DocumentUndo::done(_desktop->getDocument(), _("Ellipse: Change radius"), INKSCAPE_ICON("draw-ellipse"));
     }
 
     _freeze = false;
@@ -315,9 +303,9 @@ ArcToolbar::startend_value_changed(Glib::RefPtr<Gtk::Adjustment>&  adj,
     auto itemlist= _desktop->getSelection()->items();
     for(auto i=itemlist.begin();i!=itemlist.end();++i){
         SPItem *item = *i;
-        if (SP_IS_GENERICELLIPSE(item)) {
+        if (is<SPGenericEllipse>(item)) {
 
-            SPGenericEllipse *ge = SP_GENERICELLIPSE(item);
+            auto ge = cast<SPGenericEllipse>(item);
 
             if (!strcmp(value_name, "start")) {
                 ge->start = (adj->get_value() * M_PI)/ 180;
@@ -338,8 +326,7 @@ ArcToolbar::startend_value_changed(Glib::RefPtr<Gtk::Adjustment>&  adj,
     sensitivize( adj->get_value(), other_adj->get_value() );
 
     if (modmade) {
-        DocumentUndo::maybeDone(_desktop->getDocument(), value_name, SP_VERB_CONTEXT_ARC,
-                                _("Arc: Change start/end"));
+        DocumentUndo::maybeDone(_desktop->getDocument(), value_name, _("Arc: Change start/end"), INKSCAPE_ICON("draw-ellipse"));
     }
 
     _freeze = false;
@@ -384,7 +371,7 @@ ArcToolbar::type_changed( int type )
     auto itemlist= _desktop->getSelection()->items();
     for(auto i=itemlist.begin();i!=itemlist.end();++i){
         SPItem *item = *i;
-        if (SP_IS_GENERICELLIPSE(item)) {
+        if (is<SPGenericEllipse>(item)) {
             Inkscape::XML::Node *repr = item->getRepr();
             repr->setAttribute("sodipodi:open", (open?"true":nullptr) );
             repr->setAttribute("sodipodi:arc-type", arc_type);
@@ -394,8 +381,7 @@ ArcToolbar::type_changed( int type )
     }
 
     if (modmade) {
-        DocumentUndo::done(_desktop->getDocument(), SP_VERB_CONTEXT_ARC,
-                           _("Arc: Changed arc type"));
+        DocumentUndo::done(_desktop->getDocument(), _("Arc: Change arc type"), INKSCAPE_ICON("draw-ellipse"));
     }
 
     _freeze = false;
@@ -434,7 +420,7 @@ ArcToolbar::check_ec(SPDesktop* desktop, Inkscape::UI::Tools::ToolBase* ec)
         if (_changed) {
             _changed.disconnect();
             if(_repr) {
-                _repr->removeListenerByData(this);
+                _repr->removeObserver(*this);
                 Inkscape::GC::release(_repr);
                 _repr = nullptr;
             }
@@ -450,7 +436,7 @@ ArcToolbar::selection_changed(Inkscape::Selection *selection)
 
     if ( _repr ) {
         _item = nullptr;
-        _repr->removeListenerByData(this);
+        _repr->removeObserver(*this);
         GC::release(_repr);
         _repr = nullptr;
     }
@@ -458,7 +444,7 @@ ArcToolbar::selection_changed(Inkscape::Selection *selection)
     SPItem *item = nullptr;
 
     for(auto i : selection->items()){
-        if (SP_IS_GENERICELLIPSE(i)) {
+        if (is<SPGenericEllipse>(i)) {
             n_selected++;
             item = i;
             repr = item->getRepr();
@@ -478,8 +464,8 @@ ArcToolbar::selection_changed(Inkscape::Selection *selection)
             _repr = repr;
             _item = item;
             Inkscape::GC::anchor(_repr);
-            _repr->addListener(&arc_tb_repr_events, this);
-            _repr->synthesizeEvents(&arc_tb_repr_events, this);
+            _repr->addObserver(*this);
+            _repr->synthesizeEvents(*this);
         }
     } else {
         // FIXME: implement averaging of all parameters for multiple selected
@@ -489,58 +475,54 @@ ArcToolbar::selection_changed(Inkscape::Selection *selection)
     }
 }
 
-void
-ArcToolbar::event_attr_changed(Inkscape::XML::Node *repr, gchar const * /*name*/,
-                               gchar const * /*old_value*/, gchar const * /*new_value*/,
-                               bool /*is_interactive*/, gpointer data)
-{
-    auto toolbar = reinterpret_cast<ArcToolbar *>(data);
 
+void ArcToolbar::notifyAttributeChanged(Inkscape::XML::Node &repr, GQuark,
+                                        Inkscape::Util::ptr_shared,
+                                        Inkscape::Util::ptr_shared)
+{
     // quit if run by the _changed callbacks
-    if (toolbar->_freeze) {
+    if (_freeze) {
         return;
     }
 
     // in turn, prevent callbacks from responding
-    toolbar->_freeze = true;
+    _freeze = true;
 
-    if (toolbar->_item && SP_IS_GENERICELLIPSE(toolbar->_item)) {
-        SPGenericEllipse *ge = SP_GENERICELLIPSE(toolbar->_item);
-
-        Unit const *unit = toolbar->_tracker->getActiveUnit();
+    if (auto ge = cast<SPGenericEllipse>(_item)) {
+        Unit const *unit = _tracker->getActiveUnit();
         g_return_if_fail(unit != nullptr);
 
         gdouble rx = ge->getVisibleRx();
         gdouble ry = ge->getVisibleRy();
-        toolbar->_rx_adj->set_value(Quantity::convert(rx, "px", unit));
-        toolbar->_ry_adj->set_value(Quantity::convert(ry, "px", unit));
+        _rx_adj->set_value(Quantity::convert(rx, "px", unit));
+        _ry_adj->set_value(Quantity::convert(ry, "px", unit));
     }
 
-    gdouble start = repr->getAttributeDouble("sodipodi:start", 0.0);;
-    gdouble end = repr->getAttributeDouble("sodipodi:end", 0.0);
+    gdouble start = repr.getAttributeDouble("sodipodi:start", 0.0);;
+    gdouble end = repr.getAttributeDouble("sodipodi:end", 0.0);
 
-    toolbar->_start_adj->set_value(mod360((start * 180)/M_PI));
-    toolbar->_end_adj->set_value(mod360((end * 180)/M_PI));
+    _start_adj->set_value(mod360((start * 180)/M_PI));
+    _end_adj->set_value(mod360((end * 180)/M_PI));
 
-    toolbar->sensitivize(toolbar->_start_adj->get_value(), toolbar->_end_adj->get_value());
+    sensitivize(_start_adj->get_value(), _end_adj->get_value());
 
     char const *arctypestr = nullptr;
-    arctypestr = repr->attribute("sodipodi:arc-type");
+    arctypestr = repr.attribute("sodipodi:arc-type");
     if (!arctypestr) { // For old files.
         char const *openstr = nullptr;
-        openstr = repr->attribute("sodipodi:open");
+        openstr = repr.attribute("sodipodi:open");
         arctypestr = (openstr ? "arc" : "slice");
     }
 
     if (!strcmp(arctypestr,"slice")) {
-        toolbar->_type_buttons[0]->set_active();
+        _type_buttons[0]->set_active();
     } else if (!strcmp(arctypestr,"arc")) {
-        toolbar->_type_buttons[1]->set_active();
+        _type_buttons[1]->set_active();
     } else {
-        toolbar->_type_buttons[2]->set_active();
+        _type_buttons[2]->set_active();
     }
 
-    toolbar->_freeze = false;
+    _freeze = false;
 }
 
 }

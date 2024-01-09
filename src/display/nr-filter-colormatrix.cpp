@@ -22,17 +22,12 @@
 namespace Inkscape {
 namespace Filters {
 
-FilterColorMatrix::FilterColorMatrix()
-= default;
+FilterColorMatrix::FilterColorMatrix() = default;
 
-FilterPrimitive * FilterColorMatrix::create() {
-    return new FilterColorMatrix();
-}
+FilterColorMatrix::~FilterColorMatrix() = default;
 
-FilterColorMatrix::~FilterColorMatrix()
-= default;
-
-FilterColorMatrix::ColorMatrixMatrix::ColorMatrixMatrix(std::vector<double> const &values) {
+FilterColorMatrix::ColorMatrixMatrix::ColorMatrixMatrix(std::vector<double> const &values)
+{
     unsigned limit = std::min(static_cast<size_t>(20), values.size());
     for (unsigned i = 0; i < limit; ++i) {
         if (i % 5 == 4) {
@@ -46,7 +41,8 @@ FilterColorMatrix::ColorMatrixMatrix::ColorMatrixMatrix(std::vector<double> cons
     }
 }
 
-guint32 FilterColorMatrix::ColorMatrixMatrix::operator()(guint32 in) {
+guint32 FilterColorMatrix::ColorMatrixMatrix::operator()(guint32 in)
+{
     EXTRACT_ARGB32(in, a, r, g, b)
     // we need to un-premultiply alpha values for this type of matrix
     // TODO: unpremul can be ignored if there is an identity mapping on the alpha channel
@@ -73,17 +69,19 @@ guint32 FilterColorMatrix::ColorMatrixMatrix::operator()(guint32 in) {
     return pxout;
 }
 
-
-struct ColorMatrixSaturate {
-    ColorMatrixSaturate(double v_in) {
+struct ColorMatrixSaturate
+{
+    ColorMatrixSaturate(double v_in)
+    {
         // clamp parameter instead of clamping color values
-        double v = CLAMP(v_in, 0.0, 1.0);
+        double v = std::clamp(v_in, 0.0, 1.0);
         _v[0] = 0.213+0.787*v; _v[1] = 0.715-0.715*v; _v[2] = 0.072-0.072*v;
         _v[3] = 0.213-0.213*v; _v[4] = 0.715+0.285*v; _v[5] = 0.072-0.072*v;
         _v[6] = 0.213-0.213*v; _v[7] = 0.715-0.715*v; _v[8] = 0.072+0.928*v;
     }
 
-    guint32 operator()(guint32 in) {
+    guint32 operator()(guint32 in)
+    {
         EXTRACT_ARGB32(in, a, r, g, b)
 
         // Note: this cannot be done in fixed point, because the loss of precision
@@ -95,28 +93,33 @@ struct ColorMatrixSaturate {
         ASSEMBLE_ARGB32(pxout, a, ro, go, bo)
         return pxout;
     }
+
 private:
     double _v[9];
 };
 
-struct ColorMatrixHueRotate {
-    ColorMatrixHueRotate(double v) {
+struct ColorMatrixHueRotate
+{
+    ColorMatrixHueRotate(double v)
+    {
         double sinhue, coshue;
         Geom::sincos(v * M_PI/180.0, sinhue, coshue);
 
-        _v[0] = round((0.213 +0.787*coshue -0.213*sinhue)*255);
-        _v[1] = round((0.715 -0.715*coshue -0.715*sinhue)*255);
-        _v[2] = round((0.072 -0.072*coshue +0.928*sinhue)*255);
+        _v[0] = std::round((0.213 +0.787*coshue -0.213*sinhue)*255);
+        _v[1] = std::round((0.715 -0.715*coshue -0.715*sinhue)*255);
+        _v[2] = std::round((0.072 -0.072*coshue +0.928*sinhue)*255);
 
-        _v[3] = round((0.213 -0.213*coshue +0.143*sinhue)*255);
-        _v[4] = round((0.715 +0.285*coshue +0.140*sinhue)*255);
-        _v[5] = round((0.072 -0.072*coshue -0.283*sinhue)*255);
+        _v[3] = std::round((0.213 -0.213*coshue +0.143*sinhue)*255);
+        _v[4] = std::round((0.715 +0.285*coshue +0.140*sinhue)*255);
+        _v[5] = std::round((0.072 -0.072*coshue -0.283*sinhue)*255);
 
-        _v[6] = round((0.213 -0.213*coshue -0.787*sinhue)*255);
-        _v[7] = round((0.715 -0.715*coshue +0.715*sinhue)*255);
-        _v[8] = round((0.072 +0.928*coshue +0.072*sinhue)*255);
+        _v[6] = std::round((0.213 -0.213*coshue -0.787*sinhue)*255);
+        _v[7] = std::round((0.715 -0.715*coshue +0.715*sinhue)*255);
+        _v[8] = std::round((0.072 +0.928*coshue +0.072*sinhue)*255);
     }
-    guint32 operator()(guint32 in) {
+
+    guint32 operator()(guint32 in)
+    {
         EXTRACT_ARGB32(in, a, r, g, b)
         gint32 maxpx = a*255;
         gint32 ro = r*_v[0] + g*_v[1] + b*_v[2];
@@ -129,12 +132,15 @@ struct ColorMatrixHueRotate {
         ASSEMBLE_ARGB32(pxout, a, ro, go, bo)
         return pxout;
     }
+
 private:
     gint32 _v[9];
 };
 
-struct ColorMatrixLuminanceToAlpha {
-    guint32 operator()(guint32 in) {
+struct ColorMatrixLuminanceToAlpha
+{
+    guint32 operator()(guint32 in)
+    {
         // original computation in double: r*0.2125 + g*0.7154 + b*0.0721
         EXTRACT_ARGB32(in, a, r, g, b)
         // unpremultiply color values
@@ -148,7 +154,7 @@ struct ColorMatrixLuminanceToAlpha {
     }
 };
 
-void FilterColorMatrix::render_cairo(FilterSlot &slot)
+void FilterColorMatrix::render_cairo(FilterSlot &slot) const
 {
     cairo_surface_t *input = slot.getcairo(_input);
     cairo_surface_t *out = nullptr;
@@ -156,18 +162,14 @@ void FilterColorMatrix::render_cairo(FilterSlot &slot)
     // We may need to transform input surface to correct color interpolation space. The input surface
     // might be used as input to another primitive but it is likely that all the primitives in a given
     // filter use the same color interpolation space so we don't copy the input before converting.
-    SPColorInterpolation ci_fp = SP_CSS_COLOR_INTERPOLATION_AUTO;
-    if( _style ) {
-        ci_fp = (SPColorInterpolation)_style->color_interpolation_filters.computed;
-    }
-    set_cairo_surface_ci( input, ci_fp );
+    set_cairo_surface_ci(input, color_interpolation);
 
     if (type == COLORMATRIX_LUMINANCETOALPHA) {
         out = ink_cairo_surface_create_same_size(input, CAIRO_CONTENT_ALPHA);
     } else {
         out = ink_cairo_surface_create_same_size(input, CAIRO_CONTENT_COLOR_ALPHA);
         // Set ci to that used for computation
-        set_cairo_surface_ci(out, ci_fp);
+        set_cairo_surface_ci(out, color_interpolation);
     }
 
     switch (type) {
@@ -192,30 +194,33 @@ void FilterColorMatrix::render_cairo(FilterSlot &slot)
     cairo_surface_destroy(out);
 }
 
-bool FilterColorMatrix::can_handle_affine(Geom::Affine const &)
+bool FilterColorMatrix::can_handle_affine(Geom::Affine const &) const
 {
     return true;
 }
 
-double FilterColorMatrix::complexity(Geom::Affine const &)
+double FilterColorMatrix::complexity(Geom::Affine const &) const
 {
     return 2.0;
 }
 
-void FilterColorMatrix::set_type(FilterColorMatrixType t){
-        type = t;
+void FilterColorMatrix::set_type(FilterColorMatrixType t)
+{
+    type = t;
 }
 
-void FilterColorMatrix::set_value(gdouble v){
-        value = v;
+void FilterColorMatrix::set_value(double v)
+{
+    value = v;
 }
 
-void FilterColorMatrix::set_values(std::vector<gdouble> const &v){
-        values = v;
+void FilterColorMatrix::set_values(std::vector<double> const &v)
+{
+    values = v;
 }
 
-} /* namespace Filters */
-} /* namespace Inkscape */
+} // namespace Filters
+} // namespace Inkscape
 
 /*
   Local Variables:

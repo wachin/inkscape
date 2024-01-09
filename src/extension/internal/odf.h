@@ -291,7 +291,7 @@ private:
     //for renaming image file names
     std::map<Glib::ustring, Glib::ustring> imageTable;
 
-    void preprocess(ZipFile &zf, Inkscape::XML::Node *node);
+    void preprocess(ZipFile &zf, SPDocument *doc, Inkscape::XML::Node *node);
 
     bool writeManifest(ZipFile &zf);
 
@@ -312,9 +312,9 @@ private:
 
     bool writeContentFooter(Writer &outs);
 
-    bool writeTree(Writer &couts, Writer &souts, Inkscape::XML::Node *node);
+    bool writeTree(Writer &couts, Writer &souts, SPDocument *doc, Inkscape::XML::Node *node);
 
-    bool writeContent(ZipFile &zf, Inkscape::XML::Node *node);
+    bool writeContent(ZipFile &zf, SPDocument *doc);
 
 };
 

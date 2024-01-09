@@ -25,6 +25,9 @@
 #include "filter-chemistry.h"
 #include "inkscape.h"
 #include "selection.h"
+#include "message-context.h"
+#include "message-stack.h"
+
 
 #include "object/box3d-side.h"
 #include "object/filters/blend.h"
@@ -49,26 +52,21 @@
 
 #include "ui/tools/tool-base.h"
 
+#include <glibmm/i18n.h>
 #include "xml/sp-css-attr.h"
 #include "xml/attribute-record.h"
 
-namespace {
-
-bool isTextualItem(SPObject const *obj)
+static bool isTextualItem(SPObject const *obj)
 {
-    bool isTextual = dynamic_cast<SPText const *>(obj) //
-        || dynamic_cast<SPFlowtext const *>(obj) //
-        || dynamic_cast<SPTSpan const *>(obj) //
-        || dynamic_cast<SPTRef const *>(obj) //
-        || dynamic_cast<SPTextPath const *>(obj) //
-        || dynamic_cast<SPFlowdiv const *>(obj) //
-        || dynamic_cast<SPFlowpara const *>(obj) //
-        || dynamic_cast<SPFlowtspan const *>(obj);
-
-    return isTextual;
+    return is<SPText>(obj)
+        || is<SPFlowtext>(obj)
+        || is<SPTSpan>(obj)
+        || is<SPTRef>(obj)
+        || is<SPTextPath>(obj)
+        || is<SPFlowdiv>(obj)
+        || is<SPFlowpara>(obj)
+        || is<SPFlowtspan>(obj);
 }
-
-} // namespace
 
 /**
  * Set color on selection on desktop.
@@ -110,7 +108,7 @@ void
 sp_desktop_apply_css_recursive(SPObject *o, SPCSSAttr *css, bool skip_lines)
 {
     // non-items should not have style
-    SPItem *item = dynamic_cast<SPItem *>(o);
+    auto item = cast<SPItem>(o);
     if (!item) {
         return;
     }
@@ -123,21 +121,21 @@ sp_desktop_apply_css_recursive(SPObject *o, SPCSSAttr *css, bool skip_lines)
     // it, be it clone or not; it's just styleless shape (because that's how Inkscape does
     // flowtext).
 
-    SPTSpan *tspan = dynamic_cast<SPTSpan *>(o);
+    auto tspan = cast<SPTSpan>(o);
 
     if (!(skip_lines
           && ((tspan && tspan->role == SP_TSPAN_ROLE_LINE)
-              || dynamic_cast<SPFlowdiv *>(o)
-              || dynamic_cast<SPFlowpara *>(o)
-              || dynamic_cast<SPTextPath *>(o))
+              || is<SPFlowdiv>(o)
+              || is<SPFlowpara>(o)
+              || is<SPTextPath>(o))
           &&  !o->getAttribute("style"))
         &&
-        !(dynamic_cast<SPFlowregionbreak *>(o) ||
-          dynamic_cast<SPFlowregionExclude *>(o) ||
-          (dynamic_cast<SPUse *>(o) &&
+        !(is<SPFlowregionbreak>(o) ||
+          is<SPFlowregionExclude>(o) ||
+          (is<SPUse>(o) &&
            o->parent &&
-           (dynamic_cast<SPFlowregion *>(o->parent) ||
-            dynamic_cast<SPFlowregionExclude *>(o->parent)
+           (is<SPFlowregion>(o->parent) ||
+            is<SPFlowregionExclude>(o->parent)
                )
               )
             )
@@ -162,7 +160,7 @@ sp_desktop_apply_css_recursive(SPObject *o, SPCSSAttr *css, bool skip_lines)
     }
 
     // setting style on child of clone spills into the clone original (via shared repr), don't do it!
-    if (dynamic_cast<SPUse *>(o)) {
+    if (is<SPUse>(o)) {
         return;
     }
 
@@ -207,7 +205,7 @@ sp_desktop_set_style(Inkscape::ObjectSet *set, SPDesktop *desktop, SPCSSAttr *cs
         for (auto i = itemlist.begin(); i!= itemlist.end(); ++i) {
             /* last used styles for 3D box faces are stored separately */
             SPObject *obj = *i;
-            Box3DSide *side = dynamic_cast<Box3DSide *>(obj);
+            auto side = cast<Box3DSide>(obj);
             if (side) {
                 prefs->mergeStyle(
                         Glib::ustring("/desktop/") + side->axes_string() + "/style", css_write);
@@ -232,7 +230,7 @@ sp_desktop_set_style(Inkscape::ObjectSet *set, SPDesktop *desktop, SPCSSAttr *cs
     if (!intercepted) {
         // If we have an event context, update its cursor (TODO: it could be neater to do this with the signal sent above, but what if the signal gets intercepted?)
         if (desktop->event_context) {
-            desktop->event_context->sp_event_context_update_cursor();
+            desktop->event_context->use_tool_cursor();
         }
 
         // Remove text attributes if not text...
@@ -244,22 +242,21 @@ sp_desktop_set_style(Inkscape::ObjectSet *set, SPDesktop *desktop, SPCSSAttr *cs
         auto itemlist = set->items();
         for (auto i = itemlist.begin(); i!= itemlist.end(); ++i) {
             SPItem *item = *i;
-
-            // If not text, don't apply text attributes (can a group have text attributes? Yes! FIXME)
-            if (isTextualItem(item)) {
-
-                // If any font property has changed, then we have written out the font
-                // properties in longhand and we need to remove the 'font' shorthand.
-                if( !sp_repr_css_property_is_unset(css, "font-family") ) {
-                    sp_repr_css_unset_property(css, "font");
-                }
-
-                sp_desktop_apply_css_recursive(item, css, true);
-
+            if (item->isLocked()) {
+                // If locked, don't apply style
+                desktop->messageStack()->flash(Inkscape::WARNING_MESSAGE, _("<b>Locked</b> object(s) cannot be modified."));
             } else {
-
-                sp_desktop_apply_css_recursive(item, css_no_text, true);
-
+                // If not text, don't apply text attributes (can a group have text attributes? Yes! FIXME)
+                if (isTextualItem(item)) {
+                    // If any font property has changed, then we have written out the font
+                    // properties in longhand and we need to remove the 'font' shorthand.
+                    if (!sp_repr_css_property_is_unset(css, "font-family")) {
+                        sp_repr_css_unset_property(css, "font");
+                    }
+                    sp_desktop_apply_css_recursive(item, css, true);
+                } else {
+                    sp_desktop_apply_css_recursive(item, css_no_text, true);
+                }
             }
         }
         sp_repr_css_attr_unref(css_no_text);
@@ -409,8 +406,11 @@ sp_desktop_apply_style_tool(SPDesktop *desktop, Inkscape::XML::Node *repr, Glib:
     Inkscape::Preferences *prefs = Inkscape::Preferences::get();
 
     if (prefs->getBool(tool_path + "/usecurrent") && css_current) {
+        sp_repr_css_unset_property(css_current, "shape-inside");
         sp_repr_css_unset_property(css_current, "mix-blend-mode");
         sp_repr_css_unset_property(css_current, "filter");
+        sp_repr_css_unset_property(css_current, "stop-color");
+        sp_repr_css_unset_property(css_current, "stop-opacity");
         sp_repr_css_set(repr, css_current, "style");
     } else {
         SPCSSAttr *css = prefs->getInheritedStyle(tool_path + "/style");
@@ -449,7 +449,6 @@ sp_desktop_get_font_size_tool(SPDesktop *desktop)
 }
 
 /** Determine average stroke width, simple method */
-// see TODO in dialogs/stroke-style.cpp on how to get rid of this eventually
 gdouble
 stroke_average_width (const std::vector<SPItem*> &objects)
 {
@@ -469,7 +468,7 @@ stroke_average_width (const std::vector<SPItem*> &objects)
         double width = item->style->stroke_width.computed * i2dt.descrim();
 
         // Width becomes NaN when scaling a diagonal line to a horizontal line (lp:825840)
-        if ( std::isnan(width)) {
+        if (item->style->stroke.isNone() || std::isnan(width)) {
             ++n_notstroked;   // do not count nonstroked objects
             continue;
         } else {
@@ -484,20 +483,6 @@ stroke_average_width (const std::vector<SPItem*> &objects)
 
     return avgwidth / (objects.size() - n_notstroked);
 }
-
-static bool vectorsClose( std::vector<double> const &lhs, std::vector<double> const &rhs )
-{
-    bool isClose = false;
-    if ( lhs.size() == rhs.size() ) {
-        static double epsilon = 1e-6;
-        isClose = true;
-        for ( size_t i = 0; (i < lhs.size()) && isClose; ++i ) {
-            isClose = fabs(lhs[i] - rhs[i]) < epsilon;
-        }
-    }
-    return isClose;
-}
-
 
 /**
  * Write to style_res the average fill or stroke of list of objects, if applicable.
@@ -514,7 +499,7 @@ objects_query_fillstroke (const std::vector<SPItem*> &objects, SPStyle *style_re
     bool paintImpossible = true;
     paint_res->set = true;
 
-    SVGICCColor* iccColor = nullptr;
+    std::optional<SPColor> iccColor;
 
     bool iccSeen = false;
     gfloat c[4];
@@ -542,9 +527,9 @@ objects_query_fillstroke (const std::vector<SPItem*> &objects, SPStyle *style_re
         // We consider paint "effectively set" for anything within text hierarchy
         SPObject *parent = obj->parent;
         bool paint_effectively_set =
-            paint->set || (dynamic_cast<SPText *>(parent) || dynamic_cast<SPTextPath *>(parent) || dynamic_cast<SPTSpan *>(parent)
-            || dynamic_cast<SPFlowtext *>(parent) || dynamic_cast<SPFlowdiv *>(parent) || dynamic_cast<SPFlowpara *>(parent)
-            || dynamic_cast<SPFlowtspan *>(parent) || dynamic_cast<SPFlowline*>(parent));
+            paint->set || is<SPText>(parent) || is<SPTextPath>(parent) || is<SPTSpan>(parent)
+            || is<SPFlowtext>(parent) || is<SPFlowdiv>(parent) || is<SPFlowpara>(parent)
+            || is<SPFlowtspan>(parent) || is<SPFlowline>(parent);
 
         // 1. Bail out with QUERY_STYLE_MULTIPLE_DIFFERENT if necessary
 
@@ -559,14 +544,14 @@ objects_query_fillstroke (const std::vector<SPItem*> &objects, SPStyle *style_re
             SPPaintServer *server_res = isfill ? style_res->getFillPaintServer() : style_res->getStrokePaintServer();
             SPPaintServer *server = isfill ? style->getFillPaintServer() : style->getStrokePaintServer();
 
-            SPLinearGradient *linear_res = dynamic_cast<SPLinearGradient *>(server_res);
-            SPRadialGradient *radial_res = linear_res ? nullptr : dynamic_cast<SPRadialGradient *>(server_res);
-            SPPattern *pattern_res = (linear_res || radial_res) ? nullptr : dynamic_cast<SPPattern *>(server_res);
+            auto linear_res = cast<SPLinearGradient>(server_res);
+            SPRadialGradient *radial_res = linear_res ? nullptr : cast<SPRadialGradient>(server_res);
+            SPPattern *pattern_res = (linear_res || radial_res) ? nullptr : cast<SPPattern>(server_res);
             SPHatch *hatch_res =
-                (linear_res || radial_res || pattern_res) ? nullptr : dynamic_cast<SPHatch *>(server_res);
+                (linear_res || radial_res || pattern_res) ? nullptr : cast<SPHatch>(server_res);
 
             if (linear_res) {
-                SPLinearGradient *linear = dynamic_cast<SPLinearGradient *>(server);
+                auto linear = cast<SPLinearGradient>(server);
                 if (!linear) {
                    return QUERY_STYLE_MULTIPLE_DIFFERENT;  // different kind of server
                 }
@@ -577,7 +562,7 @@ objects_query_fillstroke (const std::vector<SPItem*> &objects, SPStyle *style_re
                    return QUERY_STYLE_MULTIPLE_DIFFERENT;  // different gradient vectors
                 }
             } else if (radial_res) {
-                SPRadialGradient *radial = dynamic_cast<SPRadialGradient *>(server);
+                auto radial = cast<SPRadialGradient>(server);
                 if (!radial) {
                    return QUERY_STYLE_MULTIPLE_DIFFERENT;  // different kind of server
                 }
@@ -588,24 +573,24 @@ objects_query_fillstroke (const std::vector<SPItem*> &objects, SPStyle *style_re
                    return QUERY_STYLE_MULTIPLE_DIFFERENT;  // different gradient vectors
                 }
             } else if (pattern_res) {
-                SPPattern *pattern = dynamic_cast<SPPattern *>(server);
+                auto pattern = cast<SPPattern>(server);
                 if (!pattern) {
                    return QUERY_STYLE_MULTIPLE_DIFFERENT;  // different kind of server
                 }
 
-                SPPattern *pat = SP_PATTERN (server)->rootPattern();
-                SPPattern *pat_res = SP_PATTERN (server_res)->rootPattern();
+                auto pat = cast<SPPattern>(server)->rootPattern();
+                auto pat_res = cast<SPPattern>(server_res)->rootPattern();
                 if (pat_res != pat) {
                    return QUERY_STYLE_MULTIPLE_DIFFERENT;  // different pattern roots
                 }
             } else if (hatch_res) {
-                SPHatch *hatch = dynamic_cast<SPHatch *>(server);
+                auto hatch = cast<SPHatch>(server);
                 if (!hatch) {
                     return QUERY_STYLE_MULTIPLE_DIFFERENT; // different kind of server
                 }
 
-                SPHatch *hat = SP_HATCH(server)->rootHatch();
-                SPHatch *hat_res = SP_HATCH(server_res)->rootHatch();
+                auto hat = cast<SPHatch>(server)->rootHatch();
+                auto hat_res = cast<SPHatch>(server_res)->rootHatch();
                 if (hat_res != hat) {
                     return QUERY_STYLE_MULTIPLE_DIFFERENT; // different hatch roots
                 }
@@ -624,20 +609,19 @@ objects_query_fillstroke (const std::vector<SPItem*> &objects, SPStyle *style_re
                 prev[1] = d[1];
                 prev[2] = d[2];
                 paint_res->setColor(d[0], d[1], d[2]);
-                iccColor = paint->value.color.icc;
-                iccSeen = true;
+                if (paint->value.color.hasColors()) {
+                    iccColor.emplace(paint->value.color);
+                    iccSeen = true;
+                }
             } else {
                 if (same_color && (prev[0] != d[0] || prev[1] != d[1] || prev[2] != d[2])) {
                     same_color = false;
-                    iccColor = nullptr;
+                    iccColor.reset();
                 }
-                if ( iccSeen && iccColor ) {
-                    if ( !paint->value.color.icc
-                         || (iccColor->colorProfile != paint->value.color.icc->colorProfile)
-                         || !vectorsClose(iccColor->colors, paint->value.color.icc->colors) ) {
-                        same_color = false;
-                        iccColor = nullptr;
-                    }
+                if (iccSeen && iccColor && *iccColor != paint->value.color) {
+                    // We can't yet blend together two icc based colors.
+                    same_color = false;
+                    iccColor.reset();
                 }
             }
 
@@ -679,11 +663,8 @@ objects_query_fillstroke (const std::vector<SPItem*> &objects, SPStyle *style_re
             style_res->stroke_opacity.value = SP_SCALE24_FROM_FLOAT (c[3]);
         }
 
-
-        if ( iccSeen && iccColor ) {
-            // TODO check for existing
-            SVGICCColor* tmp = new SVGICCColor(*iccColor);
-            paint_res->value.color.icc = tmp;
+        if (iccSeen && iccColor) {
+            paint_res->value.color.copyColors(*iccColor);
         }
 
         if (num > 1) {
@@ -781,7 +762,7 @@ objects_query_strokewidth (const std::vector<SPItem*> &objects, SPStyle *style_r
         if (!obj) {
             continue;
         }
-        SPItem *item = dynamic_cast<SPItem *>(obj);
+        auto item = obj;
         if (!item) {
             continue;
         }
@@ -854,7 +835,7 @@ objects_query_miterlimit (const std::vector<SPItem*> &objects, SPStyle *style_re
     bool same_ml = true;
 
     for (auto obj : objects) {
-        if (!dynamic_cast<SPItem *>(obj)) {
+        if (!obj) {
             continue;
         }
         SPStyle *style = obj->style;
@@ -911,7 +892,7 @@ objects_query_strokecap (const std::vector<SPItem*> &objects, SPStyle *style_res
     int n_stroked = 0;
 
     for (auto obj : objects) {
-        if (!dynamic_cast<SPItem *>(obj)) {
+        if (!obj) {
             continue;
         }
         SPStyle *style = obj->style;
@@ -961,7 +942,7 @@ objects_query_strokejoin (const std::vector<SPItem*> &objects, SPStyle *style_re
     int n_stroked = 0;
 
     for (auto obj : objects) {
-        if (!dynamic_cast<SPItem *>(obj)) {
+        if (!obj) {
             continue;
         }
         SPStyle *style = obj->style;
@@ -1012,7 +993,7 @@ objects_query_paintorder (const std::vector<SPItem*> &objects, SPStyle *style_re
     int n_order = 0;
 
     for (auto obj : objects) {
-        if (!dynamic_cast<SPItem *>(obj)) {
+        if (!obj) {
             continue;
         }
         SPStyle *style = obj->style;
@@ -1092,7 +1073,7 @@ objects_query_fontnumbers (const std::vector<SPItem*> &objects, SPStyle *style_r
         }
 
         texts ++;
-        SPItem *item = dynamic_cast<SPItem *>(obj);
+        auto item = obj;
         g_assert(item != nullptr);
 
         // Quick way of getting document scale. Should be same as:
@@ -1701,7 +1682,7 @@ objects_query_blend (const std::vector<SPItem*> &objects, SPStyle *style_res)
             continue;
         }
         SPStyle *style = obj->style;
-        if (!style || !dynamic_cast<SPItem *>(obj)) {
+        if (!style || !obj) {
             continue;
         }
 
@@ -1752,7 +1733,7 @@ int objects_query_isolation(const std::vector<SPItem *> &objects, SPStyle *style
             continue;
         }
         SPStyle *style = obj->style;
-        if (!style || !dynamic_cast<SPItem *>(obj)) {
+        if (!style || !obj) {
             continue;
         }
 
@@ -1811,7 +1792,7 @@ objects_query_blur (const std::vector<SPItem*> &objects, SPStyle *style_res)
         if (!style) {
             continue;
         }
-        SPItem *item = dynamic_cast<SPItem *>(obj);
+        auto item = obj;
         if (!item) {
             continue;
         }
@@ -1824,13 +1805,13 @@ objects_query_blur (const std::vector<SPItem*> &objects, SPStyle *style_res)
         if (style->filter.set && style->getFilter()) {
             //cycle through filter primitives
             for(auto& primitive_obj: style->getFilter()->children) {
-                SPFilterPrimitive *primitive = dynamic_cast<SPFilterPrimitive *>(&primitive_obj);
+                auto primitive = cast<SPFilterPrimitive>(&primitive_obj);
                 if (primitive) {
 
                     //if primitive is gaussianblur
-                    SPGaussianBlur * spblur = dynamic_cast<SPGaussianBlur *>(primitive);
+                    auto spblur = cast<SPGaussianBlur>(primitive);
                     if (spblur) {
-                        float num = spblur->stdDeviation.getNumber();
+                        float num = spblur->get_std_deviation().getNumber();
                         float dummy = num * i2d.descrim();
                         if (!std::isnan(dummy)) {
                             blur_sum += dummy;
@@ -1932,54 +1913,13 @@ sp_desktop_query_style(SPDesktop *desktop, SPStyle *style, int property)
         return ret; // subselection returned a style, pass it on
 
     // otherwise, do querying and averaging over selection
-    if (desktop->selection != nullptr) {
-        std::vector<SPItem *> vec(desktop->selection->items().begin(), desktop->selection->items().end());
+    if (auto selection = desktop->getSelection()) {
+        std::vector<SPItem *> vec(selection->items().begin(), selection->items().end());
         return sp_desktop_query_style_from_list (vec, style, property);
     }
 
     return QUERY_STYLE_NOTHING;
 }
-
-/**
- * Do the same as sp_desktop_query_style for all (defined) style properties, return true if at
- * least one of the properties did not return QUERY_STYLE_NOTHING.
- */
-bool
-sp_desktop_query_style_all (SPDesktop *desktop, SPStyle *query)
-{
-        int result_family = sp_desktop_query_style (desktop, query, QUERY_STYLE_PROPERTY_FONTFAMILY);
-        int result_fstyle = sp_desktop_query_style (desktop, query, QUERY_STYLE_PROPERTY_FONTSTYLE);
-        int result_fnumbers = sp_desktop_query_style (desktop, query, QUERY_STYLE_PROPERTY_FONTNUMBERS);
-        int result_fill = sp_desktop_query_style (desktop, query, QUERY_STYLE_PROPERTY_FILL);
-        int result_stroke = sp_desktop_query_style (desktop, query, QUERY_STYLE_PROPERTY_STROKE);
-        int result_strokewidth = sp_desktop_query_style (desktop, query, QUERY_STYLE_PROPERTY_STROKEWIDTH);
-        int result_strokemiterlimit = sp_desktop_query_style (desktop, query, QUERY_STYLE_PROPERTY_STROKEMITERLIMIT);
-        int result_strokecap = sp_desktop_query_style (desktop, query, QUERY_STYLE_PROPERTY_STROKECAP);
-        int result_strokejoin = sp_desktop_query_style (desktop, query, QUERY_STYLE_PROPERTY_STROKEJOIN);
-
-        int result_paintorder = sp_desktop_query_style (desktop, query, QUERY_STYLE_PROPERTY_PAINTORDER);
-
-        int result_opacity = sp_desktop_query_style (desktop, query, QUERY_STYLE_PROPERTY_MASTEROPACITY);
-        int result_blur = sp_desktop_query_style (desktop, query, QUERY_STYLE_PROPERTY_BLUR);
-        int result_blend = sp_desktop_query_style (desktop, query, QUERY_STYLE_PROPERTY_BLEND);
-        int result_isolation = sp_desktop_query_style (desktop, query, QUERY_STYLE_PROPERTY_ISOLATION);
-
-        return (result_family != QUERY_STYLE_NOTHING ||
-                result_fstyle != QUERY_STYLE_NOTHING ||
-                result_fnumbers != QUERY_STYLE_NOTHING ||
-                result_fill != QUERY_STYLE_NOTHING ||
-                result_stroke != QUERY_STYLE_NOTHING ||
-                result_opacity != QUERY_STYLE_NOTHING ||
-                result_strokewidth != QUERY_STYLE_NOTHING ||
-                result_strokemiterlimit != QUERY_STYLE_NOTHING ||
-                result_strokecap != QUERY_STYLE_NOTHING ||
-                result_strokejoin != QUERY_STYLE_NOTHING ||
-                result_paintorder != QUERY_STYLE_NOTHING ||
-                result_blur != QUERY_STYLE_NOTHING ||
-                result_isolation != QUERY_STYLE_NOTHING ||
-                result_blend != QUERY_STYLE_NOTHING);
-}
-
 
 /*
   Local Variables:

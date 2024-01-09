@@ -18,6 +18,7 @@
 #include "live_effects/parameter/enum.h"
 #include "live_effects/parameter/hidden.h"
 #include "live_effects/parameter/powerstrokepointarray.h"
+#include "live_effects/parameter/message.h"
 
 namespace Inkscape {
 namespace LivePathEffect {
@@ -47,10 +48,11 @@ public:
     void transform_multiply(Geom::Affine const &postmul, bool set) override;
     void applyStyle(SPLPEItem *lpeitem);
     // methods called by path-manipulator upon edits
-    void adjustForNewPath(Geom::PathVector const & path_in);
+    void adjustForNewPath();
 
     PowerStrokePointArrayParam offset_points;
     BoolParam not_jump;
+    bool knotdragging = false;
 private:
     BoolParam sort_points;
     EnumParam<unsigned> interpolator_type;
@@ -62,6 +64,9 @@ private:
     EnumParam<unsigned> end_linecap_type;
     size_t recusion_limit;
     bool has_recursion;
+    bool adjust_path = false;
+    Geom::PathVector path_out_prev;
+    MessageParam message;
 };
 
 } //namespace LivePathEffect

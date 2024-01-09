@@ -94,7 +94,6 @@ int objects_query_blend (const std::vector<SPItem*> &objects, SPStyle *style_res
 
 int sp_desktop_query_style_from_list (const std::vector<SPItem*> &list, SPStyle *style, int property);
 int sp_desktop_query_style(SPDesktop *desktop, SPStyle *style, int property);
-bool sp_desktop_query_style_all (SPDesktop *desktop, SPStyle *query);
 
 #endif // SEEN_SP_DESKTOP_STYLE_H
 

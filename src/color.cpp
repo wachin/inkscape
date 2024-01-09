@@ -16,77 +16,51 @@
 #include <cmath>
 #include <cstdio>
 #include <vector>
-
-#define MIN(X,Y) ((X) < (Y) ? (X) : (Y))
-#define MAX(X,Y) ((X) > (Y) ? (X) : (Y))
+#include <boost/range/combine.hpp>
+#include <glib.h>
 
 #include "color.h"
-#include "svg/svg-icc-color.h"
+#include "hsluv.h"
+#include "strneq.h"
 #include "svg/svg-color.h"
 
 #include "svg/css-ostringstream.h"
+#include "object/color-profile.h"
 
 #define return_if_fail(x) if (!(x)) { printf("assertion failed: " #x); return; }
 #define return_val_if_fail(x, val) if (!(x)) { printf("assertion failed: " #x); return val; }
 
 using Inkscape::CSSOStringStream;
 
-static bool profileMatches( SVGICCColor const* first, SVGICCColor const* second );
+static bool profileMatches(SVGICCColor const &first, SVGICCColor const &second);
 
-#define PROFILE_EPSILON 0.00000001
+static constexpr double PROFILE_EPSILON = 1e-8;
 
-SPColor::SPColor() :
-    icc(nullptr)
-{
-    v.c[0] = 0;
-    v.c[1] = 0;
-    v.c[2] = 0;
-}
-
-SPColor::SPColor( SPColor const& other ) :
-    icc(nullptr)
+SPColor::SPColor(SPColor const &other)
 {
     *this = other;
 }
 
-SPColor::SPColor( float r, float g, float b ) :
-    icc(nullptr)
+SPColor::SPColor(float r, float g, float b)
 {
     set( r, g, b );
 }
 
-SPColor::SPColor( guint32 value ) :
-    icc(nullptr)
+SPColor::SPColor(guint32 value)
 {
     set( value );
 }
 
-SPColor::~SPColor()
-{
-    delete icc;
-    icc = nullptr;
-}
-
-
-SPColor& SPColor::operator= (SPColor const& other)
+SPColor &SPColor::operator=(SPColor const &other)
 {
     if (this == &other){
         return *this;
     }
     
-    SVGICCColor* tmp_icc = other.icc ? new SVGICCColor(*other.icc) : nullptr;
-
-    v.c[0] = other.v.c[0];
-    v.c[1] = other.v.c[1];
-    v.c[2] = other.v.c[2];
-    if ( icc ) {
-        delete icc;
-    }
-    icc = tmp_icc;
-
+    set(other.v.c[0], other.v.c[1], other.v.c[2]);
+    copyColors(other);
     return *this;
 }
-
 
 /**
  * Returns true if colors match.
@@ -98,7 +72,7 @@ bool SPColor::operator == (SPColor const& other) const
         (v.c[1] == other.v.c[1]) &&
         (v.c[2] == other.v.c[2]);
 
-    match &= profileMatches( icc, other.icc );
+    match &= profileMatches(_icc, other._icc);
 
     return match;
 }
@@ -107,39 +81,39 @@ bool SPColor::operator == (SPColor const& other) const
  * Returns true if no RGB value differs epsilon or more in both colors,
  * false otherwise.
  */
-bool SPColor::isClose( SPColor const& other, float epsilon ) const
+bool SPColor::isClose(SPColor const& other, float epsilon) const
 {
     bool match = (fabs((v.c[0]) - (other.v.c[0])) < epsilon)
         && (fabs((v.c[1]) - (other.v.c[1])) < epsilon)
         && (fabs((v.c[2]) - (other.v.c[2])) < epsilon);
 
-    match &= profileMatches( icc, other.icc );
+    match &= profileMatches(_icc, other._icc);
 
     return match;
 }
 
-static bool profileMatches( SVGICCColor const* first, SVGICCColor const* second ) {
-    bool match = false;
-    if ( !first && !second ) {
-        match = true;
-    } else {
-        match = first && second
-            && (first->colorProfile == second->colorProfile)
-            && (first->colors.size() == second->colors.size());
-        if ( match ) {
-            for ( unsigned i = 0; i < first->colors.size(); i++ ) {
-                match &= (fabs(first->colors[i] - second->colors[i]) < PROFILE_EPSILON);
-            }
+/**
+ * Matches two profile colors within PROFILE_EPSILON distance.
+ */
+static bool profileMatches(SVGICCColor const &first, SVGICCColor const &second)
+{
+    if (first.colorProfile != second.colorProfile || first.colors.size() != second.colors.size()) {
+        return false;
+    }
+
+    for (unsigned i = 0; i < first.colors.size(); i++) {
+        if (fabs(first.colors[i] - second.colors[i]) > PROFILE_EPSILON) {
+            return false;
         }
     }
-    return match;
+    return true;
 }
 
 /**
  * Sets RGB values and colorspace in color.
  * \pre 0 <={r,g,b}<=1
  */
-void SPColor::set( float r, float g, float b )
+void SPColor::set(float r, float g, float b)
 {
     return_if_fail(r >= 0.0);
     return_if_fail(r <= 1.0);
@@ -148,21 +122,95 @@ void SPColor::set( float r, float g, float b )
     return_if_fail(b >= 0.0);
     return_if_fail(b <= 1.0);
 
-    // TODO clear icc if set?
     v.c[0] = r;
     v.c[1] = g;
     v.c[2] = b;
+
+    // Remove icc colors, but not the profile
+    unsetColors();
 }
 
 /**
  * Converts 32bit value to RGB floats and sets color.
  */
-void SPColor::set( guint32 value )
+void SPColor::set(guint32 value)
 {
-    // TODO clear icc if set?
     v.c[0] = (value >> 24) / 255.0F;
     v.c[1] = ((value >> 16) & 0xff) / 255.0F;
     v.c[2] = ((value >> 8) & 0xff) / 255.0F;
+    // Remove icc colors, but not the profile
+    unsetColors();
+}
+
+/**
+ * Returns true if this color has a color profile set.
+ */
+bool SPColor::hasColorProfile() const
+{
+    return !_icc.colorProfile.empty();
+}
+
+/**
+ * Returns true if there is a defined color for the set profile.
+ */
+bool SPColor::hasColors() const
+{
+    return hasColorProfile() && !_icc.colors.empty() && _icc.colors[0] != -1.0;
+}
+
+void SPColor::setColorProfile(Inkscape::ColorProfile *profile)
+{
+    unsetColorProfile();
+    if (profile) {
+        _icc.colorProfile = profile->name;
+        for (int i = 0; i < profile->getChannelCount(); i++) {
+            _icc.colors.emplace_back(-1.0);
+        }
+    }
+}
+
+void SPColor::setColors(std::vector<double> &&values)
+{
+    if (values.size() != _icc.colors.size()) {
+        g_error("Can't set profile-based color, wrong number of colors.");
+        unsetColors();
+        return;
+    }
+    _icc.colors = std::move(values);
+}
+
+void SPColor::copyColors(const SPColor &other)
+{
+    if (!profileMatches(_icc, other._icc)) {
+        _icc = other._icc; // copy
+    }
+}
+
+void SPColor::setColor(unsigned int index, double value)
+{
+    if (index < 0 || index > _icc.colors.size()) {
+        g_warning("Can't set profile-based color, index out of range.");
+    }
+    _icc.colors[index] = value;
+}
+
+/**
+ * Clears the saved profile color, but retains the color profile for imediate reuse.
+ */
+void SPColor::unsetColors()
+{
+    for (double &color : _icc.colors) {
+        color = -1.0;
+    }
+}
+
+/**
+ * Remove the color profile and save color, reverting to sRGB only.
+ */
+void SPColor::unsetColorProfile()
+{
+    _icc.colorProfile = "";
+    _icc.colors.clear();
 }
 
 /**
@@ -172,6 +220,10 @@ void SPColor::set( guint32 value )
 guint32 SPColor::toRGBA32( int alpha ) const
 {
     return_val_if_fail (alpha <= 0xff, 0x0);
+
+    if (!is_set()) {
+        return SP_RGBA32_U_COMPOSE(0, 0, 0, alpha);
+    }
 
     guint32 rgba = SP_RGBA32_U_COMPOSE( SP_COLOR_F_TO_U(v.c[0]),
                                         SP_COLOR_F_TO_U(v.c[1]),
@@ -200,12 +252,12 @@ std::string SPColor::toString() const
     sp_svg_write_color(tmp, sizeof(tmp), toRGBA32(0x0ff));
     css << tmp;
 
-    if ( icc ) {
+    if (hasColors()) {
         if ( !css.str().empty() ) {
             css << " ";
         }
-        css << "icc-color(" << icc->colorProfile;
-        for (double color : icc->colors) {
+        css << "icc-color(" << _icc.colorProfile;
+        for (double color : _icc.colors) {
             css << ", " << color;
         }
         css << ')';
@@ -214,6 +266,30 @@ std::string SPColor::toString() const
     return css.str();
 }
 
+/**
+ * Set the color from the given string.
+ *
+ * @param str - The CSS3 formatted string input (see toString)
+ * @returns true if the color was parsed correctly.
+ */
+bool SPColor::fromString(char const *str)
+{
+    guint32 const rgb0 = sp_svg_read_color(str, &str, 0xff);
+    if (rgb0 == 0xff) {
+        return false;
+    }
+    set(rgb0);
+    while (g_ascii_isspace(*str)) {
+        ++str;
+    }
+    if (strneq(str, "icc-color(", 10)) {
+        if (!sp_svg_read_icc_color(str, &str, &_icc)) {
+            g_warning("Couldn't parse icc-color format in css.");
+            unsetColorProfile();
+        }
+    }
+    return true;
+}
 
 /**
  * Fill rgb float array with values from SPColor.
@@ -223,6 +299,9 @@ void
 SPColor::get_rgb_floatv(float *rgb) const
 {
     return_if_fail (rgb != nullptr);
+    if (!is_set()) {
+        return;
+    }
 
     rgb[0] = v.c[0];
     rgb[1] = v.c[1];
@@ -237,6 +316,9 @@ void
 SPColor::get_cmyk_floatv(float *cmyk) const
 {
     return_if_fail (cmyk != nullptr);
+    if (!is_set()) {
+        return;
+    }
 
     SPColor::rgb_to_cmyk_floatv( cmyk,
                                  v.c[0],
@@ -445,6 +527,33 @@ SPColor::cmyk_to_rgb_floatv (float *rgb, float c, float m, float y, float k)
     rgb[0] = 1.0 - c;
     rgb[1] = 1.0 - m;
     rgb[2] = 1.0 - y;
+}
+
+/**
+ * Fill hsluv float array from r,g,b float values.
+ */
+void
+SPColor::rgb_to_hsluv_floatv(float *hsluv, float r, float g, float b)
+{
+    auto tmp = Hsluv::rgb_to_hsluv(r, g, b);
+    tmp[0] /= 360.0;
+    tmp[1] /= 100.0;
+    tmp[2] /= 100.0;
+    for (size_t i : {0, 1, 2}) {
+        hsluv[i] = std::clamp(tmp[i], 0.0, 1.0);
+    }
+}
+
+/**
+ * Fill rgb float array from h,s,l float values.
+ */
+void
+SPColor::hsluv_to_rgb_floatv(float *rgb, float h, float s, float l)
+{
+    auto tmp = Hsluv::hsluv_to_rgb(h * 360, s * 100, l * 100);
+    for (size_t i : {0, 1, 2}) {
+        rgb[i] = tmp[i];
+    }
 }
 
 /*

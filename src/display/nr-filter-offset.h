@@ -20,30 +20,30 @@
 namespace Inkscape {
 namespace Filters {
 
-class FilterOffset : public FilterPrimitive {
+class FilterOffset : public FilterPrimitive
+{
 public:
     FilterOffset();
-    static FilterPrimitive *create();
     ~FilterOffset() override;
 
-    void render_cairo(FilterSlot &slot) override;
-    void area_enlarge(Geom::IntRect &area, Geom::Affine const &trans) override;
-    bool can_handle_affine(Geom::Affine const &) override;
-    double complexity(Geom::Affine const &ctm) override;
+    void render_cairo(FilterSlot &slot) const override;
+    void area_enlarge(Geom::IntRect &area, Geom::Affine const &trans) const override;
+    bool can_handle_affine(Geom::Affine const &) const override;
+    double complexity(Geom::Affine const &ctm) const override;
 
     void set_dx(double amount);
     void set_dy(double amount);
 
-    Glib::ustring name() override { return Glib::ustring("Offset"); }
+    Glib::ustring name() const override { return Glib::ustring("Offset"); }
 
 private:
     double dx, dy;
 };
 
-} /* namespace Filters */
-} /* namespace Inkscape */
+} // namespace Filters
+} // namespace Inkscape
 
-#endif /* __NR_FILTER_OFFSET_H__ */
+#endif // SEEN_NR_FILTER_OFFSET_H
 /*
   Local Variables:
   mode:c++

@@ -137,11 +137,6 @@ void DrawingContext::setSource(DrawingSurface *s) {
     Geom::Point origin = s->origin();
     cairo_set_source_surface(_ct, s->raw(), origin[X], origin[Y]);
 }
-void DrawingContext::setSourceCheckerboard() {
-    cairo_pattern_t *check = ink_cairo_pattern_create_checkerboard();
-    cairo_set_source(_ct, check);
-    cairo_pattern_destroy(check);
-}
 
 Geom::Rect DrawingContext::targetLogicalBounds() const
 {

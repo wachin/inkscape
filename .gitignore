@@ -4,6 +4,7 @@ gtest/
 build
 share/inkscape
 share/*/*.h
+src/3rdparty/cairo
 
 inkscape_devel_*.snap
 inkscape_devel_source.tar.bz2
@@ -51,4 +52,4 @@ src/helper/sp-marshal.*
 
 # Ctags
 tags
-
+.DS_Store

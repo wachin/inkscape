@@ -16,7 +16,7 @@
 #define INKSCAPE_UI_DIALOG_DOCUMENT_PREFERENCES_H
 
 #ifdef HAVE_CONFIG_H
-# include "config.h"  // only include where actually required!
+#include "config.h" // only include where actually required!
 #endif
 
 #include <cstddef>
@@ -29,35 +29,39 @@
 
 #include "ui/dialog/dialog-base.h"
 #include "ui/widget/licensor.h"
-#include "ui/widget/page-sizer.h"
 #include "ui/widget/registered-widget.h"
 #include "ui/widget/registry.h"
 #include "ui/widget/tolerance-slider.h"
 #include "xml/helper-observer.h"
+#include "xml/node-observer.h"
 
 namespace Inkscape {
-    namespace XML {
-        class Node;
-    }
-    namespace UI {
-        namespace Widget {
-            class EntityEntry;
-            class NotebookPage;
-        }
-        namespace Dialog {
+namespace XML { class Node; }
+namespace UI {
 
-typedef std::list<UI::Widget::EntityEntry*> RDElist;
+namespace Widget {
+class AlignmentSelector;
+class EntityEntry;
+class NotebookPage;
+class PageProperties;
+} // namespace Widget
+
+namespace Dialog {
+
+using RDEList = std::vector<UI::Widget::EntityEntry *>;
 
 class DocumentProperties : public DialogBase
 {
 public:
+    DocumentProperties();
+    ~DocumentProperties() override;
+
     void  update_widgets();
     static DocumentProperties &getInstance();
     static void destroy();
 
     void documentReplaced() override;
 
-    void update() override;
     void update_gridspage();
 
 protected:
@@ -67,12 +71,9 @@ protected:
     void  build_snap();
     void  build_gridspage();
 
-    void  create_guides_around_page();
-    void  delete_all_guides();
     void  build_cms();
     void  build_scripting();
     void  build_metadata();
-    void  init();
 
     virtual void  on_response (int);
     void  populate_available_profiles();
@@ -81,7 +82,7 @@ protected:
     void  removeSelectedProfile();
     void  onColorProfileSelectRow();
     void  linked_profiles_list_button_release(GdkEventButton* event);
-    void  cms_create_popup_menu(Gtk::Widget& parent, sigc::slot<void> rem);
+    void  cms_create_popup_menu(Gtk::Widget& parent, sigc::slot<void ()> rem);
 
     void  external_scripts_list_button_release(GdkEventButton* event);
     void  embedded_scripts_list_button_release(GdkEventButton* event);
@@ -95,17 +96,22 @@ protected:
     void  onExternalScriptSelectRow();
     void  onEmbeddedScriptSelectRow();
     void  editEmbeddedScript();
-    void  external_create_popup_menu(Gtk::Widget& parent, sigc::slot<void> rem);
-    void  embedded_create_popup_menu(Gtk::Widget& parent, sigc::slot<void> rem);
+    void  external_create_popup_menu(Gtk::Widget& parent, sigc::slot<void ()> rem);
+    void  embedded_create_popup_menu(Gtk::Widget& parent, sigc::slot<void ()> rem);
     void  load_default_metadata();
     void  save_default_metadata();
+    void update_viewbox(SPDesktop* desktop);
+    void update_scale_ui(SPDesktop* desktop);
+    void update_viewbox_ui(SPDesktop* desktop);
+    void set_document_scale(SPDesktop* desktop, double scale_x);
+    void set_viewbox_pos(SPDesktop* desktop, double x, double y);
+    void set_viewbox_size(SPDesktop* desktop, double width, double height);
 
     Inkscape::XML::SignalObserver _emb_profiles_observer, _scripts_observer;
     Gtk::Notebook  _notebook;
 
     UI::Widget::NotebookPage   *_page_page;
     UI::Widget::NotebookPage   *_page_guides;
-    UI::Widget::NotebookPage   *_page_snap;
     UI::Widget::NotebookPage   *_page_cms;
     UI::Widget::NotebookPage   *_page_scripting;
 
@@ -120,18 +126,6 @@ protected:
 
     UI::Widget::Registry _wr;
     //---------------------------------------------------------------
-    Gtk::Grid            _rcb_doc_props_left;
-    Gtk::Grid            _rcb_doc_props_right;
-    UI::Widget::RegisteredCheckButton _rcb_antialias;
-    UI::Widget::RegisteredCheckButton _rcb_checkerboard;
-    UI::Widget::RegisteredCheckButton _rcb_canb;
-    UI::Widget::RegisteredCheckButton _rcb_bord;
-    UI::Widget::RegisteredCheckButton _rcb_shad;
-    UI::Widget::RegisteredColorPicker _rcp_bg;
-    UI::Widget::RegisteredColorPicker _rcp_bord;
-    UI::Widget::RegisteredUnitMenu    _rum_deflt;
-    UI::Widget::PageSizer             _page_sizer;
-    //---------------------------------------------------------------
     UI::Widget::RegisteredCheckButton _rcb_sgui;
     UI::Widget::RegisteredCheckButton _rcb_lgui;
     UI::Widget::RegisteredColorPicker _rcp_gui;
@@ -139,15 +133,7 @@ protected:
     Gtk::Button                       _create_guides_btn;
     Gtk::Button                       _delete_guides_btn;
     //---------------------------------------------------------------
-    UI::Widget::ToleranceSlider       _rsu_sno;
-    UI::Widget::ToleranceSlider       _rsu_sn;
-    UI::Widget::ToleranceSlider       _rsu_gusn;
-    UI::Widget::ToleranceSlider       _rsu_assn;
-    UI::Widget::ToleranceSlider       _rsu_dssn;
-    UI::Widget::RegisteredCheckButton _rcb_snclp;
-    UI::Widget::RegisteredCheckButton _rcb_snmsk;
-    UI::Widget::RegisteredCheckButton _rcb_perp;
-    UI::Widget::RegisteredCheckButton _rcb_tang;
+    UI::Widget::PageProperties* _page;
     //---------------------------------------------------------------
     Gtk::Button         _unlink_btn;
     class AvailableProfilesColumns : public Gtk::TreeModel::ColumnRecord
@@ -223,24 +209,51 @@ protected:
     Gtk::Box        _grids_space;
     //---------------------------------------------------------------
 
-    RDElist _rdflist;
+    RDEList _rdflist;
     UI::Widget::Licensor _licensor;
 
     Gtk::Box& _createPageTabLabel(const Glib::ustring& label, const char *label_image);
 
 private:
-    DocumentProperties();
-    ~DocumentProperties() override;
-
     // callback methods for buttons on grids page.
     void onNewGrid();
     void onRemoveGrid();
 
-    // callback for document unit change
-    void onDocUnitChange();
+    // callback for display unit change
+    void display_unit_change(const Inkscape::Util::Unit* unit);
 
+    Gtk::Widget *createNewGridWidget(SPGrid *grid);
+    Gtk::Widget *createRightGridColumn(SPGrid *grid);
+    static void *notifyGridWidgetsDestroyed(void *data);
+
+    UI::Widget::RegisteredCheckButton *_grid_rcb_enabled = nullptr;
+    UI::Widget::RegisteredCheckButton *_grid_rcb_snap_visible_only = nullptr;
+    UI::Widget::RegisteredCheckButton *_grid_rcb_visible = nullptr;
+    UI::Widget::RegisteredCheckButton *_grid_rcb_dotted = nullptr;
+    UI::Widget::AlignmentSelector     *_grid_as_alignment = nullptr;
+
+    class WatchConnection : private XML::NodeObserver
+    {
+    public:
+        WatchConnection(DocumentProperties *dialog)
+            : _dialog(dialog)
+        {}
+        ~WatchConnection() override { disconnect(); }
+        void connect(Inkscape::XML::Node *node);
+        void disconnect();
+
+    private:
+        void notifyChildAdded(XML::Node &node, XML::Node &child, XML::Node *prev) final;
+        void notifyChildRemoved(XML::Node &node, XML::Node &child, XML::Node *prev) final;
+        void notifyAttributeChanged(XML::Node &node, GQuark name, Util::ptr_shared old_value,
+                                    Util::ptr_shared new_value) final;
+
+        Inkscape::XML::Node *_node{nullptr};
+        DocumentProperties *_dialog;
+    };
     // nodes connected to listeners
-    Inkscape::XML::Node *_repr_namedview = nullptr;
+    WatchConnection _namedview_connection;
+    WatchConnection _root_connection;
 };
 
 } // namespace Dialog

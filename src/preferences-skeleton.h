@@ -24,11 +24,8 @@
  * obsolete versions the user might have. */
 static char const preferences_skeleton[] =
     R"=====(
-<inkscape version="1"
-  xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
-  xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape">
+<inkscape version="1">
   <group id="window">
-    <group id="task" />
     <group id="menu"        state="1"/>
     <group id="commands"    state="1"/>
     <group id="snaptoolbox" state="1"/>
@@ -40,7 +37,6 @@ static char const preferences_skeleton[] =
     <group id="scrollbars"  state="1"/>
   </group>
   <group id="fullscreen">
-    <group id="task" />
     <group id="menu"        state="1"/>
     <group id="commands"    state="1"/>
     <group id="snaptoolbox" state="1"/>
@@ -52,7 +48,6 @@ static char const preferences_skeleton[] =
     <group id="scrollbars"  state="1"/>
   </group>
   <group id="focus">
-    <group id="task" />
     <group id="menu"        state="0"/>
     <group id="commands"    state="0"/>
     <group id="snaptoolbox" state="0"/>
@@ -65,13 +60,14 @@ static char const preferences_skeleton[] =
   </group>
 
   <group id="template">
-    <sodipodi:namedview
+    <group
        id="base"
        pagecolor="#ffffff"
+       deskcolor="#d1d1d1"
        pageopacity="0.0"
        pagecheckerboard="0"
-       bordercolor="#666666"
-       borderopacity="1.0"
+       bordercolor="#000000"
+       borderopacity="0.25"
        objecttolerance="10.0"
        gridtolerance="10.0"
        guidetolerance="10.0"
@@ -97,16 +93,16 @@ static char const preferences_skeleton[] =
 
     <group id="freehand"
          style="fill:none;stroke:black;stroke-opacity:1;stroke-linejoin:miter;stroke-linecap:butt;">
-      <eventcontext id="pencil" tolerance="4.0" selcue="1" style="stroke-width:1px;" usecurrent="0" average_all_sketches="1"/>
-      <eventcontext id="pen" mode="drag" selcue="1" style="stroke-width:1px;" usecurrent="0"/>
+      <eventcontext id="pencil" tolerance="15.0" selcue="1" style="stroke-width:1px;" usecurrent="1" average_all_sketches="1"/>
+      <eventcontext id="pen" mode="drag" selcue="1" style="stroke-width:1px;" usecurrent="1"/>
     </group>
 
     <eventcontext id="calligraphic" style="fill:black;fill-opacity:1;fill-rule:nonzero;stroke:none;"
-                       mass="2" angle="30" width="15.118" thinning="10" flatness="90" cap_rounding="0.0" usecurrent="1"
+                       mass="2" angle="30" width="15.118" thinning="10" flatness="-90" cap_rounding="0.0" usecurrent="1"
                        tracebackground="0" usepressure="1" usetilt="0" keep_selected="1" abs_width="1" unit="mm">
 
       <group id="preset">
-        <group id="cp0" name="Dip pen" mass="2" wiggle="0.0" angle="30.0" thinning="10" tremor="0.0" flatness="90" cap_rounding="0.0" tracebackground="0" usepressure="1" usetilt="1" />
+        <group id="cp0" name="Dip pen" mass="2" wiggle="0.0" angle="30.0" thinning="10" tremor="0.0" flatness="-90" cap_rounding="0.0" tracebackground="0" usepressure="1" usetilt="1" />
         <group id="cp1" name="Marker" mass="2" wiggle="0.0" angle="90.0" thinning="0.0" tremor="0.0" flatness="0.0" cap_rounding="1.0" tracebackground="0" usepressure="0" usetilt="0" />
         <group id="cp2" name="Brush" mass="2" wiggle="25" angle="45.0" thinning="-40" tremor="0.0" flatness="16" cap_rounding=".1" tracebackground="0" usepressure="1" usetilt="1" />
         <group id="cp3" name="Wiggly" usetilt="1" tracebackground="0" usepressure="1" cap_rounding="0.1" flatness="16" tremor="18" thinning="-30" angle="30" wiggle="50" mass="0" />
@@ -116,14 +112,14 @@ static char const preferences_skeleton[] =
     </eventcontext>
 
     <eventcontext id="eraser" mode="1" style="fill:#ff0000;fill-opacity:1;fill-rule:nonzero;stroke:none;"
-                       mass="0.02" drag="1" angle="30" width="10" thinning="0.1" flatness="0.0" cap_rounding="1.4" usecurrent="0"
+                       mass="3.00" drag="1" angle="30" width="10" thinning="0.1" flatness="0.0" cap_rounding="1.4" usecurrent="0"
                        tracebackground="0" usepressure="1" usetilt="0" selcue="1">
     </eventcontext>
 
     <eventcontext id="lpetool" mode="drag" style="fill:#ff0000;fill-opacity:1;fill-rule:nonzero;stroke:none;">
     </eventcontext>
 
-    <eventcontext id="text"  usecurrent="0" gradientdrag="1"
+    <eventcontext id="text"  usecurrent="1" gradientdrag="1"
                        font_sample="AaBbCcIiPpQq12369$€¢?.;/()"
                        show_sample_in_list="1" use_svg2="1"
                   style="fill:black;fill-opacity:1;line-height:1.25;stroke:none;font-family:sans-serif;font-style:normal;font-weight:normal;font-size:40px;" selcue="1"/>
@@ -131,7 +127,8 @@ static char const preferences_skeleton[] =
     <eventcontext id="nodes" selcue="1" gradientdrag="1"
       pathflash_enabled="1" pathflash_unselected="0" pathflash_timeout="500" show_handles="1" show_outline="0"
       sculpting_profile="1" single_node_transform_handles="0" show_transform_handles="0" live_outline="1" live_objects="1" show_helperpath="0" x="0" y="0" edit_clipping_paths="0" edit_masks="0" />
-    <eventcontext id="tweak" selcue="0" gradientdrag="0" show_handles="0" width="0.2" force="0.2" fidelity="0.5" usepressure="1" style="fill:red;stroke:none;" usecurrent="0"/>
+    <eventcontext id="marker" selcue="1" gradientdrag="1" />
+    <eventcontext id="tweak" selcue="0" gradientdrag="0" show_handles="0" width="0.2" force="0.2" fidelity="0.5" usepressure="1" style="fill:red;stroke:none;" usecurrent="1"/>
     <eventcontext id="spray" selcue="1" gradientdrag="0" usepressure="1" width="15" population="70" mode="1" rotation_variation="0" scale_variation="0" standard_deviation="70" mean="0"/>
     <eventcontext id="gradient" selcue="1"/>
     <eventcontext id="mesh" selcue="1"/>
@@ -140,6 +137,9 @@ static char const preferences_skeleton[] =
     <eventcontext id="select" selcue="1" gradientdrag="0"/>
     <eventcontext id="connector" style="fill:none;fill-rule:evenodd;stroke:black;stroke-opacity:1;stroke-linejoin:miter;stroke-width:1px;stroke-linecap:butt;" selcue="1"/>
     <eventcontext id="paintbucket" style="fill:#a0a0a0;stroke:none;" usecurrent="1"/>
+    <group
+       id="geometric"
+       mode="drag" />
   </group>
 
   <group id="palette">
@@ -184,7 +184,22 @@ static char const preferences_skeleton[] =
     </group>
   </group>
 
-  <group id="colorselector" page="0"/>
+  <group id="colorselector" page="1" switcher="1">
+    <group id="RGB"
+      visible="1" />
+    <group id="HSL"
+      visible="1" />
+    <group id="CMYK"
+      visible="1" />
+    <group id="HSV"
+      visible="1" />
+    <group id="HSLuv"
+      visible="1" />
+    <group id="OKLAB"
+      visible="1" />
+    <group id="CMS"
+      visible="1" />
+  </group>
 
   <group id="embedded">
     <group id="swatches"
@@ -192,7 +207,13 @@ static char const preferences_skeleton[] =
       panel_mode="1"
       panel_ratio="100"
       panel_wrap="0"
-      palette="Inkscape default" />
+      palette="Inkscape default">
+      <group id="pinned"
+         none="1"
+         rgb000000="1" black="1"
+         rgb808080="1" gray-50="1"
+         rgbffffff="1" white="1" />
+    </group>
   </group>
 
   <group id="dialogs">
@@ -218,12 +239,12 @@ static char const preferences_skeleton[] =
     <group id="open" enable_preview="1" path=""/>
     <group id="import" enable_preview="1" path="" ask="1" ask_svg="1" link="link" scale="optimizeSpeed"/>
     <group id="debug" redirect="0"/>
-    <group id="clonetiler" />
+    <group id="clonetiler" dotrace="0" />
     <group id="gridtiler" />
     <group id="extension-error" show-on-startup="0"/>
     <group id="memory" />
     <group id="messages" />
-    <group id="swatches" />
+    <group id="swatches" palette="Auto"/>
     <group id="iconpreview" />
     <group id="aboutextensions" />
     <group id="treeeditor" />
@@ -239,7 +260,8 @@ static char const preferences_skeleton[] =
     <group id="debug" add-label-comments="0"/>
   </group>
 
-  <group id="options">
+  <group id="options"
+     rotationlock="1">
     <group id="renderingcache" size="512" />
     <group id="useoldpdfexporter" value="0" />
     <group id="highlightoriginal" value="1" />
@@ -252,7 +274,7 @@ static char const preferences_skeleton[] =
     <group id="rotationsnapsperpi" value="12"/>
     <group id="cursortolerance" value="8.0"/>
     <group id="dragtolerance" value="4.0"/>
-    <group id="grabsize" value="3"/>
+    <group id="grabsize" value="4"/>
     <group
        id="displayprofile"
        enable="0"
@@ -266,7 +288,6 @@ static char const preferences_skeleton[] =
        gamutcolor="#808080"
        gamutwarn="0"
        bpc="0"
-       preserveblack="0"
        uri="" />
     <group id="savewindowgeometry" value="1"/>
     <group id="defaultoffsetwidth" value="2px"/>
@@ -308,7 +329,6 @@ static char const preferences_skeleton[] =
     <group id="maskobject" topmost="1" remove="1"/>
     <group id="blurquality" value="0"/>
     <group id="filterquality" value="1"/>
-    <group id="showfiltersinfobox" value="1" />
     <group id="startmode" outline="0"/>
     <group id="outlinemode" value="0"/>
 
@@ -342,12 +362,10 @@ static char const preferences_skeleton[] =
            allow_net_access="0"/>
     </group>
     <group id="forkgradientvectors" value="1"/>
-    <group id="iconrender" named_nodelay="0"/>
-    <group id="autosave" enable="1" interval="10" path="" max="10"/>
+    <group id="autosave" enable="1" interval="10" path="" max="50"/>
     <group id="grids"
       no_emphasize_when_zoomedout="0">
       <group id="xy"
-             units="px"
              origin_x="0.0"
              origin_y="0.0"
              spacing_x="1.0"
@@ -366,13 +384,22 @@ static char const preferences_skeleton[] =
     <group id="workarounds"
            colorsontop="0"
            partialdynamic="0"/>
+    <group
+       id="font"
+       unitType="2" />
+    <group
+       id="boot"
+       theme="colorful" />
   </group>
 
-  <group id="extensions">
-  </group>
+  <group
+     id="extensions"
+     org.inkscape.output.png.inkscape.png_bitdepth="99"
+     org.inkscape.output.png.inkscape.png_compression="6"
+     org.inkscape.output.png.inkscape.png_antialias="2" />
 
   <group id="desktop"
-         style="">
+         style="fill:#000000">
     <group
        width="640"
        height="480"
@@ -402,11 +429,25 @@ static char const preferences_skeleton[] =
      id="toolbox"
      icononly="1"
      secondary="1"
+     simplesnap="1"
      small="1">
     <group
        id="tools"
        icononly="1"
-       small="0" />
+       small="0"
+       iconsize="16">
+      <group
+         id="buttons" />
+    </group>
+    <group
+       id="controlbars"
+       iconsize="16" />
+  </group>
+
+  <group
+     id="statusbar">
+    <group
+       id="visibility" />
   </group>
 
   <group
@@ -472,11 +513,23 @@ static char const preferences_skeleton[] =
     </group>
   </group>
   <group id="debug">
-    <group id="latency" skew="1"/>
   </group>
   <group id="ui"
     language=""/>
-
+  <group
+     id="live_effects"
+     flattening="0" />
+  <group
+     id="theme"
+     defaultPreferDarkTheme="1"
+     defaultIconTheme="multicolor"
+     defaultGtkTheme="Adwaita"
+     narrowSpinButton="1"
+     preferDarkTheme="1"
+     darkTheme="1"
+     symbolicIcons="1"
+     symbolicDefaultBaseColors="1"
+     symbolicDefaultHighColors="0"/>
 </inkscape>
 )=====";
 

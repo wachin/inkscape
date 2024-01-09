@@ -10,42 +10,22 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
-#ifndef INKSCAPE_UI_FONT_SUBSTITUTION_H
-#define INKSCAPE_UI_FONT_SUBSTITUTION_H
+#ifndef INKSCAPE_UI_DIALOG_FONT_SUBSTITUTION_H
+#define INKSCAPE_UI_DIALOG_FONT_SUBSTITUTION_H
 
-#include <glibmm/ustring.h>
-#include <vector>
-
-class SPItem;
 class SPDocument;
 
 namespace Inkscape {
 namespace UI {
 namespace Dialog {
 
-class FontSubstitution  {
-public:
-    FontSubstitution();
-    virtual ~FontSubstitution();
-    void checkFontSubstitutions(SPDocument* doc);
-    void show(Glib::ustring out, std::vector<SPItem*> &l);
-
-    static FontSubstitution &getInstance() { return *new FontSubstitution(); }
-    Glib::ustring getSubstituteFontName (Glib::ustring font);
-
-protected:
-    std::vector<SPItem*> getFontReplacedItems(SPDocument* doc, Glib::ustring *out);
-
-private:
-    FontSubstitution(FontSubstitution const &d) = delete;
-    FontSubstitution& operator=(FontSubstitution const &d) = delete;
-};
+void checkFontSubstitutions(SPDocument *doc);
 
 } // namespace Dialog
 } // namespace UI
 } // namespace Inkscape
 
-#endif // INKSCAPE_UI_FONT_SUBSTITUTION_H
+#endif // INKSCAPE_UI_DIALOG_FONT_SUBSTITUTION_H
 
 /*
   Local Variables:

@@ -22,7 +22,6 @@
 #include "include/macros.h"
 #include "document.h"
 #include "document-undo.h"
-#include "verbs.h"
 
 #include "include/gtkmm_version.h"
 
@@ -64,7 +63,7 @@ static void sp_attribute_table_object_modified (SPObject *object, guint flags, S
 static void sp_attribute_table_object_release (SPObject */*object*/, SPAttributeTable *spat);
 
 #define XPAD 4
-#define YPAD 0
+#define YPAD 2
 
 
 SPAttributeTable::SPAttributeTable () : 
@@ -137,7 +136,6 @@ void SPAttributeTable::set_object(SPObject *object,
                             std::vector<Glib::ustring> &attributes,
                             GtkWidget* parent)
 {
-    g_return_if_fail (!object || SP_IS_OBJECT (object));
     g_return_if_fail (!object || !labels.empty() || !attributes.empty());
     g_return_if_fail (labels.size() == attributes.size());
 
@@ -164,11 +162,10 @@ void SPAttributeTable::set_object(SPObject *object,
             ll->show();
             ll->set_halign(Gtk::ALIGN_START);
             ll->set_valign(Gtk::ALIGN_CENTER);
-            ll->set_vexpand();
-            ll->set_margin_start(XPAD);
+            ll->set_vexpand(false);
             ll->set_margin_end(XPAD);
-            ll->set_margin_top(XPAD);
-            ll->set_margin_bottom(XPAD);
+            ll->set_margin_top(YPAD);
+            ll->set_margin_bottom(YPAD);
             table->attach(*ll, 0, i, 1, 1);
 
             Gtk::Entry *ee = new Gtk::Entry();
@@ -176,11 +173,10 @@ void SPAttributeTable::set_object(SPObject *object,
             const gchar *val = object->getRepr()->attribute(attributes[i].c_str());
             ee->set_text (val ? val : (const gchar *) "");
             ee->set_hexpand();
-            ee->set_vexpand();
+            ee->set_vexpand(false);
             ee->set_margin_start(XPAD);
-            ee->set_margin_end(XPAD);
-            ee->set_margin_top(XPAD);
-            ee->set_margin_bottom(XPAD);
+            ee->set_margin_top(YPAD);
+            ee->set_margin_bottom(YPAD);
             table->attach(*ee, 1, i, 1, 1);
 
             _entries.push_back(ee);
@@ -196,7 +192,6 @@ void SPAttributeTable::set_object(SPObject *object,
 
 void SPAttributeTable::change_object(SPObject *object)
 {
-    g_return_if_fail (!object || SP_IS_OBJECT (object));
     if (_object)
     {
         modified_connection.disconnect();
@@ -272,8 +267,7 @@ static void sp_attribute_table_entry_changed ( Gtk::Entry *editable,
                 Glib::ustring text = e->get_text ();
                 if (spat->_object) {
                     spat->_object->getRepr()->setAttribute(attributes[i], text);
-                    DocumentUndo::done(spat->_object->document, SP_VERB_NONE,
-                                       _("Set attribute"));
+                    DocumentUndo::done(spat->_object->document, _("Set attribute"), "");
                 }
                 spat->blocked = false;
                 return;

@@ -28,6 +28,7 @@ class LPEInterpolate : public Effect {
     LPEInterpolate(LivePathEffectObject *lpeobject);
     ~LPEInterpolate() override;
 
+    bool doOnOpen(SPLPEItem const *lpeitem) override;
     Geom::PathVector doEffect_path(Geom::PathVector const &path_in) override;
     void transform_multiply(Geom::Affine const &postmul, bool set) override;
 

@@ -15,33 +15,35 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
+#include "sp-marker.h"
+
 #include <cstring>
 #include <string>
+#include <glib/gi18n.h>
 
 #include <2geom/affine.h>
 #include <2geom/transforms.h>
-#include "svg/svg.h"
-#include "display/drawing-group.h"
-#include "xml/repr.h"
+
 #include "attributes.h"
+#include "document-undo.h"
 #include "document.h"
 #include "preferences.h"
-
-#include "sp-marker.h"
 #include "sp-defs.h"
 
-class SPMarkerView {
+#include "display/drawing-group.h"
+#include "display/drawing-item-ptr.h"
+#include "object/object-set.h"
+#include "svg/css-ostringstream.h"
+#include "svg/svg.h"
+#include "ui/icon-names.h"
+#include "xml/repr.h"
 
-public:
+using Inkscape::DocumentUndo;
+using Inkscape::ObjectSet;
 
-    SPMarkerView() = default;;
-    ~SPMarkerView() {
-        for (auto & item : items) {
-            delete item;
-        }
-        items.clear();
-    }
-    std::vector<Inkscape::DrawingItem *> items;
+struct SPMarkerView
+{
+    std::vector<DrawingItemPtr<Inkscape::DrawingItem>> items;
 };
 
 SPMarker::SPMarker() : SPGroup(), SPViewBox(),
@@ -104,15 +106,13 @@ void SPMarker::build(SPDocument *document, Inkscape::XML::Node *repr) {
  */
 void SPMarker::release() {
 
-    std::map<unsigned int, SPMarkerView>::iterator it;
-    for (it = views_map.begin(); it != views_map.end(); ++it) {
-        SPGroup::hide( it->first );
+    for (auto &it : views_map) {
+        SPGroup::hide(it.first);
     }
     views_map.clear();
 
     SPGroup::release();
 }
-
 
 void SPMarker::set(SPAttr key, const gchar* value) {
 	switch (key) {
@@ -172,7 +172,6 @@ void SPMarker::set(SPAttr key, const gchar* value) {
                         }
                     }
 		}
-
 		this->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG);
 		break;
 
@@ -217,12 +216,11 @@ void SPMarker::update(SPCtx *ctx, guint flags) {
     SPGroup::update((SPCtx *) &rctx, flags);
 
     // As last step set additional transform of drawing group
-    std::map<unsigned int, SPMarkerView>::iterator it;
-    for (it = views_map.begin(); it != views_map.end(); ++it) {
-        for (auto & item : it->second.items) {
+    for (auto &it : views_map) {
+        for (auto &item : it.second.items) {
             if (item) {
-                Inkscape::DrawingGroup *g = dynamic_cast<Inkscape::DrawingGroup *>(item);
-                g->setChildTransform(this->c2p);
+                auto g = cast<Inkscape::DrawingGroup>(item.get());
+                g->setChildTransform(c2p);
             }
         }
     }
@@ -278,12 +276,9 @@ Inkscape::XML::Node* SPMarker::write(Inkscape::XML::Document *xml_doc, Inkscape:
 	} else {
             repr->removeAttribute("orient");
 	}
-        
-	/* fixme: */
-	//XML Tree being used directly here while it shouldn't be....
-	repr->setAttribute("viewBox", this->getRepr()->attribute("viewBox"));
-	//XML Tree being used directly here while it shouldn't be....
-	repr->setAttribute("preserveAspectRatio", this->getRepr()->attribute("preserveAspectRatio"));
+
+    this->write_viewBox(repr);
+    this->write_preserveAspectRatio(repr);
 
 	SPGroup::write(xml_doc, repr, flags);
 
@@ -304,12 +299,109 @@ void SPMarker::hide(unsigned int key) {
 	SPGroup::hide(key);
 }
 
+/**
+ * Calculate the transformation for this marker.
+ */
+Geom::Affine SPMarker::get_marker_transform(const Geom::Affine &base, double linewidth, bool start_marker)
+{
+    // Default is MARKER_ORIENT_AUTO
+    Geom::Affine result = base;
+
+    if (this->orient_mode == MARKER_ORIENT_AUTO_START_REVERSE) {
+        if (start_marker) {
+            result = Geom::Rotate::from_degrees( 180.0 ) * base;
+        }
+    } else if (this->orient_mode != MARKER_ORIENT_AUTO) {
+        /* fixme: Orient units (Lauris) */
+        result = Geom::Rotate::from_degrees(this->orient.computed);
+        result *= Geom::Translate(base.translation());
+    }
+
+    if (this->markerUnits == SP_MARKER_UNITS_STROKEWIDTH) {
+        result = Geom::Scale(linewidth) * result;
+    }
+    return result;
+}
+
+/* 
+- used to validate the marker item before passing it into the shape editor from the marker-tool. 
+- sets any missing properties that are needed before editing starts.
+*/
+void sp_validate_marker(SPMarker *sp_marker, SPDocument *doc) {
+
+    if (!doc || !sp_marker) return;
+
+    doc->ensureUpToDate();
+
+    // calculate the marker bounds to set any missing viewBox information
+    std::vector<SPObject*> items = const_cast<SPMarker*>(sp_marker)->childList(false, SPObject::ActionBBox);
+
+    Geom::OptRect r;
+    for (auto *i : items) {
+        auto item = cast<SPItem>(i);
+        r.unionWith(item->desktopVisualBounds());
+    }
+
+    Geom::Rect bounds(r->min() * doc->dt2doc(), r->max() * doc->dt2doc());
+
+    if(!sp_marker->refX._set) {
+        sp_marker->setAttribute("refX", "0.0");
+    }
+
+    if(!sp_marker->refY._set) {
+        sp_marker->setAttribute("refY", "0.0");
+    }
+
+    if(!sp_marker->orient._set) {
+        sp_marker->setAttribute("orient", "0.0");
+    }
+
+    double xScale = 1;
+    double yScale = 1;
+
+    if(sp_marker->viewBox_set) {
+        // check if the X direction has any existing scale factor
+        if(sp_marker->viewBox.width() > 0) {
+            double existingXScale = sp_marker->markerWidth.computed/sp_marker->viewBox.width();
+            xScale = (existingXScale >= 0? existingXScale: 1);
+        }
+
+        // check if the Y direction has any existing scale factor
+        if(sp_marker->viewBox.height() > 0) {
+            double existingYScale = sp_marker->markerHeight.computed/sp_marker->viewBox.height();
+            yScale = (existingYScale >= 0? existingYScale: 1);
+        }
+
+        // only enforce uniform scale if the preserveAspectRatio is not set yet or if it does not equal "none"
+        if((!sp_marker->aspect_set) || (sp_marker->aspect_align != SP_ASPECT_NONE)) {
+            // set the scale to the smaller option if both xScale and yScale exist
+            if(xScale > yScale) {
+                xScale = yScale;
+            } else {
+                yScale = xScale;
+            }
+        }
+    } else {
+        Inkscape::CSSOStringStream os;
+        os << "0 0 " << bounds.dimensions()[Geom::X] << " " << bounds.dimensions()[Geom::Y];
+        sp_marker->setAttribute("viewBox", os.str().c_str());
+    }
+    
+    sp_marker->setAttributeDouble("markerWidth", sp_marker->viewBox.width() * xScale);
+    sp_marker->setAttributeDouble("markerHeight", sp_marker->viewBox.height() * yScale);
+
+    if(!sp_marker->aspect_set) {
+        // feedback from UX expert indicates that uniform scaling should be used by default;
+        // marker tool should respect aspect ratio setting too (without Ctrl key modifier?)
+        sp_marker->setAttribute("preserveAspectRatio", "xMidYMid");
+    }
+}
+
 Geom::OptRect SPMarker::bbox(Geom::Affine const &/*transform*/, SPItem::BBoxType /*type*/) const {
 	return Geom::OptRect();
 }
 
 void SPMarker::print(SPPrintContext* /*ctx*/) {
-
 }
 
 /* fixme: Remove link if zero-sized (Lauris) */
@@ -330,7 +422,7 @@ void SPMarker::print(SPPrintContext* /*ctx*/) {
 void
 sp_marker_show_dimension (SPMarker *marker, unsigned int key, unsigned int size)
 {
-    std::map<unsigned int, SPMarkerView>::iterator it = marker->views_map.find(key);
+    auto it = marker->views_map.find(key);
     if (it != marker->views_map.end()) {
         if (it->second.items.size() != size ) {
             // Need to change size of vector! (We should not really need to do this.)
@@ -364,52 +456,40 @@ sp_marker_show_instance ( SPMarker *marker, Inkscape::DrawingItem *parent,
         return nullptr;
     }
 
-    std::map<unsigned int, SPMarkerView>::iterator it = marker->views_map.find(key);
+    auto it = marker->views_map.find(key);
     if (it == marker->views_map.end()) {
         // Key not found
         return nullptr;
     }
 
-    SPMarkerView *view = &(it->second);
+    SPMarkerView *view = &it->second;
     if (pos >= view->items.size() ) {
         // Position index too large, doesn't exist.
         return nullptr;
     }
 
     // If not already created
-    if (view->items[pos] == nullptr) {
+    if (!view->items[pos]) {
 
         /* Parent class ::show method */
-        view->items[pos] = marker->private_show(parent->drawing(), key, SP_ITEM_REFERENCE_FLAGS);
+        view->items[pos].reset(marker->private_show(parent->drawing(), key, SP_ITEM_REFERENCE_FLAGS));
 
         if (view->items[pos]) {
             /* fixme: Position (Lauris) */
-            parent->prependChild(view->items[pos]);
-            Inkscape::DrawingGroup *g = dynamic_cast<Inkscape::DrawingGroup *>(view->items[pos]);
-            if (g) g->setChildTransform(marker->c2p);
+            parent->prependChild(view->items[pos].get());
+            if (auto g = cast<Inkscape::DrawingGroup>(view->items[pos].get())) {
+                g->setChildTransform(marker->c2p);
+            }
         }
     }
 
     if (view->items[pos]) {
-        Geom::Affine m;
-        if (marker->orient_mode == MARKER_ORIENT_AUTO) {
-            m = base;
-        } else if (marker->orient_mode == MARKER_ORIENT_AUTO_START_REVERSE) {
-            // m = Geom::Rotate::from_degrees( 180.0 ) * base;
-            // Rotating is done at rendering time if necessary
-            m = base;
-        } else {
-            /* fixme: Orient units (Lauris) */
-            m = Geom::Rotate::from_degrees(marker->orient.computed);
-            m *= Geom::Translate(base.translation());
-        }
-        if (marker->markerUnits == SP_MARKER_UNITS_STROKEWIDTH) {
-            m = Geom::Scale(linewidth) * m;
-        }
-        view->items[pos]->setTransform(m);
+        // Rotating for reversed-marker option is done at rendering time if necessary
+        // so always pass in start_marker is false.
+        view->items[pos]->setTransform(marker->get_marker_transform(base, linewidth, false));
     }
 
-    return view->items[pos];
+    return view->items[pos].get();
 }
 
 /**
@@ -449,7 +529,7 @@ const gchar *generate_marker(std::vector<Inkscape::XML::Node*> &reprs, Geom::Rec
     SPObject *mark_object = document->getObjectById(mark_id);
 
     for (auto node : reprs){
-        SPItem *copy = SP_ITEM(mark_object->appendChildRepr(node));
+        auto copy = cast<SPItem>(mark_object->appendChildRepr(node));
 
         Geom::Affine dup_transform;
         if (!sp_svg_transform_read (node->attribute("transform"), &dup_transform))
@@ -493,6 +573,72 @@ SPObject *sp_marker_fork_if_necessary(SPObject *marker)
     SPObject *marker_new = static_cast<SPObject *>(doc->getObjectByRepr(mark_repr));
     Inkscape::GC::release(mark_repr);
     return marker_new;
+}
+
+void sp_marker_set_orient(SPMarker* marker, const char* value) {
+    if (!marker || !value) return;
+
+    marker->setAttribute("orient", value);
+
+    if (marker->document) {
+        DocumentUndo::maybeDone(marker->document, "marker", _("Set marker orientation"), INKSCAPE_ICON("dialog-fill-and-stroke"));
+    }
+}
+
+void sp_marker_set_size(SPMarker* marker, double sx, double sy) {
+    if (!marker) return;
+
+    marker->setAttributeDouble("markerWidth", sx);
+    marker->setAttributeDouble("markerHeight", sy);
+
+    if (marker->document) {
+        DocumentUndo::maybeDone(marker->document, "marker", _("Set marker size"), INKSCAPE_ICON("dialog-fill-and-stroke"));
+    }
+}
+
+void sp_marker_scale_with_stroke(SPMarker* marker, bool scale_with_stroke) {
+    if (!marker) return;
+
+    marker->setAttribute("markerUnits", scale_with_stroke ? "strokeWidth" : "userSpaceOnUse");
+
+    if (marker->document) {
+        DocumentUndo::maybeDone(marker->document, "marker", _("Set marker scale with stroke"), INKSCAPE_ICON("dialog-fill-and-stroke"));
+    }
+}
+
+void sp_marker_set_offset(SPMarker* marker, double dx, double dy) {
+    if (!marker) return;
+
+    marker->setAttributeDouble("refX", dx);
+    marker->setAttributeDouble("refY", dy);
+
+    if (marker->document) {
+        DocumentUndo::maybeDone(marker->document, "marker", _("Set marker offset"), INKSCAPE_ICON("dialog-fill-and-stroke"));
+    }
+}
+
+void sp_marker_set_uniform_scale(SPMarker* marker, bool uniform) {
+    if (!marker) return;
+
+    marker->setAttribute("preserveAspectRatio", uniform ? "xMidYMid" : "none");
+
+    if (marker->document) {
+        DocumentUndo::maybeDone(marker->document, "marker", _("Set marker uniform scaling"), INKSCAPE_ICON("dialog-fill-and-stroke"));
+    }
+}
+
+void sp_marker_flip_horizontally(SPMarker* marker) {
+    if (!marker) return;
+
+    ObjectSet set(marker->document);
+    set.addList(marker->item_list());
+    Geom::OptRect bbox = set.visualBounds();
+    if (bbox) {
+        set.setScaleRelative(bbox->midpoint(), Geom::Scale(-1.0, 1.0));
+        if (marker->document) {
+            DocumentUndo::maybeDone(marker->document, "marker", _("Flip marker horizontally"), INKSCAPE_ICON("dialog-fill-and-stroke"));
+        }
+    }
 }
 
 /*

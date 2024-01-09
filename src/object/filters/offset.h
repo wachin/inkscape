@@ -15,32 +15,25 @@
 
 #include "sp-filter-primitive.h"
 
-#define SP_FEOFFSET(obj) (dynamic_cast<SPFeOffset*>((SPObject*)obj))
-#define SP_IS_FEOFFSET(obj) (dynamic_cast<const SPFeOffset*>((SPObject*)obj) != NULL)
-
-class SPFeOffset : public SPFilterPrimitive {
+class SPFeOffset final
+    : public SPFilterPrimitive
+{
 public:
-	SPFeOffset();
-	~SPFeOffset() override;
+    int tag() const override { return tag_of<decltype(*this)>; }
 
-        double dx, dy;
+    Geom::Rect calculate_region(Geom::Rect const &region) const override;
 
-        Geom::Rect calculate_region(Geom::Rect region) override;
+private:
+    double dx = 0.0;
+    double dy = 0.0;
 
-protected:
-	void build(SPDocument* doc, Inkscape::XML::Node* repr) override;
-	void release() override;
+    void build(SPDocument *doc, Inkscape::XML::Node *repr) override;
+    void set(SPAttr key, char const *value) override;
 
-	void set(SPAttr key, const gchar* value) override;
-
-	void update(SPCtx* ctx, unsigned int flags) override;
-
-	Inkscape::XML::Node* write(Inkscape::XML::Document* doc, Inkscape::XML::Node* repr, guint flags) override;
-
-	void build_renderer(Inkscape::Filters::Filter* filter) override;
+    std::unique_ptr<Inkscape::Filters::FilterPrimitive> build_renderer(Inkscape::DrawingItem *item) const override;
 };
 
-#endif /* !SP_FEOFFSET_H_SEEN */
+#endif // SP_FEOFFSET_H_SEEN
 
 /*
   Local Variables:

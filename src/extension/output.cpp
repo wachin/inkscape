@@ -13,12 +13,11 @@
 
 #include "document.h"
 
+#include "io/sys.h"
 #include "implementation/implementation.h"
 
-#include "prefdialog/prefdialog.h"
-
 #include "xml/repr.h"
-
+#include "xml/attribute-record.h"
 
 /* Inkscape::Extension::Output */
 
@@ -49,7 +48,7 @@ Output::Output (Inkscape::XML::Node *in_repr, Implementation::Implementation *in
     filetypename = nullptr;
     filetypetooltip = nullptr;
     dataloss = true;
-    raster = false;
+    savecopyonly = false;
 
     if (repr != nullptr) {
         Inkscape::XML::Node * child_repr;
@@ -59,8 +58,15 @@ Output::Output (Inkscape::XML::Node *in_repr, Implementation::Implementation *in
         while (child_repr != nullptr) {
             if (!strcmp(child_repr->name(), INKSCAPE_EXTENSION_NS "output")) {
 
-                if (child_repr->attribute("raster") && !strcmp(child_repr->attribute("raster"), "true")) {
-                     raster = true;
+                for (const auto &iter : child_repr->attributeList()) {
+                    std::string name = g_quark_to_string(iter.key);
+                    std::string value = std::string(iter.value);
+                    if (name == "raster")
+                        raster = value == "true";
+                    else if (name == "is_exported")
+                        exported = value == "true";
+                    else if (name == "priority")
+                        set_sort_priority(strtol(value.c_str(), nullptr, 0));
                 }
 
                 child_repr = child_repr->firstChild();
@@ -88,10 +94,11 @@ Output::Output (Inkscape::XML::Node *in_repr, Implementation::Implementation *in
                         filetypetooltip = g_strdup(child_repr->firstChild()->content());
                     }
                     if (!strcmp(chname, "dataloss")) {
-                        if (!strcmp(child_repr->firstChild()->content(), "false")) {
-							dataloss = FALSE;
-						}
-					}
+                        dataloss = strcmp(child_repr->firstChild()->content(), "false");
+                    }
+                    if (!strcmp(chname, "savecopyonly")) {
+                        savecopyonly = !strcmp(child_repr->firstChild()->content(), "true");
+                    }
 
                     child_repr = child_repr->next();
                 }
@@ -192,36 +199,6 @@ Output::get_filetypetooltip(bool translated)
 }
 
 /**
-    \return  A dialog to get settings for this extension
-	\brief   Create a dialog for preference for this extension
-
-	Calls the implementation to get the preferences.
-*/
-bool
-Output::prefs ()
-{
-    if (!loaded())
-        set_state(Extension::STATE_LOADED);
-    if (!loaded()) return false;
-
-    Gtk::Widget * controls;
-    controls = imp->prefs_output(this);
-    if (controls == nullptr) {
-        // std::cout << "No preferences for Output" << std::endl;
-        return true;
-    }
-
-    Glib::ustring title = this->get_name();
-    PrefDialog *dialog = new PrefDialog(title, controls);
-    int response = dialog->run();
-    dialog->hide();
-
-    delete dialog;
-
-    return (response == Gtk::RESPONSE_OK);
-}
-
-/**
     \return  None
 	\brief   Save a document as a file
 	\param   doc  Document to save
@@ -239,9 +216,14 @@ Output::prefs ()
 void
 Output::save(SPDocument *doc, gchar const *filename, bool detachbase)
 {
-    imp->setDetachBase(detachbase);
-    auto new_doc = doc->copy();
-    imp->save(this, new_doc.get(), filename);
+    if (!loaded())
+        set_state(Extension::STATE_LOADED);
+
+    if (loaded()) {
+        imp->setDetachBase(detachbase);
+        auto new_doc = doc->copy();
+        imp->save(this, new_doc.get(), filename);
+    }
 }
 
 /**
@@ -254,11 +236,41 @@ Output::save(SPDocument *doc, gchar const *filename, bool detachbase)
 void
 Output::export_raster(const SPDocument *doc, std::string png_filename, gchar const *filename, bool detachbase)
 {
-    imp->setDetachBase(detachbase);
-    imp->export_raster(this, doc, png_filename, filename);
-    return;
+    if (!loaded())
+        set_state(Extension::STATE_LOADED);
+
+    if (loaded()) {
+        imp->setDetachBase(detachbase);
+        imp->export_raster(this, doc, png_filename, filename);
+    }
 }
 
+/**
+ * Adds a valid extension to the filename if it's missing.
+ */
+void
+Output::add_extension(Glib::ustring &filename)
+{
+    auto current_ext = Inkscape::IO::get_file_extension(filename);
+    if (extension && current_ext != extension) {
+        filename = filename + extension;
+    }
+}
+
+/**
+    \return  True if the filename matches
+    \brief   Match filename to extension that can open it.
+*/
+bool
+Output::can_save_filename(gchar const *filename)
+{
+    gchar *filenamelower = g_utf8_strdown(filename, -1);
+    gchar *extensionlower = g_utf8_strdown(extension, -1);
+    bool result = g_str_has_suffix(filenamelower, extensionlower);
+    g_free(filenamelower);
+    g_free(extensionlower);
+    return result;
+}
 
 } }  /* namespace Inkscape, Extension */
 

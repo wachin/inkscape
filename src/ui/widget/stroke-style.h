@@ -33,7 +33,6 @@
 #include "preferences.h"
 #include "selection.h"
 #include "style.h"
-#include "verbs.h"
 
 #include "display/drawing.h"
 
@@ -50,7 +49,6 @@
 
 #include "widgets/spw-utilities.h"
 
-#include "xml/repr.h"
 
 namespace Gtk {
 class Widget;
@@ -79,6 +77,7 @@ struct { gchar const *key; gint value; } const SPMarkerNames[] = {
     {nullptr, -1}
 };
 
+
 SPObject *getMarkerObj(gchar const *n, SPDocument *doc);
 
 namespace Inkscape {
@@ -92,7 +91,9 @@ public:
     StrokeStyle();
     ~StrokeStyle() override;
     void setDesktop(SPDesktop *desktop);
-
+    void updateLine();
+    void selectionModifiedCB(guint flags);
+    void selectionChangedCB();
 private:
     /** List of valid types for the stroke-style radio-button widget */
     enum StrokeStyleButtonType {
@@ -100,7 +101,7 @@ private:
         STROKE_STYLE_BUTTON_CAP,  ///< A button to set the line-cap style
         STROKE_STYLE_BUTTON_ORDER ///< A button to set the paint-order style
     };
-    
+
     /**
      * A custom radio-button for setting the stroke style.  It can be configured
      * to set either the join or cap style by setting the button_type field.
@@ -123,7 +124,8 @@ private:
             gchar const *stroke_style;         ///< The stroke style associated with the button
     };
 
-    void updateLine();
+    std::vector<double> getDashFromStyle(SPStyle *style, double &offset);
+
     void updateAllMarkers(std::vector<SPItem*> const &objects, bool skip_undo = false);
     void setDashSelectorFromStyle(Inkscape::UI::Widget::DashSelector *dsel, SPStyle *style);
     void setJoinType (unsigned const jointype);
@@ -132,8 +134,10 @@ private:
     void setJoinButtons(Gtk::ToggleButton *active);
     void setCapButtons(Gtk::ToggleButton *active);
     void setPaintOrderButtons(Gtk::ToggleButton *active);
-    void scaleLine();
-    void setScaledDash(SPCSSAttr *css, int ndash, double *dash, double offset, double scale);
+    void setStrokeWidth();
+    void setStrokeDash();
+    void setStrokeMiter();
+    void setScaledDash(SPCSSAttr *css, int ndash, const double *dash, double offset, double scale);
     bool isHairlineSelected() const;
 
     StrokeStyleButton * makeRadioButton(Gtk::RadioButtonGroup &grp,
@@ -143,14 +147,9 @@ private:
                                         gchar const           *stroke_style);
 
     // Callback functions
-    void selectionModifiedCB(guint flags);
-    void selectionChangedCB();
-    void widthChangedCB();
-    void miterLimitChangedCB();
-    void lineDashChangedCB();
     void unitChangedCB();
-    bool shouldMarkersBeUpdated();
-    static void markerSelectCB(MarkerComboBox *marker_combo, StrokeStyle *spw, SPMarkerLoc const which);
+    bool areMarkersBeingUpdated();
+    void markerSelectCB(MarkerComboBox *marker_combo, SPMarkerLoc const which);
     static void buttonToggledCB(StrokeStyleButton *tb, StrokeStyle *spw);
 
 
@@ -177,19 +176,22 @@ private:
     StrokeStyleButton *paintOrderSMF;
     StrokeStyleButton *paintOrderMSF;
     Inkscape::UI::Widget::DashSelector *dashSelector;
+    Gtk::Entry* _pattern = nullptr;
+    Gtk::Label* _pattern_label = nullptr;
+    void update_pattern(int ndash, const double* pattern);
+    bool _editing_pattern = false;
 
     gboolean update;
+    double _last_width = 0.0;
     SPDesktop *desktop;
-    sigc::connection selectChangedConn;
-    sigc::connection selectModifiedConn;
     sigc::connection startMarkerConn;
     sigc::connection midMarkerConn;
     sigc::connection endMarkerConn;
-    sigc::connection unitChangedConn;
     
     Inkscape::Util::Unit const *_old_unit;
 
     void _handleDocumentReplaced(SPDesktop *, SPDocument *);
+    void enterEditMarkerMode(SPMarkerLoc editMarkerMode);
     sigc::connection _document_replaced_connection;
 };
 

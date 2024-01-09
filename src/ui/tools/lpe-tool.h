@@ -52,24 +52,18 @@ namespace Tools {
 
 class LpeTool : public PenTool {
 public:
-    LpeTool();
+    LpeTool(SPDesktop *desktop);
     ~LpeTool() override;
 
-    ShapeEditor* shape_editor = nullptr;
-    Inkscape::CanvasItemRect *canvas_bbox = nullptr;
+    std::unique_ptr<ShapeEditor> shape_editor;
+    CanvasItemPtr<CanvasItemRect> canvas_bbox;
     Inkscape::LivePathEffect::EffectType mode;
 
-    std::map<SPPath *, Inkscape::CanvasItemText*> measuring_items;
+    std::map<SPPath*, CanvasItemPtr<CanvasItemText>> measuring_items;
 
     sigc::connection sel_changed_connection;
     sigc::connection sel_modified_connection;
-
-    static const std::string prefsPath;
-
-    const std::string& getPrefsPath() override;
-
 protected:
-    void setup() override;
     void set(const Inkscape::Preferences::Entry& val) override;
     bool root_handler(GdkEvent* event) override;
     bool item_handler(SPItem* item, GdkEvent* event) override;

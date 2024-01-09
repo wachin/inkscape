@@ -32,7 +32,7 @@ namespace Widget {
 class FontVariationAxis : public Gtk::Grid
 {
 public:
-    FontVariationAxis(Glib::ustring name, OTVarAxis& axis);
+    FontVariationAxis(Glib::ustring name, OTVarAxis const &axis);
     Glib::ustring get_name() { return name; }
     Gtk::Label* get_label() { return label; }
     double get_value() { return scale->get_value(); }
@@ -51,7 +51,7 @@ private:
     double def = 0.0; // Default value
 
     // Signals
-    sigc::signal<void> signal_changed;
+    sigc::signal<void ()> signal_changed;
 };
 
 /**
@@ -94,7 +94,7 @@ public:
      * Let others know that user has changed GUI settings.
      * (Used to enable 'Apply' and 'Default' buttons.)
      */
-    sigc::connection connectChanged(sigc::slot<void> slot) {
+    sigc::connection connectChanged(sigc::slot<void ()> slot) {
         return signal_changed.connect(slot);
     }
 
@@ -106,7 +106,7 @@ private:
     std::vector<FontVariationAxis*> axes;
     Glib::RefPtr<Gtk::SizeGroup> size_group;
 
-    sigc::signal<void> signal_changed;
+    sigc::signal<void ()> signal_changed;
 };
 
  

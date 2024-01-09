@@ -35,7 +35,6 @@ struct SPGradientVector {
     std::vector<SPGradientStop> stops;
 };
 
-
 #endif /* !SEEN_SP_GRADIENT_VECTOR_H */
 
 /*

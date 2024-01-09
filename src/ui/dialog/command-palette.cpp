@@ -107,22 +107,21 @@ CommandPalette::CommandPalette()
     _CPBase->set_halign(Gtk::ALIGN_CENTER);
     _CPBase->set_valign(Gtk::ALIGN_START);
 
-    _CPFilter->signal_key_press_event().connect(sigc::mem_fun(*this, &CommandPalette::on_key_press_cpfilter_escape),
-                                                false);
-    _CPSuggestions->signal_key_press_event().connect(sigc::mem_fun(*this, &CommandPalette::on_key_press_cpfilter_escape), false);
-    _CPHistory->signal_key_press_event().connect(sigc::mem_fun(*this, &CommandPalette::on_key_press_cpfilter_escape), false);
+    auto esc_func = sigc::mem_fun(*this, &CommandPalette::on_key_press_cpfilter_escape);
+    _CPFilter->signal_key_press_event().connect(esc_func, false);
+    _CPSuggestions->signal_key_release_event().connect(esc_func, false);
+    _CPHistory->signal_key_press_event().connect(esc_func, false);
     set_mode(CPMode::SEARCH);
 
     _CPSuggestions->set_activate_on_single_click();
     _CPSuggestions->set_selection_mode(Gtk::SELECTION_SINGLE);
 
-    // Setup operations [actions, verbs, extensions]
+    // Setup operations [actions, extensions]
     {
-        // setup actions - win doc actions loaded in open()
-        load_app_actions();
-
         // setup recent files
         {
+            //TODO: refactor this ==============================
+            // this code is repeated in menubar.cpp
             auto recent_manager = Gtk::RecentManager::get_default();
             auto recent_files = recent_manager->get_items(); // all recent files not necessarily inkscape only
 
@@ -150,6 +149,7 @@ CommandPalette::CommandPalette()
                 append_recent_file_operation(recent_file->get_uri_display(), true,
                                              true); // import - last param true for import operation
             }
+            // ==================================================
         }
     }
 
@@ -181,6 +181,8 @@ CommandPalette::CommandPalette()
 void CommandPalette::open()
 {
     if (not _win_doc_actions_loaded) {
+        // loading actions can be very slow
+        load_app_actions();
         // win doc don't exist at construction so loading at first time opening Command Palette
         load_win_doc_actions();
         _win_doc_actions_loaded = true;
@@ -226,11 +228,12 @@ void CommandPalette::append_recent_file_operation(const Glib::ustring &path, boo
     Gtk::EventBox *CPOperation;
     Gtk::Box *CPSynapseBox;
 
-    Gtk::Label *CPGroup;
-    Gtk::Label *CPName;
-    Gtk::Label *CPShortcut;
-    Gtk::Button *CPActionFullName;
-    Gtk::Label *CPDescription;
+    Gtk::Label  *CPGroup;
+    Gtk::Label  *CPName;
+    Gtk::Label  *CPShortcut;
+    Gtk::Button *CPActionFullButton;
+    Gtk::Label  *CPActionFullLabel;
+    Gtk::Label  *CPDescription;
 
     // Reading widgets
     operation_builder->get_widget("CPOperation", CPOperation);
@@ -239,7 +242,8 @@ void CommandPalette::append_recent_file_operation(const Glib::ustring &path, boo
     operation_builder->get_widget("CPGroup", CPGroup);
     operation_builder->get_widget("CPName", CPName);
     operation_builder->get_widget("CPShortcut", CPShortcut);
-    operation_builder->get_widget("CPActionFullName", CPActionFullName);
+    operation_builder->get_widget("CPActionFullButton", CPActionFullButton);
+    operation_builder->get_widget("CPActionFullLabel", CPActionFullLabel);
     operation_builder->get_widget("CPDescription", CPDescription);
 
     const auto file = Gio::File::create_for_path(path);
@@ -249,16 +253,16 @@ void CommandPalette::append_recent_file_operation(const Glib::ustring &path, boo
         if (is_import) {
             // Used for Activate row signal of listbox and not
             CPGroup->set_text("import");
-            CPActionFullName->set_label("import"); // For filtering only
+            CPActionFullLabel->set_text("import"); // For filtering only
 
         } else {
             CPGroup->set_text("open");
-            CPActionFullName->set_label("open"); // For filtering only
+            CPActionFullLabel->set_text("open"); // For filtering only
         }
 
         // Hide for recent_file, not required
-        CPActionFullName->set_no_show_all();
-        CPActionFullName->hide();
+        CPActionFullButton->set_no_show_all();
+        CPActionFullButton->hide();
 
         CPName->set_text((is_import ? _("Import") : _("Open")) + (": " + file_name));
         CPName->set_tooltip_text((is_import ? ("Import") : ("Open")) + (": " + file_name)); // Tooltip_text are not translatable
@@ -309,7 +313,8 @@ bool CommandPalette::generate_action_operation(const ActionPtrName &action_ptr_n
     Gtk::Label *CPName;
     Gtk::Label *CPShortcut;
     Gtk::Label *CPDescription;
-    Gtk::Button *CPActionFullName;
+    Gtk::Button *CPActionFullButton;
+    Gtk::Label *CPActionFullLabel;
 
     // Reading widgets
     operation_builder->get_widget("CPOperation", CPOperation);
@@ -318,7 +323,8 @@ bool CommandPalette::generate_action_operation(const ActionPtrName &action_ptr_n
     operation_builder->get_widget("CPGroup", CPGroup);
     operation_builder->get_widget("CPName", CPName);
     operation_builder->get_widget("CPShortcut", CPShortcut);
-    operation_builder->get_widget("CPActionFullName", CPActionFullName);
+    operation_builder->get_widget("CPActionFullButton", CPActionFullButton);
+    operation_builder->get_widget("CPActionFullLabel", CPActionFullLabel);
     operation_builder->get_widget("CPDescription", CPDescription);
 
     CPGroup->set_text(action_data.get_section_for_action(Glib::ustring(action_ptr_name.second)));
@@ -338,13 +344,13 @@ bool CommandPalette::generate_action_operation(const ActionPtrName &action_ptr_n
     }
 
     {
-        CPActionFullName->set_label(action_ptr_name.second);
+        CPActionFullLabel->set_text(action_ptr_name.second);
 
         if (not show_full_action_name) {
-            CPActionFullName->set_no_show_all();
-            CPActionFullName->hide();
+            CPActionFullButton->set_no_show_all();
+            CPActionFullButton->hide();
         } else {
-            CPActionFullName->signal_clicked().connect(
+            CPActionFullButton->signal_clicked().connect(
                 sigc::bind<Glib::ustring>(sigc::mem_fun(*this, &CommandPalette::on_action_fullname_clicked),
                                           action_ptr_name.second),
                 false);
@@ -355,7 +361,11 @@ bool CommandPalette::generate_action_operation(const ActionPtrName &action_ptr_n
         std::vector<Glib::ustring> accels = gapp->get_accels_for_action(action_ptr_name.second);
         std::stringstream ss;
         for (const auto &accel : accels) {
-            ss << accel << ',';
+            guint key = 0;
+            Gdk::ModifierType mods;
+            Gtk::AccelGroup::parse(accel, key, mods);
+            Glib::ustring label = Gtk::AccelGroup::get_label(key, mods);
+            ss << label.raw() << ' ';
         }
         std::string accel_label = ss.str();
 
@@ -390,12 +400,13 @@ void CommandPalette::on_search()
     if (auto top_row = _CPSuggestions->get_row_at_y(0); top_row) {
         _CPSuggestions->select_row(*top_row); // select top row
     }
+    _CPSuggestionsScroll->get_vadjustment()->set_value(0);
 }
 
 bool CommandPalette::on_filter_full_action_name(Gtk::ListBoxRow *child)
 {
-    if (auto CPActionFullName = get_full_action_name(child);
-        CPActionFullName and _search_text == CPActionFullName->get_label()) {
+    if (auto CPActionFullLabel = get_full_action_name(child);
+        CPActionFullLabel and _search_text == CPActionFullLabel->get_text()) {
         return true;
     }
     return false;
@@ -403,9 +414,9 @@ bool CommandPalette::on_filter_full_action_name(Gtk::ListBoxRow *child)
 
 bool CommandPalette::on_filter_recent_file(Gtk::ListBoxRow *child, bool const is_import)
 {
-    auto CPActionFullName = get_full_action_name(child);
+    auto CPActionFullLabel = get_full_action_name(child);
     if (is_import) {
-        if (CPActionFullName and CPActionFullName->get_label() == "import") {
+        if (CPActionFullLabel and CPActionFullLabel->get_text() == "import") {
             auto [CPName, CPDescription] = get_name_desc(child);
             if (CPDescription && CPDescription->get_text() == _search_text) {
                 return true;
@@ -413,7 +424,7 @@ bool CommandPalette::on_filter_recent_file(Gtk::ListBoxRow *child, bool const is
         }
         return false;
     }
-    if (CPActionFullName and CPActionFullName->get_label() == "open") {
+    if (CPActionFullLabel and CPActionFullLabel->get_text() == "open") {
         auto [CPName, CPDescription] = get_name_desc(child);
         if (CPDescription && CPDescription->get_text() == _search_text) {
             return true;
@@ -440,9 +451,13 @@ bool CommandPalette::on_key_press_cpfilter_search_mode(GdkEventKey *evt)
         }
         return true;
     } else if (key == GDK_KEY_Up) {
-        if (not _CPHistory->get_children().empty()) {
+        if (!_CPHistory->get_children().empty()) {
             set_mode(CPMode::HISTORY);
             return true;
+        }
+    } else if (key == GDK_KEY_Down) {
+        if (!_CPSuggestions->get_children().empty()) {
+             _CPSuggestions->unselect_all();
         }
     }
     return false;
@@ -587,7 +602,7 @@ bool CommandPalette::ask_action_parameter(const ActionPtrName &action_ptr_name)
     TypeOfVariant action_param_type = get_action_variant_type(action_ptr_name.first);
     if (action_param_type == TypeOfVariant::UNKNOWN) {
         std::cerr << "CommandPalette::ask_action_parameter: unhandled action value type (Unknown Type) "
-                  << action_ptr_name.second << std::endl;
+                  << action_ptr_name.second.raw() << std::endl;
         return false;
     }
 
@@ -614,12 +629,28 @@ bool CommandPalette::ask_action_parameter(const ActionPtrName &action_ptr_name)
             case TypeOfVariant::STRING:
                 type_string = "string";
                 break;
+            case TypeOfVariant::TUPLE_DD:
+                type_string = "pair of doubles";
+                break;
             default:
                 break;
         }
+
+        const auto app = InkscapeApplication::instance();
+        InkActionHintData &action_hint_data = app->get_action_hint_data();
+        auto action_hint = action_hint_data.get_tooltip_hint_for_action(action_ptr_name.second, false);
+
+
         // Indicate user about what to enter FIXME Dialog generation
-        _CPFilter->set_placeholder_text("Enter a " + type_string + "...");
-        _CPFilter->set_tooltip_text("Enter a " + type_string + "...");
+        if (action_hint.length()) {
+            _CPFilter->set_placeholder_text(action_hint);
+            _CPFilter->set_tooltip_text(action_hint);
+        } else {
+            _CPFilter->set_placeholder_text("Enter a " + type_string + "...");
+            _CPFilter->set_tooltip_text("Enter a " + type_string + "...");
+        }
+
+
         return true;
     }
 
@@ -634,11 +665,11 @@ bool CommandPalette::ask_action_parameter(const ActionPtrName &action_ptr_name)
  */
 void CommandPalette::remove_color(Gtk::Label *label, const Glib::ustring &subject, bool tooltip)
 {
-    if (tooltip) {
+    /* if (tooltip) {
         label->set_tooltip_text(subject);
     } else if (label->get_use_markup()) {
         label->set_text(subject);
-    }
+    } */
 }
 
 /**
@@ -652,7 +683,8 @@ Glib::ustring make_bold(const Glib::ustring &search)
 
 void CommandPalette::add_color(Gtk::Label *label, const Glib::ustring &search, const Glib::ustring &subject, bool tooltip)
 {
-    Glib::ustring text = "";
+    //is no working on master fill all chars so I comment to speedup
+    /* Glib::ustring text = "";
     Glib::ustring subject_string = subject.lowercase();
     Glib::ustring search_string = search.lowercase();
     int j = 0;
@@ -668,7 +700,7 @@ void CommandPalette::add_color(Gtk::Label *label, const Glib::ustring &search, c
                     j++;
                     break;
                 } else {
-                    text += subject[j];
+                    text += Glib::Markup::escape_text(subject.substr(j, 1));
                 }
                 j++;
             }
@@ -689,7 +721,7 @@ void CommandPalette::add_color(Gtk::Label *label, const Glib::ustring &search, c
             if (search_string_character[subject_string[i]]--) {
                 text += make_bold(Glib::Markup::escape_text(subject.substr(i, 1)));
             } else {
-                text += subject[i];
+                text += Glib::Markup::escape_text(subject.substr(i, 1));
             }
         }
     }
@@ -698,7 +730,7 @@ void CommandPalette::add_color(Gtk::Label *label, const Glib::ustring &search, c
         label->set_tooltip_markup(text);
     } else {
         label->set_markup(text);
-    }
+    } */
 }
 
 /**
@@ -707,7 +739,7 @@ void CommandPalette::add_color(Gtk::Label *label, const Glib::ustring &search, c
  */
 void CommandPalette::add_color_description(Gtk::Label *label, const Glib::ustring &search)
 {
-    Glib::ustring subject = label->get_text();
+   /*  Glib::ustring subject = label->get_text();
 
     Glib::ustring const subject_normalize = subject.lowercase().normalize();
     Glib::ustring const search_normalize = search.lowercase().normalize();
@@ -719,7 +751,7 @@ void CommandPalette::add_color_description(Gtk::Label *label, const Glib::ustrin
               make_bold(Glib::Markup::escape_text(subject.substr(position, search_length))) +
               Glib::Markup::escape_text(subject.substr(position + search_length));
 
-    label->set_markup(subject);
+    label->set_markup(subject); */
 }
 
 /**
@@ -1051,12 +1083,12 @@ int CommandPalette::on_sort(Gtk::ListBoxRow *row1, Gtk::ListBoxRow *row2)
         if (fuzzy_tolerance_search(cp_name_1->get_tooltip_text(), _search_text)) {
             text_len_1 = cp_name_1->get_tooltip_text().length();
             fuzzy_points_count_1 = fuzzy_tolerance_points(cp_name_1->get_tooltip_text(), _search_text) +
-                                   TOOLTIP_PENALTY; // Adding a constant intiger to decrease the prefrence
+                                   TOOLTIP_PENALTY; // Adding a constant integer to decrease the prefrence
         }
         if (fuzzy_tolerance_search(cp_name_2->get_tooltip_text(), _search_text)) {
             text_len_2 = cp_name_2->get_tooltip_text().length();
             fuzzy_points_count_2 = fuzzy_tolerance_points(cp_name_2->get_tooltip_text(), _search_text) +
-                                   TOOLTIP_PENALTY; // Adding a constant intiger to decrease the prefrence
+                                   TOOLTIP_PENALTY; // Adding a constant integer to decrease the prefrence
         }
         points_compare = fuzzy_points_compare(fuzzy_points_count_1, fuzzy_points_count_2, text_len_1, text_len_2);
         if (points_compare != 0) {
@@ -1067,12 +1099,12 @@ int CommandPalette::on_sort(Gtk::ListBoxRow *row1, Gtk::ListBoxRow *row2)
     if (cp_description_1 && normal_search(cp_description_1->get_text(), _search_text)) {
         text_len_1 = cp_description_1->get_text().length();
         fuzzy_points_count_1 = fuzzy_points(cp_description_1->get_text(), _search_text) +
-                               DESCRIPTION_PENALTY; // Adding a constant intiger to decrease the prefrence
+                               DESCRIPTION_PENALTY; // Adding a constant integer to decrease the prefrence
     }
     if (cp_description_2 && normal_search(cp_description_2->get_text(), _search_text)) {
         text_len_2 = cp_description_2->get_text().length();
         fuzzy_points_count_2 = fuzzy_points(cp_description_2->get_text(), _search_text) +
-                               DESCRIPTION_PENALTY; // Adding a constant intiger to decrease the prefrence
+                               DESCRIPTION_PENALTY; // Adding a constant integer to decrease the prefrence
     }
 
     points_compare = fuzzy_points_compare(fuzzy_points_count_1, fuzzy_points_count_2, text_len_1, text_len_2);
@@ -1233,7 +1265,7 @@ bool CommandPalette::execute_action(const ActionPtrName &action_ptr_name, const 
             } else if (value == "0" || value == "f" || value == "false") {
                 action_ptr->activate(Glib::Variant<bool>::create(false));
             } else {
-                std::cerr << "CommandPalette::execute_action: Invalid boolean value: " << action_name << ":" << value
+                std::cerr << "CommandPalette::execute_action: Invalid boolean value: " << action_name.raw() << ":" << value
                           << std::endl;
             }
             break;
@@ -1258,8 +1290,37 @@ bool CommandPalette::execute_action(const ActionPtrName &action_ptr_name, const 
         case TypeOfVariant::STRING:
             action_ptr->activate(Glib::Variant<Glib::ustring>::create(value));
             break;
+        case TypeOfVariant::TUPLE_DD:
+            try {
+                double d0 = 0;
+                double d1 = 0;
+                std::vector<Glib::ustring> tokens = Glib::Regex::split_simple("\\s*,\\s*", value);
+
+                try {
+                    if (tokens.size() != 2) {
+                        throw std::invalid_argument("requires two numbers");
+                    }
+                } catch (...) {
+                    throw;
+                }
+
+                try {
+                    d0 = std::stod(tokens[0]);
+                    d1 = std::stod(tokens[1]);
+                } catch (...) {
+                    throw;
+                }
+
+                auto variant = Glib::Variant<std::tuple<double, double>>::create(std::tuple<double, double>(d0, d1));
+                action_ptr->activate(variant);
+            } catch (...) {
+                if (SPDesktop *dt = SP_ACTIVE_DESKTOP; dt) {
+                    dt->messageStack()->flash(ERROR_MESSAGE, _("Invalid input! Enter two comma separated numbers."));
+                }
+            }
+            break;
         case TypeOfVariant::UNKNOWN:
-            std::cerr << "CommandPalette::execute_action: unhandled action value type (Unknown Type) " << action_name
+            std::cerr << "CommandPalette::execute_action: unhandled action value type (Unknown Type) " << action_name.raw()
                       << std::endl;
             break;
         case TypeOfVariant::NONE:
@@ -1283,7 +1344,10 @@ TypeOfVariant CommandPalette::get_action_variant_type(const ActionPtr &action_pt
             return TypeOfVariant::DOUBLE;
         } else if (type.get_string() == "s") {
             return TypeOfVariant::STRING;
+        } else if (type.get_string() == "(dd)") {
+            return TypeOfVariant::TUPLE_DD;
         } else {
+            std::cerr << "CommandPalette::get_action_variant_type: unknown variant type: " << type.get_string() << std::endl;
             return TypeOfVariant::UNKNOWN;
         }
     }
@@ -1300,26 +1364,34 @@ std::pair<Gtk::Label *, Gtk::Label *> CommandPalette::get_name_desc(Gtk::ListBox
         auto CPSynapseBox = dynamic_cast<Gtk::Box *>(event_box->get_child());
         if (CPSynapseBox) {
             auto synapse_children = CPSynapseBox->get_children();
-            auto CPName = dynamic_cast<Gtk::Label *>(synapse_children[0]);
-            auto CPDescription = dynamic_cast<Gtk::Label *>(synapse_children[1]);
-
-            return std::pair(CPName, CPDescription);
+            auto CPNameBox = dynamic_cast<Gtk::Box *>(synapse_children[0]);
+            if (CPNameBox) {
+                auto name_children = CPNameBox->get_children();
+                auto CPName = dynamic_cast<Gtk::Label *>(name_children[0]);
+                auto CPDescription = dynamic_cast<Gtk::Label *>(name_children[1]);
+                return std::pair(CPName, CPDescription);
+            }
         }
     }
-
     return std::pair(nullptr, nullptr);
 }
 
-Gtk::Button *CommandPalette::get_full_action_name(Gtk::ListBoxRow *child)
+Gtk::Label *CommandPalette::get_full_action_name(Gtk::ListBoxRow *child)
 {
     auto event_box = dynamic_cast<Gtk::EventBox *>(child->get_child());
     if (event_box) {
         auto CPSynapseBox = dynamic_cast<Gtk::Box *>(event_box->get_child());
         if (CPSynapseBox) {
             auto synapse_children = CPSynapseBox->get_children();
-            auto CPActionFullName = dynamic_cast<Gtk::Button *>(synapse_children[2]);
-
-            return CPActionFullName;
+            auto CPActionFullButton = dynamic_cast<Gtk::Button *>(synapse_children[1]);
+            if (CPActionFullButton) {
+                auto synapse_button = CPActionFullButton->get_children();
+                auto CPSinapseButtonBox = dynamic_cast<Gtk::Box *>(synapse_button[0]);
+                if (CPSinapseButtonBox) {
+                    auto synapse_button_content = CPSinapseButtonBox->get_children();
+                    return dynamic_cast<Gtk::Label *>(synapse_button_content[1]);
+                }
+            }
         }
     }
 
@@ -1336,6 +1408,7 @@ void CommandPalette::load_app_actions()
         generate_action_operation(get_action_ptr_name("app." + action), true);
     }
 }
+
 void CommandPalette::load_win_doc_actions()
 {
     if (auto window = InkscapeApplication::instance()->get_active_window(); window) {
@@ -1352,7 +1425,7 @@ void CommandPalette::load_win_doc_actions()
                     generate_action_operation(get_action_ptr_name("doc." + action), true);
                 }
             } else {
-                std::cerr << "CommandPalette::list_all_actions: No document map!" << std::endl;
+                std::cerr << "CommandPalette::load_win_doc_actions: No document map!" << std::endl;
             }
         }
     }
@@ -1454,7 +1527,7 @@ void CPHistoryXML::add_action_parameter(const std::string &full_action_name, con
         if (full_action_name == action_iter->attribute("name")) {
             // If the last parameter was the same don't do anything, inner text is also a node hence 2 times last
             // child
-            if (action_iter->lastChild()->lastChild()->content() == param) {
+            if (action_iter->lastChild()->lastChild() && action_iter->lastChild()->lastChild()->content() == param) {
                 Inkscape::GC::release(parameter_node);
                 return;
             }
@@ -1573,3 +1646,14 @@ std::optional<HistoryType> CPHistoryXML::_get_operation_type(Inkscape::XML::Node
 } // namespace Dialog
 } // namespace UI
 } // namespace Inkscape
+
+/*
+  Local Variables:
+  mode:c++
+  c-file-style:"stroustrup"
+  c-file-offsets:((innamespace . 0)(inline-open . 0)(case-label . +))
+  indent-tabs-mode:nil
+  fill-column:99
+  End:
+*/
+// vim: filetype=cpp:expandtab:shiftwidth=4:tabstop=8:softtabstop=4:fileencoding=utf-8:textwidth=99 :

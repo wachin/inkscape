@@ -16,30 +16,17 @@
 
 #include <glibmm/ustring.h>
 #include <gtk/gtk.h>
+#include <gtkmm.h>
+#include <gtkmm/builder.h>
 #include <gtkmm/enums.h>
 
 #include "preferences.h"
 
-#define TOOLBAR_SLIDER_HINT "compact"
-
+class InkscapeWindow;
 class SPDesktop;
 
 namespace Inkscape {
 namespace UI {
-namespace Tools {
-
-class ToolBase;
-
-}
-}
-}
-
-namespace Inkscape {
-namespace UI {
-
-namespace Widget {
-    class UnitTracker;
-}
 
 /**
  * Main toolbox source.
@@ -51,17 +38,27 @@ public:
     static void setOrientation(GtkWidget* toolbox, GtkOrientation orientation);
     static void showAuxToolbox(GtkWidget* toolbox);
 
-    static GtkWidget *createToolToolbox();
+    static GtkWidget *createToolToolbox(InkscapeWindow *window);
     static GtkWidget *createAuxToolbox();
     static GtkWidget *createCommandsToolbox();
     static GtkWidget *createSnapToolbox();
 
-    static Glib::ustring getToolboxName(GtkWidget* toolbox);
-
-    static GtkIconSize prefToSize(Glib::ustring const &path, int base = 0 );
+    static int prefToPixelSize(Glib::ustring const& path);
     static Gtk::IconSize prefToSize_mm(Glib::ustring const &path, int base = 0);
 
     ToolboxFactory() = delete;
+
+    static constexpr const char* tools_icon_size = "/toolbox/tools/iconsize";
+    static constexpr const char* tools_visible_buttons = "/toolbox/tools/buttons"; 
+    static constexpr const char* ctrlbars_icon_size = "/toolbox/controlbars/iconsize";
+    static constexpr const char* snap_bar_simple = "/toolbox/simplesnap";
+    static constexpr const int min_pixel_size = 16;
+    static constexpr const int max_pixel_size = 48;
+    static Glib::ustring get_tool_visible_buttons_path(const Glib::ustring& button_action_name);
+
+private:
+    static Gtk::Menu *_getContextMenu(Glib::ustring tool_name, InkscapeWindow *window);
+    static void _attachHandlers(Glib::RefPtr<Gtk::Builder> builder, InkscapeWindow *window);
 };
 
 

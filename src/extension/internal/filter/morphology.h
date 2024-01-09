@@ -62,7 +62,7 @@ public:
               "<param name=\"type\" gui-text=\"" N_("Type:") "\" type=\"optiongroup\" appearance=\"combo\">\n"
                 "<option value=\"in\">" N_("Inner") "</option>\n"
                 "<option value=\"over\">" N_("Outer") "</option>\n"
-                "<option value=\"xor\">" N_("Open") "</option>\n"
+                "<option value=\"xor\">" N_("Open (XOR)") "</option>\n"
               "</param>\n"
               "<param name=\"width\" gui-text=\"" N_("Width") "\" type=\"float\" appearance=\"full\" precision=\"2\" min=\"0.01\" max=\"30.\">10</param>\n"
               "<param name=\"level\" gui-text=\"" N_("Level") "\" type=\"float\" appearance=\"full\" precision=\"2\" min=\"0.2\" max=\"2\">1</param>\n"

@@ -12,22 +12,30 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
+#include "id-clash.h"
+
 #include <cstdlib>
 #include <cstring>
+#include <glibmm/regex.h>
 #include <list>
 #include <map>
 #include <string>
 #include <utility>
-#include <glibmm/regex.h>
 
 #include "extract-uri.h"
-#include "id-clash.h"
-
+#include "live_effects/effect.h"
 #include "live_effects/lpeobject.h"
+#include "live_effects/parameter/originalpath.h"
+#include "live_effects/parameter/path.h"
+#include "live_effects/parameter/patharray.h"
+#include "live_effects/parameter/originalsatellite.h"
+#include "live_effects/parameter/parameter.h"
+#include "live_effects/parameter/satellitearray.h"
 #include "object/sp-gradient.h"
 #include "object/sp-object.h"
 #include "object/sp-paint-server.h"
 #include "object/sp-root.h"
+#include "object/sp-use.h"
 #include "style.h"
 
 enum ID_REF_TYPE { REF_HREF, REF_STYLE, REF_SHAPES, REF_URL, REF_CLIPBOARD };
@@ -43,17 +51,17 @@ typedef std::map<Glib::ustring, std::list<IdReference> > refmap_type;
 typedef std::pair<SPObject*, Glib::ustring> id_changeitem_type;
 typedef std::list<id_changeitem_type> id_changelist_type;
 
-const char *href_like_attributes[] = {
-    "inkscape:connection-end",
-    "inkscape:connection-end-point",
-    "inkscape:connection-start",
-    "inkscape:connection-start-point",
-    "inkscape:href",
-    "inkscape:path-effect",
-    "inkscape:perspectiveID",
-    "inkscape:tiled-clone-of",
-    "xlink:href",
-};
+const char *href_like_attributes[] = {"inkscape:connection-end",
+                                      "inkscape:connection-end-point",
+                                      "inkscape:connection-start",
+                                      "inkscape:connection-start-point",
+                                      "inkscape:href",
+                                      "inkscape:path-effect",
+                                      "inkscape:perspectiveID",
+                                      "inkscape:linked-fill",
+                                      "inkscape:tiled-clone-of",
+                                      "href",
+                                      "xlink:href"};
 #define NUM_HREF_LIKE_ATTRIBUTES (sizeof(href_like_attributes) / sizeof(*href_like_attributes))
 
 const SPIPaint SPStyle::* SPIPaint_members[] = {
@@ -107,9 +115,23 @@ static void
 fix_ref(IdReference const &idref, SPObject *to_obj, const char *old_id) {
     switch (idref.type) {
         case REF_HREF: {
-            gchar *new_uri = g_strdup_printf("#%s", to_obj->getId());
-            idref.elem->setAttribute(idref.attr, new_uri);
-            g_free(new_uri);
+            if (idref.elem->getAttribute(idref.attr)) {
+                gchar *new_uri = g_strdup_printf("#%s", to_obj->getId());
+                Glib::ustring value = idref.elem->getAttribute(idref.attr);
+                // look to values stores as separated id references like inkscape::path-effect or LPE satellites param
+                Glib::ustring old = "#";
+                old += old_id;
+                size_t posid = value.find(old_id);
+                if (new_uri && posid != Glib::ustring::npos) {
+                    if (!g_strcmp0(idref.attr,"inkscape:linked-fill")) {
+                        value = value.replace(posid, old.size() - 1, to_obj->getId());
+                    } else {
+                        value = value.replace(posid - 1, old.size(), new_uri);
+                    }
+                    idref.elem->setAttribute(idref.attr, value.c_str());
+                }
+                g_free(new_uri);
+            }
             break;
         }
         case REF_STYLE: {
@@ -155,8 +177,7 @@ fix_ref(IdReference const &idref, SPObject *to_obj, const char *old_id) {
  *  FIXME: There are some types of references not yet dealt with here
  *         (e.g., ID selectors in CSS stylesheets, and references in scripts).
  */
-static void
-find_references(SPObject *elem, refmap_type &refmap)
+static void find_references(SPObject *elem, refmap_type &refmap, bool from_clipboard)
 {
     if (elem->cloned) return;
     Inkscape::XML::Node *repr_elem = elem->getRepr();
@@ -179,16 +200,103 @@ find_references(SPObject *elem, refmap_type &refmap)
             }
 
         }
-        return; // nothing more to do for inkscape:clipboard elements
+        // TODO: uncomment if clipboard issues
+        // if (!from_clipboard) {
+        // return; // nothing more to do for inkscape:clipboard elements
+        //}
     }
+    if (!std::strcmp(repr_elem->name(), "inkscape:path-effect")) {
+        auto lpeobj = cast<LivePathEffectObject>(elem);
+        if (lpeobj) {
+            Inkscape::LivePathEffect::Effect *effect = lpeobj->get_lpe();
+            if (effect) {
+                for (auto &p : effect->param_vector) {
+                    if (p->paramType() == Inkscape::LivePathEffect::SATELLITE || 
+                        p->paramType() == Inkscape::LivePathEffect::SATELLITE_ARRAY || 
+                        p->paramType() == Inkscape::LivePathEffect::PATH ||
+                        p->paramType() == Inkscape::LivePathEffect::PATH_ARRAY ||
+                        p->paramType() == Inkscape::LivePathEffect::ORIGINAL_PATH || 
+                        p->paramType() == Inkscape::LivePathEffect::ORIGINAL_SATELLITE) 
+                    {
+                        const gchar *val = repr_elem->attribute(p->param_key.c_str());
+                        if (val) {
+                            gchar **strarray = g_strsplit(val, "|", 0);
+                            if (strarray) {
+                                unsigned int i = 0;
+                                Glib::ustring realycopied = "";
+                                bool write = false;
+                                while (strarray[i]) {
+                                    gchar *splitid = g_strdup(g_strstrip(strarray[i]));
+                                    if (splitid[0] == '#') {
+                                        std::string id(splitid + 1);
+                                        if (size_t pos = id.find(",")) {
+                                            if (pos != Glib::ustring::npos) {
+                                                id.erase(pos);
+                                            }
+                                        }
 
+                                        IdReference idref = {REF_HREF, elem, p->param_key.c_str()};
+                                        SPObject *refobj = elem->document->getObjectById(id);
+                                        // special tweak to allow clone original LPE keep cloned on copypase without
+                                        // operand also added to path parameters
+                                        bool cloneoriginal = p->effectType() == Inkscape::LivePathEffect::CLONE_ORIGINAL;
+                                        bool bypass = ((p->param_key == "linkeditem") && cloneoriginal);
+                                        bypass = bypass || p->paramType() == Inkscape::LivePathEffect::ParamType::PATH;
+                                        bypass = bypass || p->paramType() == Inkscape::LivePathEffect::ParamType::ORIGINAL_PATH;
+                                        bypass = bypass || p->paramType() == Inkscape::LivePathEffect::ParamType::PATH_ARRAY;
+                                        bypass = bypass && !refobj;
+                                        if (refobj || bypass) {
+                                            if (!bypass) {
+                                                refmap[id].push_back(idref);
+                                            } else {
+                                                write = true;
+                                            }
+                                            if (!realycopied.empty()) {
+                                                realycopied += " | ";
+                                            }
+                                            realycopied += splitid;
+                                        } else {
+                                            write = true;
+                                        }
+                                    }
+                                    i++;
+                                    g_free(splitid);
+                                }
+                                if (write) {
+                                    repr_elem->setAttribute(p->param_key.c_str(), realycopied.c_str());
+                                }
+                                g_strfreev(strarray);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
     /* check for xlink:href="#..." and similar */
     for (auto attr : href_like_attributes) {
-        const gchar *val = repr_elem->attribute(attr);
-        if (val && val[0] == '#') {
-            std::string id(val+1);
-            IdReference idref = { REF_HREF, elem, attr };
-            refmap[id].push_back(idref);
+        Glib::ustring attfixed = "";
+        if (repr_elem->attribute(attr)) {
+            if (!g_strcmp0(attr,"inkscape:linked-fill")) {
+                attfixed += "#";
+            }
+            attfixed += repr_elem->attribute(attr);
+        }
+        const gchar *val = attfixed.c_str();
+        if (!attfixed.empty() && attfixed[0] == '#') {
+            gchar **strarray = g_strsplit(val, ";", 0);
+            if (strarray) {
+                unsigned int i = 0;
+                while (strarray[i]) {
+                    if (strarray[i][0] == '#') {
+                        std::string id(strarray[i] + 1);
+                        IdReference idref = {REF_HREF, elem, attr};
+                        refmap[id].push_back(idref);
+                    }
+                    i++;
+                }
+                g_strfreev(strarray);
+            }
         }
     }
 
@@ -261,7 +369,7 @@ find_references(SPObject *elem, refmap_type &refmap)
     // recurse
     for (auto& child: elem->children)
     {
-        find_references(&child, refmap);
+        find_references(&child, refmap, from_clipboard);
     }
 }
 
@@ -269,10 +377,8 @@ find_references(SPObject *elem, refmap_type &refmap)
  *  Change any IDs that clash with IDs in the current document, and make
  *  a list of those changes that will require fixing up references.
  */
-static void
-change_clashing_ids(SPDocument *imported_doc, SPDocument *current_doc,
-                    SPObject *elem, refmap_type const &refmap,
-                    id_changelist_type *id_changes)
+static void change_clashing_ids(SPDocument *imported_doc, SPDocument *current_doc, SPObject *elem,
+                                refmap_type const &refmap, id_changelist_type *id_changes, bool from_clipboard)
 {
     const gchar *id = elem->getId();
     bool fix_clashing_ids = true;
@@ -283,23 +389,23 @@ change_clashing_ids(SPDocument *imported_doc, SPDocument *current_doc,
         // may have had, the new ID is the old ID followed by a hyphen
         // and one or more digits.
 
-        if (SP_IS_GRADIENT(elem)) {
+        if (is<SPGradient>(elem)) {
             SPObject *cd_obj =  current_doc->getObjectById(id);
 
-            if (cd_obj && SP_IS_GRADIENT(cd_obj)) {
-                SPGradient *cd_gr = SP_GRADIENT(cd_obj);
-                if ( cd_gr->isEquivalent(SP_GRADIENT(elem))) {
+            if (cd_obj && is<SPGradient>(cd_obj)) {
+                auto cd_gr = cast<SPGradient>(cd_obj);
+                if ( cd_gr->isEquivalent(cast<SPGradient>(elem))) {
                     fix_clashing_ids = false;
                  }
              }
         }
 
-        LivePathEffectObject *lpeobj = dynamic_cast<LivePathEffectObject *>(elem);
+        auto lpeobj = cast<LivePathEffectObject>(elem);
         if (lpeobj) {
             SPObject *cd_obj = current_doc->getObjectById(id);
-            LivePathEffectObject *cd_lpeobj = dynamic_cast<LivePathEffectObject *>(cd_obj);
+            auto cd_lpeobj = cast<LivePathEffectObject>(cd_obj);
             if (cd_lpeobj && lpeobj->is_similar(cd_lpeobj)) {
-                fix_clashing_ids = false;
+                fix_clashing_ids = from_clipboard;
             }
         }
 
@@ -325,7 +431,7 @@ change_clashing_ids(SPDocument *imported_doc, SPDocument *current_doc,
     // recurse
     for (auto& child: elem->children)
     {
-        change_clashing_ids(imported_doc, current_doc, &child, refmap, id_changes);
+        change_clashing_ids(imported_doc, current_doc, &child, refmap, id_changes, from_clipboard);
     }
 }
 
@@ -354,16 +460,14 @@ fix_up_refs(refmap_type const &refmap, const id_changelist_type &id_changes)
  *  clash with IDs in the existing document are changed, and references to
  *  those IDs are updated accordingly.
  */
-void
-prevent_id_clashes(SPDocument *imported_doc, SPDocument *current_doc)
+void prevent_id_clashes(SPDocument *imported_doc, SPDocument *current_doc, bool from_clipboard)
 {
     refmap_type refmap;
     id_changelist_type id_changes;
     SPObject *imported_root = imported_doc->getRoot();
 
-    find_references(imported_root, refmap);
-    change_clashing_ids(imported_doc, current_doc, imported_root, refmap,
-                        &id_changes);
+    find_references(imported_root, refmap, from_clipboard);
+    change_clashing_ids(imported_doc, current_doc, imported_root, refmap, &id_changes, from_clipboard);
     fix_up_refs(refmap, id_changes);
 }
 
@@ -377,7 +481,7 @@ change_def_references(SPObject *from_obj, SPObject *to_obj)
     SPDocument *current_doc = from_obj->document;
     std::string old_id(from_obj->getId());
 
-    find_references(current_doc->getRoot(), refmap);
+    find_references(current_doc->getRoot(), refmap, false);
 
     refmap_type::const_iterator pos = refmap.find(old_id);
     if (pos != refmap.end()) {
@@ -394,8 +498,7 @@ const char valid_id_chars[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvw
 /**
  * Modify 'base_name' to create a new ID that is not used in the 'document'
 */
-Glib::ustring generate_unique_id(SPDocument* document, const Glib::ustring& base_name) {
-    const auto NPOS = Glib::ustring::npos;
+Glib::ustring generate_similar_unique_id(SPDocument* document, const Glib::ustring& base_name) {
     // replace illegal chars in base_name
     auto id = base_name;
     if (id.empty()) {
@@ -403,7 +506,7 @@ Glib::ustring generate_unique_id(SPDocument* document, const Glib::ustring& base
     }
     else {
         for (auto pos = id.find_first_not_of(valid_id_chars);
-                  pos != NPOS;
+                  pos != Glib::ustring::npos;
                   pos = id.find_first_not_of(valid_id_chars, pos)) {
             id.replace(pos, 1, "_");
         }
@@ -460,7 +563,7 @@ void rename_id(SPObject *elem, Glib::ustring const &new_name)
 
     SPDocument *current_doc = elem->document;
     refmap_type refmap;
-    find_references(current_doc->getRoot(), refmap);
+    find_references(current_doc->getRoot(), refmap, false);
 
     std::string old_id(elem->getId());
     if (current_doc->getObjectById(id)) {
@@ -481,7 +584,7 @@ void rename_id(SPObject *elem, Glib::ustring const &new_name)
     // Make a note of this change, if we need to fix up refs to it
     id_changelist_type id_changes;
     if (refmap.find(old_id) != refmap.end()) {
-        id_changes.push_back(id_changeitem_type(elem, old_id));
+        id_changes.emplace_back(elem, old_id);
     }
 
     fix_up_refs(refmap, id_changes);

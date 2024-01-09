@@ -27,11 +27,12 @@ public:
 
     /** \brief  Returns \c _value, with a \i const to protect it. */
     const std::string& get() const { return _value; }
-    const std::string& set(const std::string &in);
+    const std::string &set(const std::string &in) override;
 
-    Gtk::Widget *get_widget(sigc::signal<void> *changeSignal) override;
+    Gtk::Widget *get_widget(sigc::signal<void ()> *changeSignal) override;
 
     std::string value_to_string() const override;
+    void string_to_value(const std::string &in) override;
 
 private:
     enum Mode {

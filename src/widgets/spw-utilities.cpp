@@ -55,7 +55,7 @@ Gtk::Label * spw_label(Gtk::Grid *table, const gchar *label_text, int col, int r
 Gtk::Box * spw_hbox(Gtk::Grid * table, int width, int col, int row)
 {
   /* Create a new hbox with a 4-pixel spacing between children */
-  Gtk::Box *hb = new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 4);
+  Gtk::Box *hb = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 4));
   g_assert(hb != nullptr);
   hb->show();
   hb->set_hexpand();
@@ -168,7 +168,7 @@ Gtk::Widget* sp_traverse_widget_tree(Gtk::Widget* widget, const std::function<bo
         return sp_traverse_widget_tree(bin->get_child(), eval);
     }
     else if (auto container = dynamic_cast<Gtk::Container*>(widget)) {
-        auto children = container->get_children();
+        auto&& children = container->get_children();
         for (auto child : children) {
             if (auto found = sp_traverse_widget_tree(child, eval)) {
                 return found;
@@ -190,6 +190,20 @@ Gtk::Widget* sp_find_focusable_widget(Gtk::Widget* widget) {
     return sp_traverse_widget_tree(widget, [](Gtk::Widget* w) { return w->get_can_focus(); });
 }
 
+
+Glib::ustring sp_get_action_target(Gtk::Widget* widget) {
+    Glib::ustring target;
+
+    if (widget && GTK_IS_ACTIONABLE(widget->gobj())) {
+        auto variant = gtk_actionable_get_action_target_value(GTK_ACTIONABLE(widget->gobj()));
+        auto type = variant ? g_variant_get_type_string(variant) : nullptr;
+        if (type && strcmp(type, "s") == 0) {
+            target = g_variant_get_string(variant, nullptr);
+        }
+    }
+
+    return target;
+}
 /*
   Local Variables:
   mode:c++

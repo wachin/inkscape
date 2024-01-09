@@ -16,12 +16,13 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
+#include <array>
+#include <vector>
 #include <2geom/point.h>
 #include <2geom/affine.h>
 #include <2geom/rect.h>
 #include <cstddef>
 #include <sigc++/sigc++.h>
-#include <vector>
 
 #include "message-context.h"
 #include "seltrans-handles.h"
@@ -57,7 +58,7 @@ public:
     void grab(Geom::Point const &p, double x, double y, bool show_handles, bool translating);
     void transform(Geom::Affine const &rel_affine, Geom::Point const &norm);
     void ungrab();
-    void stamp();
+    void stamp(bool clone = false);
     void moveTo(Geom::Point const &xy, unsigned int state);
     void stretch(SPSelTransHandle const &handle, Geom::Point &pt, unsigned int state);
     void scale(Geom::Point &pt, unsigned int state);
@@ -110,7 +111,7 @@ private:
     };
 
     friend class Inkscape::SelTrans::BoundingBoxPrefsObserver;
-
+    void _clear_stamp();
     void _updateHandles();
     void _updateVolatileState();
     void _selChanged(Inkscape::Selection *selection);
@@ -132,7 +133,7 @@ private:
     SPDesktop *_desktop;
 
     std::vector<SPItem *> _items;
-    std::vector<SPItem const *> _items_const;
+    std::vector<SPObject const *> _objects_const;
     std::vector<Geom::Affine> _items_affines;
     std::vector<Geom::Point> _items_centers;
 
@@ -154,7 +155,7 @@ private:
     SPItem::BBoxType _snap_bbox_type;
 
     Geom::OptRect _bbox;
-    Geom::OptRect _visual_bbox;
+    Geom::OptRect _stroked_bbox;
     Geom::OptRect _geometric_bbox;
     double _strokewidth;
 
@@ -180,11 +181,11 @@ private:
     bool _center_is_set; ///< we've already set _center, no need to reread it from items
 
     SPKnot *knots[NUMHANDS];
-    Inkscape::CanvasItemCtrl *_norm;
-    Inkscape::CanvasItemCtrl *_grip;
-    Inkscape::CanvasItemCurve *_l[4];
+    CanvasItemPtr<CanvasItemCtrl> _norm;
+    CanvasItemPtr<CanvasItemCtrl> _grip;
+    std::array<CanvasItemPtr<CanvasItemCurve>, 4> _l;
     std::vector<SPItem*> _stamp_cache;
-
+    bool _stamped = false;
     Geom::Point _origin; ///< position of origin for transforms
     Geom::Point _point; ///< original position of the knot being used for the current transform
     Geom::Point _point_geom; ///< original position of the knot being used for the current transform

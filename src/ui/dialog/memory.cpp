@@ -21,61 +21,13 @@
 
 #include "inkgc/gc-core.h"
 #include "debug/heap.h"
+#include "util/format_size.h"
+
+using Inkscape::Util::format_size;
 
 namespace Inkscape {
 namespace UI {
 namespace Dialog {
-
-namespace {
-
-Glib::ustring format_size(std::size_t value) {
-    if (!value) {
-        return Glib::ustring("0");
-    }
-
-    typedef std::vector<char> Digits;
-    typedef std::vector<Digits *> Groups;
-
-    Groups groups;
-
-    Digits *digits;
-
-    while (value) {
-        unsigned places=3;
-        digits = new Digits();
-        digits->reserve(places);
-
-        while ( value && places ) {
-            digits->push_back('0' + (char)( value % 10 ));
-            value /= 10;
-            --places;
-        }
-
-        groups.push_back(digits);
-    }
-
-    Glib::ustring temp;
-
-    while (true) {
-        digits = groups.back();
-        while (!digits->empty()) {
-            temp.append(1, digits->back());
-            digits->pop_back();
-        }
-        delete digits;
-
-        groups.pop_back();
-        if (groups.empty()) {
-            break;
-        }
-
-        temp.append(",");
-    }
-
-    return temp;
-}
-
-}
 
 struct Memory::Private {
     class ModelColumns : public Gtk::TreeModel::ColumnRecord {
@@ -205,21 +157,21 @@ void Memory::Private::stop_update_task() {
 
 Memory::Memory()
     : DialogBase("/dialogs/memory", "Memory")
-    , _private(*(new Memory::Private()))
+    , _private(std::make_unique<Private>())
 {
     // Private conf
-    pack_start(_private.view);
+    pack_start(_private->view);
 
-    _private.update();
+    _private->update();
 
-    signal_show().connect(sigc::mem_fun(_private, &Private::start_update_task));
-    signal_hide().connect(sigc::mem_fun(_private, &Private::stop_update_task));
+    signal_show().connect(sigc::mem_fun(*_private, &Private::start_update_task));
+    signal_hide().connect(sigc::mem_fun(*_private, &Private::stop_update_task));
 
     // Add button
-    Gtk::Button *button = Gtk::manage(new Gtk::Button(_("Recalculate")));
+    auto button = Gtk::make_managed<Gtk::Button>(_("Recalculate"));
     button->signal_button_press_event().connect(sigc::mem_fun(*this, &Memory::_apply));
 
-    Gtk::ButtonBox *button_box = Gtk::manage(new Gtk::ButtonBox());
+    auto button_box = Gtk::make_managed<Gtk::ButtonBox>();
     button_box->set_layout(Gtk::BUTTONBOX_END);
     button_box->set_spacing(6);
     button_box->set_border_width(4);
@@ -227,21 +179,20 @@ Memory::Memory()
     pack_end(*button_box, Gtk::PACK_SHRINK, 0);
 
     // Start
-    _private.start_update_task();
+    _private->start_update_task();
 
     show_all_children();
 }
 
-Memory::~Memory() {
-    _private.stop_update_task();
-    delete &_private;
+Memory::~Memory()
+{
+    _private->stop_update_task();
 }
 
-bool Memory::_apply(GdkEventButton * /* button */)
+bool Memory::_apply(GdkEventButton*)
 {
     GC::Core::gcollect();
-    _private.update();
-
+    _private->update();
     return false;
 }
 

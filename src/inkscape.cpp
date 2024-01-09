@@ -17,6 +17,8 @@
 
 #include <unistd.h>
 
+#include <boost/stacktrace.hpp>
+
 #include <map>
 
 #include <glibmm/regex.h>
@@ -32,32 +34,34 @@
 #include "device-manager.h"
 #include "document.h"
 #include "inkscape.h"
+#include "inkscape-application.h"
+#include "inkscape-version-info.h"
+#include "inkscape-window.h"
 #include "message-stack.h"
 #include "path-prefix.h"
 
 #include "debug/simple-event.h"
 #include "debug/event-tracker.h"
 
-#include "extension/db.h"
-#include "extension/init.h"
-#include "extension/system.h"
-
-#include "helper/action-context.h"
-
 #include "io/resource.h"
-#include "io/fix-broken-links.h"
 #include "io/sys.h"
 
-#include "libnrtype/FontFactory.h"
+#include "libnrtype/font-factory.h"
 
+#include "object/sp-item-group.h"
 #include "object/sp-root.h"
 
+#include "io/resource.h"
+#include "ui/builder-utils.h"
 #include "ui/themes.h"
+#include "ui/dialog-events.h"
 #include "ui/dialog/debug.h"
+#include "ui/dialog/dialog-manager.h"
+#include "ui/dialog/dialog-window.h"
 #include "ui/tools/tool-base.h"
+#include "ui/util.h"
 
-/* Backbones of configuration xml data */
-#include "menus-skeleton.h"
+#include "util/units.h"
 
 #include <fstream>
 
@@ -74,8 +78,6 @@ static void (* ill_handler)  (int) = SIG_DFL;
 #ifndef _WIN32
 static void (* bus_handler)  (int) = SIG_DFL;
 #endif
-
-#define MENUS_FILE "menus.xml"
 
 #define SP_INDENT 8
 
@@ -191,6 +193,26 @@ Application::Application(bool use_gui) :
     using namespace Inkscape::IO::Resource;
     /* fixme: load application defaults */
 
+    /* If we're running from inside a macOS application bundle, we haven't
+     * loaded the units.xml file from a user data location yet (see
+     * UnitTable::UnitTable()). This has been deferred to this point so
+     * the environment has been set up for macOS (especially XDG variables).
+     */
+    if (g_str_has_suffix(get_program_dir(), "Contents/MacOS")) {
+        using namespace Inkscape::IO::Resource;
+        Util::unit_table.load(get_filename(UIS, "units.xml", false, true));
+    }
+
+    // we need a app runing to know shared path
+    auto extensiondir_shared = get_path_string(SHARED, EXTENSIONS);
+    if (!extensiondir_shared.empty()) {
+        std::string pythonpath = extensiondir_shared;
+        auto pythonpath_old = Glib::getenv("PYTHONPATH");
+        if (!pythonpath_old.empty()) {
+            pythonpath += G_SEARCHPATH_SEPARATOR + pythonpath_old;
+        }
+        Glib::setenv("PYTHONPATH", pythonpath);
+    }
     segv_handler = signal (SIGSEGV, Application::crash_handler);
     abrt_handler = signal (SIGABRT, Application::crash_handler);
     fpe_handler  = signal (SIGFPE,  Application::crash_handler);
@@ -218,11 +240,13 @@ Application::Application(bool use_gui) :
         using namespace Inkscape::IO::Resource;
         auto icon_theme = Gtk::IconTheme::get_default();
         icon_theme->prepend_search_path(get_path_ustring(SYSTEM, ICONS));
+        icon_theme->prepend_search_path(get_path_ustring(SHARED, ICONS));
         icon_theme->prepend_search_path(get_path_ustring(USER, ICONS));
         themecontext = new Inkscape::UI::ThemeContext();
         themecontext->add_gtk_css(false);
-        /* Load the preferences and menus */
-        load_menus();
+        auto scale = prefs->getDoubleLimited(UI::ThemeContext::get_font_scale_pref_path(), 100, 50, 150);
+        themecontext->adjustGlobalFontScale(scale / 100.0);
+        Inkscape::UI::ThemeContext::initialize_source_syntax_styles();
         Inkscape::DeviceManager::getManager().loadConfig();
     }
 
@@ -231,6 +255,13 @@ Application::Application(bool use_gui) :
     if(!ui_language.empty())
     {
         setenv("LANGUAGE", ui_language, true);
+#ifdef _WIN32
+        // locale may be set to C with some Windows Region Formats (like English(Europe)).
+        // forcing the LANGUAGE variable to be ignored
+        // see :guess_category_value:gettext-runtime/intl/dcigettext.c,
+        // and :gl_locale_name_from_win32_LANGID:gettext-runtime/gnulib-lib/localename.c
+        setenv("LANG", ui_language, true);
+#endif
     }
 
     /* DebugDialog redirection.  On Linux, default to OFF, on Win32, default to ON.
@@ -253,25 +284,32 @@ Application::Application(bool use_gui) :
         /* Check for global remapping of Alt key */
         mapalt(guint(prefs->getInt("/options/mapalt/value", 0)));
         trackalt(guint(prefs->getInt("/options/trackalt/value", 0)));
-    }
 
-    /* Initialize the extensions */
-    Inkscape::Extension::init();
+        /* update highlight colors when theme changes */
+        themecontext->getChangeThemeSignal().connect([=](){
+            themecontext->themechangecallback();
+        });
+    }
 
     /* Initialize font factory */
-    font_factory *factory = font_factory::Default();
+    auto &factory = FontFactory::get();
     if (prefs->getBool("/options/font/use_fontsdir_system", true)) {
         char const *fontsdir = get_path(SYSTEM, FONTS);
-        factory->AddFontsDir(fontsdir);
+        factory.AddFontsDir(fontsdir);
     }
+    // we keep user font dir for simplicity
     if (prefs->getBool("/options/font/use_fontsdir_user", true)) {
+        char const *fontsdirshared = get_path(SHARED, FONTS);
+        if (fontsdirshared) {
+            factory.AddFontsDir(fontsdirshared);
+        }
         char const *fontsdir = get_path(USER, FONTS);
-        factory->AddFontsDir(fontsdir);
+        factory.AddFontsDir(fontsdir);
     }
     Glib::ustring fontdirs_pref = prefs->getString("/options/font/custom_fontdirs");
     std::vector<Glib::ustring> fontdirs = Glib::Regex::split_simple("\\|", fontdirs_pref);
     for (auto &fontdir : fontdirs) {
-        factory->AddFontsDir(fontdir.c_str());
+        factory.AddFontsDir(fontdir.c_str());
     }
 }
 
@@ -282,11 +320,6 @@ Application::~Application()
     }
 
     Inkscape::Preferences::unload();
-
-    if (_menus) {
-        Inkscape::GC::release(_menus);
-        _menus = nullptr;
-    }
 
     _S_inst = nullptr; // this will probably break things
 
@@ -421,6 +454,21 @@ Application::crash_handler (int /*signum*/)
                 sp_repr_save_stream (repr->document(), file, SP_SVG_NS_URI);
                 savednames.push_back(g_strdup (c));
                 fclose (file);
+
+                // Attempt to add the emergency save to the recent files, so users can find it on restart
+                auto recentmanager = Gtk::RecentManager::get_default();
+                if (recentmanager && Glib::path_is_absolute(c)) {
+                    Glib::ustring uri = Glib::filename_to_uri(c);
+                    recentmanager->add_item(uri, {
+                        docname,                 // Name
+                        "Emergency Saved Image", // Description
+                        "image/svg+xml",         // Mime type
+                        "org.inkscape.Inkscape", // App name
+                        "",                      // Execute
+                        {"Crash"},               // Groups
+                        true,                    // Private
+                    });
+                }
             } else {
                 failednames.push_back((doc->getDocumentName()) ? g_strdup(doc->getDocumentName()) : g_strdup (_("Untitled document")));
             }
@@ -451,7 +499,7 @@ Application::crash_handler (int /*signum*/)
 
     /* Show nice dialog box */
 
-    char const *istr = _("Inkscape encountered an internal error and will close now.\n");
+    char const *istr = "";
     char const *sstr = _("Automatic backups of unsaved documents were done to the following locations:\n");
     char const *fstr = _("Automatic backup of the following documents failed:\n");
     gint nllen = strlen ("\n");
@@ -499,13 +547,20 @@ Application::crash_handler (int /*signum*/)
     *(b + pos) = '\0';
 
     if ( exists() && instance().use_gui() ) {
-        GtkWidget *msgbox = gtk_message_dialog_new (nullptr, GTK_DIALOG_MODAL, GTK_MESSAGE_ERROR, GTK_BUTTONS_CLOSE, "%s", b);
-        gtk_dialog_run (GTK_DIALOG (msgbox));
-        gtk_widget_destroy (msgbox);
-    }
-    else
-    {
+        try {
+            auto builder = UI::create_builder("dialog-crash.glade");
+            UI::get_widget<Gtk::Label>(builder, "message").set_label(b);
+            UI::get_object<Gtk::TextBuffer>(builder, "stacktrace")->set_text("<pre>\n" + boost::stacktrace::to_string(boost::stacktrace::stacktrace()) + "</pre>\n<details><summary>System info</summary>\n" + debug_info() + "\n</details>");
+            Gtk::MessageDialog &m = UI::get_widget<Gtk::MessageDialog>(builder, "crash_dialog");
+            sp_transientize(GTK_WIDGET(m.gobj()));
+            m.run();
+        } catch (const Glib::Error &ex) {
+            g_message("Glade file loading failed for crash handler... Anyway, error was: %s", b);
+            std::cerr << boost::stacktrace::stacktrace();
+        }
+    } else {
         g_message( "Error: %s", b );
+        std::cerr << boost::stacktrace::stacktrace();
     }
     g_free (b);
 
@@ -515,77 +570,6 @@ Application::crash_handler (int /*signum*/)
     fflush(stderr); // make sure buffers are empty before crashing (otherwise output might be suppressed)
 
     /* on exit, allow restored signal handler to take over and crash us */
-}
-
-/**
- *  Menus management
- *
- */
-bool Application::load_menus()
-{
-    using namespace Inkscape::IO::Resource;
-    Glib::ustring filename = get_filename(UIS, MENUS_FILE);
-
-    _menus = sp_repr_read_file(filename.c_str(), nullptr);
-    if ( !_menus ) {
-        _menus = sp_repr_read_mem(menus_skeleton, MENUS_SKELETON_SIZE, nullptr);
-    }
-    return (_menus != nullptr);
-}
-
-
-void
-Application::selection_modified (Inkscape::Selection *selection, guint flags)
-{
-    g_return_if_fail (selection != nullptr);
-
-    if (DESKTOP_IS_ACTIVE (selection->desktop())) {
-        signal_selection_modified.emit(selection, flags);
-    }
-}
-
-
-void
-Application::selection_changed (Inkscape::Selection * selection)
-{
-    g_return_if_fail (selection != nullptr);
-
-    if (DESKTOP_IS_ACTIVE (selection->desktop())) {
-        signal_selection_changed.emit(selection);
-    }
-}
-
-void
-Application::subselection_changed (SPDesktop *desktop)
-{
-    g_return_if_fail (desktop != nullptr);
-
-    if (DESKTOP_IS_ACTIVE (desktop)) {
-        signal_subselection_changed.emit(desktop);
-    }
-}
-
-
-void
-Application::selection_set (Inkscape::Selection * selection)
-{
-    g_return_if_fail (selection != nullptr);
-
-    if (DESKTOP_IS_ACTIVE (selection->desktop())) {
-        signal_selection_set.emit(selection);
-        signal_selection_changed.emit(selection);
-    }
-}
-
-
-void
-Application::eventcontext_set (Inkscape::UI::Tools::ToolBase * eventcontext)
-{
-    g_return_if_fail (eventcontext != nullptr);
-
-    if (DESKTOP_IS_ACTIVE (eventcontext->getDesktop())) {
-        signal_eventcontext_set.emit(eventcontext);
-    }
 }
 
 
@@ -604,7 +588,6 @@ Application::add_desktop (SPDesktop * desktop)
     _desktops->insert(_desktops->begin(), desktop);
 
     signal_activate_desktop.emit(desktop);
-    signal_eventcontext_set.emit(desktop->getEventContext());
     signal_selection_set.emit(desktop->getSelection());
     signal_selection_changed.emit(desktop->getSelection());
 }
@@ -629,16 +612,13 @@ Application::remove_desktop (SPDesktop * desktop)
             _desktops->insert(_desktops->begin(), new_desktop);
 
             signal_activate_desktop.emit(new_desktop);
-            signal_eventcontext_set.emit(new_desktop->getEventContext());
             signal_selection_set.emit(new_desktop->getSelection());
             signal_selection_changed.emit(new_desktop->getSelection());
         } else {
-            signal_eventcontext_set.emit(nullptr);
             if (desktop->getSelection())
                 desktop->getSelection()->clear();
         }
     }
-    desktop->setEventContext("");
 
     _desktops->erase(std::find(_desktops->begin(), _desktops->end(), desktop));
 
@@ -675,7 +655,6 @@ Application::activate_desktop (SPDesktop * desktop)
     _desktops->insert (_desktops->begin(), desktop);
 
     signal_activate_desktop.emit(desktop);
-    signal_eventcontext_set.emit(desktop->getEventContext());
     signal_selection_set(desktop->getSelection());
     signal_selection_changed(desktop->getSelection());
 }
@@ -814,16 +793,6 @@ Application::add_document (SPDocument *document)
                 iter.second ++;
             }
        }
-    } else {
-        // insert succeeded, this document is new.
-
-        // Create a selection model tied to the document for running without a GUI.
-        // We create the model even if there is a GUI as there might not be a window
-        // tied to the document (which would have its own selection model) as in the
-        // case where a verb requires a GUI where it's not really needed (conversion
-        // of verbs to actions will eliminate this need).
-        g_assert(_selection_models.find(document) == _selection_models.end());
-        _selection_models[document] = new AppSelectionModel(document);
     }
 }
 
@@ -843,12 +812,6 @@ Application::remove_document (SPDocument *document)
             if (iter->second < 1) {
                 // this was the last one, remove the pair from list
                 _document_set.erase (iter);
-
-                // also remove the selection model
-                std::map<SPDocument *, AppSelectionModel *>::iterator sel_iter = _selection_models.find(document);
-                if (sel_iter != _selection_models.end()) {
-                    _selection_models.erase(sel_iter);
-                }
 
                 return true;
             } else {
@@ -899,65 +862,9 @@ Application::sole_desktop_for_document(SPDesktop const &desktop) {
     return true;
 }
 
-Inkscape::UI::Tools::ToolBase *
-Application::active_event_context ()
-{
-    if (SP_ACTIVE_DESKTOP) {
-        return SP_ACTIVE_DESKTOP->getEventContext();
-    }
-
-    return nullptr;
-}
-
-Inkscape::ActionContext
-Application::active_action_context()
-{
-    if (SP_ACTIVE_DESKTOP) {
-        return Inkscape::ActionContext(SP_ACTIVE_DESKTOP);
-    }
-
-    SPDocument *doc = active_document();
-    if (!doc) {
-        return Inkscape::ActionContext();
-    }
-
-    return action_context_for_document(doc);
-}
-
-Inkscape::ActionContext
-Application::action_context_for_document(SPDocument *doc)
-{
-    // If there are desktops, check them first to see if the document is bound to one of them
-    if (_desktops != nullptr) {
-        for (auto desktop : *_desktops) {
-            if (desktop->doc() == doc) {
-                return Inkscape::ActionContext(desktop);
-            }
-        }
-    }
-
-    // Document is not associated with any desktops - maybe we're in command-line mode
-    std::map<SPDocument *, AppSelectionModel *>::iterator sel_iter = _selection_models.find(doc);
-    if (sel_iter == _selection_models.end()) {
-        std::cout << "Application::action_context_for_document: no selection model" << std::endl;
-        return Inkscape::ActionContext();
-    }
-    return Inkscape::ActionContext(sel_iter->second->getSelection());
-}
-
-
 /*#####################
 # HELPERS
 #####################*/
-
-void
-Application::refresh_display ()
-{
-    for (auto & _desktop : *_desktops) {
-        _desktop->requestRedraw();
-    }
-}
-
 
 /**
  *  Handler for Inkscape's Exit verb.  This emits the shutdown signal,
@@ -971,17 +878,6 @@ Application::exit ()
 
     Inkscape::Preferences::unload();
     //gtk_main_quit ();
-}
-
-
-
-
-Inkscape::XML::Node *
-Application::get_menus()
-{
-    Inkscape::XML::Node *repr = _menus->root();
-    g_assert (!(strcmp (repr->name(), "inkscape")));
-    return repr->firstChild();
 }
 
 void

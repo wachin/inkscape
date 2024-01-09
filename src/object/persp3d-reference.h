@@ -31,7 +31,7 @@ public:
     ~Persp3DReference() override;
 
     Persp3D *getObject() const {
-        return SP_PERSP3D(URIReference::getObject());
+        return cast<Persp3D>(URIReference::getObject());
     }
 
     SPObject *owner;
@@ -53,7 +53,6 @@ public:
 protected:
     bool _acceptObject(SPObject *obj) const override;
 };
-
 
 #endif /* !SEEN_PERSP3D_REFERENCE_H */
 

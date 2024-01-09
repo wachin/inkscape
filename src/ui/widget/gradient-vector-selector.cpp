@@ -35,7 +35,6 @@
 #include "layer-manager.h"
 #include "include/macros.h"
 #include "selection-chemistry.h"
-#include "verbs.h"
 
 #include "io/resource.h"
 
@@ -56,7 +55,6 @@
 
 #include "xml/repr.h"
 
-using Inkscape::DocumentUndo;
 using Inkscape::UI::SelectedColor;
 
 void gr_get_usage_counts(SPDocument *doc, std::map<SPGradient *, gint> *mapUsageCount );
@@ -106,7 +104,6 @@ void GradientVectorSelector::set_gradient(SPDocument *doc, SPGradient *gr)
     static gboolean suppress = FALSE;
 
     g_return_if_fail(!gr || (doc != nullptr));
-    g_return_if_fail(!gr || SP_IS_GRADIENT(gr));
     g_return_if_fail(!gr || (gr->document == doc));
     g_return_if_fail(!gr || gr->hasStops());
 
@@ -124,11 +121,11 @@ void GradientVectorSelector::set_gradient(SPDocument *doc, SPGradient *gr)
 
         // Connect signals
         if (doc) {
-            _defs_release_connection = doc->getDefs()->connectRelease(sigc::mem_fun(this, &GradientVectorSelector::defs_release));
-            _defs_modified_connection = doc->getDefs()->connectModified(sigc::mem_fun(this, &GradientVectorSelector::defs_modified));
+            _defs_release_connection = doc->getDefs()->connectRelease(sigc::mem_fun(*this, &GradientVectorSelector::defs_release));
+            _defs_modified_connection = doc->getDefs()->connectModified(sigc::mem_fun(*this, &GradientVectorSelector::defs_modified));
         }
         if (gr) {
-            _gradient_release_connection = gr->connectRelease(sigc::mem_fun(this, &GradientVectorSelector::gradient_release));
+            _gradient_release_connection = gr->connectRelease(sigc::mem_fun(*this, &GradientVectorSelector::gradient_release));
         }
         _doc = doc;
         _gr = gr;
@@ -197,9 +194,9 @@ GradientVectorSelector::rebuild_gui_full()
     if (_gr) {
         auto gradients = _gr->document->getResourceList("gradient");
         for (auto gradient : gradients) {
-            SPGradient* grad = SP_GRADIENT(gradient);
+            auto grad = cast<SPGradient>(gradient);
             if ( grad->hasStops() && (grad->isSwatch() == _swatched) ) {
-                gl.push_back(SP_GRADIENT(gradient));
+                gl.push_back(cast<SPGradient>(gradient));
             }
         }
     }
@@ -292,16 +289,6 @@ unsigned long sp_gradient_to_hhssll(SPGradient *gr)
     SPColor::rgb_to_hsl_floatv (hsl, SP_RGBA32_R_F(rgba), SP_RGBA32_G_F(rgba), SP_RGBA32_B_F(rgba));
 
     return ((int)(hsl[0]*100 * 10000)) + ((int)(hsl[1]*100 * 100)) + ((int)(hsl[2]*100 * 1));
-}
-
-static void get_all_doc_items(std::vector<SPItem*> &list, SPObject *from)
-{
-    for (auto& child: from->children) {
-        if (SP_IS_ITEM(&child)) {
-            list.push_back(SP_ITEM(&child));
-        }
-        get_all_doc_items(list, &child);
-    }
 }
 
 /*

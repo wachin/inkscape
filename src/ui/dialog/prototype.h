@@ -33,21 +33,17 @@ namespace Dialog {
 class Prototype : public DialogBase
 {
 public:
-    ~Prototype() override { std::cout << "Prototype::~Prototype()" << std::endl; }
-    static Prototype &getInstance() { return *new Prototype(); }
+    Prototype();
+    ~Prototype() override { std::cerr << "Prototype::~Prototype()" << std::endl; }
 
     void documentReplaced(SPDocument *document) override;
     void selectionChanged(Inkscape::Selection *selection) override;
 
 private:
-    // No default constructor, noncopyable, nonassignable
-    Prototype();
-    Prototype(Prototype const &d) = delete;
-    Prototype operator=(Prototype const &d) = delete;
-
     // Just for example
     Gtk::Label *_label;
     Gtk::Button _debug_button; // For printing to console.
+
     virtual void on_click();
 };
 

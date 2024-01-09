@@ -28,6 +28,7 @@
 #include "sp-text.h"
 #include "style.h"
 #include "text-editing.h"
+#include "xml/href-attribute-helper.h"
 
 //#define DEBUG_TREF
 #ifdef DEBUG_TREF
@@ -47,18 +48,17 @@ static void build_string_from_root(Inkscape::XML::Node *root, Glib::ustring *ret
 static void sp_tref_href_changed(SPObject *old_ref, SPObject *ref, SPTRef *tref);
 static void sp_tref_delete_self(SPObject *deleted, SPTRef *self);
 
-SPTRef::SPTRef() : SPItem() {
-	this->stringChild = nullptr;
-
-    this->href = nullptr;
-    this->uriOriginalRef = new SPTRefReference(this);
-
-    this->_changed_connection =
-        this->uriOriginalRef->changedSignal().connect(sigc::bind(sigc::ptr_fun(sp_tref_href_changed), this));
+SPTRef::SPTRef()
+    : SPItem()
+    , href(nullptr)
+    , uriOriginalRef(this)
+    , stringChild(nullptr)
+{
+    _changed_connection = uriOriginalRef.changedSignal().connect(sigc::bind(sigc::ptr_fun(sp_tref_href_changed), this));
 }
 
-SPTRef::~SPTRef() {
-	delete this->uriOriginalRef;
+SPTRef::~SPTRef()
+{
 }
 
 void SPTRef::build(SPDocument *document, Inkscape::XML::Node *repr) {
@@ -78,10 +78,10 @@ void SPTRef::release() {
     this->_delete_connection.disconnect();
     this->_changed_connection.disconnect();
 
-    g_free(this->href);
-    this->href = nullptr;
+    g_free(href);
+    href = nullptr;
 
-    this->uriOriginalRef->detach();
+    uriOriginalRef.detach();
 
     SPItem::release();
 }
@@ -95,9 +95,9 @@ void SPTRef::set(SPAttr key, const gchar* value) {
     } else if (key == SPAttr::XLINK_HREF) { // xlink:href
         if ( !value ) {
             // No value
-            g_free(this->href);
-            this->href = nullptr;
-            this->uriOriginalRef->detach();
+            g_free(href);
+            href = nullptr;
+            uriOriginalRef.detach();
         } else if ((this->href && strcmp(value, this->href) != 0) || (!this->href)) {
             // Value has changed
 
@@ -106,18 +106,18 @@ void SPTRef::set(SPAttr key, const gchar* value) {
                 this->href = nullptr;
             }
 
-            this->href = g_strdup(value);
+            href = g_strdup(value);
 
             try {
-                this->uriOriginalRef->attach(Inkscape::URI(value));
-                this->uriOriginalRef->updateObserver();
-            } catch ( Inkscape::BadURIException &e ) {
+                uriOriginalRef.attach(Inkscape::URI(value));
+                uriOriginalRef.updateObserver();
+            } catch (Inkscape::BadURIException const &e) {
                 g_warning("%s", e.what());
-                this->uriOriginalRef->detach();
+                uriOriginalRef.detach();
             }
 
             // No matter what happened, an update should be in order
-            this->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG);
+            requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG);
         }
     } else { // default
         SPItem::set(key, value);
@@ -173,11 +173,11 @@ Inkscape::XML::Node* SPTRef::write(Inkscape::XML::Document *xml_doc, Inkscape::X
 
     this->attributes.writeTo(repr);
 
-    if (this->uriOriginalRef->getURI()) {
-        auto uri = this->uriOriginalRef->getURI()->str();
+    if (uriOriginalRef.getURI()) {
+        auto uri = uriOriginalRef.getURI()->str();
         auto uri_string = uri.c_str();
         debug("uri_string=%s", uri_string);
-        repr->setAttribute("xlink:href", uri_string);
+        Inkscape::setHrefAttribute(*repr, uri_string);
     }
 
     SPItem::write(xml_doc, repr, flags);
@@ -190,7 +190,7 @@ Geom::OptRect SPTRef::bbox(Geom::Affine const &transform, SPItem::BBoxType type)
     // find out the ancestor text which holds our layout
     SPObject const *parent_text = this;
 
-    while ( parent_text && !SP_IS_TEXT(parent_text) ) {
+    while ( parent_text && !is<SPText>(parent_text) ) {
         parent_text = parent_text->parent;
     }
 
@@ -199,17 +199,10 @@ Geom::OptRect SPTRef::bbox(Geom::Affine const &transform, SPItem::BBoxType type)
     }
 
     // get the bbox of our portion of the layout
-    bbox = SP_TEXT(parent_text)->layout.bounds(transform,
-        sp_text_get_length_upto(parent_text, this), sp_text_get_length_upto(this, nullptr) - 1);
-
-    // Add stroke width
-    // FIXME this code is incorrect
-    if (bbox && type == SPItem::VISUAL_BBOX && !this->style->stroke.isNone()) {
-        double scale = transform.descrim();
-        bbox->expandBy(0.5 * this->style->stroke_width.computed * scale);
-    }
-
-    return bbox;
+    return cast<SPText>(parent_text)->layout.bounds(transform,
+        type == SPItem::VISUAL_BBOX,
+        sp_text_get_length_upto(parent_text, this),
+        sp_text_get_length_upto(this, nullptr) - 1);
 }
 
 const char* SPTRef::typeName() const {
@@ -226,14 +219,14 @@ gchar* SPTRef::description() const {
     if (referred) {
 	char *child_desc;
 
-	if (SP_IS_ITEM(referred)) {
-	    child_desc = SP_ITEM(referred)->detailedDescription();
+	if (is<SPItem>(referred)) {
+	    child_desc = cast<SPItem>(referred)->detailedDescription();
 	} else {
 	    child_desc = g_strdup("");
 	}
 
 	char *ret = g_strdup_printf("%s%s",
-	    (SP_IS_ITEM(referred) ? _(" from ") : ""), child_desc);
+	    (is<SPItem>(referred) ? _(" from ") : ""), child_desc);
 	g_free(child_desc);
 
 	return ret;
@@ -287,28 +280,16 @@ sp_tref_delete_self(SPObject */*deleted*/, SPTRef *self)
  */
 SPObject * SPTRef::getObjectReferredTo()
 {
-    SPObject *referredObject = nullptr;
-
-    if (uriOriginalRef) {
-        referredObject = uriOriginalRef->getObject();
-    }
-
-    return referredObject;
+    return uriOriginalRef.getObject();
 }
 
 /**
  * Return the object referred to via the URI reference
  */
-SPObject const *SPTRef::getObjectReferredTo() const {
-    SPObject *referredObject = nullptr;
-
-    if (uriOriginalRef) {
-        referredObject = uriOriginalRef->getObject();
-    }
-
-    return referredObject;
+SPObject const *SPTRef::getObjectReferredTo() const
+{
+    return uriOriginalRef.getObject();
 }
-
 
 /**
  * Returns true when the given tref is allowed to refer to a particular object
@@ -350,34 +331,34 @@ sp_tref_fully_contained(SPObject *start_item, Glib::ustring::iterator &start,
         // If neither the beginning or the end is a tref then we return true (whether there
         // is a tref in the innards or not, because if there is one then it must be totally
         // contained)
-        if (!(SP_IS_STRING(start_item) && SP_IS_TREF(start_item->parent))
-                && !(SP_IS_STRING(end_item) && SP_IS_TREF(end_item->parent))) {
+        if (!(is<SPString>(start_item) && is<SPTRef>(start_item->parent))
+                && !(is<SPString>(end_item) && is<SPTRef>(end_item->parent))) {
             fully_contained = true;
         }
 
         // Both the beginning and end are trefs; but in this case, the string iterators
         // must be at the right places
-        else if ((SP_IS_STRING(start_item) && SP_IS_TREF(start_item->parent))
-                && (SP_IS_STRING(end_item) && SP_IS_TREF(end_item->parent))) {
-            if (start == SP_STRING(start_item)->string.begin()
-                    && end == SP_STRING(start_item)->string.end()) {
+        else if ((is<SPString>(start_item) && is<SPTRef>(start_item->parent))
+                && (is<SPString>(end_item) && is<SPTRef>(end_item->parent))) {
+            if (start == cast<SPString>(start_item)->string.begin()
+                    && end == cast<SPString>(start_item)->string.end()) {
                 fully_contained = true;
             }
         }
 
         // If the beginning is a string that is a child of a tref, the iterator has to be
         // at the beginning of the item
-        else if ((SP_IS_STRING(start_item) && SP_IS_TREF(start_item->parent))
-                    && !(SP_IS_STRING(end_item) && SP_IS_TREF(end_item->parent))) {
-            if (start == SP_STRING(start_item)->string.begin()) {
+        else if ((is<SPString>(start_item) && is<SPTRef>(start_item->parent))
+                    && !(is<SPString>(end_item) && is<SPTRef>(end_item->parent))) {
+            if (start == cast<SPString>(start_item)->string.begin()) {
                 fully_contained = true;
             }
         }
 
         // Same, but the for the end
-        else if (!(SP_IS_STRING(start_item) && SP_IS_TREF(start_item->parent))
-                    && (SP_IS_STRING(end_item) && SP_IS_TREF(end_item->parent))) {
-            if (end == SP_STRING(start_item)->string.end()) {
+        else if (!(is<SPString>(start_item) && is<SPTRef>(start_item->parent))
+                    && (is<SPString>(end_item) && is<SPTRef>(end_item->parent))) {
+            if (end == cast<SPString>(start_item)->string.end()) {
                 fully_contained = true;
             }
         }
@@ -408,7 +389,7 @@ void sp_tref_update_text(SPTRef *tref)
         // Add this SPString as a child of the tref
         tref->attach(tref->stringChild, tref->lastChild());
         sp_object_unref(tref->stringChild, nullptr);
-        (tref->stringChild)->invoke_build(tref->document, newStringRepr, TRUE);
+        (tref->stringChild)->invoke_build(tref->document, newStringRepr, FALSE);
 
         Inkscape::GC::release(newStringRepr);
     }
@@ -456,9 +437,9 @@ sp_tref_convert_to_tspan(SPObject *obj)
     ////////////////////
     // BASE CASE
     ////////////////////
-    if (SP_IS_TREF(obj)) {
+    if (is<SPTRef>(obj)) {
 
-        SPTRef *tref = SP_TREF(obj);
+        auto tref = cast<SPTRef>(obj);
 
         if (tref && tref->stringChild) {
             Inkscape::XML::Node *tref_repr = tref->getRepr();

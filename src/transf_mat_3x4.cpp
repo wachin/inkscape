@@ -67,9 +67,9 @@ TransfMat3x4::preimage (Geom::Point const &pt, double coord, Proj::Axis axis) {
 
     if (sol != SysEq::unique) {
         if (sol == SysEq::no_solution) {
-            g_print ("No solution. Please investigate.\n");
+            g_warning ("No solution. Please investigate.");
         } else {
-            g_print ("Infinitely many solutions. Please investigate.\n");
+            g_warning ("Infinitely many solutions. Please investigate.");
         }
     }
     return Pt3(x[0], x[1], x[2], x[3]);

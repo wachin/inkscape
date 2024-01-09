@@ -16,30 +16,34 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
+#include <optional>
+#include <string>
 #include "object/sp-object.h"
+#include "display/nr-filter-types.h"
 
-#define SP_FEMERGENODE(obj) (dynamic_cast<SPFeMergeNode*>((SPObject*)obj))
-#define SP_IS_FEMERGENODE(obj) (dynamic_cast<const SPFeMergeNode*>((SPObject*)obj) != NULL)
+class SlotResolver;
 
-class SPFeMergeNode : public SPObject {
+class SPFeMergeNode final
+    : public SPObject
+{
 public:
-	SPFeMergeNode();
-	~SPFeMergeNode() override;
+    int tag() const override { return tag_of<decltype(*this)>; }
 
-    int input;
+    int get_in() const { return in_slot; }
+
+    void invalidate_parent_slots();
+    void resolve_slots(SlotResolver const &);
 
 protected:
-	void build(SPDocument* doc, Inkscape::XML::Node* repr) override;
-	void release() override;
+    void build(SPDocument *doc, Inkscape::XML::Node *repr) override;
+    void set(SPAttr key, char const *value) override;
 
-	void set(SPAttr key, const gchar* value) override;
-
-	void update(SPCtx* ctx, unsigned int flags) override;
-
-	Inkscape::XML::Node* write(Inkscape::XML::Document* doc, Inkscape::XML::Node* repr, guint flags) override;
+private:
+    std::optional<std::string> in_name;
+    int in_slot = Inkscape::Filters::NR_FILTER_SLOT_NOT_SET;
 };
 
-#endif /* !SP_FEMERGENODE_H_SEEN */
+#endif // SP_FEMERGENODE_H_SEEN
 
 /*
   Local Variables:

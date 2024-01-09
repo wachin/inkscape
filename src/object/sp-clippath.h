@@ -16,108 +16,88 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
+#include <memory>
+#include <vector>
 #include <cstdio>
+#include <2geom/rect.h>
 #include "sp-object-group.h"
-#include "display/drawing.h"
-#include "display/drawing-group.h"
 #include "uri-references.h"
-#include "xml/node.h"
+#include "display/drawing-item-ptr.h"
 
 namespace Inkscape {
-
 class Drawing;
 class DrawingItem;
-
+class DrawingGroup;
 } // namespace Inkscape
 
-
-struct SPClipPathView {
-    SPClipPathView *next;
-    unsigned int key;
-    Inkscape::DrawingItem *arenaitem;
-    Geom::OptRect bbox;
-};
-
-class SPClipPath : public SPObjectGroup {
+class SPClipPath final
+    : public SPObjectGroup
+{
 public:
 	SPClipPath();
-	~SPClipPath() override;
+    ~SPClipPath() override;
+    int tag() const override { return tag_of<decltype(*this)>; }
 
-    class Reference;
+    bool clippath_units() const { return clipPathUnits; }
 
-    unsigned int clipPathUnits_set : 1;
-    unsigned int clipPathUnits : 1;
+    // Fixme: Hack used by cairo-renderer.
+    Geom::OptRect get_last_bbox() const { return views.back().bbox; }
 
-    SPClipPathView *display;
     static char const *create(std::vector<Inkscape::XML::Node*> &reprs, SPDocument *document);
-    //static GType sp_clippath_get_type(void);
 
-    Inkscape::DrawingItem *show(Inkscape::Drawing &drawing, unsigned int key);
-    void hide(unsigned int key);
+    Inkscape::DrawingItem *show(Inkscape::Drawing &drawing, unsigned key, Geom::OptRect const &bbox);
+    void hide(unsigned key);
+    void setBBox(unsigned key, Geom::OptRect const &bbox);
 
-    void setBBox(unsigned int key, Geom::OptRect const &bbox);
-    Geom::OptRect geometricBounds(Geom::Affine const &transform);
+    Geom::OptRect geometricBounds(Geom::Affine const &transform) const;
 
 protected:
-    void build(SPDocument* doc, Inkscape::XML::Node* repr) override;
+    void build(SPDocument *doc, Inkscape::XML::Node *repr) override;
 	void release() override;
+    void set(SPAttr key, char const *value) override;
+    void update(SPCtx *ctx, unsigned flags) override;
+    void modified(unsigned flags) override;
+    Inkscape::XML::Node *write(Inkscape::XML::Document *doc, Inkscape::XML::Node *repr, unsigned flags) override;
 
-	void child_added(Inkscape::XML::Node* child, Inkscape::XML::Node* ref) override;
+    void child_added(Inkscape::XML::Node *child, Inkscape::XML::Node *ref) override;
 
-	void set(SPAttr key, char const* value) override;
+private:
+    bool clipPathUnits_set : 1;
+    bool clipPathUnits : 1;
 
-	void update(SPCtx* ctx, unsigned int flags) override;
-	void modified(unsigned int flags) override;
-
-	Inkscape::XML::Node* write(Inkscape::XML::Document* doc, Inkscape::XML::Node* repr, unsigned int flags) override;
+    struct View
+    {
+        DrawingItemPtr<Inkscape::DrawingGroup> drawingitem;
+        Geom::OptRect bbox;
+        unsigned key;
+        View(DrawingItemPtr<Inkscape::DrawingGroup> drawingitem, Geom::OptRect const &bbox, unsigned key);
+    };
+    std::vector<View> views;
+    void update_view(View &v);
 };
 
-MAKE_SP_OBJECT_TYPECHECK_FUNCTIONS(SP_IS_CLIPPATH, SPClipPath)
-
-class SPClipPathReference : public Inkscape::URIReference {
+class SPClipPathReference
+    : public Inkscape::URIReference
+{
 public:
-    SPClipPathReference(SPObject *obj) : URIReference(obj) {}
-    SPClipPath *getObject() const {
-        return static_cast<SPClipPath *>(URIReference::getObject());
+    SPClipPathReference(SPObject *obj)
+        : URIReference(obj) {}
+
+    SPClipPath *getObject() const
+    {
+        return static_cast<SPClipPath*>(URIReference::getObject());
     }
+
+    sigc::connection modified_connection;
 
 protected:
     /**
      * If the owner element of this reference (the element with <... clippath="...">)
      * is a child of the clippath it refers to, return false.
      * \return false if obj is not a clippath or if obj is a parent of this
-     *         reference's owner element.  True otherwise.
+     *         reference's owner element. True otherwise.
      */
-    bool _acceptObject(SPObject *obj) const override {
-        if (!SP_IS_CLIPPATH(obj)) {
-            return false;
-        }
-        SPObject * const owner = this->getOwner();
-        if (!URIReference::_acceptObject(obj)) {
-            //XML Tree being used directly here while it shouldn't be...
-            Inkscape::XML::Node * const owner_repr = owner->getRepr();
-            //XML Tree being used directly here while it shouldn't be...
-            Inkscape::XML::Node * const obj_repr = obj->getRepr();
-            char const * owner_name = "";
-            char const * owner_clippath = "";
-            char const * obj_name = "";
-            char const * obj_id = "";
-            if (owner_repr != nullptr) {
-                owner_name = owner_repr->name();
-                owner_clippath = owner_repr->attribute("clippath");
-            }
-            if (obj_repr != nullptr) {
-                obj_name = obj_repr->name();
-                obj_id = obj_repr->attribute("id");
-            }
-            printf("WARNING: Ignoring recursive clippath reference "
-                      "<%s clippath=\"%s\"> in <%s id=\"%s\">",
-                      owner_name, owner_clippath,
-                      obj_name, obj_id);
-            return false;
-        }
-        return true;
-    }
+    bool _acceptObject(SPObject *obj) const override;
 };
 
 #endif // SEEN_SP_CLIPPATH_H

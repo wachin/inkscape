@@ -12,9 +12,11 @@
 #ifndef INKSCAPE_EXTENSION_EFFECT_H__
 #define INKSCAPE_EXTENSION_EFFECT_H__
 
+#include <list>
+
 #include <glibmm/i18n.h>
-#include "verbs.h"
 #include "extension.h"
+#include "inkscape-application.h"
 
 namespace Gtk {
 	class Box;
@@ -36,83 +38,28 @@ class Effect : public Extension {
     /** \brief  This is the last effect that was used.  This is used in
                 a menu item to rapidly recall the same effect. */
     static Effect * _last_effect;
-    /** \brief  The location of the Extensions and Filters menus on the menu structure
-                XML file.  This is saved so it only has to be discovered
-                once. */
-    static Inkscape::XML::Node * _effects_list;
-    static Inkscape::XML::Node * _filters_list;
+
     Inkscape::XML::Node *find_menu (Inkscape::XML::Node * menustruct, const gchar *name);
-    void merge_menu (Inkscape::XML::Node * base, Inkscape::XML::Node * start, Inkscape::XML::Node * pattern, Inkscape::XML::Node * merge);
+    void get_menu (Inkscape::XML::Node * pattern, std::list<Glib::ustring>& sub_menu_list);
 
-    /** \brief  This is the verb type that is used for all effect's verbs.
-                It provides convenience functions and maintains a pointer
-                back to the effect that created it.  */
-    class EffectVerb : public Inkscape::Verb {
-        private:
-            static void perform (SPAction * action, void * mydata);
-
-            /** \brief  The effect that this verb represents. */
-            Effect * _effect;
-            /** \brief  Whether or not to show preferences on display */
-            bool _showPrefs;
-            /** \brief  Name with ellipses if that makes sense */
-            gchar * _elip_name;
-        protected:
-            SPAction * make_action (Inkscape::ActionContext const & context) override;
-        public:
-            /** \brief Use the Verb initializer with the same parameters. */
-            EffectVerb(gchar const * id,
-                       gchar const * name,
-                       gchar const * tip,
-                       gchar const * image,
-                       Effect *      effect,
-                       bool          showPrefs) :
-                    Verb(id, _(name), tip ? _(tip) : nullptr, image, _("Extensions")),
-                    _effect(effect),
-                    _showPrefs(showPrefs),
-                    _elip_name(nullptr) {
-                /* No clue why, but this is required */
-                this->set_default_sensitive(true);
-                if (_showPrefs && effect != nullptr && effect->widget_visible_count() != 0) {
-                    _elip_name = g_strdup_printf("%s...", _(name));
-                    set_name(_elip_name);
-                }
-            }
-
-            /** \brief  Destructor */
-            ~EffectVerb() override {
-                if (_elip_name != nullptr) {
-                    g_free(_elip_name);
-                }
-            }
-    };
-
-    /** \brief  ID used for the verb without preferences */
-    Glib::ustring _id_noprefs;
-    /** \brief  Name used for the verb without preferences */
-    Glib::ustring _name_noprefs;
-
-    /** \brief  The verb representing this effect. */
-    EffectVerb _verb;
-    /** \brief  The verb representing this effect.  Without preferences. */
-    EffectVerb _verb_nopref;
     /** \brief  Menu node created for this effect */
     Inkscape::XML::Node * _menu_node;
-    /** \brief  Whether a working dialog should be shown */
-    bool _workingDialog;
 
     /** \brief  The preference dialog if it is shown */
     PrefDialog * _prefDialog;
+
 public:
     Effect(Inkscape::XML::Node *in_repr, Implementation::Implementation *in_imp, std::string *base_directory);
     ~Effect  () override;
 
-    bool check() override;
-
     bool         prefs   (Inkscape::UI::View::View * doc);
     void         effect  (Inkscape::UI::View::View * doc);
-    /** \brief  Accessor function for a pointer to the verb */
-    Inkscape::Verb * get_verb () { return &_verb; };
+
+    /** \brief  Whether a working dialog should be shown */
+    bool _workingDialog = true;
+
+    /** \brief  If stderr log should be shown, when process return code is 0 */
+    bool ignore_stderr = false;
 
     /** \brief  Static function to get the last effect used */
     static Effect *  get_last_effect () { return _last_effect; };
@@ -128,8 +75,14 @@ public:
 
     PrefDialog *get_pref_dialog ();
     void        set_pref_dialog (PrefDialog * prefdialog);
+
+    void deactivate() override;
 private:
     static gchar *   remove_ (gchar * instr);
+    static void _sanitizeId(std::string &id);
+
+    Glib::RefPtr<Gio::SimpleAction> action;
+    Glib::RefPtr<Gio::SimpleAction> action_noprefs;
 };
 
 } }  /* namespace Inkscape, Extension */

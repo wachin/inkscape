@@ -13,6 +13,10 @@
 #include <cstdio>
 #include <glibmm/ustring.h>
 
+#ifdef printf
+#undef printf
+#endif
+
 namespace Inkscape
 {
 namespace IO

@@ -13,6 +13,7 @@
 
 #include <gtk/gtk.h>
 #include <glib.h>
+#include <gtkmm/cellrenderertext.h>
 
 namespace Inkscape::XML {
 class Node;
@@ -29,13 +30,24 @@ class Node;
 
 struct SPXMLViewTree;
 struct SPXMLViewTreeClass;
+namespace Inkscape::UI::Syntax { class XMLFormatter; }
 
-struct SPXMLViewTree
+class SPXMLViewTree
 {
-	GtkTreeView tree;
-	GtkTreeStore *store;
-	Inkscape::XML::Node * repr;
-	gint blocked;
+public:
+    GtkTreeView tree;
+    GtkTreeStore *store;
+    Inkscape::XML::Node * repr;
+    gint blocked;
+    Gtk::CellRendererText* renderer;
+    Inkscape::UI::Syntax::XMLFormatter* formatter;
+
+    sigc::connection connectTreeMove(const sigc::slot<void ()> &slot)
+    {
+        return _tree_move->connect(slot);
+    }
+// private: Make private and not-pointer when refactoring to C++
+    sigc::signal<void ()> *_tree_move;
 };
 
 struct SPXMLViewTreeClass

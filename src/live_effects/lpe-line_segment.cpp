@@ -36,8 +36,7 @@ LPELineSegment::LPELineSegment(LivePathEffectObject *lpeobject) :
     registerParameter(&end_type);
 }
 
-LPELineSegment::~LPELineSegment()
-= default;
+LPELineSegment::~LPELineSegment() = default;
 
 void
 LPELineSegment::doBeforeEffect (SPLPEItem const* lpeitem)
@@ -57,7 +56,7 @@ LPELineSegment::doEffect_path (Geom::PathVector const & path_in)
     std::optional<Geom::LineSegment> intersection_segment = Geom::Line(A, B).clip(dummyRect);
 
     if (!intersection_segment) {
-        g_print ("Possible error - no intersection with limiting bounding box.\n");
+        g_warning ("Possible error - no intersection with limiting bounding box.");
         return path_in;
     }
 

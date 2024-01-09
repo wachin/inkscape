@@ -11,24 +11,27 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
+#include <cstdint>
 #include <2geom/point.h>
+#include <2geom/path.h>
 #include <2geom/rect.h>
 #include <optional>
 #include <vector>
+#include "display/control/canvas-item-ptr.h"
 
 /* fixme: do multidocument safe */
 
 class SPCurve;
 class SPDesktop;
 
-enum {
+enum
+{
     RUBBERBAND_MODE_RECT,
     RUBBERBAND_MODE_TOUCHPATH,
     RUBBERBAND_MODE_TOUCHRECT
 };
 
-namespace Inkscape
-{
+namespace Inkscape {
 
 class CanvasItemBpath;
 class CanvasItemRect;
@@ -39,43 +42,49 @@ class CanvasItemRect;
 class Rubberband
 {
 public:
-
-    void start(SPDesktop *desktop, Geom::Point const &p);
+    void start(SPDesktop *desktop, Geom::Point const &p, bool tolerance = false);
     void move(Geom::Point const &p);
     Geom::OptRect getRectangle() const;
     void stop();
-    bool is_started();
+    bool is_started() { return _started; }
+    bool is_moved() { return _moved; }
 
     inline int getMode() {return _mode;}
-    inline std::vector<Geom::Point> getPoints() {return _points;}
+    std::vector<Geom::Point> getPoints() const;
+    Geom::Path getPath() const;
 
     void setMode(int mode);
     void defaultMode();
 
+    void setColor(uint32_t color);
+    void resetColor() { _color.reset(); }
+
     static Rubberband* get(SPDesktop *desktop);
 
 private:
-
     Rubberband(SPDesktop *desktop);
     static Rubberband* _instance;
     
     SPDesktop *_desktop;
     Geom::Point _start;
     Geom::Point _end;
+    Geom::Path _path;
 
-    std::vector<Geom::Point> _points;
-
-    Inkscape::CanvasItemRect *_rect = nullptr;
-    Inkscape::CanvasItemBpath *_touchpath = nullptr;
+    CanvasItemPtr<CanvasItemRect> _rect;
+    CanvasItemPtr<CanvasItemBpath> _touchpath;
     SPCurve *_touchpath_curve = nullptr;
 
     void delete_canvas_items();
 
     bool _started = false;
+    bool _moved = false;
     int _mode = RUBBERBAND_MODE_RECT;
+    double _tolerance = 0.0;
+
+    std::optional<uint32_t> _color;
 };
 
-}
+} // namespace Inkscape
 
 #endif // SEEN_RUBBERBAND_H
 

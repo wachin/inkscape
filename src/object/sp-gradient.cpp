@@ -54,6 +54,7 @@
 
 #include "svg/svg.h"
 #include "svg/css-ostringstream.h"
+#include "xml/href-attribute-helper.h"
 
 bool SPGradient::hasStops() const
 {
@@ -96,6 +97,14 @@ void SPGradient::setSwatch( bool swatch )
     }
 }
 
+void SPGradient::setPinned(bool pinned)
+{
+    if (pinned != isPinned()) {
+        setAttribute("inkscape:pinned", pinned ? "true" : "false");
+        requestModified(SP_OBJECT_MODIFIED_FLAG);
+    }
+}
+
 
 /**
  * return true if this gradient is "equivalent" to that gradient.
@@ -117,9 +126,9 @@ bool SPGradient::isEquivalent(SPGradient *that)
            // drop down to check stops.
         }
         else if (
-            (SP_IS_LINEARGRADIENT(this) && SP_IS_LINEARGRADIENT(that)) ||
-            (SP_IS_RADIALGRADIENT(this) && SP_IS_RADIALGRADIENT(that)) ||
-            (SP_IS_MESHGRADIENT(this)   && SP_IS_MESHGRADIENT(that))) {
+            (is<SPLinearGradient>(this) && is<SPLinearGradient>(that)) ||
+            (is<SPRadialGradient>(this) && is<SPRadialGradient>(that)) ||
+            (is<SPMeshGradient>(this)   && is<SPMeshGradient>(that))) {
             if(!this->isAligned(that))break;
         }
         else { break; }  // this should never happen, some unhandled type of gradient
@@ -172,9 +181,9 @@ bool SPGradient::isAligned(SPGradient *that)
         if(this->gradientTransform_set != that->gradientTransform_set) { break; }
         if(this->gradientTransform_set && 
             (this->gradientTransform != that->gradientTransform)) { break; }
-        if (SP_IS_LINEARGRADIENT(this) && SP_IS_LINEARGRADIENT(that)) {
-            SPLinearGradient *sg=SP_LINEARGRADIENT(this);
-            SPLinearGradient *tg=SP_LINEARGRADIENT(that);
+        if (is<SPLinearGradient>(this) && is<SPLinearGradient>(that)) {
+            auto sg = cast<SPLinearGradient>(this);
+            auto tg = cast<SPLinearGradient>(that);
  
             if( sg->x1._set != tg->x1._set) { break; }
             if( sg->y1._set != tg->y1._set) { break; }
@@ -187,9 +196,9 @@ bool SPGradient::isAligned(SPGradient *that)
                     (sg->y2.computed != tg->y2.computed) )  { break; }
             } else if( sg->x1._set || sg->y1._set || sg->x2._set || sg->y2._set) { break; } // some mix of set and not set
             // none set? assume aligned and fall through
-        } else if (SP_IS_RADIALGRADIENT(this) && SP_IS_LINEARGRADIENT(that)) {
-            SPRadialGradient *sg=SP_RADIALGRADIENT(this);
-            SPRadialGradient *tg=SP_RADIALGRADIENT(that);
+        } else if (is<SPRadialGradient>(this) && is<SPLinearGradient>(that)) {
+            auto sg = cast<SPRadialGradient>(this);
+            auto tg = cast<SPRadialGradient>(that);
 
             if( sg->cx._set != tg->cx._set) { break; }
             if( sg->cy._set != tg->cy._set) { break; }
@@ -204,9 +213,9 @@ bool SPGradient::isAligned(SPGradient *that)
                     (sg->fy.computed != tg->fy.computed)  ) { break; }
             } else if(  sg->cx._set || sg->cy._set || sg->fx._set || sg->fy._set || sg->r._set ) { break; } // some mix of set and not set
             // none set? assume aligned and fall through
-        } else if (SP_IS_MESHGRADIENT(this) && SP_IS_MESHGRADIENT(that)) {
-            SPMeshGradient *sg=SP_MESHGRADIENT(this);
-            SPMeshGradient *tg=SP_MESHGRADIENT(that);
+        } else if (is<SPMeshGradient>(this) && is<SPMeshGradient>(that)) {
+            auto sg = cast<SPMeshGradient>(this);
+            auto tg = cast<SPMeshGradient>(that);
  
             if( sg->x._set  !=  !tg->x._set) { break; }
             if( sg->y._set  !=  !tg->y._set) { break; }
@@ -275,13 +284,13 @@ void SPGradient::build(SPDocument *document, Inkscape::XML::Node *repr)
     SPPaintServer::build(document, repr);
 
     for (auto& ochild: children) {
-        if (SP_IS_STOP(&ochild)) {
+        if (is<SPStop>(&ochild)) {
             this->has_stops = TRUE;
             break;
         }
-        if (SP_IS_MESHROW(&ochild)) {
+        if (is<SPMeshrow>(&ochild)) {
             for (auto& ochild2: ochild.children) {
-                if (SP_IS_MESHPATCH(&ochild2)) {
+                if (is<SPMeshpatch>(&ochild2)) {
                     this->has_patches = TRUE;
                     break;
                 }
@@ -297,6 +306,7 @@ void SPGradient::build(SPDocument *document, Inkscape::XML::Node *repr)
     this->readAttr(SPAttr::SPREADMETHOD);
     this->readAttr(SPAttr::XLINK_HREF);
     this->readAttr(SPAttr::INKSCAPE_SWATCH);
+    this->readAttr(SPAttr::INKSCAPE_PINNED);
 
     // Register ourselves
     document->addResource("gradient", this);
@@ -323,8 +333,6 @@ void SPGradient::release()
         delete this->ref;
         this->ref = nullptr;
     }
-
-    //this->modified_connection.~connection();
 
     SPPaintServer::release();
 }
@@ -402,6 +410,13 @@ void SPGradient::set(SPAttr key, gchar const *value)
             }
             break;
 
+        case SPAttr::INKSCAPE_PINNED:
+        {
+            if (value) {
+                this->_pinned = !strcmp(value, "true");
+            }
+            break;
+        }
         case SPAttr::INKSCAPE_SWATCH:
         {
             bool newVal = (value != nullptr);
@@ -445,7 +460,7 @@ void SPGradient::gradientRefChanged(SPObject *old_ref, SPObject *ref, SPGradient
     if (old_ref) {
         gr->modified_connection.disconnect();
     }
-    if ( SP_IS_GRADIENT(ref)
+    if ( is<SPGradient>(ref)
          && ref != gr )
     {
         gr->modified_connection = ref->connectModified(sigc::bind<2>(sigc::ptr_fun(&SPGradient::gradientRefModified), gr));
@@ -476,7 +491,7 @@ void SPGradient::child_added(Inkscape::XML::Node *child, Inkscape::XML::Node *re
     SPPaintServer::child_added(child, ref);
 
     SPObject *ochild = this->get_child_by_repr(child);
-    if ( ochild && SP_IS_STOP(ochild) ) {
+    if ( ochild && is<SPStop>(ochild) ) {
         this->has_stops = TRUE;
         if ( this->getStopCount() > 1 ) {
             gchar const * attr = this->getAttribute("inkscape:swatch");
@@ -485,7 +500,7 @@ void SPGradient::child_added(Inkscape::XML::Node *child, Inkscape::XML::Node *re
             }
         }
     }
-    if ( ochild && SP_IS_MESHROW(ochild) ) {
+    if ( ochild && is<SPMeshrow>(ochild) ) {
         this->has_patches = TRUE;
     }
 
@@ -505,13 +520,13 @@ void SPGradient::remove_child(Inkscape::XML::Node *child)
     this->has_stops = FALSE;
     this->has_patches = FALSE;
     for (auto& ochild: children) {
-        if (SP_IS_STOP(&ochild)) {
+        if (is<SPStop>(&ochild)) {
             this->has_stops = TRUE;
             break;
         }
-        if (SP_IS_MESHROW(&ochild)) {
+        if (is<SPMeshrow>(&ochild)) {
             for (auto& ochild2: ochild.children) {
-                if (SP_IS_MESHPATCH(&ochild2)) {
+                if (is<SPMeshpatch>(&ochild2)) {
                     this->has_patches = TRUE;
                     break;
                 }
@@ -543,7 +558,7 @@ void SPGradient::modified(guint flags)
     objectTrace( "SPGradient::modified" );
 #endif
     if (flags & SP_OBJECT_CHILD_MODIFIED_FLAG) {
-        if (SP_IS_MESHGRADIENT(this)) {
+        if (is<SPMeshGradient>(this)) {
             this->invalidateArray();
         } else {
             this->invalidateVector();
@@ -551,7 +566,7 @@ void SPGradient::modified(guint flags)
     }
 
     if (flags & SP_OBJECT_STYLE_MODIFIED_FLAG) {
-        if (SP_IS_MESHGRADIENT(this)) {
+        if (is<SPMeshGradient>(this)) {
             this->ensureArray();
         } else {
             this->ensureVector();
@@ -584,8 +599,8 @@ SPStop* SPGradient::getFirstStop()
 {
     SPStop* first = nullptr;
     for (auto& ochild: children) {
-        if (SP_IS_STOP(&ochild)) {
-            first = SP_STOP(&ochild);
+        if (is<SPStop>(&ochild)) {
+            first = cast<SPStop>(&ochild);
             break;
         }
     }
@@ -635,7 +650,8 @@ Inkscape::XML::Node *SPGradient::write(Inkscape::XML::Document *xml_doc, Inkscap
 
     if (this->ref->getURI()) {
         auto uri_string = this->ref->getURI()->str();
-        repr->setAttributeOrRemoveIfEmpty("xlink:href", uri_string);
+        auto href_key = Inkscape::getHrefAttribute(*repr).first;
+        repr->setAttributeOrRemoveIfEmpty(href_key, uri_string);
     }
 
     if ((flags & SP_OBJECT_WRITE_ALL) || this->units_set) {
@@ -690,7 +706,7 @@ Inkscape::XML::Node *SPGradient::write(Inkscape::XML::Document *xml_doc, Inkscap
 /**
  * Forces the vector to be built, if not present (i.e., changed).
  *
- * \pre SP_IS_GRADIENT(gradient).
+ * \pre is<SPGradient>(gradient).
  */
 void SPGradient::ensureVector()
 {
@@ -702,7 +718,7 @@ void SPGradient::ensureVector()
 /**
  * Forces the array to be built, if not present (i.e., changed).
  *
- * \pre SP_IS_GRADIENT(gradient).
+ * \pre is<SPGradient>(gradient).
  */
 void SPGradient::ensureArray()
 {
@@ -744,12 +760,12 @@ void SPGradient::setSpread(SPGradientSpread spread)
  * The raison d'être of this routine is that it correctly handles cycles in the href chain (e.g., if
  * a gradient gives itself as its href, or if each of two gradients gives the other as its href).
  *
- * \pre SP_IS_GRADIENT(src).
+ * \pre is<SPGradient>(src).
  */
 static SPGradient *
 chase_hrefs(SPGradient *const src, bool (*match)(SPGradient const *))
 {
-    g_return_val_if_fail(SP_IS_GRADIENT(src), NULL);
+    g_return_val_if_fail(src, NULL);
 
     /* Use a pair of pointers for detecting loops: p1 advances half as fast as p2.  If there is a
        loop, then once p1 has entered the loop, we'll detect it the next time the distance between
@@ -837,7 +853,7 @@ SPGradient *SPGradient::getArray(bool force_vector)
 /**
  * Returns the effective spread of given gradient (climbing up the refs chain if needed).
  *
- * \pre SP_IS_GRADIENT(gradient).
+ * \pre is<SPGradient>(gradient).
  */
 SPGradientSpread SPGradient::fetchSpread()
 {
@@ -850,7 +866,7 @@ SPGradientSpread SPGradient::fetchSpread()
 /**
  * Returns the effective units of given gradient (climbing up the refs chain if needed).
  *
- * \pre SP_IS_GRADIENT(gradient).
+ * \pre is<SPGradient>(gradient).
  */
 SPGradientUnits SPGradient::fetchUnits()
 {
@@ -905,8 +921,8 @@ SPGradient::repr_write_vector()
         child->setAttributeCssDouble("offset", stop.offset);
         /* strictly speaking, offset an SVG <number> rather than a CSS one, but exponents make no
          * sense for offset proportions. */
-        os << "stop-color:" << stop.color.toString() << ";stop-opacity:" << stop.opacity;
-        child->setAttribute("style", os.str());
+        auto obj = cast<SPStop>(document->getObjectByRepr(child));
+        obj->setColor(stop.color, stop.opacity);
         /* Order will be reversed here */
         l.push_back(child);
     }
@@ -963,7 +979,7 @@ void SPGradient::rebuildVector()
 {
     gint len = 0;
     for (auto& child: children) {
-        if (SP_IS_STOP(&child)) {
+        if (is<SPStop>(&child)) {
             len ++;
         }
     }
@@ -985,8 +1001,8 @@ void SPGradient::rebuildVector()
     }
 
     for (auto& child: children) {
-        if (SP_IS_STOP(&child)) {
-            SPStop *stop = SP_STOP(&child);
+        if (is<SPStop>(&child)) {
+            auto stop = cast<SPStop>(&child);
 
             SPGradientStop gstop;
             if (!vector.stops.empty()) {
@@ -1061,12 +1077,12 @@ void SPGradient::rebuildArray()
 {
     // std::cout << "SPGradient::rebuildArray()" << std::endl;
 
-    if( !SP_IS_MESHGRADIENT(this) ) {
+    if( !is<SPMeshGradient>(this) ) {
         g_warning( "SPGradient::rebuildArray() called for non-mesh gradient" );
         return;
     }
 
-    array.read( SP_MESHGRADIENT( this ) );
+    array.read( cast<SPMeshGradient>( this ) );
     has_patches = array.patch_columns() > 0;
 }
 
@@ -1136,7 +1152,7 @@ sp_gradient_pattern_common_setup(cairo_pattern_t *cp,
     }
 
     // add stops
-    if (!SP_IS_MESHGRADIENT(gr)) {
+    if (!is<SPMeshGradient>(gr)) {
         for (auto & stop : gr->vector.stops)
         {
             // multiply stop opacity by paint opacity
@@ -1159,7 +1175,7 @@ SPGradient::create_preview_pattern(double width)
 {
     cairo_pattern_t *pat = nullptr;
 
-    if (!SP_IS_MESHGRADIENT(this)) {
+    if (!is<SPMeshGradient>(this)) {
         ensureVector();
 
         pat = cairo_pattern_create_linear(0, 0, width, 0);
@@ -1206,3 +1222,4 @@ bool SPGradient::isSolid() const
   End:
 */
 // vim: filetype=cpp:expandtab:shiftwidth=4:tabstop=8:softtabstop=4:fileencoding=utf-8:textwidth=99 :
+

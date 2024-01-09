@@ -237,7 +237,7 @@ sp_png_write_rgba_striped(SPDocument *doc,
         }
 
 
-        struct rdf_license_t *license =  rdf_get_license(doc);
+        struct rdf_license_t *license =  rdf_get_license(doc, true);
         if (license) {
             if (license->name && license->uri) {
                 gchar* tmp = g_strdup_printf("%s %s", license->name, license->uri);
@@ -360,7 +360,8 @@ sp_export_get_rows(guchar const **rows, void **to_free, int row, int num_rows, v
 
     // PNG stores data as unpremultiplied big-endian RGBA, which means
     // it's identical to the GdkPixbuf format.
-    convert_pixels_argb32_to_pixbuf(px, ebp->width, num_rows, stride);
+    convert_pixels_argb32_to_pixbuf(px, ebp->width, num_rows, stride,
+                                    /* RGBA to ARGB with A=0 */ ebp->background >> 8);
     
     // If a custom bit depth or color type is asked, then convert rgb to grayscale, etc.
     const guchar* new_data = pixbuf_to_png(rows, px, num_rows, ebp->width, stride, color_type, bit_depth);
@@ -369,29 +370,6 @@ sp_export_get_rows(guchar const **rows, void **to_free, int row, int num_rows, v
 
     return num_rows;
 }
-
-/**
- * Hide all items that are not listed in list, recursively, skipping groups and defs.
- */
-static void hide_other_items_recursively(SPObject *o, const std::vector<SPItem*> &list, unsigned dkey)
-{
-    if ( SP_IS_ITEM(o)
-         && !SP_IS_DEFS(o)
-         && !SP_IS_ROOT(o)
-         && !SP_IS_GROUP(o)
-         && list.end()==find(list.begin(),list.end(),o))
-    {
-        SP_ITEM(o)->invoke_hide(dkey);
-    }
-
-    // recurse
-    if (list.end()==find(list.begin(),list.end(),o)) {
-        for (auto& child: o->children) {
-            hide_other_items_recursively(&child, list, dkey);
-        }
-    }
-}
-
 
 ExportResult sp_export_png_file(SPDocument *doc, gchar const *filename,
                                 double x0, double y0, double x1, double y1,
@@ -461,18 +439,17 @@ ExportResult sp_export_png_file(SPDocument *doc, gchar const *filename,
 
     /* Create new drawing */
     Inkscape::Drawing drawing;
-    drawing.setExact(true); // export with maximum blur rendering quality
     unsigned const dkey = SPItem::display_key_new(1);
-
-    // Create ArenaItems and set transform
     drawing.setRoot(doc->getRoot()->invoke_show(drawing, dkey, SP_ITEM_SHOW_DISPLAY));
     drawing.root()->setTransform(affine);
+    drawing.setExact(); // export with maximum blur rendering quality
+
     ebp.drawing = &drawing;
 
     // We show all and then hide all items we don't want, instead of showing only requested items,
     // because that would not work if the shown item references something in defs
     if (!items_only.empty()) {
-        hide_other_items_recursively(doc->getRoot(), items_only, dkey);
+        doc->getRoot()->invoke_hide_except(dkey, items_only);
     }
 
     ebp.status = status;

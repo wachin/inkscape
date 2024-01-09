@@ -61,19 +61,19 @@ Geom::Path sp_bbox_without_clip(SPLPEItem *lpeitem)
 
 Geom::PathVector sp_get_recursive_pathvector(SPLPEItem *item, Geom::PathVector res, bool dir, bool inverse)
 {
-    SPGroup *group = dynamic_cast<SPGroup *>(item);
+    auto group = cast<SPGroup>(item);
     if (group) {
-        std::vector<SPItem *> item_list = sp_item_group_item_list(group);
+        std::vector<SPItem *> item_list = group->item_list();
         for (auto child : item_list) {
             if (child) {
-                SPLPEItem *childitem = dynamic_cast<SPLPEItem *>(child);
+                auto childitem = cast<SPLPEItem>(child);
                 if (childitem) {
                     res = sp_get_recursive_pathvector(childitem, res, dir, inverse);
                 }
             }
         }
     }
-    SPShape *shape = dynamic_cast<SPShape *>(item);
+    auto shape = cast<SPShape>(item);
     if (shape && shape->curve()) {
         for (auto path : shape->curve()->get_pathvector()) {
             if (!path.empty()) {
@@ -102,7 +102,7 @@ Geom::PathVector LPEPowerClip::getClipPathvector()
         clip_path_list.pop_back();
         if (clip_path_list.size()) {
             for (auto clip : clip_path_list) {
-                SPLPEItem *childitem = dynamic_cast<SPLPEItem *>(clip);
+                auto childitem = cast<SPLPEItem>(clip);
                 if (childitem) {
                     res_hlp = sp_get_recursive_pathvector(childitem, res_hlp, false, inverse);
                     if (is_load && _legacy) {
@@ -146,9 +146,10 @@ void LPEPowerClip::add()
     if (clip_path) {
         Inkscape::XML::Document *xml_doc = document->getReprDoc();
         Inkscape::XML::Node *parent = clip_path->getRepr();
-        SPLPEItem *childitem = dynamic_cast<SPLPEItem *>(clip_path->childList(true).back());
+        auto childitems = clip_path->childList(true);
+        auto childitem = cast<SPLPEItem>(childitems.empty() ? nullptr : childitems.back());
         if (childitem) {
-            if (const gchar *powerclip = childitem->getRepr()->attribute("class")) {
+           if (const gchar *powerclip = childitem->getRepr()->attribute("class")) {
                 if (!strcmp(powerclip, "powerclip")) {
                     Glib::ustring newclip = Glib::ustring("clipath_") + getId();
                     Glib::ustring uri = Glib::ustring("url(#") + newclip + Glib::ustring(")");
@@ -157,8 +158,8 @@ void LPEPowerClip::add()
                     clip_path = document->getDefs()->appendChildRepr(parent);
                     Inkscape::GC::release(parent);
                     sp_lpe_item->setAttribute("clip-path", uri);
-                    SPLPEItem *childitemdel = dynamic_cast<SPLPEItem *>(clip_path->childList(true).back());
-                    if (childitemdel) {
+                    auto childitems2 = clip_path->childList(true);
+                    if (auto childitemdel = cast<SPLPEItem>(childitems2.empty() ? nullptr : childitems2.back())) {
                         childitemdel->setAttribute("id", getId());
                         return;
                     }
@@ -218,10 +219,11 @@ LPEPowerClip::doOnRemove (SPLPEItem const* /*lpeitem*/)
     if (!document) {
         return;
     }
-    if (keep_paths) {
+    Inkscape::Preferences *prefs = Inkscape::Preferences::get();
+    if (keep_paths || prefs->getBool("/options/onungroup", false)) {
         SPObject *clip_path = sp_lpe_item->getClipObject();
         if (clip_path) {
-            SPLPEItem *childitem = dynamic_cast<SPLPEItem *>(clip_path->childList(true).front());
+            auto childitem = cast<SPLPEItem>(clip_path->childList(true).front());
             childitem->deleteObject();
         }
         return;
@@ -235,7 +237,7 @@ LPEPowerClip::doOnRemove (SPLPEItem const* /*lpeitem*/)
     if (clip_path) {
         std::vector<SPObject *> clip_path_list = clip_path->childList(true);
         for (auto clip : clip_path_list) {
-            SPLPEItem *childitem = dynamic_cast<SPLPEItem *>(clip);
+            auto childitem = cast<SPLPEItem>(clip);
             if (childitem) {
                 if (!childitem->style || childitem->style->display.set ||
                     childitem->style->display.value == SP_CSS_DISPLAY_NONE) {
@@ -268,7 +270,7 @@ void sp_remove_powerclip(Inkscape::Selection *sel)
     if (!sel->isEmpty()) {
         auto selList = sel->items();
         for (auto i = boost::rbegin(selList); i != boost::rend(selList); ++i) {
-            SPLPEItem *lpeitem = dynamic_cast<SPLPEItem *>(*i);
+            auto lpeitem = cast<SPLPEItem>(*i);
             if (lpeitem) {
                 if (lpeitem->hasPathEffect() && lpeitem->pathEffectsEnabled()) {
                     PathEffectList path_effect_list(*lpeitem->path_effect_list);
@@ -298,13 +300,13 @@ void sp_inverse_powerclip(Inkscape::Selection *sel) {
     if (!sel->isEmpty()) {
         auto selList = sel->items();
         for(auto i = boost::rbegin(selList); i != boost::rend(selList); ++i) {
-            SPLPEItem* lpeitem = dynamic_cast<SPLPEItem*>(*i);
+            auto lpeitem = cast<SPLPEItem>(*i);
             if (lpeitem) {
                 SPClipPath *clip_path = lpeitem->getClipObject();
                 if(clip_path) {
                     std::vector<SPObject*> clip_path_list = clip_path->childList(true);
                     for (auto iter : clip_path_list) {
-                        SPUse *use = dynamic_cast<SPUse*>(iter);
+                        auto use = cast<SPUse>(iter);
                         if (use) {
                             g_warning("We can`t add inverse clip on clones");
                             return;

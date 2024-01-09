@@ -64,8 +64,8 @@ public:
     ControlPoint const &rotationCenter() const;
     ControlPoint &rotationCenter();
 
-    sigc::signal<void, Geom::Affine const &> signal_transform;
-    sigc::signal<void, CommitEvent> signal_commit;
+    sigc::signal<void (Geom::Affine const &)> signal_transform;
+    sigc::signal<void (CommitEvent)> signal_commit;
 
 private:
 

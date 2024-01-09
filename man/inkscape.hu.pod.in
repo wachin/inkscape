@@ -23,21 +23,25 @@ C<inkscape [kapcsolók] [fájlnév1 fájlnév2 ...]>
 kapcsolók:
 
     -?, --help
+        --help-all
+        --help-gapplication
+        --help-gtk
+
     -V, --version
         --debug-info
         --system-data-directory
         --user-data-directory
 
     -p, --pipe
-        --pdf-page=OLDAL
+    -n, --pages=PAGE[,PAGE]
         --pdf-poppler
-        --convert-dpi-method=MÓDSZER
+        --convert-dpi-method=METHOD
         --no-convert-text-baseline-spacing
 
-    -o, --export-filename=FILENAME
+    -o, --export-filename=FÁJLNÉV
         --export-overwrite
-        --export-type=TYPE[,TYPE]*
-        --export-extension=EXTENSION-ID
+        --export-type=TÍPUS[,TÍPUS]*
+        --export-extension=KIEGÉSZÍTŐAZONOSÍTÓ
 
     -C, --export-area-page
     -D, --export-area-drawing
@@ -48,17 +52,20 @@ kapcsolók:
     -h, --export-height=MAGASSÁG
         --export-margin=MARGÓ
 
-    -i, --export-id=OBJEKTUMAZONOSÍTÓ[;OBJEKTUMAZONOSÍTÓ]*
+        --export-page=all|n[,a-b]
+    -i, --export-id=OBJECT-ID[;OBJECT-ID]*
     -j, --export-id-only
     -l, --export-plain-svg
-        --export-ps-level=SZINT
-        --export-pdf-version=VERZIÓ
+        --export-png-color-mode=COLORMODE
+        --export-png-use-dithering=BOOLEAN
+        --export-ps-level=LEVEL
+        --export-pdf-version=VERSION
     -T, --export-text-to-path
         --export-latex
         --export-ignore-filters
     -t, --export-use-hints
-    -b, --export-background=SZÍN
-    -y, --export-background-opacity=ÉRTÉK
+    -b, --export-background=COLOR
+    -y, --export-background-opacity=VALUE
 
     -I, --query-id=OBJEKTUMAZONOSÍTÓ[,OBJEKTUMAZONOSÍTÓ]*
     -S, --query-all
@@ -71,10 +78,11 @@ kapcsolók:
         --select=OBJEKTUMAZONOSÍTÓ[,OBJEKTUMAZONOSÍTÓ]*
         --actions=MŰVELET(:ARGUMENTUM)[;MŰVELET(:ARGUMENTUM)]*
         --action-list
-        --verb=FUNKCIÓ[;FUNKCIÓ]*
-        --verb-list
-
+        --actions-file=FÁJLNÉV
     -g, --with-gui
+    -q, --active-window
+        --display=KIJELZŐ
+        --app-id-tag=CÍMKE
         --batch-process
         --shell
 
@@ -119,15 +127,27 @@ forrású közösségben.
 
 Megjeleníti a súgóüzeneteket.
 
+=item B<--help-all>
+
+Megjeleníti az összes súgóüzenetet.
+
+=item B<--help-gapplication>
+
+Megjeleníti a GApplication kapcsolókat.
+
+=item B<--help-gtk>
+
+Megjeleníti a GTK+ kapcsolókat.
+
 =item B<-V>, B<--version>
 
 Megjeleníti az Inkscape verzióját és a build dátumát.
 
 =item B<--debug-info>
 
-Prints technical information including Inkscape version, dependency versions
-and operating system.  This Information is useful when debugging issues with
-Inkscape and should be included whenever filing a bug report.
+Technikai információkat ír ki: az Inkscape verzióját, függőségi verziókat és
+az operációs rendszert. Ez az információ hasznos hibakereséskor és minden
+hibajelentésben meg kell adni.
 
 =item B<--system-data-directory>
 
@@ -158,9 +178,12 @@ környezeti változóval.
 
 Beolvassa a bemeneti fájlt a szabványos bemenetről (stdin).
 
-=item B<--pdf-page>=I<OLDAL>
+=item B<--pages>=I<PAGE>
 
-Importálja a PDF-fájl megadott számú oldalát. A számozás 1-gyel kezdődik.
+Imports the given comma separated list of pages from a PDF, or multi page
+SVG file.
+
+This replaces the I<--pdf-page> from previous Inkscape versions.
 
 =item B<--pdf-poppler>
 
@@ -210,9 +233,9 @@ Felülírja a bemeneti fájlt.
 
 =item B<--export-type>=I<TÍPUS[,TÍPUS]*>
 
-Specify the file type to export. Possible values: svg, png, ps, eps, pdf,
-emf, wmf and every file type for which an export extension exists. It is
-possible to export more than one file type at a time.
+Megadja az exportálandó fájl típusát. Lehetséges értékek: svg, png, ps, eps,
+pdf, emf, wmf és minden további fájltípus, amihez van kiterjesztés
+telepítve. Lehetséges egyszerre akár több fájltípusba is exportálni.
 
 Mivel a PostScript nem támogatja az átlátszóságot, ezért minden az SVG-ben
 eredetileg átlátszó objektum bitkép másolattal lesz helyettesítve. Az
@@ -222,13 +245,13 @@ lehet a rajzra módosítani.
 
 A PDF megőrzi az eredeti SVG-ben található átlátszóságokat.
 
-=item B<--export-extension>=I<EXTENSION-ID>
+=item B<--export-extension>=I<KIEGÉSZÍTŐAZONOSÍTÓ>
 
-Allows to specify an output extension that will be used for exporting, which
-is especially relevant if there is more than one export option for a given
-file type. If set, the file extension in --export-filename and --export-type
-may be omitted. Additionally, if set, only one file type may be given in
---export-type.
+Lehetővé tesz egy kimeneti kiterjesztés meghatározását, amellyel az
+exportálás megvalósul abban az esetben, amikor több mint egy exportálási
+kapcsoló van megadva az adott fájl számára. Ha ez be van állítva, akkor az
+--export-filename és az --export-type mellőzve lehet. Továbbá, ha be van
+állítva, csak egy fájltípus adható meg az --export-type kapcsolóval.
 
 =item B<-C>, B<--export-area-page>
 
@@ -250,18 +273,17 @@ alkalmazni az L<--export-use-hints> kapcsolóval.
 
 =item B<-a> I<x0:y0:x1:y1>, B<--export-area>=I<x0:y0:x1:y1>
 
-PNG exportálása esetén beállítja az exportált területet SVG felhasználói
-egységben számítva (az Inkscape SVG-ben általában használatos névtelen
-hosszegység). Az alapértelmezés a dokumentum teljes lapja. A (0,0) pont az
-alsó jobb sarok.
+PNG exportálása esetén beállítja a dokumentum exportált területét px-ben
+(1/96 hüvelyk). Az alapértelmezés a teljes dokumentumoldal exportálása. A
+(0,0) pont a bal alsó sarok.
 
 =item B<--export-area-snap>
 
-PNG exportálásakor az exportált területet kifelé a legközelebbi egész SVG
-felhasználói egységre (px) illeszti. Ez a kapcsoló az alapértelmezett 96
-DPI-s exportálási felbontás és a grafikák elsimítás elkerülése érdekében
-történő pixelre igazítása esetén megőrzi ezt az igazítást akkor is, ha olyan
-objektum határoló téglalapja kerül exportálásra (az L<--export-id> vagy az
+PNG exportálásakor az exportált területet kifelé a legközelebbi egész
+pixelre illeszti. Ez a kapcsoló az alapértelmezett 96 DPI-s exportálási
+felbontás és a grafikák elsimítás elkerülése érdekében történő pixelre
+igazítása esetén megőrzi ezt az igazítást akkor is, ha olyan objektum
+határoló téglalapja kerül exportálásra (az L<--export-id> vagy az
 L<--export-area-drawing> kapcsolókkal), amely maga nincs pixelre igazítva.
 
 =item B<-d> I<DPI>, B<--export-dpi>=I<DPI>
@@ -293,6 +315,15 @@ margó értéke az lap mértékegysége szerint kerül értelmezésre SVG eseté
 milliméterben PS, PDF esetén. A kapcsolónak jelenleg más formátumokra nincs
 hatása.
 
+=item B<-i> I<ID>, B<--export-page>=I<all|n[,a-b]*>
+
+Exports the selected pages only. If more than one page is specified then the
+resulting document may contain multiple pages if the format supports it.
+
+Value can be a comma separated list of page numbers, or page ranges of two
+numbers separated by a dash. The keyword 'all' can be used to indicate all
+pages would be exported.
+
 =item B<-i> I<ID>, B<--export-id>=I<OBJEKTUMAZONOSÍTÓ[;OBJEKTUMAZONOSÍTÓ]*>
 
 PNG, PS, EPS, PDF és egyszerű SVG exportálása esetén meghatározza annak az
@@ -308,18 +339,27 @@ létre:[bemeneti_fájlnév]_[objektumazonosító].[fájltípus]
 
 =item B<-j>, B<--export-id-only>
 
-PNG és egyszerű SVG exportálása esetén beállítja, hogy csak az az objektum
-legyen exportálva, amelynek az azonosítója meg van adva az L<--export-id>
-kapcsolóval. Minden más egyéb objektum rejtve marad az exportált állományban
-még akkor is, ha egyébként fedné ezt az objektumot. Az L<--export-id> nélkül
-ez a kapcsoló mellőzve lesz. PDF exportálása esetén ez az alapértelmezett
-viselkedés, ezért nincs további hatása a kapcsolónak.
+PNG, PS, EPS, PDF és egyszerű SVG exportálása esetén beállítja, hogy csak az
+az objektum legyen exportálva, amelynek az azonosítója meg van adva az
+L<--export-id> kapcsolóval. Minden más egyéb objektum rejtve marad az
+exportált állományban még akkor is, ha egyébként fedné ezt az objektumot. Az
+L<--export-id> nélkül ez a kapcsoló mellőzve lesz.
 
 =item B<-l>, B<--export-plain-svg>
 
 Beállítja, hogy az exportált állomány egyszerű SVG legyen, sodipodi: és
 inkscape: névterek, valamint RDF metaadatok nélkül. Az L<--export-filename>
 kapcsolóval lehet megadni a fájl kívánt nevét.
+
+=item B<--export-png-color-mode>=I<SZÍNMÓD>
+
+Beállítja az exportálandó bitkép színmódját (bitmélység és színtípus)
+(Gray_1/Gray_2/Gray_4/Gray_8/Gray_16/RGB_8/RGB_16/GrayAlpha_8/GrayAlpha_16/RGBA_8/RGBA_16)
+
+=item B<--export-png-use-dithering>=I<false|true>
+
+Kikényszeríti a zajmodulációt vagy letiltja azt (az Inkscape buildnek
+támogatni kell a zajmodulációt ehhez)
 
 =item B<--export-ps-level>=I<SZINT>
 
@@ -382,22 +422,24 @@ alkalmazva.
 
 =item B<-b> I<SZÍN>, B<--export-background>=I<SZÍN>
 
-Background color of exported PNG.  This may be any SVG supported color
-string, for example "#ff007f" or "rgb(255, 0, 128)".  If not set, then the
-page color set in Inkscape in the Document Properties dialog will be used
-(stored in the pagecolor= attribute of sodipodi:namedview).
+Beállítja az exportált PNG háttérszínét. Ez bármilyen az SVG által
+támogatott színleíró karaktersorozat lehet, mint pl. a „#ff007f” vagy az
+„rgb(255, 0, 128)”. Ha ez nincs megadva, akkor a Dokumentumbeállítások
+párbeszédablakban megadott lapszín (a „sodipodi:namedview” névtér
+„pagecolor” attribútuma) lesz alkalmazva.
 
 
 
 =item B<-y> I<ÉRTÉK>, B<--export-background-opacity>=I<ÉRTÉK>
 
-Opacity of the background of exported PNG.  This may be a value either
-between 0.0 and 1.0 (0.0 meaning full transparency, 1.0 full opacity) or
-greater than 1 up to 255 (255 meaning full opacity).  If not set and the -b
-option is not used, then the page opacity set in Inkscape in the Document
-Properties dialog will be used (stored in the inkscape:pageopacity=
-attribute of sodipodi:namedview).  If not set but the -b option is used,
-then the value of 255 (full opacity) will be used.
+Átlátszatlanságot állít be háttérszínhez PNG exportálás esetén. Ez az érték
+lehet 0.0 és 1.0 között (a 0.0 a teljes átlátszóság, az 1.0 a teljes
+átlátszatlanság), valamint 1 és 255 között (255 jelöli a teljes
+átlátszatlanságot). Ha nincs beállítva és a -b kapcsoló sem, akkor a
+Dokumentumbeállítások párbeszédablakban megadott lapátlátszatlanság (a
+„sodipodi:namedview” névtér „inkscape:pageopacity” attribútuma) lesz
+alkalmazva. Ha nincs beállítva, de a -b kapcsoló be van kapcsolva, akkor 255
+(teljes átlátszatlanság) értékkel lesz alkalmazva.
 
 =item B<-I>, B<--query-id>=I<OBJEKTUMAZONOSÍTÓ[,OBJEKTUMAZONOSÍTÓ]*>
 
@@ -480,32 +522,32 @@ művelettel. Ez többszörös exportálást tesz lehetővé egyetlen fájlon.
 
 Felsorol minden elérhető műveletet.
 
-=item B<--verb>=I<FUNKCIÓ[;FUNKCIÓ]*>
+=item <--actions-file>B=I<FÁJLNÉV>
 
-A L<--verb> kapcsoló futtat egy a grafikus felhasználói felületen is
-elérhető konkrét menüponthoz vagy gombhoz kapcsolódó funkciót,
-ill. funkciókat. Párbeszédablakok tűnnek fel, ha ezek részei a
-funkciónak. Az elérhető funkcióazonosítókat a L<--verb-list> parancssori
-kapcsolóval lehet kilistázni.
-
-Érdemes arra figyelni, hogy a L<--verb> kapcsoló igényli a grafikus
-felhasználói felületet.
-
-A L<--select> kapcsolóval együtt egyszerű szkriptelhetőséget biztosít az
-Inkscape parancssora számára. Szükség esetén mindkettő több parancssori
-argumentumot tud fogadni és sorban végrehajtani minden dokumentumon.
-
-=item B<--verb-list>
-
-Felsorol minden funkciót azonosítójuk szerint, ami elérhető az
-Inkscape-ben. Ezek az azonosítók használhatók a gyorsbillentyűk, ill. a
-menük definiálására. És természetesen a L<--verb> parancssori kapcsolóval is
-használhatóak.
+Végrehajtja a fájlban felsorolt összes műveletet. A fájl tartalmát az
+L<--actions> szintaxis szerint kell formázni. Ez az opció felülírja az
+L<--actions> argumentumot, ha mindkettő meg van adva.
 
 =item B<-g>, B<--with-gui>
 
 Megkísérli a grafikus felhasználói felület alkalmazását (Unix rendszereken
 az X szervert használja, ha a $DISPLAY nincs beállítva).
+
+=item B<-q>, B<--active-window>
+
+Egy új Inkscape-folyamat indítása helyett ez a parancs a legutóbb fókuszált
+Inkscape-dokumentumban fogja futtatni a parancsot.
+
+=item B<--display>=I<KIJELZŐ>
+
+Beállítja az Inkscape ablak X-kijelzőjét.
+
+=item B<--app-id-tag>=I<CÍMKE>
+
+Létrehoz egy egyedi példányt az Inkscape-ből az
+'org.inkscape.Inkscape.CÍMKE' alkalmazásazonosítóval. Ez hasznos az
+Inkscape-példányok elkülönítéséhez, ha egyidejűleg különböző
+Inkscape-verziókat futtatunk vagy különböző beállításfájlokat használunk.
 
 =item B<--batch-process>
 
@@ -519,14 +561,17 @@ az Inkscape végrehajt anélkül, hogy minden egye utasítás után új példán
 kellene indítani a programból. Ez a szolgáltatás főleg szkriptelésre és
 szerver üzemmódban való használatra való: nem ad új képességeket, de
 jelentősen gyorsítja a végrehajtást és csökkenti a memóriaszükségletet
-minden olyan parancsfájlnál, amely ismétlődően hívja meg az Inkscape-t, hogy
-parancssori feladatokat hajtson végre (mint például az exportálás vagy a
-konvertálás).
+minden olyan parancsfájlnál, amely ismétlődően hívja meg az Inkscape-et,
+hogy parancssori feladatokat hajtson végre (mint például az exportálás vagy
+a konvertálás).
 
 Parancsértelmező módban az Inkscape egy művelet (vagy funkció) sorozatot vár
 bemenetül. Soronként kerül értelmezésre, tipikusan az Enter
 leütésekor. Lehetséges (de nem szükséges) minden műveletet akár egy sorban
 is megadni.
+
+Ez az opció kombinálható az L<--active-window> paraméterrel, hogy a shell
+parancsokat egy már megnyitott Inkscape dokumentumban hajtsa végre.
 
 A következő példa megnyit egy fájlt és két különböző formátumba exportálja,
 majd megnyit egy másik fájlt és abból egyetlen objektumot exportál:
@@ -543,13 +588,23 @@ testreszabási beállítást tárol, melyet jellemzően az Inkscape Beállítás
 párbeszédablakában lehet módosítani. Ugyanitt, az almappákba saját
 beállításokat helyezhet el a következőképpen:
 
-B<$HOME>/.config/inkscape/extensions/ – effektus kiterjesztések.
+B<$HOME>/.config/inkscape/extensions/ – kiterjesztések.
 
-B<$HOME>/.config/inkscape/icons/ – ikonok.
+B<$HOME>/.config/inkscape/fonts/ – betűkészletek.
+
+B<$HOME>/.config/inkscape/icons/ – ikoncsomagok.
 
 B<$HOME>/.config/inkscape/keys/ – gyorsbillentyűkiosztások.
 
+B<$HOME>/.config/inkscape/paint/ – minták és vonalkák
+
+B<$HOME>/.config/inkscape/palettes/ – paletták.
+
+B<$HOME>/.config/inkscape/symbols/ – szimbólumfájlok.
+
 B<$HOME>/.config/inkscape/templates/ – sablonok az új fájlok számára.
+
+B<$HOME>/.config/inkscape/ui/ – felhasználói felület fájlok.
 
 =head1 DIAGNOSZTIKA
 
@@ -616,18 +671,18 @@ Lekérdezi a „text1555” azonosítójú objektum szélességét:
 Megkettőzi a „path1555” és a „rect835” azonosítójú objektumokat, majd
 elforgatja azokat 90°-kal, elmenti SVG-be és kilép.
 
-    inkscape --select=path1555,rect835 --verb="EditDuplicate;ObjectRotate90;FileSave;FileQuit" fájlnév.svg
+    inkscape --select=path1555,rect835 --actions="duplicate;object-rotate-90-cw" --export-overwrite fájlnév.svg
 
 Kijelöl minden ellipszis elemet, elforgatja azokat 30°-kal, elmenti a fájlt
 és kilép.
 
-    inkscape --actions="select-via-element:ellipse;transform-rotate:30;FileSave;FileClose" --batch-process fájlnév.svg
+    inkscape --actions="select-by-element:ellipse;transform-rotate:30" --export-overwrite fájlnév.svg
 
 A „MyTriangle” azonosítójú objektumot exportálja először egy félig áttetsző
 lila háttérrel a lila_háromszög.png-be, majd vörös háttérrel a
 vörös_háromszög.png-be.
 
-    inkscape --actions="export-id:MyTriangle; export-id-only; export-background:purple; export-background-opacity:0.5;export-filename:lila_háromszög.png; export-do; export-background:red; export-background-opacity:1; export-filename:vörös_háromszög.png" fájlnév.svg
+    inkscape --actions="export-id:MyTriangle; export-id-only; export-background:purple; export-background-opacity:0.5;export-filename:lila_háromszög.png; export-do; export-background:red; export-background-opacity:1; export-filename:vörös_háromszög.png; export-do" fájlnév.svg
 
 Beolvassa az SVG-t a szabványos bemenetről (stdin) és PDF-be exportálja:
 
@@ -664,21 +719,6 @@ Egyéni helyet állít be a fordítási katalógusfájloknak.
 
 További információk:
 L<http://wiki.inkscape.org/wiki/index.php/Environment_variables>
-
-=head1 TÉMÁK
-
-Az alapértelmezett B<$PREFIX>/share/inkscape/icons/icons.svg fájl helyett
-egy másik ikonkészlet betöltésére a B<$HOME>/.config/inkscape/icons/ mappa
-használható. Az ikonok a nevük szerint fognak betöltődni
-(pl. I<fill_none.svg>), vagy ha nem találhatóak, akkor az I<icons.svg>
-fájlból. Ha egyik helyről sem tölthető be az ikon, akkor a rendszer
-alapértelmezett helyéről a tartalék lép a helyükbe.
-
-Az SVG fájlokból igényelt ikon a nevének az SVG azonosítóra való rákeresés
-alapján töltődik be. (Például: a „fill_none” ikon betöltése egy külső
-fájlból úgy történik, hogy az ezen azonosítóval rendelkező határoló téglalap
-lesz leképezve, legyen az akár a I<fill_none.svg>-ben vagy az
-I<icons.svg>-ben.)
 
 =head1 TOVÁBBI INFORMÁCIÓK
 
@@ -771,7 +811,7 @@ rendszerre való portolással és a meglévő függőségek kiküszöböléséve
 
 Az Inkscape-et 2003-ban négy aktív Sodipodi fejlesztő, Bryce Harrington,
 MenTaLguY, Nathan Hurst és Ted Gould alapította azzal a szándékkal, hogy más
-irányt vegyen a fejlesztés elsősorban az SVG megfelelőséget illetőem, a
+irányt vegyen a fejlesztés elsősorban az SVG megfelelőséget illetően, a
 felhasználói felület kinézete érdekében és hogy a fejlesztésbe többen
 kapcsolódhassanak be. A projekt gyorsan haladt előre és együtt növekedett az
 aktív hozzájárulók száma a funkciókkal együtt.
@@ -809,9 +849,9 @@ ${INKSCAPE_AUTHORS}
 
 =head1 SZERZŐI JOGOK ÉS LICENC
 
-B<Copyright (C)> 1999–2020 a szerzők.
+B<Copyright (C)> 1999–2023 a szerzők.
 
-Az B<Inkscape> szabad szoftver és GPL 3-as verziója szerint lehet
+Az B<Inkscape> szabad szoftver és GPL 2-as verziója szerint lehet
 terjeszteni, ill. módosítani.
 
 

@@ -21,7 +21,7 @@
 
 bool SPTagUseReference::_acceptObject(SPObject * const obj) const
 {
-    if (SP_IS_ITEM(obj)) {
+    if (is<SPItem>(obj)) {
         return URIReference::_acceptObject(obj);
     } else {
         return false;

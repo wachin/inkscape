@@ -27,6 +27,8 @@
 #include "imagemagick.h"
 #include <Magick++.h>
 
+#include "xml/href-attribute-helper.h"
+
 namespace Inkscape {
 namespace Extension {
 namespace Internal {
@@ -61,7 +63,7 @@ ImageMagickDocCache::ImageMagickDocCache(Inkscape::UI::View::View * view) :
     _imageItems(NULL)
 {
     SPDesktop *desktop = (SPDesktop*)view;
-    auto selectedItemList = desktop->selection->items();
+    auto selectedItemList = desktop->getSelection()->items();
     int selectCount = (int) boost::distance(selectedItemList);
     
     // Init the data-holders
@@ -80,7 +82,7 @@ ImageMagickDocCache::ImageMagickDocCache(Inkscape::UI::View::View * view) :
         if (!strcmp(node->name(), "image") || !strcmp(node->name(), "svg:image"))
         {
             _nodes[_imageCount] = node;    
-            char const *xlink = node->attribute("xlink:href");
+            char const *xlink = Inkscape::getHrefAttribute(*node).second;
             char const *id = node->attribute("id");
             _originals[_imageCount] = xlink;
             _caches[_imageCount] = (char*)"";
@@ -163,7 +165,7 @@ ImageMagick::effect (Inkscape::Extension::Effect *module, Inkscape::UI::View::Vi
     ImageMagickDocCache * dc = dynamic_cast<ImageMagickDocCache *>(docCache);
     if (dc == NULL) { // should really never happen
         printf("AHHHHHHHHH!!!!!");
-        exit(1);
+        std::terminate();
     }
 
     for (int i = 0; i < dc->_imageCount; i++)
@@ -215,7 +217,7 @@ ImageMagick::effect (Inkscape::Extension::Effect *module, Inkscape::UI::View::Vi
             }
             *formatted_i = '\0';
 
-            dc->_nodes[i]->setAttribute("xlink:href", dc->_caches[i]);
+            Inkscape::setHrefAttribute(*dc->_nodes[i], dc->_caches[i]);
             dc->_nodes[i]->removeAttribute("sodipodi:absref");
             delete blob;
         }
@@ -229,14 +231,14 @@ ImageMagick::effect (Inkscape::Extension::Effect *module, Inkscape::UI::View::Vi
     }
 }
 
-/** \brief  A function to get the prefences for the grid
+/** \brief  A function to get the preferences for the grid
     \param  module  Module which holds the params
     \param  view     Unused today - may get style information in the future.
 
     Uses AutoGUI for creating the GUI.
 */
 Gtk::Widget *
-ImageMagick::prefs_effect(Inkscape::Extension::Effect *module, Inkscape::UI::View::View * view, sigc::signal<void> * changeSignal, Inkscape::Extension::Implementation::ImplementationDocumentCache * /*docCache*/)
+ImageMagick::prefs_effect(Inkscape::Extension::Effect *module, Inkscape::UI::View::View * view, sigc::signal<void ()> * changeSignal, Inkscape::Extension::Implementation::ImplementationDocumentCache * /*docCache*/)
 {
     SPDocument * current_document = view->doc();
 

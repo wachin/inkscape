@@ -16,83 +16,44 @@
 
 #include "mergenode.h"
 #include "merge.h"
+#include "object/sp-filter.h"
 
 #include "attributes.h"
-
-#include "display/nr-filter-types.h"
-
 #include "xml/repr.h"
+#include "slot-resolver.h"
+#include "util/optstr.h"
 
-SPFeMergeNode::SPFeMergeNode()
-    : SPObject(), input(Inkscape::Filters::NR_FILTER_SLOT_NOT_SET) {
+void SPFeMergeNode::build(SPDocument */*document*/, Inkscape::XML::Node */*repr*/)
+{
+    readAttr(SPAttr::IN_);
 }
 
-SPFeMergeNode::~SPFeMergeNode() = default;
-
-/**
- * Reads the Inkscape::XML::Node, and initializes SPFeMergeNode variables.  For this to get called,
- * our name must be associated with a repr via "sp_object_type_register".  Best done through
- * sp-object-repr.cpp's repr_name_entries array.
- */
-void SPFeMergeNode::build(SPDocument */*document*/, Inkscape::XML::Node */*repr*/) {
-	this->readAttr(SPAttr::IN_);
-}
-
-/**
- * Drops any allocated memory.
- */
-void SPFeMergeNode::release() {
-	SPObject::release();
-}
-
-/**
- * Sets a specific value in the SPFeMergeNode.
- */
-void SPFeMergeNode::set(SPAttr key, gchar const *value) {
-    SPFeMerge *parent = SP_FEMERGE(this->parent);
-
-    if (key == SPAttr::IN_) {
-        int input = parent->read_in(value);
-        if (input != this->input) {
-            this->input = input;
-            this->requestModified(SP_OBJECT_MODIFIED_FLAG);
-        }
+void SPFeMergeNode::set(SPAttr key, char const *value)
+{
+    switch (key) {
+        case SPAttr::IN_:
+            if (Inkscape::Util::assign(in_name, value)) {
+                requestModified(SP_OBJECT_MODIFIED_FLAG);
+                invalidate_parent_slots();
+            }
+            break;
+        default:
+            SPObject::set(key, value);
+            break;
     }
-
-    /* See if any parents need this value. */
-    SPObject::set(key, value);
 }
 
-/**
- * Receives update notifications.
- */
-void SPFeMergeNode::update(SPCtx *ctx, guint flags) {
-    if (flags & SP_OBJECT_MODIFIED_FLAG) {
-        this->parent->requestModified(SP_OBJECT_MODIFIED_FLAG);
+void SPFeMergeNode::invalidate_parent_slots()
+{
+    if (auto merge = cast<SPFeMerge>(parent)) {
+        merge->invalidate_parent_slots();
     }
-
-    SPObject::update(ctx, flags);
 }
 
-/**
- * Writes its settings to an incoming repr object, if any.
- */
-Inkscape::XML::Node* SPFeMergeNode::write(Inkscape::XML::Document *doc, Inkscape::XML::Node *repr, guint flags) {
-    // Inkscape-only this, not copied during an "plain SVG" dump:
-    if (flags & SP_OBJECT_WRITE_EXT) {
-        if (repr) {
-            // is this sane?
-            //repr->mergeFrom(object->getRepr(), "id");
-        } else {
-            repr = this->getRepr()->duplicate(doc);
-        }
-    }
-
-    SPObject::write(doc, repr, flags);
-
-    return repr;
+void SPFeMergeNode::resolve_slots(SlotResolver const &resolver)
+{
+    in_slot = resolver.read(in_name);
 }
-
 
 /*
   Local Variables:

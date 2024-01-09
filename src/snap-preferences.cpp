@@ -11,14 +11,12 @@
  */
 
 #include "inkscape.h"
-#include "snap-enums.h"
+#include "snap-preferences.h"
 
 Inkscape::SnapPreferences::SnapPreferences() :
     _snap_enabled_globally(true),
     _snap_postponed_globally(false),
-    _strict_snapping(true),
-    _snap_perp(false),
-    _snap_tang(false)
+    _strict_snapping(true)
 {
     // Check for powers of two; see the comments in snap-enums.h
     g_assert((SNAPTARGET_BBOX_CATEGORY != 0) && !(SNAPTARGET_BBOX_CATEGORY & (SNAPTARGET_BBOX_CATEGORY - 1)));
@@ -31,16 +29,34 @@ Inkscape::SnapPreferences::SnapPreferences() :
     for (int & _active_snap_target : _active_snap_targets) {
         _active_snap_target = -1;
     }
+    clearTargetMask();
+
+    for (bool& b : _simple_snapping) {
+        b = false;
+    }
+}
+
+bool Inkscape::SnapPreferences::get_simple_snap(Inkscape::SimpleSnap option) const {
+    auto index = static_cast<size_t>(option);
+    assert(index < size_t(Inkscape::SimpleSnap::_MaxEnumValue));
+    return _simple_snapping[index];
+}
+
+void Inkscape::SnapPreferences::set_simple_snap(Inkscape::SimpleSnap option, bool enable) {
+    auto index = static_cast<size_t>(option);
+    assert(index < size_t(Inkscape::SimpleSnap::_MaxEnumValue));
+    _simple_snapping[index] = enable;
 }
 
 bool Inkscape::SnapPreferences::isAnyDatumSnappable() const
 {
-    return isTargetSnappable(SNAPTARGET_GUIDE, SNAPTARGET_GRID, SNAPTARGET_PAGE_BORDER);
+    return isTargetSnappable(SNAPTARGET_GUIDE, SNAPTARGET_GRID, SNAPTARGET_PAGE_EDGE_BORDER, SNAPTARGET_PAGE_MARGIN_BORDER, SNAPTARGET_PAGE_BLEED_BORDER);
 }
 
 bool Inkscape::SnapPreferences::isAnyCategorySnappable() const
 {
-    return isTargetSnappable(SNAPTARGET_NODE_CATEGORY, SNAPTARGET_BBOX_CATEGORY, SNAPTARGET_OTHERS_CATEGORY) || isTargetSnappable(SNAPTARGET_GUIDE, SNAPTARGET_GRID, SNAPTARGET_PAGE_BORDER);
+    return isTargetSnappable(SNAPTARGET_NODE_CATEGORY, SNAPTARGET_BBOX_CATEGORY, SNAPTARGET_OTHERS_CATEGORY)
+        || isTargetSnappable(SNAPTARGET_GUIDE, SNAPTARGET_GRID, SNAPTARGET_PAGE_EDGE_BORDER, SNAPTARGET_PAGE_MARGIN_BORDER, SNAPTARGET_PAGE_BLEED_BORDER);
 }
 
 void Inkscape::SnapPreferences::_mapTargetToArrayIndex(Inkscape::SnapTargetType &target, bool &always_on, bool &group_on) const
@@ -75,9 +91,9 @@ void Inkscape::SnapPreferences::_mapTargetToArrayIndex(Inkscape::SnapTargetType 
             case SNAPTARGET_PATH_GUIDE_INTERSECTION:
                 target = SNAPTARGET_PATH_INTERSECTION;
                 break;
-            case SNAPTARGET_PATH_PERPENDICULAR:
-            case SNAPTARGET_PATH_TANGENTIAL:
-                target = SNAPTARGET_PATH;
+            // case SNAPTARGET_PATH_PERPENDICULAR:
+            // case SNAPTARGET_PATH_TANGENTIAL:
+                // target = SNAPTARGET_PATH;
                 break;
             default:
                 break;
@@ -100,9 +116,20 @@ void Inkscape::SnapPreferences::_mapTargetToArrayIndex(Inkscape::SnapTargetType 
             case SNAPTARGET_GUIDE_PERPENDICULAR:
                 target = SNAPTARGET_GUIDE;
                 break;
-            case SNAPTARGET_PAGE_CORNER:
-                target = SNAPTARGET_PAGE_BORDER;
+            case SNAPTARGET_PAGE_EDGE_CORNER:
+            case SNAPTARGET_PAGE_EDGE_CENTER:
+                target = SNAPTARGET_PAGE_EDGE_BORDER;
                 break;
+
+            case SNAPTARGET_PAGE_MARGIN_CORNER:
+            case SNAPTARGET_PAGE_MARGIN_CENTER:
+                target = SNAPTARGET_PAGE_MARGIN_BORDER;
+                break;
+
+            case SNAPTARGET_PAGE_BLEED_CORNER:
+                target = SNAPTARGET_PAGE_BLEED_BORDER;
+                break;
+
 
             // Some snap targets cannot be toggled at all, and are therefore always enabled
             case SNAPTARGET_GRID_GUIDE_INTERSECTION:
@@ -111,8 +138,11 @@ void Inkscape::SnapPreferences::_mapTargetToArrayIndex(Inkscape::SnapTargetType 
 
             // These are only listed for completeness
             case SNAPTARGET_GRID:
+            case SNAPTARGET_GRID_LINE:
             case SNAPTARGET_GUIDE:
-            case SNAPTARGET_PAGE_BORDER:
+            case SNAPTARGET_PAGE_EDGE_BORDER:
+            case SNAPTARGET_PAGE_MARGIN_BORDER:
+            case SNAPTARGET_PAGE_BLEED_BORDER:
             case SNAPTARGET_DATUMS_CATEGORY:
                 break;
             default:
@@ -193,6 +223,41 @@ void Inkscape::SnapPreferences::setTargetSnappable(Inkscape::SnapTargetType cons
     }
 }
 
+/**
+ * Set a target mask, which will turn off all other targets except the masked ones.
+ *
+ * target - The Snap Target to change the mask for.
+ * enabled - The mask setting to set.
+ *    -1 means use user settings (turn off mask)
+ *     0 means mask with disabled,
+ *     1 means mask with enabled,
+ */
+void Inkscape::SnapPreferences::setTargetMask(Inkscape::SnapTargetType const target, int enabled)
+{
+    bool always_on = false;
+    bool group_on = false; // Only needed as a dummy
+    Inkscape::SnapTargetType index = target;
+
+    _mapTargetToArrayIndex(index, always_on, group_on);
+
+    _active_mask_targets[index] = enabled;
+}
+
+/**
+ * Clear the target mask, this should be done in a four step process.
+ *
+ * snap_manager->snaprepfs->clearTargetMask(0); // Default all options to disabled
+ * snap_manager->snaprepfs->setTargetMask(SOME_TARGET, 1);
+ * snap_manager->freeSnap(...);
+ * snap_manager->snaprepfs->clearTargetMask(); // Turns off masking
+ */
+void Inkscape::SnapPreferences::clearTargetMask(int enabled)
+{
+    for (int & _active_mask_targets : _active_mask_targets) {
+        _active_mask_targets = enabled;
+    }
+}
+
 bool Inkscape::SnapPreferences::isTargetSnappable(Inkscape::SnapTargetType const target) const
 {
     bool always_on = false;
@@ -200,6 +265,11 @@ bool Inkscape::SnapPreferences::isTargetSnappable(Inkscape::SnapTargetType const
     Inkscape::SnapTargetType index = target;
 
     _mapTargetToArrayIndex(index, always_on, group_on);
+
+    // Check masking first, it over-rides even group_on
+    if (_active_mask_targets[index] != -1) {
+        return _active_mask_targets[index];
+    }
 
     if (group_on) { // If true, then this snap target is in a snap group that has been enabled (e.g. bbox group, nodes/paths group, or "others" group
         if (always_on) { // If true, then this snap target is always active and cannot be toggled
@@ -311,6 +381,10 @@ Inkscape::SnapTargetType Inkscape::SnapPreferences::source2target(Inkscape::Snap
         case SNAPSOURCE_GRID_PITCH:
             return SNAPTARGET_GRID;
 
+        case SNAPSOURCE_PAGE_CORNER:
+            return SNAPTARGET_PAGE_EDGE_CORNER;
+        case SNAPSOURCE_PAGE_CENTER:
+            return SNAPTARGET_PAGE_EDGE_CENTER;
 
         case SNAPSOURCE_ALIGNMENT_CATEGORY:
             return SNAPTARGET_ALIGNMENT_CATEGORY;
@@ -321,14 +395,14 @@ Inkscape::SnapTargetType Inkscape::SnapPreferences::source2target(Inkscape::Snap
         case SNAPSOURCE_ALIGNMENT_BBOX_EDGE_MIDPOINT:
             return SNAPTARGET_ALIGNMENT_BBOX_EDGE_MIDPOINT;
         case SNAPSOURCE_ALIGNMENT_PAGE_CENTER:
-            return SNAPTARGET_ALIGNMENT_PAGE_CENTER;
+            return SNAPTARGET_ALIGNMENT_PAGE_EDGE_CENTER;
         case SNAPSOURCE_ALIGNMENT_PAGE_CORNER:
-            return SNAPTARGET_ALIGNMENT_PAGE_CORNER;
+            return SNAPTARGET_ALIGNMENT_PAGE_EDGE_CORNER;
         case Inkscape::SNAPSOURCE_ALIGNMENT_HANDLE:
             return SNAPTARGET_ALIGNMENT_HANDLE;
 
         default:
-            g_warning("Mapping of snap source to snap target undefined");
+            g_warning("Mapping of snap source to snap target undefined (#%i)", source);
             return SNAPTARGET_UNDEFINED;
     }
 }

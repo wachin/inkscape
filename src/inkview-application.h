@@ -24,11 +24,10 @@ class InkviewWindow;
 
 class InkviewApplication : public Gtk::Application
 {
-protected:
-    InkviewApplication();
-
 public:
-    static Glib::RefPtr<InkviewApplication> create();
+    /// Exclusively for the creation of the singleton instance inside main().
+    InkviewApplication();
+    ~InkviewApplication() override;
 
 protected:
     void on_startup()  override;

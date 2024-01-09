@@ -21,6 +21,7 @@
 #include "style.h"
 
 #include "display/curve.h"
+#include "helper/geom.h"
 #include "helper/geom-nodetype.h"
 #include "helper/geom-pathstroke.h"
 #include "object/sp-shape.h"
@@ -44,18 +45,36 @@ namespace LivePathEffect {
 namespace TpS {
     class KnotHolderEntityAttachBegin : public LPEKnotHolderEntity {
     public:
-        KnotHolderEntityAttachBegin(LPETaperStroke * effect) : LPEKnotHolderEntity(effect) {}
+        KnotHolderEntityAttachBegin(LPETaperStroke * effect, size_t index) 
+        : LPEKnotHolderEntity(effect)
+        , _effect(effect)
+        , _index(index) {};
         void knot_set(Geom::Point const &p, Geom::Point const &origin, guint state) override;
         void knot_click(guint state) override;
         Geom::Point knot_get() const override;
+        bool valid_index(unsigned int index) const {
+            return (_effect->attach_start._vector.size() > index);
+        };
+    private:
+        size_t _index;
+        LPETaperStroke * _effect;
     };
-    
+        
     class KnotHolderEntityAttachEnd : public LPEKnotHolderEntity {
     public:
-        KnotHolderEntityAttachEnd(LPETaperStroke * effect) : LPEKnotHolderEntity(effect) {}
+        KnotHolderEntityAttachEnd(LPETaperStroke * effect, size_t index) 
+        : LPEKnotHolderEntity(effect)
+        , _effect(effect)
+        , _index(index) {};
         void knot_set(Geom::Point const &p, Geom::Point const &origin, guint state) override;
         void knot_click(guint state) override;
         Geom::Point knot_get() const override;
+        bool valid_index(unsigned int index) const {
+            return (_effect->attach_end._vector.size() > index);
+        };
+    private:
+        size_t _index;
+        LPETaperStroke * _effect;
     };
 } // TpS
 
@@ -86,6 +105,7 @@ static const Util::EnumDataConverter<unsigned> TaperShapeTypeConverter(TaperShap
 
 LPETaperStroke::LPETaperStroke(LivePathEffectObject *lpeobject) :
     Effect(lpeobject),
+    subpath(_("Select subpath:"), _("Select the subpath you want to modify"), "subpath", &wr, this, 1.),
     line_width(_("Stroke width:"), _("The (non-tapered) width of the path"), "stroke_width", &wr, this, 1.),
     attach_start(_("Start offset:"), _("Taper distance from path start"), "attach_start", &wr, this, 0.2),
     attach_end(_("End offset:"), _("The ending position of the taper"), "end_offset", &wr, this, 0.2),
@@ -98,11 +118,29 @@ LPETaperStroke::LPETaperStroke(LivePathEffectObject *lpeobject) :
 {
     show_orig_path = true;
     _provides_knotholder_entities = true;
-
+    //backward compat
+    auto ss = this->getRepr()->attribute("start_shape");
+    auto se = this->getRepr()->attribute("end_shape");
+    if (!ss || !g_strcmp0(ss,"")){
+        this->getRepr()->setAttribute("start_shape", "center");
+        if (ss) {
+            g_warning("Your taper stroke is not set correctly in LPE id: %s, defaulting to center mode", this->getRepr()->attribute("id"));
+        }
+    };
+    if (!se || !g_strcmp0(se,"")){
+        this->getRepr()->setAttribute("end_shape", "center");
+        if (se) {
+            g_warning("Your taper stroke is not set correctly in LPE id: %s, defaulting to center mode", this->getRepr()->attribute("id"));
+        }
+    };
     attach_start.param_set_digits(3);
     attach_end.param_set_digits(3);
+    subpath.param_set_range(1, 1);
+    subpath.param_set_increments(1, 1);
+    subpath.param_set_digits(0);
 
     registerParameter(&line_width);
+    registerParameter(&subpath);
     registerParameter(&attach_start);
     registerParameter(&attach_end);
     registerParameter(&start_smoothing);
@@ -113,6 +151,8 @@ LPETaperStroke::LPETaperStroke(LivePathEffectObject *lpeobject) :
     registerParameter(&miter_limit);
 }
 
+LPETaperStroke::~LPETaperStroke() = default;
+
 // from LPEPowerStroke -- sets fill if stroke color because we will
 // be converting to a fill to make the new join.
 
@@ -120,7 +160,7 @@ void LPETaperStroke::transform_multiply(Geom::Affine const &postmul, bool /*set*
 {
     Inkscape::Preferences *prefs = Inkscape::Preferences::get();
     bool transform_stroke = prefs ? prefs->getBool("/options/transform/stroke", true) : true;
-    if (transform_stroke) {
+    if (transform_stroke && !sp_lpe_item->unoptimized()) {
         line_width.param_transform_multiply(postmul, false);
     }
 }
@@ -128,7 +168,7 @@ void LPETaperStroke::transform_multiply(Geom::Affine const &postmul, bool /*set*
 void LPETaperStroke::doOnApply(SPLPEItem const* lpeitem)
 {
     auto lpeitem_mutable = const_cast<SPLPEItem *>(lpeitem);
-    auto item = dynamic_cast<SPShape *>(lpeitem_mutable);
+    auto item = cast<SPShape>(lpeitem_mutable);
 
     if (!item) {
         printf("WARNING: It only makes sense to apply Taper stroke to paths (not groups).\n");
@@ -157,13 +197,10 @@ void LPETaperStroke::doOnApply(SPLPEItem const* lpeitem)
 void LPETaperStroke::doOnRemove(SPLPEItem const* lpeitem)
 {
     auto lpeitem_mutable = const_cast<SPLPEItem *>(lpeitem);
-    auto item = dynamic_cast<SPShape *>(lpeitem_mutable);
-
-    if (!item) {
-        return;
+    auto shape = cast<SPShape>(lpeitem_mutable);
+    if (shape) {
+        lpe_shape_revert_stroke_and_fill(shape, line_width);
     }
-
-    lpe_shape_revert_stroke_and_fill(item, line_width);
 }
 
 using Geom::Piecewise;
@@ -177,8 +214,10 @@ static Geom::Path return_at_first_cusp(Geom::Path const & path_in, double /*smoo
 
     for (unsigned i = 0; i < path_in.size(); i++) {
         temp.append(path_in[i]);
-        if (Geom::get_nodetype(path_in[i], path_in[i + 1]) != Geom::NODE_SMOOTH ) {
-            break;
+        if (path_in.size() > i+1) {
+            if (Geom::get_nodetype(path_in[i], path_in[i + 1]) != Geom::NODE_SMOOTH ) {
+                break;
+            }
         }
     }
     
@@ -191,174 +230,7 @@ Piecewise<D2<SBasis> > stretch_along(Piecewise<D2<SBasis> > pwd2_in, Geom::Path 
 
 Geom::PathVector LPETaperStroke::doEffect_path(Geom::PathVector const& path_in)
 {
-    Geom::Path first_cusp = return_at_first_cusp(path_in[0]);
-    Geom::Path last_cusp = return_at_first_cusp(path_in[0].reversed());
-
-    bool zeroStart = false; // [distance from start taper knot -> start of path] == 0
-    bool zeroEnd = false; // [distance from end taper knot -> end of path] == 0
-    bool metInMiddle = false; // knots are touching
-    
-    // there is a pretty good chance that people will try to drag the knots
-    // on top of each other, so block it
-
-    unsigned size = path_in[0].size();
-    if (size == first_cusp.size()) {
-        // check to see if the knots were dragged over each other
-        // if so, reset the end offset, but still allow the start offset.
-        if ( attach_start >= (size - attach_end) ) {
-            attach_end.param_set_value( size - attach_start );
-            metInMiddle = true;
-        }
-    }
-    
-    if (attach_start == size - attach_end) {
-        metInMiddle = true;
-    }
-    if (attach_end == size - attach_start) {
-        metInMiddle = true;
-    }
-
-    // don't let it be integer (TODO this is stupid!)
-    {
-        if (double(unsigned(attach_start)) == attach_start) {
-            attach_start.param_set_value(attach_start - 0.00001);
-        }
-        if (double(unsigned(attach_end)) == attach_end) {
-            attach_end.param_set_value(attach_end -     0.00001);
-        }
-    }
-
-    unsigned allowed_start = first_cusp.size();
-    unsigned allowed_end = last_cusp.size();
-
-    // don't let the knots be farther than they are allowed to be
-    {
-        if ((unsigned)attach_start >= allowed_start) {
-            attach_start.param_set_value((double)allowed_start - 0.00001);
-        }
-        if ((unsigned)attach_end >= allowed_end) {
-            attach_end.param_set_value((double)allowed_end - 0.00001);
-        }
-    }
-    
-    // don't let it be zero (this is stupid too!)
-    if (attach_start < 0.0000001 || withinRange(double(attach_start), 0.00000001, 0.000001)) {
-        attach_start.param_set_value( 0.0000001 );
-        zeroStart = true;
-    }
-    if (attach_end < 0.0000001 || withinRange(double(attach_end), 0.00000001, 0.000001)) {
-        attach_end.param_set_value( 0.0000001 );
-        zeroEnd = true;
-    }
-
-    // Path::operator () means get point at time t
-    start_attach_point = first_cusp(attach_start);
-    end_attach_point = last_cusp(attach_end);
-    Geom::PathVector pathv_out;
-
-    // the following function just splits it up into three pieces.
-    pathv_out = doEffect_simplePath(path_in);
-
-    // now for the actual tapering. the stretch_along method (stolen from PaP) is used to accomplish this
-
-    Geom::PathVector real_pathv;
-    Geom::Path real_path;
-    Geom::PathVector pat_vec;
-    Piecewise<D2<SBasis> > pwd2;
-    Geom::Path throwaway_path;
-
-    if (!zeroStart) {
-        // Construct the pattern
-        std::stringstream pat_str;
-        pat_str.imbue(std::locale::classic());
-
-        switch (start_shape.get_value()) {
-            case TAPER_RIGHT:
-                pat_str << "M 1,0 Q " << 1 - (double)start_smoothing << ",0 0,1 L 1,1";
-                break;
-            case TAPER_LEFT:
-                pat_str << "M 1,0 L 0,0 Q " << 1 - (double)start_smoothing << ",1 1,1";
-                break;
-            default:
-                pat_str << "M 1,0 C " << 1 - (double)start_smoothing << ",0 0,0.5 0,0.5 0,0.5 " << 1 - (double)start_smoothing << ",1 1,1";
-                break;
-        }
-
-        pat_vec = sp_svg_read_pathv(pat_str.str().c_str());
-        pwd2.concat(stretch_along(pathv_out[0].toPwSb(), pat_vec[0], fabs(line_width)));
-        throwaway_path = Geom::path_from_piecewise(pwd2, LPE_CONVERSION_TOLERANCE)[0];
-
-        real_path.append(throwaway_path);
-    }
-    
-    // if this condition happens to evaluate false, i.e. there was no space for a path to be drawn, it is simply skipped.
-    // although this seems obvious, it can probably lead to bugs.
-    if (!metInMiddle) {
-        // append the outside outline of the path (goes with the direction of the path)
-        throwaway_path = half_outline(pathv_out[1], fabs(line_width)/2., miter_limit, static_cast<LineJoinType>(join_type.get_value()));
-        if (!zeroStart && real_path.size() >= 1 && throwaway_path.size() >= 1) {
-            if (!Geom::are_near(real_path.finalPoint(), throwaway_path.initialPoint())) {
-                real_path.appendNew<Geom::LineSegment>(throwaway_path.initialPoint());
-            } else {
-                real_path.setFinal(throwaway_path.initialPoint());
-            }
-        }
-        real_path.append(throwaway_path);
-    }
-
-    if (!zeroEnd) {
-        // append the ending taper
-        std::stringstream pat_str_1;
-        pat_str_1.imbue(std::locale::classic());
-
-        switch (end_shape.get_value()) {
-            case TAPER_RIGHT:
-                pat_str_1 << "M 0,1 L 1,1 Q " << (double)end_smoothing << ",0 0,0";
-                break;
-            case TAPER_LEFT:
-                pat_str_1 << "M 0,1 Q " << (double)end_smoothing << ",1 1,0 L 0,0";
-                break;
-            default:
-                pat_str_1 << "M 0,1 C " << (double)end_smoothing << ",1 1,0.5 1,0.5 1,0.5 " << (double)end_smoothing << ",0 0,0";
-                break;
-        }
-
-        pat_vec = sp_svg_read_pathv(pat_str_1.str().c_str());
-
-        pwd2 = Piecewise<D2<SBasis> >();
-        pwd2.concat(stretch_along(pathv_out[2].toPwSb(), pat_vec[0], fabs(line_width)));
-
-        throwaway_path = Geom::path_from_piecewise(pwd2, LPE_CONVERSION_TOLERANCE)[0];
-        if (!Geom::are_near(real_path.finalPoint(), throwaway_path.initialPoint()) && real_path.size() >= 1) {
-            real_path.appendNew<Geom::LineSegment>(throwaway_path.initialPoint());
-        } else {
-            real_path.setFinal(throwaway_path.initialPoint());
-        }
-        real_path.append(throwaway_path);
-    }
-    
-    if (!metInMiddle) {
-        // append the inside outline of the path (against direction)
-        throwaway_path = half_outline(pathv_out[1].reversed(), fabs(line_width)/2., miter_limit, static_cast<LineJoinType>(join_type.get_value()));
-        
-        if (!Geom::are_near(real_path.finalPoint(), throwaway_path.initialPoint()) && real_path.size() >= 1) {
-            real_path.appendNew<Geom::LineSegment>(throwaway_path.initialPoint());
-        } else {
-            real_path.setFinal(throwaway_path.initialPoint());
-        }
-        real_path.append(throwaway_path);
-    }
-    
-    if (!Geom::are_near(real_path.finalPoint(), real_path.initialPoint())) {
-        real_path.appendNew<Geom::LineSegment>(real_path.initialPoint());
-    } else {
-        real_path.setFinal(real_path.initialPoint());
-    }
-    real_path.close();
-    
-    real_pathv.push_back(real_path);
-
-    return real_pathv;
+    return pathv_out;
 }
 
 /**
@@ -367,19 +239,19 @@ Geom::PathVector LPETaperStroke::doEffect_path(Geom::PathVector const& path_in)
  *  The positions of the effect knots are accessed to determine
  *  where exactly the input path should be split.
  */
-Geom::PathVector LPETaperStroke::doEffect_simplePath(Geom::PathVector const & path_in)
+Geom::PathVector LPETaperStroke::doEffect_simplePath(Geom::Path const & path, size_t index, double start, double end)
 {
-    Geom::Coord endTime = path_in[0].size() - attach_end;
+    auto const endTime = std::max(path.size() - end, start);
 
-    Geom::Path p1 = path_in[0].portion(0., attach_start);
-    Geom::Path p2 = path_in[0].portion(attach_start, endTime);
-    Geom::Path p3 = path_in[0].portion(endTime, path_in[0].size());
+    Geom::Path p1 = path.portion(0., start);
+    Geom::Path p2 = path.portion(start, endTime);
+    Geom::Path p3 = path.portion(endTime, path.size());
     
     Geom::PathVector out;
     out.push_back(p1);
     out.push_back(p2);
     out.push_back(p3);
-    
+
     return out;
 }
 
@@ -462,17 +334,285 @@ Piecewise<D2<SBasis> > stretch_along(Piecewise<D2<SBasis> > pwd2_in, Geom::Path 
     }
 }
 
+void
+LPETaperStroke::doBeforeEffect (SPLPEItem const* lpeitem)
+{
+    using namespace Geom;
+    Geom::PathVector pathv = pathv_to_linear_and_cubic_beziers(pathvector_before_effect);
+    size_t sicepv = pathv.size();
+    bool write = false;
+    if (previous_size != sicepv) {
+        subpath.param_set_range(1, sicepv);
+        subpath.param_readSVGValue("1");
+        if (!is_load) {
+            attach_start._vector.clear();
+            attach_end._vector.clear();
+            start_smoothing._vector.clear();
+            end_smoothing._vector.clear();
+            start_shape._vector.clear();
+            end_shape._vector.clear();
+        }
+        previous_size = sicepv;
+    }
+    if (!attach_start._vector.size()) {
+        for (auto path : pathvector_before_effect) {
+            attach_start._vector.push_back(0);
+            attach_end._vector.push_back(0);
+            start_smoothing._vector.push_back(0);
+            end_smoothing._vector.push_back(0);
+            start_shape._vector.emplace_back("center");
+            end_shape._vector.emplace_back("center");
+        }
+        attach_start.param_set_default();
+        attach_end.param_set_default();
+        start_smoothing.param_set_default();
+        end_smoothing.param_set_default();
+        start_shape.param_set_default();
+        end_shape.param_set_default();
+        write = true;
+    }
+    // Some SVGs have been made with bad smoothing vectors, correct them
+    for (int i = start_smoothing._vector.size(); i < (int)sicepv; i++) {
+        start_smoothing._vector.push_back(0.5);
+        write = true;
+    }
+    for (int i = end_smoothing._vector.size(); i < (int)sicepv; i++) {
+        end_smoothing._vector.push_back(0.5);
+        write = true;
+    }
+    if (prev_subpath != subpath) {
+        attach_start.param_setActive(subpath - 1);
+        attach_end.param_setActive(subpath - 1);
+        start_smoothing.param_setActive(subpath - 1);
+        end_smoothing.param_setActive(subpath - 1);
+        start_shape.param_setActive(subpath - 1);
+        end_shape.param_setActive(subpath - 1);
+        prev_subpath = subpath;
+        refresh_widgets = true;
+        write = true;
+    }
+    std::vector<double> attach_startv;
+    for (auto & doub : attach_start.data()) {
+        attach_startv.push_back(doub);
+    }
+    std::vector<double> attach_endv;
+    for (auto & doub : attach_end.data()) {
+        attach_endv.push_back(doub);
+    }
+    std::vector<double> start_smoothingv;
+    for (auto & doub : start_smoothing.data()) {
+        start_smoothingv.push_back(doub);
+    }
+    std::vector<double> end_smoothingv;
+    for (auto & doub : end_smoothing.data()) {
+        end_smoothingv.push_back(doub);
+    }
+    if (write) {
+        start_smoothing.param_set_and_write_new_value(start_smoothingv);
+        end_smoothing.param_set_and_write_new_value(end_smoothingv);
+        attach_start.param_set_and_write_new_value(attach_startv);
+        attach_end.param_set_and_write_new_value(attach_endv);
+        start_shape.param_set_and_write_new_value(start_shape._vector);
+        end_shape.param_set_and_write_new_value(end_shape._vector);
+    }
+    pathv_out.clear();
+    if (pathvector_before_effect.empty()) {
+        return;
+    }
+    
+    size_t index = 0;
+    start_attach_point.clear();
+    end_attach_point.clear();
+    for (auto path : pathv) {
+        Geom::Path first_cusp = return_at_first_cusp(path);
+        Geom::Path last_cusp = return_at_first_cusp(path.reversed());
+
+        bool zeroStart = false; // [distance from start taper knot -> start of path] == 0
+        bool zeroEnd = false; // [distance from end taper knot -> end of path] == 0
+        bool metInMiddle = false; // knots are touching
+        
+        // there is a pretty good chance that people will try to drag the knots
+        // on top of each other, so block it
+
+        unsigned size = path.size();
+        if (size == first_cusp.size()) {
+            // check to see if the knots were dragged over each other
+            // if so, reset the end offset, but still allow the start offset.
+            if ( attach_startv[index] >= (size - attach_endv[index]) ) {
+                attach_endv[index] = ( size - attach_startv[index] );
+                metInMiddle = true;
+            }
+        }
+        
+        if (attach_startv[index] == size - attach_endv[index]) {
+            metInMiddle = true;
+        }
+        if (attach_endv[index] == size - attach_startv[index]) {
+            metInMiddle = true;
+        }
+
+        // don't let it be integer (TODO this is stupid!)
+        {
+            if (double(unsigned(attach_startv[index])) == attach_startv[index]) {
+                attach_startv[index] = (attach_startv[index] - 0.00001);
+            }
+            if (double(unsigned(attach_endv[index])) == attach_endv[index]) {
+                attach_endv[index] = (attach_endv[index] -     0.00001);
+            }
+        }
+
+        unsigned allowed_start = first_cusp.size();
+        unsigned allowed_end = last_cusp.size();
+
+        // don't let the knots be farther than they are allowed to be
+        {
+            if ((unsigned)attach_startv[index] >= allowed_start) {
+                attach_startv[index] = ((double)allowed_start - 0.00001);
+            }
+            if ((unsigned)attach_endv[index] >= allowed_end) {
+                attach_endv[index] = ((double)allowed_end - 0.00001);
+            }
+        }
+        
+        // don't let it be zero (this is stupid too!)
+        if (attach_startv[index] < 0.0000001 || withinRange(double(attach_startv[index]), 0.00000001, 0.000001)) {
+            attach_startv[index] = ( 0.0000001 );
+            zeroStart = true;
+        }
+        if (attach_endv[index] < 0.0000001 || withinRange(double(attach_endv[index]), 0.00000001, 0.000001)) {
+            attach_endv[index] = ( 0.0000001 );
+            zeroEnd = true;
+        }
+        
+        // Path::operator () means get point at time t
+        start_attach_point.push_back(first_cusp(attach_startv[index]));
+        end_attach_point.push_back(last_cusp(attach_endv[index]));
+        Geom::PathVector pathv_tmp;
+
+        // the following function just splits it up into three pieces.
+        pathv_tmp = doEffect_simplePath(path, index, attach_startv[index], attach_endv[index]);
+
+        // now for the actual tapering. the stretch_along method (stolen from PaP) is used to accomplish this
+
+        Geom::Path real_path;
+        Geom::PathVector pat_vec;
+        Piecewise<D2<SBasis> > pwd2;
+        Geom::Path throwaway_path;
+
+        if (!zeroStart && start_shape.valid_index(index) && start_smoothingv.size() > index) {
+            // Construct the pattern
+            std::stringstream pat_str;
+            pat_str.imbue(std::locale::classic());
+            switch (TaperShapeTypeConverter.get_id_from_key(start_shape._vector[index])) {
+                case TAPER_RIGHT:
+                    pat_str << "M 1,0 Q " << 1 - (double)start_smoothingv[index] << ",0 0,1 L 1,1";
+                    break;
+                case TAPER_LEFT:
+                    pat_str << "M 1,0 L 0,0 Q " << 1 - (double)start_smoothingv[index] << ",1 1,1";
+                    break;
+                default:
+                    pat_str << "M 1,0 C " << 1 - (double)start_smoothingv[index] << ",0 0,0.5 0,0.5 0,0.5 " << 1 - (double)start_smoothingv[index] << ",1 1,1";
+                    break;
+            }
+
+            pat_vec = sp_svg_read_pathv(pat_str.str().c_str());
+            pwd2.concat(stretch_along(pathv_tmp[0].toPwSb(), pat_vec[0], fabs(line_width)));
+            throwaway_path = Geom::path_from_piecewise(pwd2, LPE_CONVERSION_TOLERANCE)[0];
+
+            real_path.append(throwaway_path);
+        }
+        
+        // if this condition happens to evaluate false, i.e. there was no space for a path to be drawn, it is simply skipped.
+        // although this seems obvious, it can probably lead to bugs.
+        if (!metInMiddle) {
+            // append the outside outline of the path (goes with the direction of the path)
+            throwaway_path = half_outline(pathv_tmp[1], fabs(line_width)/2., miter_limit, static_cast<LineJoinType>(join_type.get_value()));
+            if (!zeroStart && real_path.size() >= 1 && throwaway_path.size() >= 1) {
+                if (!Geom::are_near(real_path.finalPoint(), throwaway_path.initialPoint())) {
+                    real_path.appendNew<Geom::LineSegment>(throwaway_path.initialPoint());
+                } else {
+                    real_path.setFinal(throwaway_path.initialPoint());
+                }
+            }
+            real_path.append(throwaway_path);
+        }
+
+        if (!zeroEnd && end_shape.valid_index(index) && end_smoothingv.size() > index) {
+            // append the ending taper
+            std::stringstream pat_str_1;
+            pat_str_1.imbue(std::locale::classic());
+
+            switch (TaperShapeTypeConverter.get_id_from_key(end_shape._vector[index])) {
+                case TAPER_RIGHT:
+                    pat_str_1 << "M 0,1 L 1,1 Q " << (double)end_smoothingv[index] << ",0 0,0";
+                    break;
+                case TAPER_LEFT:
+                    pat_str_1 << "M 0,1 Q " << (double)end_smoothingv[index] << ",1 1,0 L 0,0";
+                    break;
+                default:
+                    pat_str_1 << "M 0,1 C " << (double)end_smoothingv[index] << ",1 1,0.5 1,0.5 1,0.5 " << (double)end_smoothingv[index] << ",0 0,0";
+                    break;
+            }
+
+            pat_vec = sp_svg_read_pathv(pat_str_1.str().c_str());
+
+            pwd2 = Piecewise<D2<SBasis> >();
+            pwd2.concat(stretch_along(pathv_tmp[2].toPwSb(), pat_vec[0], fabs(line_width)));
+
+            throwaway_path = Geom::path_from_piecewise(pwd2, LPE_CONVERSION_TOLERANCE)[0];
+            if (!Geom::are_near(real_path.finalPoint(), throwaway_path.initialPoint()) && real_path.size() >= 1) {
+                real_path.appendNew<Geom::LineSegment>(throwaway_path.initialPoint());
+            } else {
+                real_path.setFinal(throwaway_path.initialPoint());
+            }
+            real_path.append(throwaway_path);
+        }
+        
+        if (!metInMiddle) {
+            // append the inside outline of the path (against direction)
+            throwaway_path = half_outline(pathv_tmp[1].reversed(), fabs(line_width)/2., miter_limit, static_cast<LineJoinType>(join_type.get_value()));
+            
+            if (!Geom::are_near(real_path.finalPoint(), throwaway_path.initialPoint()) && real_path.size() >= 1) {
+                real_path.appendNew<Geom::LineSegment>(throwaway_path.initialPoint());
+            } else {
+                real_path.setFinal(throwaway_path.initialPoint());
+            }
+            real_path.append(throwaway_path);
+        }
+        
+        if (!Geom::are_near(real_path.finalPoint(), real_path.initialPoint())) {
+            real_path.appendNew<Geom::LineSegment>(real_path.initialPoint());
+        } else {
+            real_path.setFinal(real_path.initialPoint());
+        }
+        real_path.close();
+        
+        pathv_out.push_back(real_path);
+        index++;
+    }
+    /* start_smoothing.param_set_and_write_new_value(start_smoothingv);
+    end_smoothing.param_set_and_write_new_value(end_smoothingv);
+    attach_start.param_set_and_write_new_value(attach_startv);
+    attach_end.param_set_and_write_new_value(attach_endv); */
+    start_smoothingv.clear();
+    end_smoothingv.clear();
+    attach_startv.clear();
+    attach_endv.clear();
+}
+
 void LPETaperStroke::addKnotHolderEntities(KnotHolder *knotholder, SPItem *item)
 {
-    KnotHolderEntity *e = new TpS::KnotHolderEntityAttachBegin(this);
-    e->create(nullptr, item, knotholder, Inkscape::CANVAS_ITEM_CTRL_TYPE_LPE, "LPE:TaperStrokeBegin",
-              _("<b>Start point of the taper</b>: drag to alter the taper, <b>Shift+click</b> changes the taper direction"));
-    knotholder->add(e);
+    for (size_t i = 0 ; i < attach_start._vector.size(); i++) {
+        KnotHolderEntity *e = new TpS::KnotHolderEntityAttachBegin(this, i);
+        e->create(nullptr, item, knotholder, Inkscape::CANVAS_ITEM_CTRL_TYPE_LPE, "LPE:TaperStrokeBegin",
+                _("<b>Start point of the taper</b>: drag to alter the taper, <b>Shift+click</b> changes the taper direction"));
+        knotholder->add(e);
 
-    KnotHolderEntity *f = new TpS::KnotHolderEntityAttachEnd(this);
-    f->create(nullptr, item, knotholder, Inkscape::CANVAS_ITEM_CTRL_TYPE_LPE, "LPE:TaperStrokeEnd",
-              _("<b>End point of the taper</b>: drag to alter the taper, <b>Shift+click</b> changes the taper direction"));
-    knotholder->add(f);
+        KnotHolderEntity *f = new TpS::KnotHolderEntityAttachEnd(this, i);
+        f->create(nullptr, item, knotholder, Inkscape::CANVAS_ITEM_CTRL_TYPE_LPE, "LPE:TaperStrokeEnd",
+                _("<b>End point of the taper</b>: drag to alter the taper, <b>Shift+click</b> changes the taper direction"));
+        knotholder->add(f);
+    }
 }
 
 namespace TpS {
@@ -481,95 +621,112 @@ void KnotHolderEntityAttachBegin::knot_set(Geom::Point const &p, Geom::Point con
 {
     using namespace Geom;
 
-    LPETaperStroke* lpe = dynamic_cast<LPETaperStroke *>(_effect);
+    if (!valid_index(_index) || _effect->start_attach_point.size() <= _index) {
+        return;
+    }
 
     Geom::Point const s = snap_knot_position(p, state);
 
-    if (!SP_IS_SHAPE(lpe->sp_lpe_item)) {
+    if (!is<SPShape>(_effect->sp_lpe_item)) {
         printf("WARNING: LPEItem is not a path!\n");
         return;
     }
     
-    if (!SP_SHAPE(lpe->sp_lpe_item)->curve()) {
+    if (!cast_unsafe<SPShape>(_effect->sp_lpe_item)->curve()) {
         // oops
         return;
     }
     // in case you are wondering, the above are simply sanity checks. we never want to actually
     // use that object.
     
-    Geom::PathVector pathv = lpe->pathvector_before_effect;
+    Geom::PathVector pathv = _effect->pathvector_before_effect;
     Piecewise<D2<SBasis> > pwd2;
-    Geom::Path p_in = return_at_first_cusp(pathv[0]);
+    Geom::Path p_in = return_at_first_cusp(pathv[_index]);
     pwd2.concat(p_in.toPwSb());
 
     double t0 = nearest_time(s, pwd2);
-    lpe->attach_start.param_set_value(t0);
-
-    // FIXME: this should not directly ask for updating the item. It should write to SVG, which triggers updating.
-    sp_lpe_item_update_patheffect(SP_LPE_ITEM(item), false, true);
-}
-
-void KnotHolderEntityAttachBegin::knot_click(guint state)
-{
-    if (!(state & GDK_SHIFT_MASK)) {
-        return;
-    }
-
-    LPETaperStroke* lpe = dynamic_cast<LPETaperStroke *>(_effect);
-
-    lpe->start_shape.param_set_value((lpe->start_shape.get_value() + 1) % LAST_SHAPE);
-    lpe->start_shape.write_to_SVG();
-}
-
-void KnotHolderEntityAttachEnd::knot_click(guint state)
-{
-    if (!(state & GDK_SHIFT_MASK)) {
-        return;
-    }
-
-    LPETaperStroke* lpe = dynamic_cast<LPETaperStroke *>(_effect);
-
-    lpe->end_shape.param_set_value((lpe->end_shape.get_value() + 1) % LAST_SHAPE);
-    lpe->end_shape.write_to_SVG();
+    _effect->attach_start._vector[_index] = t0;
+    _effect->attach_start.write_to_SVG();
 }
 
 void KnotHolderEntityAttachEnd::knot_set(Geom::Point const &p, Geom::Point const& /*origin*/, guint state)
 {
     using namespace Geom;
 
-    LPETaperStroke* lpe = dynamic_cast<LPETaperStroke *>(_effect);
+    if (!valid_index(_index) || _effect->end_attach_point.size() <= _index) {
+        return;
+    }
 
     Geom::Point const s = snap_knot_position(p, state);
 
-    if (!SP_IS_SHAPE(lpe->sp_lpe_item) ) {
+    if (!is<SPShape>(_effect->sp_lpe_item)) {
         printf("WARNING: LPEItem is not a path!\n");
         return;
     }
     
-    if (!SP_SHAPE(lpe->sp_lpe_item)->curve()) {
+    if (!cast_unsafe<SPShape>(_effect->sp_lpe_item)->curve()) {
         // oops
         return;
     }
-    Geom::PathVector pathv = lpe->pathvector_before_effect;
-    Geom::Path p_in = return_at_first_cusp(pathv[0].reversed());
-    Piecewise<D2<SBasis> > pwd2 = p_in.toPwSb();
+    Geom::PathVector pathv = _effect->pathvector_before_effect;
+    Geom::Path p_in = return_at_first_cusp(pathv[_index].reversed());
+    Piecewise<D2<SBasis>> pwd2 = p_in.toPwSb();
     
     double t0 = nearest_time(s, pwd2);
-    lpe->attach_end.param_set_value(t0);
+    _effect->attach_end._vector[_index] = t0;
+    _effect->attach_end.write_to_SVG();
+}
 
-    sp_lpe_item_update_patheffect (SP_LPE_ITEM(item), false, true);
+void KnotHolderEntityAttachBegin::knot_click(guint state)
+{
+    using namespace Geom;
+    if (!(state & GDK_SHIFT_MASK)) {
+        return;
+    }
+
+    if (!valid_index(_index) || _effect->start_attach_point.size() <= _index) {
+        return;
+    }
+
+    _effect->start_shape._vector[_index] = TaperShapeTypeConverter.get_key((TaperShapeTypeConverter.get_id_from_key(_effect->start_shape._vector[_index]) + 1) % LAST_SHAPE);
+    _effect->start_shape.write_to_SVG();
+}
+
+void KnotHolderEntityAttachEnd::knot_click(guint state)
+{
+    using namespace Geom;
+    if (!(state & GDK_SHIFT_MASK)) {
+        return;
+    }
+
+    if (!valid_index(_index) || _effect->end_attach_point.size() <= _index) {
+        return;
+    }
+
+    _effect->end_shape._vector[_index] = TaperShapeTypeConverter.get_key((TaperShapeTypeConverter.get_id_from_key(_effect->end_shape._vector[_index]) + 1) % LAST_SHAPE);
+    _effect->end_shape.write_to_SVG();
 }
 
 Geom::Point KnotHolderEntityAttachBegin::knot_get() const
 {
-    LPETaperStroke const * lpe = dynamic_cast<LPETaperStroke const*> (_effect);
-    return lpe->start_attach_point;
+    if (!valid_index(_index)) {
+        return Geom::Point();
+    }
+    if (_effect && _effect->start_attach_point.size() > _index) {
+        return _effect->start_attach_point[_index];
+    }
+    return Geom::Point();
 }
 
 Geom::Point KnotHolderEntityAttachEnd::knot_get() const
 {
-    LPETaperStroke const * lpe = dynamic_cast<LPETaperStroke const*> (_effect);
-    return lpe->end_attach_point;
+    if (!valid_index(_index)) {
+        return Geom::Point();
+    }
+    if (_effect && _effect->end_attach_point.size() > _index) {
+        return _effect->end_attach_point[_index];
+    }
+    return Geom::Point();
 }
 
 } // namespace TpS

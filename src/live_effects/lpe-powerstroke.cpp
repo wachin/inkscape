@@ -16,6 +16,8 @@
 #include <2geom/path-intersection.h>
 #include <2geom/circle.h>
 
+#include "helper/geom.h"
+
 #include "live_effects/lpe-powerstroke.h"
 #include "live_effects/lpe-powerstroke-interpolators.h"
 #include "live_effects/lpe-simplify.h"
@@ -160,34 +162,39 @@ LPEPowerStroke::LPEPowerStroke(LivePathEffectObject *lpeobject) :
     offset_points(_("Offset points"), _("Offset points"), "offset_points", &wr, this),
     not_jump(_("No jumping handles"), _("Allow to move handles along the path without them automatically attaching to the nearest path segment"), "not_jump", &wr, this, false),
     sort_points(_("Sort points"), _("Sort offset points according to their time value along the curve"), "sort_points", &wr, this, true),
-    interpolator_type(_("Interpolator type:"), _("Determines which kind of interpolator will be used to interpolate between stroke width along the path"), "interpolator_type", InterpolatorTypeConverter, &wr, this, Geom::Interpolate::INTERP_CENTRIPETAL_CATMULLROM),
+    interpolator_type(_("Smoothing type"), _("Determines which kind of interpolator will be used to interpolate between stroke width along the path"), "interpolator_type", InterpolatorTypeConverter, &wr, this, Geom::Interpolate::INTERP_CENTRIPETAL_CATMULLROM),
     interpolator_beta(_("Smoothness:"), _("Sets the smoothness for the CubicBezierJohan interpolator; 0 = linear interpolation, 1 = smooth"), "interpolator_beta", &wr, this, 0.2),
-    scale_width(_("Width factor:"), _("Scale the stroke's width uniformly along the whole path"), "scale_width", &wr, this, 1.0),
+    scale_width(_("Width multiplier"), _("Scale the stroke's width uniformly along the whole path"), "scale_width", &wr, this, 1.0),
     start_linecap_type(_("Start cap:"), _("Determines the shape of the path's start"), "start_linecap_type", LineCapTypeConverter, &wr, this, LINECAP_ZERO_WIDTH),
-    linejoin_type(_("Join:"), _("Determines the shape of the path's corners"), "linejoin_type", LineJoinTypeConverter, &wr, this, LINEJOIN_ROUND),
-    miter_limit(_("Miter limit:"), _("Maximum length of the miter (in units of stroke width)"), "miter_limit", &wr, this, 4.),
-    end_linecap_type(_("End cap:"), _("Determines the shape of the path's end"), "end_linecap_type", LineCapTypeConverter, &wr, this, LINECAP_ZERO_WIDTH)
+    linejoin_type(_("Join"), _("Determines the shape of the path's corners"), "linejoin_type", LineJoinTypeConverter, &wr, this, LINEJOIN_ROUND),
+    miter_limit(_("Miter limit"), _("Maximum length of the miter (in units of stroke width)"), "miter_limit", &wr, this, 4.),
+    end_linecap_type(_("End cap"), _("Determines the shape of the path's end"), "end_linecap_type", LineCapTypeConverter, &wr, this, LINECAP_ZERO_WIDTH),
+    message(_("Add new thickness control point"), _("Important messages"), "message", &wr, this, _("<b>Ctrl + click</b> on existing node and move it"))
 {
     show_orig_path = true;
 
     /// @todo offset_points are initialized with empty path, is that bug-save?
 
-    interpolator_beta.addSlider(true);
-    interpolator_beta.param_set_range(0.,1.);
 
-    registerParameter(&offset_points);
-    registerParameter(&not_jump);
-    registerParameter(&sort_points);
+    registerParameter(&scale_width);
     registerParameter(&interpolator_type);
     registerParameter(&interpolator_beta);
     registerParameter(&start_linecap_type);
+    registerParameter(&end_linecap_type);
+    registerParameter(&offset_points);
     registerParameter(&linejoin_type);
     registerParameter(&miter_limit);
-    registerParameter(&scale_width);
-    registerParameter(&end_linecap_type);
-    scale_width.param_set_range(0.0, std::numeric_limits<double>::max());
+    registerParameter(&not_jump);
+    registerParameter(&sort_points);
+    registerParameter(&message);
+
+    interpolator_beta.addSlider(true);
+    interpolator_beta.param_set_range(0.,1.);
+
+    scale_width.addSlider(true);
+    scale_width.param_set_range(0.0, 100);
     scale_width.param_set_increments(0.1, 0.1);
-    scale_width.param_set_digits(4);
+    scale_width.param_set_digits(1);   
     recusion_limit = 0;
     has_recursion = false;
 }
@@ -200,19 +207,20 @@ LPEPowerStroke::doBeforeEffect(SPLPEItem const *lpeItem)
     offset_points.set_scale_width(scale_width);
     if (has_recursion) {
         has_recursion = false;
-        adjustForNewPath(pathvector_before_effect);
+        adjustForNewPath();
     }
 }
 
 void LPEPowerStroke::applyStyle(SPLPEItem *lpeitem)
 {
-    lpe_shape_convert_stroke_and_fill(SP_SHAPE(lpeitem));
+    lpe_shape_convert_stroke_and_fill(cast<SPShape>(lpeitem));
 }
 
 void
 LPEPowerStroke::doOnApply(SPLPEItem const* lpeitem)
 {
-    if (auto shape = dynamic_cast<SPShape const *>(lpeitem)) {
+    if (auto shape = cast<SPShape>(lpeitem)) {
+        lpeversion.param_setValue("1.3", true);
         SPLPEItem* item = const_cast<SPLPEItem*>(lpeitem);
         std::vector<Geom::Point> points;
         Geom::PathVector const &pathv = pathv_to_linear_and_cubic_beziers(shape->curve()->get_pathvector());
@@ -231,21 +239,24 @@ LPEPowerStroke::doOnApply(SPLPEItem const* lpeitem)
                 points.emplace_back(0.5, width);
                 points.emplace_back(0.8, width);
             } else {
-                Geom::Path const &path = pathv.front();
-                Geom::Path::size_type const size = path.size_default();
-                if (!path.closed()) {
-                    points.emplace_back(0.2, width);
-                }
-                points.emplace_back(0.5 * size, width);
-                if (!path.closed()) {
-                    points.emplace_back(size - 0.2, width);
+                size_t current_pos = 0;
+                for (auto path : pathv) {
+                    size_t psize = count_pathvector_curves(path);
+                    if (!path.closed()) {
+                        points.emplace_back(0.2 + current_pos, width);
+                    }
+                    points.emplace_back((0.5 * psize) + current_pos, width);
+                    if (!path.closed()) {
+                        points.emplace_back((psize - 0.2) + current_pos, width);
+                    }
+                    current_pos += psize; 
                 }
             }
             offset_points.param_set_and_write_new_value(points);
         }
         offset_points.set_scale_width(scale_width);
     } else {
-        if (!SP_IS_SHAPE(lpeitem)) {
+        if (!is<SPShape>(lpeitem)) {
             g_warning("LPE Powerstroke can only be applied to shapes (not groups).");
         }
     }
@@ -254,7 +265,7 @@ LPEPowerStroke::doOnApply(SPLPEItem const* lpeitem)
 void LPEPowerStroke::doOnRemove(SPLPEItem const* lpeitem)
 {
     auto lpeitem_mutable = const_cast<SPLPEItem *>(lpeitem);
-    auto shape = dynamic_cast<SPShape *>(lpeitem_mutable);
+    auto shape = cast<SPShape>(lpeitem_mutable);
 
     if (shape && !keep_paths) {
         lpe_shape_revert_stroke_and_fill(shape, offset_points.median_width() * 2);
@@ -262,12 +273,11 @@ void LPEPowerStroke::doOnRemove(SPLPEItem const* lpeitem)
 }
 
 void
-LPEPowerStroke::adjustForNewPath(Geom::PathVector const & path_in)
+LPEPowerStroke::adjustForNewPath()
 {
-    if (!path_in.empty()) {
-        offset_points.recalculate_controlpoints_for_new_pwd2(path_in[0].toPwSb());
-    }
+    adjust_path = true;
 }
+    
 
 static bool compare_offsets (Geom::Point first, Geom::Point second)
 {
@@ -335,6 +345,12 @@ static Geom::Path path_from_piecewise_fix_cusps( Geom::Piecewise<Geom::D2<Geom::
                         ellipse = find_ellipse(B[prev_i].at1(), B[i].at0(), *O);
                     }
                     catch (Geom::LogicalError &e) {
+                        // 2geom did not find a fitting ellipse, this happens for weird thick paths :)
+                        // do bevel, and break
+                         pb.lineTo(B[i].at0());
+                         break;
+                    }
+                    catch (Geom::RangeError &e) {
                         // 2geom did not find a fitting ellipse, this happens for weird thick paths :)
                         // do bevel, and break
                          pb.lineTo(B[i].at0());
@@ -583,193 +599,302 @@ LPEPowerStroke::doEffect_path (Geom::PathVector const & path_in)
         return path_in;
     }
     Geom::PathVector pathv = pathv_to_linear_and_cubic_beziers(path_in);
-    Geom::Piecewise<Geom::D2<Geom::SBasis> > pwd2_in = pathv[0].toPwSb();
+    size_t path_init = 0;
+    if (adjust_path) {
+        path_out_prev.clear();
+        adjust_path = false;
+        Glib::ustring version = lpeversion.param_getSVGValue();
+        if (version < "1.3") {
+            offset_points.recalculate_controlpoints(pathv[0]);
+
+        } else {
+            offset_points.recalculate_controlpoints(pathv);
+        }
+    }
+    Geom::Piecewise<Geom::D2<Geom::SBasis> >  pwd2_in = paths_to_pw(pathv);
     if (pwd2_in.empty()) {
         return path_in;
     }
-    Piecewise<D2<SBasis> > der = derivative(pwd2_in);
+    Geom::Piecewise<Geom::D2<Geom::SBasis> >  der = derivative(pwd2_in);
     if (der.empty()) {
         return path_in;
     }
-    Piecewise<D2<SBasis> > n = unitVector(der,0.00001);
+    Geom::Piecewise<Geom::D2<Geom::SBasis> >  n = unitVector(der,0.00001);
     if (n.empty()) {
         return path_in;
     }
-
+    Geom::PathVector path_out_prev_tmp = path_out_prev;
+    path_out_prev.clear();
     n = rot90(n);
-    offset_points.set_pwd2(pwd2_in, n);
-
-    LineCapType end_linecap = static_cast<LineCapType>(end_linecap_type.get_value());
-    LineCapType start_linecap = static_cast<LineCapType>(start_linecap_type.get_value());
-
-    std::vector<Geom::Point> ts_no_scale = offset_points.data();
-    if (ts_no_scale.empty()) {
-        return path_in;
-    }
-    std::vector<Geom::Point> ts;
-    for (auto & tsp : ts_no_scale) {
-        Geom::Point p = Geom::Point(tsp[Geom::X], tsp[Geom::Y] * scale_width);
-        ts.push_back(p);
-    }
-    if (sort_points) {
-        sort(ts.begin(), ts.end(), compare_offsets);
-    }
-    // create stroke path where points (x,y) := (t, offset)
-    Geom::Interpolate::Interpolator *interpolator = Geom::Interpolate::Interpolator::create(static_cast<Geom::Interpolate::InterpolatorType>(interpolator_type.get_value()));
-    if (Geom::Interpolate::CubicBezierJohan *johan = dynamic_cast<Geom::Interpolate::CubicBezierJohan*>(interpolator)) {
-        johan->setBeta(interpolator_beta);
-    }
-    if (Geom::Interpolate::CubicBezierSmooth *smooth = dynamic_cast<Geom::Interpolate::CubicBezierSmooth*>(interpolator)) {
-        smooth->setBeta(interpolator_beta);
-    }
-    if (pathv[0].closed()) {
-        std::vector<Geom::Point> ts_close;
-        //we have only one knot or overwrite before
-        Geom::Point start = Geom::Point( pwd2_in.domain().min(), ts.front()[Geom::Y]);
-        Geom::Point end   = Geom::Point( pwd2_in.domain().max(), ts.front()[Geom::Y]);
-        if (ts.size() > 1) {
-            end = Geom::Point(pwd2_in.domain().max(), 0);
-            Geom::Point tmpstart(0, 0);
-            tmpstart[Geom::X] = end[Geom::X] + ts.front()[Geom::X];
-            tmpstart[Geom::Y] = ts.front()[Geom::Y];
-            ts_close.push_back(ts.back());
-            ts_close.push_back(middle_point(tmpstart, ts.back()));
-            ts_close.push_back(tmpstart);
-            Geom::Path closepath = interpolator->interpolateToPath(ts_close);
-            end = closepath.pointAt(Geom::nearest_time(end, closepath));
-            end[Geom::X] = pwd2_in.domain().max();
-            start = end;
-            start[Geom::X] = pwd2_in.domain().min();
+    Glib::ustring version = lpeversion.param_getSVGValue();
+    offset_points.set_pwd2(pwd2_in , n);
+    size_t pathindex = 0;
+    for (auto path : pathv) {
+        size_t psize = count_pathvector_curves(path);
+        path_init += psize;
+        if (!offset_points.unplaced && 
+            knotdragging && 
+            path_out_prev_tmp.size() > pathindex &&
+            pathindex != offset_points.current_path &&
+            offset_points.current_path != Glib::ustring::npos) 
+        {
+            path_out.push_back(path_out_prev_tmp[pathindex]);
+            path_out_prev.push_back(path_out_prev_tmp[pathindex]);
+            pathindex++;
+            if (path.closed()) {
+                path_out.push_back(path_out_prev_tmp[pathindex]);
+                path_out_prev.push_back(path_out_prev_tmp[pathindex]);
+                pathindex++;
+            }
+            continue;
         }
-        ts.insert(ts.begin(), start );
-        ts.push_back( end );
-        ts_close.clear();
-    } else {
-        // add width data for first and last point on the path
-        // depending on cap type, these first and last points have width zero or take the width from the closest width point.
-        ts.insert(ts.begin(), Point( pwd2_in.domain().min(),
-                                    (start_linecap==LINECAP_ZERO_WIDTH) ? 0. : ts.front()[Geom::Y]) );
-        ts.emplace_back( pwd2_in.domain().max(),
-                             (end_linecap==LINECAP_ZERO_WIDTH) ? 0. : ts.back()[Geom::Y] );
-    }
-
-    // do the interpolation in a coordinate system that is more alike to the on-canvas knots,
-    // instead of the heavily compressed coordinate system of (segment_no offset, Y) in which the knots are stored
-    double pwd2_in_arclength = length(pwd2_in);
-    double xcoord_scaling = pwd2_in_arclength / ts.back()[Geom::X];
-    for (auto & t : ts) {
-        t[Geom::X] *= xcoord_scaling;
-    }
-
-    Geom::Path strokepath = interpolator->interpolateToPath(ts);
-    delete interpolator;
-
-    // apply the inverse knot-xcoord scaling that was applied before the interpolation
-    strokepath *= Scale(1/xcoord_scaling, 1);
-
-    D2<Piecewise<SBasis> > patternd2 = make_cuts_independent(strokepath.toPwSb());
-    Piecewise<SBasis> x = Piecewise<SBasis>(patternd2[0]);
-    Piecewise<SBasis> y = Piecewise<SBasis>(patternd2[1]);
-    // find time values for which x lies outside path domain
-    // and only take portion of x and y that lies within those time values
-    std::vector< double > rtsmin = roots (x - pwd2_in.domain().min());
-    std::vector< double > rtsmax = roots (x + pwd2_in.domain().max());
-    if ( !rtsmin.empty() && !rtsmax.empty() ) {
-        x = portion(x, rtsmin.at(0), rtsmax.at(0));
-        y = portion(y, rtsmin.at(0), rtsmax.at(0));
-    }
-
-    LineJoinType jointype = static_cast<LineJoinType>(linejoin_type.get_value());
-    if (x.empty() || y.empty()) {
-        return path_in;
-    }
-    Piecewise<D2<SBasis> > pwd2_out   = compose(pwd2_in,x) + y*compose(n,x);
-    Piecewise<D2<SBasis> > mirrorpath = reverse( compose(pwd2_in,x) - y*compose(n,x));
-
-    Geom::Path fixed_path       = path_from_piecewise_fix_cusps( pwd2_out,   y,          jointype, miter_limit, LPE_CONVERSION_TOLERANCE);
-    Geom::Path fixed_mirrorpath = path_from_piecewise_fix_cusps( mirrorpath, reverse(y), jointype, miter_limit, LPE_CONVERSION_TOLERANCE);
-    if (pathv[0].closed()) {
-        fixed_path.close(true);
-        path_out.push_back(fixed_path);
-        fixed_mirrorpath.close(true);
-        path_out.push_back(fixed_mirrorpath);
-    } else {
-        // add linecaps...
-        switch (end_linecap) {
-            case LINECAP_ZERO_WIDTH:
-                // do nothing
-                break;
-            case LINECAP_PEAK:
-            {
-                Geom::Point end_deriv = -unitTangentAt( reverse(pwd2_in.segs.back()), 0.);
-                double radius = 0.5 * distance(fixed_path.finalPoint(), fixed_mirrorpath.initialPoint());
-                Geom::Point midpoint = 0.5*(fixed_path.finalPoint() + fixed_mirrorpath.initialPoint()) + radius*end_deriv;
-                fixed_path.appendNew<LineSegment>(midpoint);
-                fixed_path.appendNew<LineSegment>(fixed_mirrorpath.initialPoint());
-                break;
-            }
-            case LINECAP_SQUARE:
-            {
-                Geom::Point end_deriv = -unitTangentAt( reverse(pwd2_in.segs.back()), 0.);
-                double radius = 0.5 * distance(fixed_path.finalPoint(), fixed_mirrorpath.initialPoint());
-                fixed_path.appendNew<LineSegment>( fixed_path.finalPoint() + radius*end_deriv );
-                fixed_path.appendNew<LineSegment>( fixed_mirrorpath.initialPoint() + radius*end_deriv );
-                fixed_path.appendNew<LineSegment>( fixed_mirrorpath.initialPoint() );
-                break;
-            }
-            case LINECAP_BUTT:
-            {
-                fixed_path.appendNew<LineSegment>( fixed_mirrorpath.initialPoint() );
-                break;
-            }
-            case LINECAP_ROUND:
-            default:
-            {
-                double radius1 = 0.5 * distance(fixed_path.finalPoint(), fixed_mirrorpath.initialPoint());
-                fixed_path.appendNew<EllipticalArc>( radius1, radius1, M_PI/2., false, y.lastValue() < 0, fixed_mirrorpath.initialPoint() );
-                break;
-            }
+        pwd2_in = path.toPwSb();
+        if (pwd2_in.empty()) {
+            continue;
+        }
+        Piecewise<D2<SBasis> > der = derivative(pwd2_in);
+        if (der.empty()) {
+            continue;
+        }
+        Piecewise<D2<SBasis> > n = unitVector(der,0.00001);
+        if (n.empty()) {
+            continue;
         }
 
-        fixed_path.append(fixed_mirrorpath);
-        switch (start_linecap) {
-            case LINECAP_ZERO_WIDTH:
-                // do nothing
-                break;
-            case LINECAP_PEAK:
-            {
-                Geom::Point start_deriv = unitTangentAt( pwd2_in.segs.front(), 0.);
-                double radius = 0.5 * distance(fixed_path.initialPoint(), fixed_mirrorpath.finalPoint());
-                Geom::Point midpoint = 0.5*(fixed_mirrorpath.finalPoint() + fixed_path.initialPoint()) - radius*start_deriv;
-                fixed_path.appendNew<LineSegment>( midpoint );
-                fixed_path.appendNew<LineSegment>( fixed_path.initialPoint() );
-                break;
-            }
-            case LINECAP_SQUARE:
-            {
-                Geom::Point start_deriv = unitTangentAt( pwd2_in.segs.front(), 0.);
-                double radius = 0.5 * distance(fixed_path.initialPoint(), fixed_mirrorpath.finalPoint());
-                fixed_path.appendNew<LineSegment>( fixed_mirrorpath.finalPoint() - radius*start_deriv );
-                fixed_path.appendNew<LineSegment>( fixed_path.initialPoint() - radius*start_deriv );
-                fixed_path.appendNew<LineSegment>( fixed_path.initialPoint() );
-                break;
-            }
-            case LINECAP_BUTT:
-            {
-                fixed_path.appendNew<LineSegment>( fixed_path.initialPoint() );
-                break;
-            }
-            case LINECAP_ROUND:
-            default:
-            {
-                double radius2 = 0.5 * distance(fixed_path.initialPoint(), fixed_mirrorpath.finalPoint());
-                fixed_path.appendNew<EllipticalArc>( radius2, radius2, M_PI/2., false, y.firstValue() < 0, fixed_path.initialPoint() );
-                break;
+        n = rot90(n);
+
+        LineCapType end_linecap = static_cast<LineCapType>(end_linecap_type.get_value());
+        LineCapType start_linecap = static_cast<LineCapType>(start_linecap_type.get_value());
+
+        std::vector<Geom::Point> ts_no_scale = offset_points.data();
+        if (ts_no_scale.empty()) {
+            continue;
+        }
+        std::vector<Geom::Point> ts;
+        for (auto & tsp : ts_no_scale) {
+            if (path_init - psize <= tsp[Geom::X] && path_init >= tsp[Geom::X]) {
+                Geom::Point p = Geom::Point(tsp[Geom::X] - (path_init - psize), tsp[Geom::Y] * scale_width);
+                ts.push_back(p);
             }
         }
-        fixed_path.close(true);
-        path_out.push_back(fixed_path);
+        if (sort_points) {
+            sort(ts.begin(), ts.end(), compare_offsets);
+        }
+        // create stroke path where points (x,y) := (t, offset)
+        Geom::Interpolate::Interpolator *interpolator = Geom::Interpolate::Interpolator::create(static_cast<Geom::Interpolate::InterpolatorType>(interpolator_type.get_value()));
+        if (Geom::Interpolate::CubicBezierJohan *johan = dynamic_cast<Geom::Interpolate::CubicBezierJohan*>(interpolator)) {
+            johan->setBeta(interpolator_beta);
+        }
+        if (Geom::Interpolate::CubicBezierSmooth *smooth = dynamic_cast<Geom::Interpolate::CubicBezierSmooth*>(interpolator)) {
+            smooth->setBeta(interpolator_beta);
+        }
+        if (path.closed() && ts.size()) {
+            std::vector<Geom::Point> ts_close;
+            //we have only one knot or overwrite before
+            Geom::Point start = Geom::Point( pwd2_in.domain().min(), ts.front()[Geom::Y]);
+            Geom::Point end   = Geom::Point( pwd2_in.domain().max(), ts.front()[Geom::Y]);
+            if (ts.size() > 1) {
+                if (version < "1.3") {
+                    end = Geom::Point(pwd2_in.domain().max(), 0);
+                    Geom::Point tmpstart(0, 0);
+                    tmpstart[Geom::X] = end[Geom::X] + ts.front()[Geom::X];
+                    tmpstart[Geom::Y] = ts.front()[Geom::Y];
+                    ts_close.push_back(ts.back());
+                    ts_close.push_back(middle_point(tmpstart, ts.back()));
+                    ts_close.push_back(tmpstart);
+                    Geom::Path closepath = interpolator->interpolateToPath(ts_close);
+                    end = closepath.pointAt(Geom::nearest_time(end, closepath));
+                    end[Geom::X] = pwd2_in.domain().max();
+                    start = end;
+                    start[Geom::X] = pwd2_in.domain().min();
+                } else {
+                    double pl = 1;
+                    double pl2 = 0;
+                    if (ts.front()[Geom::X] > 0) {
+                        Geom::Path p = path.portion(pwd2_in.domain().min(),ts.front()[Geom::X]);
+                        pl = 0;
+                        for (gint i = 0; i < p.size_open(); i++) {
+                            pl += p.curveAt(i).length();
+                        }
+                    }
+                    if (pwd2_in.domain().max() != ts.back()[Geom::X]) {
+                        Geom::Path p2 = path.portion(ts.back()[Geom::X], pwd2_in.domain().max());
+                        pl2 = 0;
+                        for (gint i = 0; i < p2.size_open(); i++) {
+                            pl2 += p2.curveAt(i).length();
+                        }
+                    }
+                    gint signfront = ts.front()[Geom::Y] > 0 ? 1 : -1;
+                    gint signback  = ts.back() [Geom::Y] > 0 ? 1 : -1;
+                    gint sign = 1;
+                    bool inverted = std::abs(ts.front()[Geom::Y]) > std::abs(ts.back()[Geom::Y]);
+                    double min = std::min(std::abs(ts.front()[Geom::Y]), std::abs(ts.back()[Geom::Y]));
+                    double max = std::max(std::abs(ts.front()[Geom::Y]), std::abs(ts.back()[Geom::Y]));
+                    if (signfront < 0 && signback < 0) {
+                        min *= -1;
+                        max *= -1;
+                        sign = -1;
+                    } else if (signfront < 0) {
+                        max *= max == std::abs(ts.front()[Geom::Y]) ? signfront : signback;
+                        min *= min == std::abs(ts.front()[Geom::Y]) ? signback  : signfront;
+                    } else if (signback < 0) {
+                        max *= max == std::abs(ts.front()[Geom::Y]) ? signfront : signback;
+                        min *= min == std::abs(ts.front()[Geom::Y]) ? signback  : signfront;
+                    }
+                    double gap = std::abs(max-min);
+                    double factor1 = pl/(pl + pl2);
+                    double factor2 = pl2/(pl + pl2);
+                    bool toggled = false;
+                    if (!inverted) {
+                        toggled = true;
+                    }
+                    end = Geom::Point(pwd2_in.domain().max(),((std::abs(min) + (gap * (toggled ? factor1 : factor2)))  * sign));
+                    start = end;
+                    start[Geom::X] = pwd2_in.domain().min();
+                }
+            }
+            ts.insert(ts.begin(), start );
+            ts.push_back( end );
+            if (version < "1.3") {
+                ts_close.clear();
+            }
+        } else {
+            // add width data for first and last point on the path
+            // depending on cap type, these first and last points have width zero or take the width from the closest width point.
+            auto start_y = (start_linecap == LINECAP_ZERO_WIDTH || ts.empty()) ? 0. : ts.front()[Geom::Y];
+            auto end_y = (end_linecap == LINECAP_ZERO_WIDTH || ts.empty()) ? 0. : ts.back()[Geom::Y];
+            ts.insert(ts.begin(), Geom::Point(pwd2_in.domain().min(), start_y));
+            ts.emplace_back(pwd2_in.domain().max(), end_y);
+        }
+
+        // do the interpolation in a coordinate system that is more alike to the on-canvas knots,
+        // instead of the heavily compressed coordinate system of (segment_no offset, Y) in which the knots are stored
+        double pwd2_in_arclength = length(pwd2_in);
+        double xcoord_scaling = pwd2_in_arclength / ts.back()[Geom::X];
+        for (auto & t : ts) {
+            t[Geom::X] *= xcoord_scaling;
+        }
+
+        Geom::Path strokepath = interpolator->interpolateToPath(ts);
+        delete interpolator;
+
+        // apply the inverse knot-xcoord scaling that was applied before the interpolation
+        strokepath *= Scale(1/xcoord_scaling, 1);
+
+        D2<Piecewise<SBasis> > patternd2 = make_cuts_independent(strokepath.toPwSb());
+        Piecewise<SBasis> x = Piecewise<SBasis>(patternd2[0]);
+        Piecewise<SBasis> y = Piecewise<SBasis>(patternd2[1]);
+        // find time values for which x lies outside path domain
+        // and only take portion of x and y that lies within those time values
+        std::vector< double > rtsmin = roots (x - pwd2_in.domain().min());
+        std::vector< double > rtsmax = roots (x + pwd2_in.domain().max());
+        if ( !rtsmin.empty() && !rtsmax.empty() ) {
+            x = portion(x, rtsmin.at(0), rtsmax.at(0));
+            y = portion(y, rtsmin.at(0), rtsmax.at(0));
+        }
+
+        LineJoinType jointype = static_cast<LineJoinType>(linejoin_type.get_value());
+        if (x.empty() || y.empty()) {
+            continue;
+        }
+        Piecewise<D2<SBasis> > pwd2_out   = compose(pwd2_in,x) + y*compose(n,x);
+        Piecewise<D2<SBasis> > mirrorpath = reverse( compose(pwd2_in,x) - y*compose(n,x));
+
+        Geom::Path fixed_path       = path_from_piecewise_fix_cusps( pwd2_out,   y,          jointype, miter_limit, LPE_CONVERSION_TOLERANCE);
+        Geom::Path fixed_mirrorpath = path_from_piecewise_fix_cusps( mirrorpath, reverse(y), jointype, miter_limit, LPE_CONVERSION_TOLERANCE);
+        if (path.closed()) {
+            fixed_path.close(true);
+            path_out.push_back(fixed_path);
+            path_out_prev.push_back(fixed_path);
+            fixed_mirrorpath.close(true);
+            path_out.push_back(fixed_mirrorpath);
+            path_out_prev.push_back(fixed_mirrorpath);
+            pathindex++;
+            pathindex++;
+        } else {
+            // add linecaps...
+            switch (end_linecap) {
+                case LINECAP_ZERO_WIDTH:
+                    // do nothing
+                    break;
+                case LINECAP_PEAK:
+                {
+                    Geom::Point end_deriv = -unitTangentAt( reverse(pwd2_in.segs.back()), 0.);
+                    double radius = 0.5 * distance(fixed_path.finalPoint(), fixed_mirrorpath.initialPoint());
+                    Geom::Point midpoint = 0.5*(fixed_path.finalPoint() + fixed_mirrorpath.initialPoint()) + radius*end_deriv;
+                    fixed_path.appendNew<LineSegment>(midpoint);
+                    fixed_path.appendNew<LineSegment>(fixed_mirrorpath.initialPoint());
+                    break;
+                }
+                case LINECAP_SQUARE:
+                {
+                    Geom::Point end_deriv = -unitTangentAt( reverse(pwd2_in.segs.back()), 0.);
+                    double radius = 0.5 * distance(fixed_path.finalPoint(), fixed_mirrorpath.initialPoint());
+                    fixed_path.appendNew<LineSegment>( fixed_path.finalPoint() + radius*end_deriv );
+                    fixed_path.appendNew<LineSegment>( fixed_mirrorpath.initialPoint() + radius*end_deriv );
+                    fixed_path.appendNew<LineSegment>( fixed_mirrorpath.initialPoint() );
+                    break;
+                }
+                case LINECAP_BUTT:
+                {
+                    fixed_path.appendNew<LineSegment>( fixed_mirrorpath.initialPoint() );
+                    break;
+                }
+                case LINECAP_ROUND:
+                default:
+                {
+                    double radius1 = 0.5 * distance(fixed_path.finalPoint(), fixed_mirrorpath.initialPoint());
+                    fixed_path.appendNew<EllipticalArc>( radius1, radius1, M_PI/2., false, y.lastValue() < 0, fixed_mirrorpath.initialPoint() );
+                    break;
+                }
+            }
+
+            fixed_path.append(fixed_mirrorpath);
+            switch (start_linecap) {
+                case LINECAP_ZERO_WIDTH:
+                    // do nothing
+                    break;
+                case LINECAP_PEAK:
+                {
+                    Geom::Point start_deriv = unitTangentAt( pwd2_in.segs.front(), 0.);
+                    double radius = 0.5 * distance(fixed_path.initialPoint(), fixed_mirrorpath.finalPoint());
+                    Geom::Point midpoint = 0.5*(fixed_mirrorpath.finalPoint() + fixed_path.initialPoint()) - radius*start_deriv;
+                    fixed_path.appendNew<LineSegment>( midpoint );
+                    fixed_path.appendNew<LineSegment>( fixed_path.initialPoint() );
+                    break;
+                }
+                case LINECAP_SQUARE:
+                {
+                    Geom::Point start_deriv = unitTangentAt( pwd2_in.segs.front(), 0.);
+                    double radius = 0.5 * distance(fixed_path.initialPoint(), fixed_mirrorpath.finalPoint());
+                    fixed_path.appendNew<LineSegment>( fixed_mirrorpath.finalPoint() - radius*start_deriv );
+                    fixed_path.appendNew<LineSegment>( fixed_path.initialPoint() - radius*start_deriv );
+                    fixed_path.appendNew<LineSegment>( fixed_path.initialPoint() );
+                    break;
+                }
+                case LINECAP_BUTT:
+                {
+                    fixed_path.appendNew<LineSegment>( fixed_path.initialPoint() );
+                    break;
+                }
+                case LINECAP_ROUND:
+                default:
+                {
+                    double radius2 = 0.5 * distance(fixed_path.initialPoint(), fixed_mirrorpath.finalPoint());
+                    fixed_path.appendNew<EllipticalArc>( radius2, radius2, M_PI/2., false, y.firstValue() < 0, fixed_path.initialPoint() );
+                    break;
+                }
+            }
+            fixed_path.close(true);
+            path_out.push_back(fixed_path);
+            path_out_prev.push_back(fixed_path);
+            pathindex++;
+        }
+        if (version < "1.3") {
+            break;
+        }
     }
+    path_out_prev_tmp.clear();
     if (path_out.empty()) {
         return path_in;
         // doEffect_path (path_in);
@@ -779,7 +904,9 @@ LPEPowerStroke::doEffect_path (Geom::PathVector const & path_in)
 
 void LPEPowerStroke::transform_multiply(Geom::Affine const &postmul, bool /*set*/)
 {
-    offset_points.param_transform_multiply(postmul, false);
+    if (!sp_lpe_item->unoptimized()) {
+        offset_points.param_transform_multiply(postmul, false);
+    }
 }
 
 void LPEPowerStroke::doAfterEffect(SPLPEItem const *lpeitem, SPCurve *curve)
@@ -787,7 +914,7 @@ void LPEPowerStroke::doAfterEffect(SPLPEItem const *lpeitem, SPCurve *curve)
     if (pathvector_before_effect[0].size() == pathvector_after_effect[0].size()) {
         if (recusion_limit < 6) {
             Inkscape::LivePathEffect::Effect *effect =
-                sp_lpe_item->getPathEffectOfType(Inkscape::LivePathEffect::SIMPLIFY);
+                sp_lpe_item->getFirstPathEffectOfType(Inkscape::LivePathEffect::SIMPLIFY);
             if (effect) {
                 LivePathEffect::LPESimplify *simplify =
                     dynamic_cast<LivePathEffect::LPESimplify *>(effect->getLPEObj()->get_lpe());

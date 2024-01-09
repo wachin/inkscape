@@ -171,7 +171,7 @@ private:
 
     std::map<std::string, Feature*> _features;
 
-    sigc::signal<void> _changed_signal;
+    sigc::signal<void ()> _changed_signal;
 
 public:
 
@@ -199,7 +199,7 @@ public:
      * Let others know that user has changed GUI settings.
      * (Used to enable 'Apply' and 'Default' buttons.)
      */
-    sigc::connection connectChanged(sigc::slot<void> slot) {
+    sigc::connection connectChanged(sigc::slot<void ()> slot) {
         return _changed_signal.connect(slot);
     }
 };

@@ -74,7 +74,7 @@ bool URIReference::_acceptObject(SPObject *obj) const
     std::set<SPObject *> done;
     SPObject *owner = getOwner();
     //allow LPE as owner has any URI attached
-    LivePathEffectObject *lpobj = dynamic_cast<LivePathEffectObject *>(obj);
+    auto lpobj = cast<LivePathEffectObject>(obj);
     if (!owner || lpobj)
         return true;
     
@@ -97,7 +97,7 @@ bool URIReference::_acceptObject(SPObject *obj) const
     while (!todo.empty()) {
         SPObject *e = todo.front();
         todo.pop_front();
-        if (!dynamic_cast<SPObject *>(e))
+        if (!e)
             continue;
         if (done.insert(e).second) {
             if (e == obj) {

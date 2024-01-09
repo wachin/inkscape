@@ -58,48 +58,21 @@ namespace Internal {
  */
 bool
 latex_render_document_text_to_file( SPDocument *doc, gchar const *filename,
-                                    const gchar * const exportId, bool exportDrawing, bool exportCanvas, double bleedmargin_px,
                                     bool pdflatex)
 {
     doc->ensureUpToDate();
 
     SPRoot *root = doc->getRoot();
-    SPItem *base = nullptr;
-
-    bool pageBoundingBox = true;
-    if (exportId && strcmp(exportId, "")) {
-        // we want to export the given item only
-        base = dynamic_cast<SPItem *>(doc->getObjectById(exportId));
-        if (!base) {
-            throw Inkscape::Extension::Output::export_id_not_found(exportId);
-        }
-        root->cropToObject(base); // TODO: This is inconsistent in CLI (should only happen for --export-id-only)
-        pageBoundingBox = exportCanvas;
-    }
-    else {
-        // we want to export the entire document from root
-        base = root;
-        pageBoundingBox = !exportDrawing;
-    }
-
-    if (!base)
+    if (!root)
         return false;
 
-    /* Create renderer */
-    LaTeXTextRenderer *renderer = new LaTeXTextRenderer(pdflatex);
+    LaTeXTextRenderer renderer = LaTeXTextRenderer(pdflatex);
 
-    bool ret = renderer->setTargetFile(filename);
-    if (ret) {
-        /* Render document */
-        bool ret = renderer->setupDocument(doc, pageBoundingBox, bleedmargin_px, base);
-        if (ret) {
-            renderer->renderItem(root);
-        }
+    if (renderer.setTargetFile(filename) && renderer.setupDocument(doc, root)) {
+        renderer.renderItem(root);
+        return true;
     }
-
-    delete renderer;
-
-    return ret;
+    return false;
 }
 
 LaTeXTextRenderer::LaTeXTextRenderer(bool pdflatex)
@@ -166,10 +139,10 @@ LaTeXTextRenderer::setTargetFile(gchar const *filename) {
     /* flush this to test output stream as early as possible */
     if (fflush(_stream)) {
         if (ferror(_stream)) {
-            g_print("Error %d on LaTeX file output stream: %s\n", errno,
+            g_warning("Error %d on LaTeX file output stream: %s", errno,
                     g_strerror(errno));
         }
-        g_print("Output to LaTeX file failed\n");
+        g_warning("Output to LaTeX file failed");
         /* fixme: should use pclose() for pipes */
         fclose(_stream);
         _stream = nullptr;
@@ -238,7 +211,7 @@ void LaTeXTextRenderer::sp_group_render(SPGroup *group)
 {
 	std::vector<SPObject*> l = (group->childList(false));
     for(auto x : l){
-        SPItem *item = dynamic_cast<SPItem*>(x);
+        auto item = cast<SPItem>(x);
         if (item) {
             renderItem(item);
         }
@@ -255,7 +228,7 @@ void LaTeXTextRenderer::sp_use_render(SPUse *use)
         translated = true;
     }
 
-    SPItem *childItem = dynamic_cast<SPItem *>(use->child);
+    auto childItem = use->child;
     if (childItem) {
         renderItem(childItem);
     }
@@ -451,7 +424,7 @@ Flowing in rectangle is possible, not in arb shape.
     SPStyle *style = flowtext->style;
 
     SPItem *frame_item = flowtext->get_frame(nullptr);
-    SPRect *frame = dynamic_cast<SPRect *>(frame_item);
+    auto frame = cast<SPRect>(frame_item);
     if (!frame_item || !frame) {
         g_warning("LaTeX export: non-rectangular flowed text shapes are not supported, skipping text.");
         return; // don't know how to handle non-rect frames yet. is quite uncommon for latex users i think
@@ -604,23 +577,23 @@ LaTeXTextRenderer::sp_item_invoke_render(SPItem *item)
         return;
     }
 
-    SPRoot *root = dynamic_cast<SPRoot *>(item);
+    auto root = cast<SPRoot>(item);
     if (root) {
         return sp_root_render(root);
     }
-    SPGroup *group = dynamic_cast<SPGroup *>(item);
+    auto group = cast<SPGroup>(item);
     if (group) {
         return sp_group_render(group);
     }
-    SPUse *use = dynamic_cast<SPUse *>(item);
+    auto use = cast<SPUse>(item);
     if (use) {
         return sp_use_render(use);
     }
-    SPText *text = dynamic_cast<SPText *>(item);
+    auto text = cast<SPText>(item);
     if (text) {
         return sp_text_render(text);
     }
-    SPFlowtext *flowtext = dynamic_cast<SPFlowtext *>(item);
+    auto flowtext = cast<SPFlowtext>(item);
     if (flowtext) {
         return sp_flowtext_render(flowtext);
     }
@@ -655,26 +628,13 @@ LaTeXTextRenderer::writeGraphicPage() {
 }
 
 bool
-LaTeXTextRenderer::setupDocument(SPDocument *doc, bool pageBoundingBox, double bleedmargin_px, SPItem *base)
+LaTeXTextRenderer::setupDocument(SPDocument *doc, SPItem *base)
 {
-// The boundingbox calculation here should be exactly the same as the one by CairoRenderer::setupDocument !
-
     if (!base) {
         base = doc->getRoot();
     }
 
-    Geom::Rect d;
-    if (pageBoundingBox) {
-        d = Geom::Rect::from_xywh(Geom::Point(0,0), doc->getDimensions());
-    } else {
-        Geom::OptRect bbox = base->documentVisualBounds();
-        if (!bbox) {
-            g_message("CairoRenderer: empty bounding box.");
-            return false;
-        }
-        d = *bbox;
-    }
-    d.expandBy(bleedmargin_px);
+    Geom::Rect d = Geom::Rect::from_xywh(Geom::Point(0,0), doc->getDimensions());
 
     // scale all coordinates, such that the width of the image is 1, this is convenient for scaling the image in LaTeX
     double scale = 1/(d.width());

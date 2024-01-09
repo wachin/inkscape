@@ -18,13 +18,14 @@
  */
 
 #include "live_effects/effect.h"
-#include "live_effects/lpeobject.h"
-#include "live_effects/lpeobject-reference.h"
-#include "live_effects/parameter/parameter.h"
-#include "live_effects/parameter/text.h"
-#include "live_effects/parameter/point.h"
-#include "live_effects/parameter/enum.h"
 #include "live_effects/lpegroupbbox.h"
+#include "live_effects/lpeobject-reference.h"
+#include "live_effects/lpeobject.h"
+#include "live_effects/parameter/enum.h"
+#include "live_effects/parameter/parameter.h"
+#include "live_effects/parameter/point.h"
+#include "live_effects/parameter/satellitearray.h"
+#include "live_effects/parameter/text.h"
 
 namespace Inkscape {
 namespace LivePathEffect {
@@ -45,15 +46,15 @@ public:
     void doOnApply (SPLPEItem const* lpeitem) override;
     void doBeforeEffect (SPLPEItem const* lpeitem) override;
     void doAfterEffect (SPLPEItem const* lpeitem, SPCurve *curve) override;
+    bool doOnOpen(SPLPEItem const * /*lpeitem*/) override;
     Geom::PathVector doEffect_path (Geom::PathVector const & path_in) override;
-    void doOnRemove (SPLPEItem const* /*lpeitem*/) override;
+    void doOnRemove(SPLPEItem const* /*lpeitem*/) override;
     void doOnVisibilityToggled(SPLPEItem const* /*lpeitem*/) override;
     Gtk::Widget * newWidget() override;
     void cloneStyle(SPObject *orig, SPObject *dest);
     void toMirror(Geom::Affine transform);
     void cloneD(SPObject *orig, SPObject *dest);
     Inkscape::XML::Node * createPathBase(SPObject *elemref);
-    void resetStyles();
     void centerVert();
     void centerHoriz();
     BoolParam split_items;
@@ -62,17 +63,21 @@ protected:
     void addCanvasIndicators(SPLPEItem const *lpeitem, std::vector<Geom::PathVector> &hp_vec) override;
 
 private:
+    SatelliteArrayParam lpesatellites;
     EnumParam<ModeType> mode;
     BoolParam discard_orig_path;
     BoolParam fuse_paths;
     BoolParam oposite_fuse;
     BoolParam split_open;
+    BoolParam link_styles;
     PointParam start_point;
     PointParam end_point;
     PointParam center_point;
     Geom::Point previous_center;
-    SPObject * container;
+    SPObject *container;
     bool reset;
+    bool prev_split = false;
+    bool prev_discard_orig_path = false;
     bool center_vert;
     bool center_horiz;
     LPEMirrorSymmetry(const LPEMirrorSymmetry&) = delete;

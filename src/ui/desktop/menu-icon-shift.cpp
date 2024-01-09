@@ -20,90 +20,80 @@
 #include <iostream>
 #include <gtkmm.h>
 
+#include "inkscape-application.h"  // Action extra data
+
+// Could be used to update status bar.
+// bool on_enter_notify(GdkEventCrossing* crossing_event, Gtk::MenuItem* menuitem)
+// {
+//     return false;
+// }
+
 /*
  *  Install CSS to shift icons into the space reserved for toggles (i.e. check and radio items).
+ *  The CSS will apply to all menu icons but is updated as each menu is shown.
  */
-void
+
+bool
 shift_icons(Gtk::MenuShell* menu)
 {
-    static Glib::RefPtr<Gtk::CssProvider> provider;
-    if (!provider) {
-        provider = Gtk::CssProvider::create();
-        auto const screen = Gdk::Screen::get_default();
-        Gtk::StyleContext::add_provider_for_screen(screen, provider, GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
-    }
-
+    gint width, height;
+    gtk_icon_size_lookup(GTK_ICON_SIZE_MENU, &width, &height);
+    bool shifted = false;    
     // Calculate required shift. We need an example!
     // Search for Gtk::MenuItem -> Gtk::Box -> Gtk::Image
+    static auto app = InkscapeApplication::instance();
+    auto &label_to_tooltip_map = app->get_menu_label_to_tooltip_map();
+
     for (auto child : menu->get_children()) {
-
         auto menuitem = dynamic_cast<Gtk::MenuItem *>(child);
-        if (menuitem) {
-
-            auto box = dynamic_cast<Gtk::Box *>(menuitem->get_child());
-            if (box) {
-
-                box->set_spacing(0); // Match ImageMenuItem
-
-                auto children = box->get_children();
-                if (children.size() == 2) { // Image + Label
-
-                    auto image = dynamic_cast<Gtk::Image *>(box->get_children()[0]);
-                    if (image) {
-
-                        // OK, we have an example, do calculation.
-                        auto allocation_menuitem = menuitem->get_allocation();
-                        auto allocation_image = image->get_allocation();
-
-                        int shift = -allocation_image.get_x();
-                        if (menuitem->get_direction() == Gtk::TEXT_DIR_RTL) {
-                            shift += (allocation_menuitem.get_width() - allocation_image.get_width());
-                        }
-
-                        static int current_shift = 0;
-                        if (std::abs(current_shift - shift) > 2) {
-                            // Only do this once per menu, and only if there is a large change.
-                            current_shift = shift;
-                            std::string css_str;
-                            if (menuitem->get_direction() == Gtk::TEXT_DIR_RTL) {
-                                css_str = "menuitem box image {margin-right:" + std::to_string(shift) + "px;}";
-                            } else {
-                                css_str = "menuitem box image {margin-left:" + std::to_string(shift) + "px;}";
-                            }
-                            provider->load_from_data(css_str);
-                        }
+        if (menuitem) { //we need to go here to know we are in RTL maybe we can check in otehr way and simplify
+            auto submenu = menuitem->get_submenu();
+            if (submenu) {
+                shifted = shift_icons(submenu);
+            }
+            Gtk::Box *box = nullptr;
+            auto label = menuitem->get_label();
+            if (label.empty()) {
+                box = dynamic_cast<Gtk::Box *>(menuitem->get_child());
+                if (!box) {
+                    continue;
+                }  
+                std::vector<Gtk::Widget *> children = box->get_children();
+                if (children.size() == 2) {
+                    auto label_widget = dynamic_cast<Gtk::Label *>(children[1]);
+                    if (!label_widget) {
+                        label_widget = dynamic_cast<Gtk::Label *>(children[0]);
+                    }
+                    if (label_widget) {
+                        label = label_widget->get_label();
                     }
                 }
             }
-        }
-    }
-    // If we get here, it means there were no examples... but we don't care as there are no icons to shift anyway.
-}
-
-/*
- * Find all submenus to add "shift_icons" callback. We need to do this for
- * all submenus as some submenus are children of other submenus without icons.
- */
-void
-shift_icons_recursive(Gtk::MenuShell *menu)
-{
-    if (menu) {
-
-        // Connect signal
-        menu->signal_map().connect(sigc::bind<Gtk::MenuShell *>(sigc::ptr_fun(&shift_icons), menu));
-
-        // Look for descendent menus.
-        auto children = menu->get_children(); // Should be Gtk::MenuItem's
-        for (auto child : children) {
-            auto menuitem = dynamic_cast<Gtk::MenuItem *>(child);
-            if (menuitem) {
-                auto submenu = menuitem->get_submenu();
-                if (submenu) {
-                    shift_icons_recursive(submenu);
-                }
+            if (label.empty()) {
+                continue;
+            } 
+            auto it = label_to_tooltip_map.find(label);
+            if (it != label_to_tooltip_map.end()) {
+                menuitem->set_tooltip_text(it->second);
             }
+            if (shifted || !box) {
+                continue;
+            }
+            width += box->get_spacing() * 1.5; //2 elements 3 halfs to measure
+            std::string css_str;
+            Glib::RefPtr<Gtk::CssProvider> provider = Gtk::CssProvider::create();
+            auto const screen = Gdk::Screen::get_default();
+            Gtk::StyleContext::add_provider_for_screen(screen, provider, GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+            if (menuitem->get_direction() == Gtk::TEXT_DIR_RTL) {
+                css_str = ".shifticonmenu box {margin-right:-" + std::to_string(width) + "px;}";
+            } else {
+                css_str = ".shifticonmenu box {margin-left:-" + std::to_string(width) + "px;}";
+            }
+            provider->load_from_data(css_str);
+            shifted = true;
         }
     }
+    return shifted;
 }
 
 

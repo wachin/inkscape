@@ -21,8 +21,8 @@ namespace Widget {
 UnitMenu::UnitMenu() : _type(UNIT_TYPE_NONE)
 {
     set_active(0);
-    gtk_widget_add_events(GTK_WIDGET(gobj()), GDK_SCROLL_MASK | GDK_SMOOTH_SCROLL_MASK);
-    signal_scroll_event().connect(sigc::mem_fun(*this, &UnitMenu::on_scroll_event));
+    add_events(Gdk::SCROLL_MASK | Gdk::SMOOTH_SCROLL_MASK);
+    signal_scroll_event().connect([](GdkEventScroll*){ return false; });
 }
 
 UnitMenu::~UnitMenu() = default;

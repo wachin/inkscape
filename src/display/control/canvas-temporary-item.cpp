@@ -15,59 +15,31 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
-#include <glib.h>
+#include <glibmm/main.h>
 
 #include "canvas-temporary-item.h"
-
 #include "canvas-item.h"
 
 namespace Inkscape {
 namespace Display {
 
-/** lifetime is measured in milliseconds
- */
-TemporaryItem::TemporaryItem(CanvasItem *item, guint lifetime, bool deselect_destroy)
-    : canvasitem(item),
-      timeout_id(0),
-      destroy_on_deselect(deselect_destroy)
+TemporaryItem::TemporaryItem(CanvasItem *item, int lifetime_msecs)
+    : canvasitem(std::move(item))
 {
-    if (lifetime > 0 && destroy_on_deselect) {
-        g_print ("Warning: lifetime should be 0 when destroy_on_deselect is true\n");
-        lifetime = 0;
-    }
-    // zero lifetime means stay forever, so do not add timeout event.
-    if (lifetime > 0) {
-        timeout_id = g_timeout_add(lifetime, &TemporaryItem::_timeout, this);
-    }
-}
-
-TemporaryItem::~TemporaryItem()
-{
-    // when it has not expired yet...
-    if (timeout_id) {
-        g_source_remove(timeout_id);
-        timeout_id = 0;
-    }
-
-    if (canvasitem) {
-        // destroying the item automatically hides it
-        delete canvasitem;
-        canvasitem = nullptr;
+    // Zero lifetime means stay forever, so do not add timeout event.
+    if (lifetime_msecs > 0) {
+        timeout_conn = Glib::signal_timeout().connect([this] {
+            signal_timeout.emit(this);
+            delete this;
+            return false;
+        }, lifetime_msecs);
     }
 }
 
-/* static method */
-int TemporaryItem::_timeout(void* data) {
-    TemporaryItem *tempitem = static_cast<TemporaryItem *>(data);
-    tempitem->timeout_id = 0;
-    tempitem->signal_timeout.emit(tempitem);
-    delete tempitem;
-    return FALSE;
-}
+TemporaryItem::~TemporaryItem() = default;
 
-
-} //namespace Display
-} /* namespace Inkscape */
+} // namespace Display
+} // namespace Inkscape
 
 /*
   Local Variables:

@@ -25,9 +25,11 @@
 #include "document.h"
 #include "selection.h"
 
+#include "actions/actions-effect-data.h"
 #include "actions/actions-extra-data.h"
-#include "helper/action.h"
+#include "actions/actions-hint-data.h"
 #include "io/file-export-cmd.h"   // File export (non-verb)
+#include "extension/internal/pdfinput/enums.h"
 
 typedef std::vector<std::pair<std::string, Glib::VariantBase> > action_vector_t;
 
@@ -40,10 +42,12 @@ class InkscapeApplication
     Glib::RefPtr<Gio::Application> _gio_application;
 
 public:
-    /// Singleton instance
-    static InkscapeApplication &singleton();
     /// Singleton instance, if it exists (will not create it)
     static InkscapeApplication *instance();
+
+    /// Exclusively for the creation of the singleton instance inside main().
+    InkscapeApplication();
+    ~InkscapeApplication();
 
     /// The Gtk application instance, or NULL if running headless without display
     Gtk::Application *gtk_app() { return dynamic_cast<Gtk::Application *>(_gio_application.get()); }
@@ -52,15 +56,16 @@ public:
 
     InkscapeWindow *create_window(SPDocument *document, bool replace);
     void create_window(const Glib::RefPtr<Gio::File> &file = Glib::RefPtr<Gio::File>());
-    bool destroy_window(InkscapeWindow *window);
-    void destroy_all();
+    bool destroy_window(InkscapeWindow *window, bool keep_alive = false);
+    bool destroy_all();
     void print_action_list();
 
     void on_startup2();
     InkFileExportCmd *file_export() { return &_file_export; }
     int on_handle_local_options(const Glib::RefPtr<Glib::VariantDict> &options);
     void on_new();
-    void on_quit();
+    void on_quit(); // Check for data loss.
+    void on_quit_immediate(); // Don't check for data loss.
 
     // Gio::Actions need to know what document, selection, view to work on.
     // In headless mode, these are set for each file processed.
@@ -85,10 +90,10 @@ public:
     void                  set_active_window(InkscapeWindow* window) { _active_window = window; }
 
     /****** Document ******/
-    /* Except for document_fix(), these should not require a GUI! */
+    /* These should not require a GUI! */
     void                  document_add(SPDocument* document);
 
-    SPDocument*           document_new(const std::string &Template);
+    SPDocument*           document_new(const std::string &Template = "");
     SPDocument*           document_open(const Glib::RefPtr<Gio::File>& file, bool *cancelled = nullptr);
     SPDocument*           document_open(const std::string& data);
     bool                  document_swap(InkscapeWindow* window, SPDocument* document);
@@ -96,7 +101,8 @@ public:
     void                  document_close(SPDocument* document);
     unsigned              document_window_count(SPDocument* document);
 
-    void                  document_fix(InkscapeWindow* window);
+    /* These require a GUI! */
+    void                  document_fix(InkscapeWindow* window); // MOVE TO ANOTHER FILE
 
     std::vector<SPDocument *> get_documents();
 
@@ -104,13 +110,17 @@ public:
     InkscapeWindow*       window_open(SPDocument* document);
     void                  window_close(InkscapeWindow* window);
     void                  window_close_active();
+    void                  startup_close();
 
     // Update all windows connected to a document.
     void                  windows_update(SPDocument* document);
 
 
     /****** Actions *******/
-    InkActionExtraData&   get_action_extra_data() { return _action_extra_data; }
+    InkActionExtraData&     get_action_extra_data()     { return _action_extra_data;  }
+    InkActionEffectData&    get_action_effect_data()    { return _action_effect_data; }
+    InkActionHintData&      get_action_hint_data()      { return _action_hint_data;   }
+    std::map<Glib::ustring, Glib::ustring>& get_menu_label_to_tooltip_map() { return _menu_label_to_tooltip_map; };
 
     /******* Debug ********/
     void                  dump();
@@ -129,10 +139,10 @@ protected:
     bool _use_shell   = false;
     bool _use_pipe    = false;
     bool _auto_export = false;
-    int _pdf_page     = 1;
     int _pdf_poppler  = false;
+    FontStrategy _pdf_font_strategy = FontStrategy::RENDER_MISSING;
     bool _use_command_line_argument = false;
-    InkscapeApplication();
+    Glib::ustring _pages;
 
     // Documents are owned by the application which is responsible for opening/saving/exporting. WIP
     // std::vector<SPDocument*> _documents;   For a true headless version
@@ -147,18 +157,28 @@ protected:
     InkFileExportCmd _file_export;
 
     // Actions from the command line or file.
+    // Must read in on_handle_local_options() but parse in on_startup(). This is done as we must
+    // have a valid app before initializing extensions which must be done before parsing.
+    Glib::ustring _command_line_actions_input;
     action_vector_t _command_line_actions;
 
     // Extra data associated with actions (Label, Section, Tooltip/Help).
-    InkActionExtraData _action_extra_data;
-
+    InkActionExtraData  _action_extra_data;
+    InkActionEffectData  _action_effect_data;
+    InkActionHintData   _action_hint_data;
+    std::map<Glib::ustring, Glib::ustring> _menu_label_to_tooltip_map; // Needed due to the
+                                                                       // inabilitiy to get the
+                                                                       // corresponding Gio::Action
+                                                                       // from a Gtk::MenuItem.
+    void on_startup();
     void on_activate();
     void on_open(const Gio::Application::type_vec_files &files, const Glib::ustring &hint);
     void process_document(SPDocument* document, std::string output_path);
     void parse_actions(const Glib::ustring& input, action_vector_t& action_vector);
 
     void on_about();
-    void shell();
+    void redirect_output();
+    void shell(bool active_window = false);
 
     void _start_main_option_section(const Glib::ustring& section_name = "");
 };

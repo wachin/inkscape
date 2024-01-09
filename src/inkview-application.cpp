@@ -31,6 +31,7 @@
 #include "include/glibmm_version.h"
 #include "inkgc/gc-core.h"        // Garbage Collecting init
 #include "inkview-window.h"
+#include "util/statics.h"
 
 #ifdef ENABLE_NLS
 // Native Language Support - shouldn't this always be used?
@@ -90,9 +91,9 @@ InkviewApplication::InkviewApplication()
     register_application();
 }
 
-Glib::RefPtr<InkviewApplication> InkviewApplication::create()
+InkviewApplication::~InkviewApplication()
 {
-    return Glib::RefPtr<InkviewApplication>(new InkviewApplication());
+    Inkscape::Util::StaticsBin::get().destroy();
 }
 
 void
@@ -139,7 +140,7 @@ InkviewApplication::on_open(const Gio::Application::type_vec_files& files, const
         window = new InkviewWindow(files, fullscreen, recursive, timer, scale, preload);
     } catch (const InkviewWindow::NoValidFilesException&) {
         std::cerr << _("Error") << ": " << _("No (valid) files to open.") << std::endl;
-        exit(1);
+        return; // Fixme: Exit with code 1 - see https://gitlab.com/inkscape/inkscape/-/issues/270.
     }
 
     window->show_all();

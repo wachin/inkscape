@@ -14,9 +14,13 @@
 #include <glibmm/i18n.h>
 
 #include "actions-canvas-transform.h"
+#include "actions-helper.h"
 #include "inkscape-application.h"
 #include "inkscape-window.h"
 #include "desktop.h"
+
+#include "object/sp-namedview.h"
+#include "page-manager.h"
 
 #include "ui/tools/freehand-base.h" // SP_DRAW_CONTEXT
 #include "ui/tools/pen-tool.h"
@@ -54,7 +58,7 @@ canvas_zoom_helper(SPDesktop* dt, const Geom::Point& midpoint, double zoom_facto
 
         // Zoom around end of unfinished path.
         std::optional<Geom::Point> zoom_to =
-            SP_DRAW_CONTEXT(dt->event_context)->red_curve_get_last_point();
+            dynamic_cast<Inkscape::UI::Tools::FreehandBase*>(dt->event_context)->red_curve_get_last_point();
         if (zoom_to) {
             dt->zoom_relative(*zoom_to, zoom_factor);
             return;
@@ -68,6 +72,7 @@ void
 canvas_transform(InkscapeWindow *win, const int& option)
 {
     SPDesktop* dt = win->get_desktop();
+    SPDocument *doc = dt->getDocument();
 
     // The following might be better done elsewhere:
 
@@ -113,15 +118,15 @@ canvas_transform(InkscapeWindow *win, const int& option)
             break;
 
         case INK_CANVAS_ZOOM_PAGE:
-            dt->zoom_page();
+            doc->getPageManager().zoomToSelectedPage(dt, false);
             break;
 
         case INK_CANVAS_ZOOM_PAGE_WIDTH:
-            dt->zoom_page_width();
+            doc->getPageManager().zoomToSelectedPage(dt, true);
             break;
 
         case INK_CANVAS_ZOOM_CENTER_PAGE:
-            dt->zoom_center_page();
+            doc->getPageManager().centerToSelectedPage(dt);
             break;
 
         case INK_CANVAS_ZOOM_PREV:
@@ -157,7 +162,7 @@ canvas_transform(InkscapeWindow *win, const int& option)
             break;
 
         default:
-            std::cerr << "canvas_zoom: unhandled action value!" << std::endl;
+            show_output("canvas_zoom: unhandled action value!");
     }
 }
 
@@ -169,13 +174,13 @@ canvas_rotate_lock(InkscapeWindow *win)
 {
     auto action = win->lookup_action("canvas-rotate-lock");
     if (!action) {
-        std::cerr << "canvas_rotate_lock: action missing!" << std::endl;
+        show_output("canvas_rotate_lock: action missing!");
         return;
     }
 
     auto saction = Glib::RefPtr<Gio::SimpleAction>::cast_dynamic(action);
     if (!saction) {
-        std::cerr << "canvas_rotate_lock: action not SimpleAction!" << std::endl;
+        show_output("canvas_rotate_lock: action not SimpleAction!");
         return;
     }
 
@@ -187,7 +192,6 @@ canvas_rotate_lock(InkscapeWindow *win)
     // Save value as a preference
     Inkscape::Preferences *pref = Inkscape::Preferences::get();
     pref->setBool("/options/rotationlock", state);
-    std::cout << "rotate_lock: set to: " << state << std::endl;
 
     SPDesktop* dt = win->get_desktop();
     dt->set_rotation_lock(state);
@@ -233,7 +237,7 @@ add_actions_canvas_transform(InkscapeWindow* win)
     if (dt) {
         dt->set_rotation_lock(rotate_lock);
     } else {
-        std::cerr << "add_actions_canvas_transform: no desktop!" << std::endl;
+        show_output("add_actions_canvas_transform: no desktop!");
     }
 
     // clang-format off
@@ -263,7 +267,7 @@ add_actions_canvas_transform(InkscapeWindow* win)
 
     auto app = InkscapeApplication::instance();
     if (!app) {
-        std::cerr << "add_actions_canvas_transform: no app!" << std::endl;
+        show_output("add_actions_canvas_transform: no app!");
         return;
     }
     app->get_action_extra_data().add_data(raw_data_canvas_transform);

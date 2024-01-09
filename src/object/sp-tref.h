@@ -20,13 +20,13 @@
 #include "sp-tref-reference.h"
 #include "text-tag-attributes.h"
 
-
 /* tref base class */
 
-class SPTRef : public SPItem {
+class SPTRef final : public SPItem {
 public:
 	SPTRef();
 	~SPTRef() override;
+    int tag() const override { return tag_of<decltype(*this)>; }
 
     // Attributes that are used in the same way they would be in a tspan
     TextTagAttributes attributes;
@@ -35,7 +35,7 @@ public:
     char *href;
     
     // URI reference to original object
-    SPTRefReference *uriOriginalRef;
+    SPTRefReference uriOriginalRef;
     
     // Shortcut pointer to the child of the tref (which is a copy
     // of the character data stored at and/or below the node
@@ -67,9 +67,6 @@ bool sp_tref_reference_allowed(SPTRef *tref, SPObject *possible_ref);
 bool sp_tref_fully_contained(SPObject *start_item, Glib::ustring::iterator &start, 
                              SPObject *end_item, Glib::ustring::iterator &end);
 SPObject * sp_tref_convert_to_tspan(SPObject *item);
-
-MAKE_SP_OBJECT_DOWNCAST_FUNCTIONS(SP_TREF, SPTRef)
-MAKE_SP_OBJECT_TYPECHECK_FUNCTIONS(SP_IS_TREF, SPTRef)
 
 #endif /* !SP_TREF_H */
 

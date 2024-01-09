@@ -28,23 +28,11 @@ enum class ParamType
     STRING,
 };
 
-class InkActionExtraDatum {
-public:
-    InkActionExtraDatum(Glib::ustring& label, Glib::ustring& section, Glib::ustring& tooltip)
-        : action_label(label)
-        , action_section(section)
-        , action_tooltip(tooltip)
-    {
-    }
-
-    Glib::ustring get_label()   { return action_label; }
-    Glib::ustring get_section() { return action_section; }
-    Glib::ustring get_tooltip() { return action_tooltip; }
-
-private:
-    Glib::ustring action_label;
-    Glib::ustring action_section;
-    Glib::ustring action_tooltip;
+struct InkActionExtraDatum
+{
+    Glib::ustring label;
+    Glib::ustring section;
+    Glib::ustring tooltip;
 };
 
 class InkActionExtraData
@@ -54,11 +42,12 @@ public:
 
     std::vector<Glib::ustring> get_actions();
 
-    void add_data(std::vector<std::vector<Glib::ustring>> &raw_data);
+    void add_data(std::vector<std::vector<Glib::ustring>> const &raw_data);
 
     Glib::ustring get_label_for_action(Glib::ustring const &action_name, bool translated = true);
     Glib::ustring get_section_for_action(Glib::ustring const &action_name);
-    Glib::ustring get_tooltip_for_action(Glib::ustring const &action_name, bool translated = true);
+    Glib::ustring get_tooltip_for_action(Glib::ustring const &action_name, bool translated = true,
+                                         bool expanded = false);
 
 private:
     std::map<Glib::ustring, InkActionExtraDatum> data;

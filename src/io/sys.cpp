@@ -293,7 +293,7 @@ void
 Inkscape::IO::spawn_async_with_pipes( const std::string& working_directory,
                                       const std::vector<std::string>& argv,
                                       Glib::SpawnFlags flags,
-                                      const sigc::slot<void>& child_setup,
+                                      const sigc::slot<void ()>& child_setup,
                                       Glib::Pid* child_pid,
                                       int* standard_input,
                                       int* standard_output,
@@ -344,8 +344,8 @@ gchar* Inkscape::IO::sanitizeString( gchar const * str )
  */
 Glib::ustring Inkscape::IO::get_file_extension(Glib::ustring path)
 {
-    Glib::ustring::size_type period_location = path.find_last_of(".");
-    return path.substr(period_location);
+    Glib::ustring::size_type loc = path.find_last_of(".");
+    return loc < path.size() ? path.substr(loc) : "";
 }
 
 /*

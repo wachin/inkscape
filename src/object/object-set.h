@@ -16,6 +16,7 @@
 
 #include <string>
 #include <unordered_map>
+
 #include <boost/multi_index_container.hpp>
 #include <boost/multi_index/identity.hpp>
 #include <boost/multi_index/sequenced_index.hpp>
@@ -27,14 +28,16 @@
 #include <boost/range/any_range.hpp>
 #include <boost/type_traits.hpp>
 #include <boost/utility/enable_if.hpp>
+
 #include <sigc++/connection.h>
+
 #include <inkgc/gc-soft-ptr.h>
+
 #include "sp-object.h"
 #include "sp-item.h"
 #include "sp-item-group.h"
 #include "desktop.h"
 #include "document.h"
-#include "verbs.h"
 
 enum BoolOpErrors {
     DONE,
@@ -58,6 +61,21 @@ enum bool_op
 };
 typedef enum bool_op BooleanOp;
 
+/**
+ * SiblingState enums are used to associate the current state
+ * while grabbing objects. 
+ * Specifically used by ObjectSet.applyAffine() to manage transforms
+ * while dragging objects
+ */
+enum class SiblingState {
+    SIBLING_NONE,		// no relation to item
+    SIBLING_CLONE_ORIGINAL,	// moving both a clone and its original or any ancestor
+    SIBLING_OFFSET_SOURCE,	// moving both an offset and its source
+    SIBLING_TEXT_PATH,		// moving both a text-on-path and its path
+    SIBLING_TEXT_FLOW_FRAME,	// moving both a flowtext and its frame
+    SIBLING_TEXT_SHAPE_INSIDE,	// moving object containing sub object
+};
+
 class SPBox3D;
 class Persp3D;
 
@@ -72,20 +90,20 @@ struct random_access{};
 
 struct is_item {
     bool operator()(SPObject* obj) {
-        return SP_IS_ITEM(obj);
+        return is<SPItem>(obj);
     }
 };
 
 struct is_group {
     bool operator()(SPObject* obj) {
-        return SP_IS_GROUP(obj);
+        return is<SPGroup>(obj);
     }
 };
 
 struct object_to_item {
     typedef SPItem* result_type;
     SPItem* operator()(SPObject* obj) const {
-        return SP_ITEM(obj);
+        return cast<SPItem>(obj);
     }
 };
 
@@ -99,7 +117,7 @@ struct object_to_node {
 struct object_to_group {
     typedef SPGroup* result_type;
     SPGroup* operator()(SPObject* obj) const {
-        return SP_GROUP(obj);
+        return cast<SPGroup>(obj);
     }
 };
 
@@ -181,7 +199,13 @@ public:
     /**
      * Returns true if the given object is selected.
      */
-    bool includes(SPObject *object);
+    bool includes(SPObject *object, bool anyAncestor = false);
+    bool includes(Inkscape::XML::Node *node, bool anyAncestor = false);
+
+    /**
+     * Returns ancestor if the given object has ancestor selected.
+     */
+    SPObject * includesAncestor(SPObject *object);
 
     /**
      * Set the selection to a single specific object.
@@ -227,6 +251,16 @@ public:
     SPItem *singleItem();
 
     /**
+     * Returns the first selected item, returns nullptr if no items selected.
+     */
+    SPItem *firstItem() const;
+
+    /**
+     * Returns the last selected item, returns nullptr if no items selected.
+     */
+    SPItem *lastItem() const;
+
+    /**
      * Returns the smallest item from this selection.
      */
     SPItem *smallestItem(CompareSize compare);
@@ -245,6 +279,11 @@ public:
            | boost::adaptors::filtered(is_item())
            | boost::adaptors::transformed(object_to_item()));
     };
+
+    std::vector<SPItem*> items_vector() {
+        auto i = items();
+        return {i.begin(), i.end()};
+    }
 
     /** Returns a range of selected groups. */
     SPGroupRange groups() {
@@ -290,6 +329,7 @@ public:
      * @param obj_a - The first item, doesn't have to appear first in the list.
      * @param obj_b - The last item, doesn't have to appear last in the list (optional)
      *                If selection already contains one item, will select from-to that.
+     *                If not set, will use the lastItem selected in the list.
      *
      * @returns the number of items added.
      */
@@ -330,6 +370,7 @@ public:
     Geom::OptRect bounds(SPItem::BBoxType type) const;
     Geom::OptRect visualBounds() const;
     Geom::OptRect geometricBounds() const;
+    Geom::OptRect strokedBounds() const;
 
     /**
      * Returns either the visual or geometric bounding rectangle of the selection, based on the
@@ -339,6 +380,12 @@ public:
 
     /* Returns the bounding rectangle of the selectionin document coordinates.*/
     Geom::OptRect documentBounds(SPItem::BBoxType type) const;
+
+    /**
+     * Returns either the visual or geometric bounding rectangle of selection in document
+     * coordinates based on preferences specified for the selector tool
+     */
+    Geom::OptRect documentPreferredBounds() const;
 
     /**
      * Returns the rotation/skew center of the selection.
@@ -371,29 +418,30 @@ public:
 
     //item groups operations
     //in selection-chemistry.cpp
-    void deleteItems();
+    void deleteItems(bool skip_undo = false);
     void duplicate(bool suppressDone = false, bool duplicateLayer = false);
-    void clone();
+    void clone(bool skip_undo = false);
 
     /**
      * @brief Unlink all directly selected clones.
      * @param skip_undo If this is set to true the call to DocumentUndo::done is omitted.
      * @return True if anything was unlinked, otherwise false.
      */
-    bool unlink(const bool skip_undo = false);
+    bool unlink(const bool skip_undo = false, const bool silent = false);
     /**
      * @brief Recursively unlink any clones present in the current selection,
      * including clones which are used to clip other objects, groups of clones etc.
      * @return true if anything was unlinked, otherwise false.
      */
-    bool unlinkRecursive(const bool skip_undo = false, const bool force = false);
+    bool unlinkRecursive(const bool skip_undo = false, const bool force = false, const bool silent = false);
     void removeLPESRecursive(bool keep_paths);
     void relink();
     void cloneOriginal();
-    void cloneOriginalPathLPE(bool allow_transforms = false);
-    Inkscape::XML::Node* group();
+    void cloneOriginalPathLPE(bool allow_transforms = false, bool sync = false, bool skip_undo = false);
+    Inkscape::XML::Node* group(bool is_anchor = false);
     void popFromGroup();
     void ungroup(bool skip_undo = false);
+    void ungroup_all(bool skip_undo = false);
     
     //z-order management
     //in selection-chemistry.cpp
@@ -405,8 +453,8 @@ public:
     void lowerToBottom(bool skip_undo = false);
     void toNextLayer(bool skip_undo = false);
     void toPrevLayer(bool skip_undo = false);
-    void toLayer(SPObject *layer, bool skip_undo = false);
-    void toLayer(SPObject *layer, bool skip_undo, Inkscape::XML::Node *after);
+    void toLayer(SPObject *layer);
+    void toLayer(SPObject *layer, Inkscape::XML::Node *after);
 
     //clipboard management
     //in selection-chemistry.cpp
@@ -419,9 +467,9 @@ public:
     
     //path operations
     //in path-chemistry.cpp
-    void combine(bool skip_undo = false);
-    void breakApart(bool skip_undo = false);
-    void toCurves(bool skip_undo = false);
+    void combine(bool skip_undo = false, bool silent = false);
+    void breakApart(bool skip_undo = false, bool overlapping = true, bool silent = false);
+    void toCurves(bool skip_undo = false, bool clonesjustunlink = false);
     void toLPEItems();
     void pathReverse();
 
@@ -432,12 +480,12 @@ public:
 
     // Boolean operations
     // in splivarot.cpp
-    bool pathUnion(const bool skip_undo = false);
-    bool pathIntersect(const bool skip_undo = false);
-    bool pathDiff(const bool skip_undo = false);
-    bool pathSymDiff(const bool skip_undo = false);
-    bool pathCut(const bool skip_undo = false);
-    bool pathSlice(const bool skip_undo = false);
+    bool pathUnion(const bool skip_undo = false, bool silent = false);
+    bool pathIntersect(const bool skip_undo = false, bool silent = false);
+    bool pathDiff(const bool skip_undo = false, bool silent = false);
+    bool pathSymDiff(const bool skip_undo = false, bool silent = false);
+    bool pathCut(const bool skip_undo = false, bool silent = false);
+    bool pathSlice(const bool skip_undo = false, bool silent = false);
 
     //Other path operations
     //in selection-chemistry.cpp
@@ -448,15 +496,17 @@ public:
     void tile(bool apply = true); //"Object to Pattern"
     void untile();
     void createBitmapCopy();
-    void setMask(bool apply_clip_path, bool apply_to_layer = false, bool skip_undo = false);
+    void setMask(bool apply_clip_path, bool apply_to_layer, bool remove_original);
     void editMask(bool clip);
-    void unsetMask(const bool apply_clip_path, const bool skip_undo = false);
+    void unsetMask(const bool apply_clip_path, const bool delete_helper_group, bool remove_original);
     void setClipGroup();
     
     // moves
     // in selection-chemistry.cpp
     void removeLPE();
     void removeFilter();
+    void reapplyAffine();
+    void clearLastAffine();
     void applyAffine(Geom::Affine const &affine, bool set_i2d=true,bool compensate=true, bool adjust_transf_center=true);
     void removeTransform();
     void setScaleAbsolute(double, double, double, double);
@@ -465,25 +515,27 @@ public:
     void skewRelative(const Geom::Point&, double, double);
     void moveRelative(const Geom::Point &move, bool compensate = true);
     void moveRelative(double dx, double dy);
-    void rotate90(bool ccw);
     void rotate(double);
     void rotateScreen(double);
-    void scale(double);
+    void scaleGrow(double);
     void scaleScreen(double);
-    void scaleTimes(double);
+    void scale(double);
     void move(double dx, double dy);
     void moveScreen(double dx, double dy);
     
     // various
-    void getExportHints(Glib::ustring &filename, float *xdpi, float *ydpi);
     bool fitCanvas(bool with_margins, bool skip_undo = false);
     void swapFillStroke();
     void fillBetweenMany();
 
+    SiblingState getSiblingState(SPItem *item);
+    void insertSiblingState(SPObject *object, SiblingState state);
+    void clearSiblingStates();
+
 protected:
     virtual void _connectSignals(SPObject* object) {};
     virtual void _releaseSignals(SPObject* object) {};
-    virtual void _emitChanged(bool persist_selection_context = false) {}
+    virtual void _emitChanged(bool persist_selection_context = false);
     void _add(SPObject* object);
     void _clear();
     void _remove(SPObject* object);
@@ -502,9 +554,13 @@ protected:
     std::unordered_map<SPObject*, sigc::connection> _releaseConnections;
 
 private:
-    BoolOpErrors pathBoolOp(bool_op bop, const bool skip_undo, const bool checked = false, const unsigned int verb = SP_VERB_NONE, const Glib::ustring description = "");
+    BoolOpErrors pathBoolOp(bool_op bop, const bool skip_undo, const bool checked = false,
+                            const Glib::ustring icon_name = nullptr, const Glib::ustring description = "",
+                            bool silent = false);
     void _disconnect(SPObject* object);
+    std::map<SPObject *, SiblingState> _sibling_state;
 
+    Geom::Affine _last_affine;
 };
 
 typedef ObjectSet::SPItemRange SPItemRange;

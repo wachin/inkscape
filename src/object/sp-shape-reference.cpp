@@ -26,7 +26,7 @@ SPShapeReference::SPShapeReference(SPObject *obj)
     // https://www.w3.org/TR/SVG/text.html#TextShapeInside
     // Applies to: 'text' elements
     // Inherited: no
-    if (!dynamic_cast<SPText *>(obj)) {
+    if (!is<SPText>(obj)) {
         g_warning("shape reference on non-text object: %s", typeid(*obj).name());
         return;
     }

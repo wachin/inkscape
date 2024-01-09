@@ -18,7 +18,6 @@ namespace Bitmap {
 
 class Colorize : public ImageMagick {
 private:
-	unsigned int _opacity;
 	guint32 _color;	
 
 public:

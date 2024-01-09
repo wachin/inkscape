@@ -24,6 +24,7 @@
 
 #include <2geom/point.h>
 
+#include "display/control/canvas-item-ptr.h"
 #include "ui/tools/dynamic-base.h"
 
 class SPItem;
@@ -46,16 +47,11 @@ namespace Tools {
 
 class CalligraphicTool : public DynamicBase {
 public:
-	CalligraphicTool();
-	~CalligraphicTool() override;
+    CalligraphicTool(SPDesktop *desktop);
+    ~CalligraphicTool() override;
 
-	static const std::string prefsPath;
-
-	void setup() override;
-	void set(const Inkscape::Preferences::Entry& val) override;
-	bool root_handler(GdkEvent* event) override;
-
-	const std::string& getPrefsPath() override;
+    void set(const Inkscape::Preferences::Entry &val) override;
+    bool root_handler(GdkEvent *event) override;
 
 private:
     /** newly created object remain selected */
@@ -71,7 +67,7 @@ private:
     Geom::Point hatch_last_nearest, hatch_last_pointer;
     std::list<Geom::Point> hatch_vectors;
     bool hatch_escaped;
-    Inkscape::CanvasItemBpath *hatch_area = nullptr;
+    CanvasItemPtr<Inkscape::CanvasItemBpath> hatch_area;
     bool just_started_drawing;
     bool trace_bg;
 

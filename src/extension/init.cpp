@@ -17,26 +17,29 @@
 # include "config.h"  // only include where actually required!
 #endif
 
-#ifdef HAVE_POPPLER
-# include "internal/pdfinput/pdf-input.h"
-#endif
-
-#include "path-prefix.h"
-
-#include "inkscape.h"
-
 #include <glibmm/fileutils.h>
 #include <glibmm/i18n.h>
 #include <glibmm/ustring.h>
 
-#include "system.h"
 #include "db.h"
+#include "inkscape.h"
+#include "internal/emf-inout.h"
+#include "internal/emf-print.h"
 #include "internal/svgz.h"
-# include "internal/emf-inout.h"
-# include "internal/emf-print.h"
-# include "internal/wmf-inout.h"
-# include "internal/wmf-print.h"
+#include "internal/template-from-file.h"
+#include "internal/template-other.h"
+#include "internal/template-paper.h"
+#include "internal/template-screen.h"
+#include "internal/template-social.h"
+#include "internal/template-video.h"
+#include "internal/wmf-inout.h"
+#include "internal/wmf-print.h"
+#include "path-prefix.h"
+#include "system.h"
 
+#ifdef HAVE_POPPLER
+#include "internal/pdfinput/pdf-input.h"
+#endif
 #include <cairo.h>
 #ifdef CAIRO_HAS_PDF_SURFACE
 # include "internal/cairo-renderer-pdf-out.h"
@@ -65,9 +68,6 @@
 #include "preferences.h"
 #include "io/sys.h"
 #include "io/resource.h"
-#ifdef WITH_DBUS
-#include "dbus/dbus-init.h"
-#endif
 
 #ifdef WITH_MAGICK
 #include <Magick++.h>
@@ -144,6 +144,7 @@ update_pref(Glib::ustring const &pref_path,
 
 // A list of user extensions loaded, used for refreshing
 static std::vector<Glib::ustring> user_extensions;
+static std::vector<Glib::ustring> shared_extensions;
 
 /**
  * Invokes the init routines for internal modules.
@@ -157,6 +158,13 @@ init()
     /* TODO: Change to Internal */
     Internal::Svg::init();
     Internal::Svgz::init();
+
+    Internal::TemplateFromFile::init();
+    Internal::TemplatePaper::init();
+    Internal::TemplateScreen::init();
+    Internal::TemplateVideo::init();
+    Internal::TemplateSocial::init();
+    Internal::TemplateOther::init();
 
 #ifdef CAIRO_HAS_PDF_SURFACE
     Internal::CairoRendererPdfOutput::init();
@@ -191,10 +199,6 @@ init()
     Internal::BlurEdge::init();
     Internal::GimpGrad::init();
     Internal::Grid::init();
-
-#ifdef WITH_DBUS
-    Dbus::init();
-#endif
 
     /* Raster Effects */
 #ifdef WITH_MAGICK
@@ -241,6 +245,7 @@ init()
 
     // User extensions first so they can over-ride
     load_user_extensions();
+    load_shared_extensions();
 
     for(auto &filename: get_filenames(SYSTEM, EXTENSIONS, {SP_MODULE_EXTENSION})) {
         build_from_file(filename.c_str());
@@ -276,9 +281,40 @@ load_user_extensions()
                 break;
             }
         }
+        for(auto &filename2: shared_extensions) {
+            if (filename == filename2) {
+                exist = true;
+                break;
+            }
+        }
         if (!exist) {
             build_from_file(filename.c_str());
             user_extensions.push_back(filename);
+        }
+    }
+}
+
+void
+load_shared_extensions()
+{
+    // There's no need to ask for SYSTEM extensions, just ask for user extensions.
+    for(auto &filename: get_filenames(SHARED, EXTENSIONS, {SP_MODULE_EXTENSION})) {
+        bool exist = false;
+        for(auto &filename2: shared_extensions) {
+            if (filename == filename2) {
+                exist = true;
+                break;
+            }
+        }
+        for(auto &filename2: user_extensions) { // do not duple user extension has preference
+            if (filename == filename2) {
+                exist = true;
+                break;
+            }
+        }
+        if (!exist) {
+            build_from_file(filename.c_str());
+            shared_extensions.push_back(filename);
         }
     }
 }
@@ -287,6 +323,9 @@ load_user_extensions()
  * Refresh user extensions
  *
  * Remember to call check_extensions() once completed.
+ * 
+ * No need to add shared extensions here (extension manager update user ones)
+ *
  */
 void
 refresh_user_extensions()

@@ -16,6 +16,7 @@
 #include <2geom/point.h>
 
 #include "color-rgba.h"
+#include "display/control/canvas-item-ptr.h"
 #include "ui/tools/tool-base.h"
 
 struct SPCanvasItem;
@@ -42,21 +43,14 @@ namespace Tools {
 
 class DropperTool : public ToolBase {
 public:
-	DropperTool();
-	~DropperTool() override;
+    DropperTool(SPDesktop *desktop);
+    ~DropperTool() override;
 
-	static const std::string prefsPath;
-
-	const std::string& getPrefsPath() override;
-
-	guint32 get_color(bool invert=false, bool non_dropping=false);
-
-        sigc::signal<void, ColorRGBA *> onetimepick_signal;
+    guint32 get_color(bool invert = false, bool non_dropping = false);
+    sigc::signal<void (ColorRGBA *)> onetimepick_signal;
 
 protected:
-	void setup() override;
-	void finish() override;
-	bool root_handler(GdkEvent* event) override;
+    bool root_handler(GdkEvent *event) override;
 
 private:
     // Stored color.
@@ -77,7 +71,7 @@ private:
     bool dragging = false; ///< When true, get average color for region on canvas, instead of a single point
 
     double radius = 0.0;                       ///< Size of region under dragging mode
-    Inkscape::CanvasItemBpath* area = nullptr; ///< Circle depicting region's borders in dragging mode
+    CanvasItemPtr<CanvasItemBpath> area;       ///< Circle depicting region's borders in dragging mode
     Geom::Point centre {0, 0};                 ///< Center of region in dragging mode
 
 };

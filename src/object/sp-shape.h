@@ -22,6 +22,7 @@
 
 #include "sp-lpe-item.h"
 #include "sp-marker-loc.h"
+#include "display/curve.h"
 
 #include <memory>
 
@@ -38,24 +39,21 @@ class SPShape : public SPLPEItem {
 public:
 	SPShape();
 	~SPShape() override;
+    int tag() const override { return tag_of<decltype(*this)>; }
 
-    SPCurve *curve();
     SPCurve const *curve() const;
     SPCurve const *curveBeforeLPE() const;
     SPCurve const *curveForEdit() const;
 
-private:
-    void _setCurve(SPCurve const *, bool);
-    void _setCurve(std::unique_ptr<SPCurve> &&, bool);
-
 public:
     void setCurve(SPCurve const *);
-    void setCurve(std::unique_ptr<SPCurve> &&);
+    void setCurve(SPCurve);
     void setCurveInsync(SPCurve const *);
-    void setCurveInsync(std::unique_ptr<SPCurve> &&);
-    void setCurveBeforeLPE(SPCurve const *new_curve);
-    void setCurveBeforeLPE(std::unique_ptr<SPCurve> &&);
-
+    void setCurveInsync(SPCurve);
+    void setCurveBeforeLPE(SPCurve const *);
+    void setCurveBeforeLPE(SPCurve);
+    bool checkBrokenPathEffect();
+    bool prepareShapeForLPE(SPCurve const *c);
     int hasMarkers () const;
     int numberOfMarkers (int type) const;
 
@@ -68,8 +66,8 @@ public:
     mutable Geom::OptRect bbox_vis_cache;
 
 protected:
-    std::unique_ptr<SPCurve> _curve_before_lpe;
-    std::unique_ptr<SPCurve> _curve;
+    std::optional<SPCurve> _curve_before_lpe;
+    std::shared_ptr<SPCurve const> _curve;
 
 public:
     SPMarker *_marker[SP_MARKER_LOC_QTY];
@@ -88,6 +86,7 @@ public:
     Geom::OptRect either_bbox(Geom::Affine const &transform, SPItem::BBoxType bboxtype, bool cache_is_valid,
                               Geom::OptRect bbox_cache, Geom::Affine const &transform_cache) const;
     void print(SPPrintContext* ctx) override;
+    std::optional<Geom::PathVector> documentExactBounds() const override;
 
 	Inkscape::DrawingItem* show(Inkscape::Drawing &drawing, unsigned int key, unsigned int flags) override;
 	void hide(unsigned int key) override;
@@ -96,17 +95,13 @@ public:
 
 	virtual void set_shape();
 	void update_patheffect(bool write) override;
+
+    void set_marker(unsigned key, char const *value);
 };
-
-
-void sp_shape_set_marker (SPObject *object, unsigned int key, const char *value);
 
 Geom::Affine sp_shape_marker_get_transform(Geom::Curve const & c1, Geom::Curve const & c2);
 Geom::Affine sp_shape_marker_get_transform_at_start(Geom::Curve const & c);
 Geom::Affine sp_shape_marker_get_transform_at_end(Geom::Curve const & c);
-
-MAKE_SP_OBJECT_DOWNCAST_FUNCTIONS(SP_SHAPE, SPShape)
-MAKE_SP_OBJECT_TYPECHECK_FUNCTIONS(SP_IS_SHAPE, SPShape)
 
 #endif // SEEN_SP_SHAPE_H
 

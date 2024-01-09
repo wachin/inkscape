@@ -15,9 +15,14 @@
 namespace Inkscape {
 namespace LivePathEffect {
 
-bool PathReference::_acceptObject(SPObject * const obj) const
+SPItem *PathReference::getObject() const
 {
-    if (SP_IS_SHAPE(obj) || SP_IS_TEXT(obj)) {
+    return static_cast<SPItem*>(URIReference::getObject());
+}
+
+bool PathReference::_acceptObject(SPObject *obj) const
+{
+    if (is<SPShape>(obj) || is<SPText>(obj)) {
         /* Refuse references to lpeobject */
         if (obj == getOwner()) {
             return false;

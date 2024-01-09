@@ -28,6 +28,7 @@ set(object_SRC
   sp-glyph.cpp
   sp-gradient-reference.cpp
   sp-gradient.cpp
+  sp-grid.cpp
   sp-guide.cpp
   sp-hatch-path.cpp
   sp-hatch.cpp
@@ -51,6 +52,7 @@ set(object_SRC
   sp-object.cpp
   sp-offset.cpp
   sp-paint-server.cpp
+  sp-page.cpp
   sp-path.cpp
   sp-pattern.cpp
   sp-polygon.cpp
@@ -115,6 +117,7 @@ set(object_SRC
   sp-gradient-units.h
   sp-gradient-vector.h
   sp-gradient.h
+  sp-grid.h
   sp-guide.h
   sp-hatch-path.h
   sp-hatch.h
@@ -140,6 +143,7 @@ set(object_SRC
   sp-offset.h
   sp-paint-server-reference.h
   sp-paint-server.h
+  sp-page.h
   sp-path.h
   sp-pattern.h
   sp-polygon.h
@@ -172,8 +176,11 @@ set(object_SRC
   uri-references.h
   uri.h
   viewbox.h
+  weakptr.h
+  tags.h
 )
 
 add_inkscape_source("${object_SRC}")
 
 add_subdirectory(filters)
+add_subdirectory(algorithms)

@@ -21,18 +21,13 @@ namespace Filters {
 using Geom::X;
 using Geom::Y;
 
-FilterOffset::FilterOffset() :
-    dx(0), dy(0)
-{}
+FilterOffset::FilterOffset()
+    : dx(0)
+    , dy(0) {}
 
-FilterPrimitive * FilterOffset::create() {
-    return new FilterOffset();
-}
+FilterOffset::~FilterOffset() = default;
 
-FilterOffset::~FilterOffset()
-= default;
-
-void FilterOffset::render_cairo(FilterSlot &slot)
+void FilterOffset::render_cairo(FilterSlot &slot) const
 {
     cairo_surface_t *in = slot.getcairo(_input);
     cairo_surface_t *out = ink_cairo_surface_create_identical(in);
@@ -40,7 +35,7 @@ void FilterOffset::render_cairo(FilterSlot &slot)
     copy_cairo_surface_ci(in, out);
     cairo_t *ct = cairo_create(out);
 
-    Geom::Rect vp = filter_primitive_area( slot.get_units() );
+    Geom::Rect vp = filter_primitive_area(slot.get_units());
     slot.set_primitive_area(_output, vp); // Needed for tiling
 
     Geom::Affine p2pb = slot.get_units().get_matrix_primitiveunits2pb();
@@ -55,20 +50,22 @@ void FilterOffset::render_cairo(FilterSlot &slot)
     cairo_surface_destroy(out);
 }
 
-bool FilterOffset::can_handle_affine(Geom::Affine const &)
+bool FilterOffset::can_handle_affine(Geom::Affine const &) const
 {
     return true;
 }
 
-void FilterOffset::set_dx(double amount) {
+void FilterOffset::set_dx(double amount)
+{
     dx = amount;
 }
 
-void FilterOffset::set_dy(double amount) {
+void FilterOffset::set_dy(double amount)
+{
     dy = amount;
 }
 
-void FilterOffset::area_enlarge(Geom::IntRect &area, Geom::Affine const &trans)
+void FilterOffset::area_enlarge(Geom::IntRect &area, Geom::Affine const &trans) const
 {
     Geom::Point offset(dx, dy);
     offset *= trans;
@@ -81,26 +78,27 @@ void FilterOffset::area_enlarge(Geom::IntRect &area, Geom::Affine const &trans)
     y1 = area.bottom();
 
     if (offset[X] > 0) {
-        x0 -= ceil(offset[X]);
+        x0 -= std::ceil(offset[X]);
     } else {
-        x1 -= floor(offset[X]);
+        x1 -= std::floor(offset[X]);
     }
 
     if (offset[Y] > 0) {
-        y0 -= ceil(offset[Y]);
+        y0 -= std::ceil(offset[Y]);
     } else {
-        y1 -= floor(offset[Y]);
+        y1 -= std::floor(offset[Y]);
     }
+
     area = Geom::IntRect(x0, y0, x1, y1);
 }
 
-double FilterOffset::complexity(Geom::Affine const &)
+double FilterOffset::complexity(Geom::Affine const &) const
 {
     return 1.02;
 }
 
-} /* namespace Filters */
-} /* namespace Inkscape */
+} // namespace Filters
+} // namespace Inkscape
 
 /*
   Local Variables:

@@ -34,10 +34,10 @@ public:
     ~GradientEditor() noexcept override;
 
 private:
-    sigc::signal<void> _signal_grabbed;
-    sigc::signal<void> _signal_dragged;
-    sigc::signal<void> _signal_released;
-    sigc::signal<void, SPGradient*> _signal_changed;
+    sigc::signal<void ()> _signal_grabbed;
+    sigc::signal<void ()> _signal_dragged;
+    sigc::signal<void ()> _signal_released;
+    sigc::signal<void (SPGradient*)> _signal_changed;
 
 public:
     decltype(_signal_changed) signal_changed() const { return _signal_changed; }

@@ -18,10 +18,11 @@
 #include <gtkmm.h>
 
 #include <giomm/file.h>
-#include <giomm/file.h>
+#include <giomm/action.h>
 
 #include "document.h"
 #include "inkscape.h"
+#include "inkscape-application.h"
 #include "preferences.h"
 #include "extension/output.h"
 #include "extension/input.h"
@@ -133,7 +134,7 @@ static void remove_marker_auto_start_reverse(Inkscape::XML::Node *repr,
     if (!value.empty()) {
 
         // Find reference <marker>
-        static Glib::RefPtr<Glib::Regex> regex = Glib::Regex::create("url\\(#([A-z0-9#]*)\\)");
+        static Glib::RefPtr<Glib::Regex> regex = Glib::Regex::create("url\\(#([^\\)]*)\\)");
         Glib::MatchInfo matchInfo;
         regex->match(value, matchInfo);
 
@@ -250,6 +251,15 @@ static void remove_marker_context_paint (Inkscape::XML::Node *repr,
         }
         if (!stroke.empty()) {
             marker_fixed_id += "_S" + stroke;
+        }
+
+        {
+            // Replace characters from color value that are invalid in ids
+            gchar *normalized_id = g_strdup(marker_fixed_id.c_str());
+            g_strdelimit(normalized_id, "#%", '-');
+            g_strdelimit(normalized_id, "(), \n\t\r", '.');
+            marker_fixed_id = normalized_id;
+            g_free(normalized_id);
         }
 
         // See if a fixed marker already exists.
@@ -370,6 +380,10 @@ static void insert_text_fallback( Inkscape::XML::Node *repr, const SPDocument *o
             }
 
             // We will keep this text node but replace all children.
+            // Text object must be visible for the text calculatons to work
+            bool was_hidden = text->isHidden();
+            text->setHidden(false);
+            text->rebuildLayout();
 
             // For text in a shape, We need to unset 'text-anchor' or SVG 1.1 fallback won't work.
             // Note 'text' here refers to original document while 'repr' refers to new document copy.
@@ -380,7 +394,7 @@ static void insert_text_fallback( Inkscape::XML::Node *repr, const SPDocument *o
                 sp_repr_css_attr_unref(css);
             }
 
-            // We need to put trailing white space into it's own tspan for inline size so
+            // We need to put trailing white space into its own tspan for inline size so
             // it is excluded during calculation of line position in SVG 1.1 renderers.
             bool trim = text->has_inline_size() &&
                 !(text->style->text_anchor.computed == SP_CSS_TEXT_ANCHOR_START);
@@ -416,9 +430,6 @@ static void insert_text_fallback( Inkscape::XML::Node *repr, const SPDocument *o
                 Geom::Point line_anchor_point = text->layout.characterAnchorPoint(it);
                 double line_x = line_anchor_point[Geom::X];
                 double line_y = line_anchor_point[Geom::Y];
-                if (!text->is_horizontal()) {
-                    std::swap(line_x, line_y); // Anchor points rotated & y inverted in vertical layout.
-                }
 
                 // std::cout << "  line_anchor_point: " << line_anchor_point << std::endl;
                 if (line_tspan->childCount() == 0) {
@@ -477,7 +488,7 @@ static void insert_text_fallback( Inkscape::XML::Node *repr, const SPDocument *o
                     text->layout.getSourceOfCharacter(it, &source_obj, &span_text_start_iter);
 
                     // Set tspan style
-                    Glib::ustring style_text = (dynamic_cast<SPString *>(source_obj) ? source_obj->parent : source_obj)
+                    Glib::ustring style_text = (is<SPString>(source_obj) ? source_obj->parent : source_obj)
                                                    ->style->writeIfDiff(text->style);
                     if (!style_text.empty()) {
                         span_tspan->setAttributeOrRemoveIfEmpty("style", style_text);
@@ -493,7 +504,7 @@ static void insert_text_fallback( Inkscape::XML::Node *repr, const SPDocument *o
                     }
 
                     // Add text node
-                    SPString *str = dynamic_cast<SPString *>(source_obj);
+                    auto str = cast<SPString>(source_obj);
                     if (str) {
                         Glib::ustring *string = &(str->string); // TODO fixme: dangerous, unsafe premature-optimization
                         SPObject *span_end_obj = nullptr;
@@ -559,6 +570,7 @@ static void insert_text_fallback( Inkscape::XML::Node *repr, const SPDocument *o
                 repr->removeChild (i);
             }
 
+	    text->setHidden(was_hidden);
             return; // No need to look at children of <text>
         }
 
@@ -726,7 +738,7 @@ Svg::init()
             "<name>" N_("SVG Input") "</name>\n"
             "<id>" SP_MODULE_KEY_INPUT_SVG "</id>\n"
             SVG_COMMON_INPUT_PARAMS
-            "<input>\n"
+            "<input priority='1'>\n"
                 "<extension>.svg</extension>\n"
                 "<mimetype>image/svg+xml</mimetype>\n"
                 "<filetypename>" N_("Scalable Vector Graphic (*.svg)") "</filetypename>\n"
@@ -739,7 +751,7 @@ Svg::init()
         "<inkscape-extension xmlns=\"" INKSCAPE_EXTENSION_URI "\">\n"
             "<name>" N_("SVG Output Inkscape") "</name>\n"
             "<id>" SP_MODULE_KEY_OUTPUT_SVG_INKSCAPE "</id>\n"
-            "<output>\n"
+            "<output is_exported='true' priority='1'>\n"
                 "<extension>.svg</extension>\n"
                 "<mimetype>image/x-inkscape-svg</mimetype>\n"
                 "<filetypename>" N_("Inkscape SVG (*.svg)") "</filetypename>\n"
@@ -753,7 +765,7 @@ Svg::init()
         "<inkscape-extension xmlns=\"" INKSCAPE_EXTENSION_URI "\">\n"
             "<name>" N_("SVG Output") "</name>\n"
             "<id>" SP_MODULE_KEY_OUTPUT_SVG "</id>\n"
-            "<output>\n"
+            "<output is_exported='true' priority='2'>\n"
                 "<extension>.svg</extension>\n"
                 "<mimetype>image/svg+xml</mimetype>\n"
                 "<filetypename>" N_("Plain SVG (*.svg)") "</filetypename>\n"
@@ -782,6 +794,8 @@ Svg::init()
 SPDocument *
 Svg::open (Inkscape::Extension::Input *mod, const gchar *uri)
 {
+    g_assert(mod != nullptr);
+
     // This is only used at the end... but it should go here once uri stuff is fixed.
     auto file = Gio::File::create_for_commandline_arg(uri);
     const auto path = file->get_path();
@@ -806,6 +820,10 @@ Svg::open (Inkscape::Extension::Input *mod, const gchar *uri)
     Glib::ustring import_mode_svg  = prefs->getString("/dialogs/import/import_mode_svg");
     Glib::ustring scale            = prefs->getString("/dialogs/import/scale");
 
+    // Selecting some of the pages (via command line) in some future update
+    // we could add an option which would allow user page selection.
+    auto page_nums = INKSCAPE.get_pages();
+
     // If we popped up a window asking about import preferences, get values from
     // there and update preferences.
     if(mod->get_gui() && ask_svg) {
@@ -818,8 +836,19 @@ Svg::open (Inkscape::Extension::Input *mod, const gchar *uri)
         prefs->setString("/dialogs/import/scale",           scale );
     }
 
+    bool import = prefs->getBool("/options/onimport", false);
+    bool import_pages = (import_mode_svg == "pages");
+    // Do we open a new svg instead of import?
+    if (uri && import && import_mode_svg == "new") {
+        prefs->setBool("/options/onimport", false); // set back to true in file_import
+        static auto gapp = InkscapeApplication::instance()->gtk_app();
+        auto action = gapp->lookup_action("file-open-window");
+        auto file_dnd = Glib::Variant<Glib::ustring>::create(uri);
+        action->activate(file_dnd);
+        return SPDocument::createNewDoc (nullptr, true, true);
+    }
     // Do we "import" as <image>?
-    if (prefs->getBool("/options/onimport", false) && import_mode_svg != "include") {
+    if (import && import_mode_svg != "include" && !import_pages) {
         // We import!
 
         // New wrapper document.
@@ -921,7 +950,19 @@ Svg::open (Inkscape::Extension::Input *mod, const gchar *uri)
     }
 
     SPDocument *doc = SPDocument::createNewDoc(uri, true);
-    // SPDocument *doc = SPDocument::createNewDoc(file->get_uri().c_str(), true);
+
+    // Page selection is achieved by removing any page not in the found list, the exports
+    // Can later figure out how they'd like to process the remaining pages.
+    if (doc && !page_nums.empty()) {
+        doc->prunePages(page_nums, true);
+    }
+
+    // Convert single page docs into multi page mode, and visa-versa if
+    // we are importing. We never change the mode for opening.
+    if (doc && import) {
+        doc->setPages(import_pages);
+    }
+
     return doc;
 }
 

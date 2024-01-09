@@ -286,7 +286,7 @@ inline PixelGraph::PixelGraph(Glib::RefPtr<Gdk::Pixbuf const> pixbuf) :
         return;
 
     // Initialize the graph using the pixels' color data
-    guint8 *pixels = pixbuf->get_pixels();
+    guint8 const *pixels = pixbuf->get_pixels();
     Node *dest = &_nodes[0];
     const int n_channels = pixbuf->get_n_channels();
     const int rowpadding = pixbuf->get_rowstride() - _width * n_channels;

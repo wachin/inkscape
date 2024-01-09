@@ -12,10 +12,11 @@
 #ifndef INKSCAPE_LPE_TAPERSTROKE_H
 #define INKSCAPE_LPE_TAPERSTROKE_H
 
-#include "live_effects/parameter/enum.h"
 #include "live_effects/effect.h"
+#include "live_effects/parameter/enum.h"
+#include "live_effects/parameter/enumarray.h"
+#include "live_effects/parameter/scalararray.h"
 #include "live_effects/parameter/parameter.h"
-#include "live_effects/parameter/vector.h"
 
 namespace Inkscape {
 namespace LivePathEffect {
@@ -29,33 +30,35 @@ class KnotHolderEntityAttachEnd;
 class LPETaperStroke : public Effect {
 public:
     LPETaperStroke(LivePathEffectObject *lpeobject);
-    ~LPETaperStroke() override = default;
+    ~LPETaperStroke() override;
 
     void doOnApply(SPLPEItem const* lpeitem) override;
     void doOnRemove(SPLPEItem const* lpeitem) override;
-
+    void doBeforeEffect (SPLPEItem const* lpeitem) override;
     Geom::PathVector doEffect_path (Geom::PathVector const& path_in) override;
-    Geom::PathVector doEffect_simplePath(Geom::PathVector const& path_in);
+    Geom::PathVector doEffect_simplePath(Geom::Path const& path, size_t index, double start, double end);
     void transform_multiply(Geom::Affine const &postmul, bool set) override;
 
     void addKnotHolderEntities(KnotHolder * knotholder, SPItem * item) override;
-
+protected:
     friend class TpS::KnotHolderEntityAttachBegin;
     friend class TpS::KnotHolderEntityAttachEnd;
+    ScalarArrayParam attach_start;
+    ScalarArrayParam attach_end;
+    ScalarArrayParam start_smoothing;
+    ScalarArrayParam end_smoothing;
 private:
+    ScalarParam subpath;
     ScalarParam line_width;
-    ScalarParam attach_start;
-    ScalarParam attach_end;
-    ScalarParam start_smoothing;
-    ScalarParam end_smoothing;
     EnumParam<unsigned> join_type;
-    EnumParam<unsigned> start_shape;
-    EnumParam<unsigned> end_shape;
+    EnumArrayParam start_shape;
+    EnumArrayParam end_shape;
     ScalarParam miter_limit;
-
-    Geom::Point start_attach_point;
-    Geom::Point end_attach_point;
-
+    size_t previous_size = 1;
+    std::vector<Geom::Point> start_attach_point;
+    std::vector<Geom::Point> end_attach_point;
+    size_t prev_subpath = Glib::ustring::npos;
+    Geom::PathVector pathv_out;
     LPETaperStroke(const LPETaperStroke&) = delete;
     LPETaperStroke& operator=(const LPETaperStroke&) = delete;
 };

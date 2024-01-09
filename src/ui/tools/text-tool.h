@@ -20,6 +20,7 @@
 #include "ui/tools/tool-base.h"
 #include <2geom/point.h>
 #include "libnrtype/Layout-TNG.h"
+#include "display/control/canvas-item-ptr.h"
 
 #define SP_TEXT_CONTEXT(obj) (dynamic_cast<Inkscape::UI::Tools::TextTool*>((Inkscape::UI::Tools::ToolBase*)obj))
 #define SP_IS_TEXT_CONTEXT(obj) (dynamic_cast<const Inkscape::UI::Tools::TextTool*>((const Inkscape::UI::Tools::ToolBase*)obj) != NULL)
@@ -39,8 +40,7 @@ namespace Tools {
 
 class TextTool : public ToolBase {
 public:
-
-    TextTool();
+    TextTool(SPDesktop *desktop);
     ~TextTool() override;
 
     sigc::connection sel_changed_connection;
@@ -63,11 +63,11 @@ public:
     guint unipos = 0;
 
     // ---- On canvas editing ---
-    Inkscape::CanvasItemCurve *cursor = nullptr;
-    Inkscape::CanvasItemRect *indicator = nullptr;
-    Inkscape::CanvasItemBpath *frame = nullptr; // Highlighting flowtext shapes or textpath path
-    Inkscape::CanvasItemBpath *padding_frame = nullptr; // Highlighting flowtext padding
-    std::vector<CanvasItemQuad*> text_selection_quads;
+    CanvasItemPtr<CanvasItemCurve> cursor;
+    CanvasItemPtr<CanvasItemRect> indicator;
+    CanvasItemPtr<CanvasItemBpath> frame; // Highlighting flowtext shapes or textpath path
+    CanvasItemPtr<CanvasItemBpath> padding_frame; // Highlighting flowtext padding
+    std::vector<CanvasItemPtr<CanvasItemQuad>> text_selection_quads;
 
     gint timeout = 0;
     bool show = false;
@@ -84,15 +84,9 @@ public:
     /* Preedit String */
     gchar* preedit_string = nullptr;
 
-    static const std::string prefsPath;
-
-    void setup() override;
-    void finish() override;
     bool root_handler(GdkEvent* event) override;
     bool item_handler(SPItem* item, GdkEvent* event) override;
-
-    const std::string& getPrefsPath() override;
-
+    void deleteSelected();
 private:
     void _selectionChanged(Inkscape::Selection *selection);
     void _selectionModified(Inkscape::Selection *selection, guint flags);

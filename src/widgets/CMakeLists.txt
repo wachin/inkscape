@@ -2,8 +2,7 @@
 
 set(widgets_SRC
 	desktop-widget.cpp
-	ege-paint-def.cpp
-	ink-action.cpp
+	paintdef.cpp
 	sp-attribute-widget.cpp
 	sp-xmlview-tree.cpp
 	spw-utilities.cpp
@@ -12,8 +11,7 @@ set(widgets_SRC
 	# -------
 	# Headers
 	desktop-widget.h
-	ege-paint-def.h
-	ink-action.h
+	paintdef.h
 	sp-attribute-widget.h
 	sp-xmlview-tree.h
 	spw-utilities.h

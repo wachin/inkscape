@@ -71,9 +71,7 @@ LPELattice::LPELattice(LivePathEffectObject *lpeobject) :
     apply_to_clippath_and_mask = true;
 }
 
-LPELattice::~LPELattice()
-= default;
-
+LPELattice::~LPELattice() = default;
 
 Geom::Piecewise<Geom::D2<Geom::SBasis> >
 LPELattice::doEffect_pwd2 (Geom::Piecewise<Geom::D2<Geom::SBasis> > const & pwd2_in)
@@ -171,7 +169,7 @@ LPELattice::resetDefaults(SPItem const* item)
 {
     Effect::resetDefaults(item);
 
-    original_bbox(SP_LPE_ITEM(item), false, true);
+    original_bbox(cast<SPLPEItem>(item), false, true);
     
     // place the 16 control points
     grid_point0[Geom::X] = boundingbox_X.min();

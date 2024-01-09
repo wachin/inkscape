@@ -13,81 +13,41 @@
  * Autotrace is available at http://github.com/autotrace/autotrace.
  *
  */
+#ifndef INKSCAPE_TRACE_AUTOTRACE_H
+#define INKSCAPE_TRACE_AUTOTRACE_H
 
-#ifndef __INKSCAPE_AUTOTRACE_H__
-#define __INKSCAPE_AUTOTRACE_H__
-
-#include "3rdparty/autotrace/autotrace.h"
-#include <trace/trace.h>
+#include "trace/trace.h"
+using at_fitting_opts_type = struct _at_fitting_opts_type;
 
 namespace Inkscape {
-
 namespace Trace {
-
 namespace Autotrace {
-enum TraceType { TRACE_CENTERLINE, TRACE_OUTLINE };
 
-class AutotraceTracingEngine : public TracingEngine {
-
-  public:
-    /**
-     *
-     */
+class AutotraceTracingEngine final
+    : public TracingEngine
+{
+public:
     AutotraceTracingEngine();
-
-    /**
-     *
-     */
     ~AutotraceTracingEngine() override;
 
+    TraceResult trace(Glib::RefPtr<Gdk::Pixbuf> const &pixbuf, Async::Progress<double> &progress) override;
+    Glib::RefPtr<Gdk::Pixbuf> preview(Glib::RefPtr<Gdk::Pixbuf> const &pixbuf) override;
 
-    /**
-     * Sets/gets parameters
-     */
-    // TODO
+    void setColorCount(unsigned);
+    void setCenterLine(bool);
+    void setPreserveWidth(bool);
+    void setFilterIterations(unsigned);
+    void setErrorThreshold(float);
 
-    /**
-     *  This is the working method of this implementing class, and all
-     *  implementing classes.  Take a GdkPixbuf, trace it, and
-     *  return the path data that is compatible with the d="" attribute
-     *  of an SVG <path> element.
-     */
-    std::vector<TracingEngineResult> trace(Glib::RefPtr<Gdk::Pixbuf> pixbuf) override;
-
-    /**
-     *  Abort the thread that is executing getPathDataFromPixbuf()
-     */
-    void abort() override;
-
-    /**
-     *
-     */
-    Glib::RefPtr<Gdk::Pixbuf> preview(Glib::RefPtr<Gdk::Pixbuf> pixbuf);
-
-    /**
-     *
-     */
-    int keepGoing;
-
-  //private:
-    // autotrace_param_t *autotraceParams;
-    TraceType traceType;
+private:
     at_fitting_opts_type *opts;
-
-    //## do I invert at the end?
-    bool invert;
-
-}; // class AutotraceTracingEngine
-
-
+};
 
 } // namespace Autotrace
 } // namespace Trace
 } // namespace Inkscape
 
-
-#endif //__INKSCAPE_POTRACE_H__
-
+#endif // INKSCAPE_TRACE_AUTOTRACE_H
 
 /*
   Local Variables:

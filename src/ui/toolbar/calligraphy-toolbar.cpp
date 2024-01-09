@@ -32,17 +32,15 @@
 #include <gtkmm/separatortoolitem.h>
 
 #include "desktop.h"
-#include "document-undo.h"
+
 #include "ui/dialog/calligraphic-profile-rename.h"
 #include "ui/icon-names.h"
 #include "ui/simple-pref-pusher.h"
-#include "ui/uxmanager.h"
 #include "ui/widget/canvas.h"
 #include "ui/widget/combo-tool-item.h"
 #include "ui/widget/spin-button-tool-item.h"
 #include "ui/widget/unit-tracker.h"
 
-using Inkscape::DocumentUndo;
 using Inkscape::UI::Widget::UnitTracker;
 using Inkscape::Util::Quantity;
 using Inkscape::Util::Unit;
@@ -69,9 +67,9 @@ CalligraphyToolbar::CalligraphyToolbar(SPDesktop *desktop)
     Inkscape::Preferences *prefs = Inkscape::Preferences::get();
     _tracker->prependUnit(unit_table.getUnit("px"));
     _tracker->changeLabel("%", 0, true);
-    prefs->getBool("/tools/calligraphic/abs_width")
-        ? _tracker->setActiveUnitByLabel(prefs->getString("/tools/calligraphic/unit"))
-        : _tracker->setActiveUnitByLabel("%");
+    if (prefs->getBool("/tools/calligraphic/abs_width")) {
+        _tracker->setActiveUnitByLabel(prefs->getString("/tools/calligraphic/unit"));
+    }
 
     /*calligraphic profile */
     {
@@ -112,7 +110,6 @@ CalligraphyToolbar::CalligraphyToolbar(SPDesktop *desktop)
         width_item->set_focus_widget(desktop->canvas);
         _width_adj->signal_value_changed().connect(sigc::mem_fun(*this, &CalligraphyToolbar::width_value_changed));
         _widget_map["width"] = G_OBJECT(_width_adj->gobj());
-        // ege_adjustment_action_set_appearance( eact, TOOLBAR_SLIDER_HINT );
         add(*width_item);
         _tracker->addAdjustment(_width_adj->gobj());
         width_item->set_sensitive(true);
@@ -177,7 +174,6 @@ CalligraphyToolbar::CalligraphyToolbar(SPDesktop *desktop)
         mass_item->set_focus_widget(desktop->canvas);
         _mass_adj->signal_value_changed().connect(sigc::mem_fun(*this, &CalligraphyToolbar::mass_value_changed));
         _widget_map["mass"] = G_OBJECT(_mass_adj->gobj());
-        // ege_adjustment_action_set_appearance( eact, TOOLBAR_SLIDER_HINT );
         add(*mass_item);
         mass_item->set_sensitive(true);
     }
@@ -216,10 +212,10 @@ CalligraphyToolbar::CalligraphyToolbar(SPDesktop *desktop)
         /* Fixation */
         std::vector<Glib::ustring> labels = {_("(perpendicular to stroke, \"brush\")"), "", "", "", _("(almost fixed, default)"), _("(fixed by Angle, \"pen\")")};
         std::vector<double>        values = {                                        0, 20, 40, 60,                           90,                            100};
-        auto flatness_val = prefs->getDouble("/tools/calligraphic/flatness", 90);
-        _fixation_adj = Gtk::Adjustment::create(flatness_val, 0.0, 100, 1.0, 10.0);
+        auto flatness_val = prefs->getDouble("/tools/calligraphic/flatness", -90);
+        _fixation_adj = Gtk::Adjustment::create(flatness_val, -100.0, 100.0, 1.0, 10.0);
         auto flatness_item = Gtk::manage(new UI::Widget::SpinButtonToolItem("calligraphy-fixation", _("Fixation:"), _fixation_adj, 1, 0));
-        flatness_item->set_tooltip_text(_("Angle behavior (0 = nib always perpendicular to stroke direction, 100 = fixed angle)"));
+        flatness_item->set_tooltip_text(_("Angle behavior (0 = nib always perpendicular to stroke direction, 100 = fixed angle, -100 = fixed angle in opposite direction)"));
         flatness_item->set_custom_numeric_menu_data(values, labels);
         flatness_item->set_focus_widget(desktop->canvas);
         _fixation_adj->signal_value_changed().connect(sigc::mem_fun(*this, &CalligraphyToolbar::flatness_value_changed));
@@ -262,7 +258,6 @@ CalligraphyToolbar::CalligraphyToolbar(SPDesktop *desktop)
         tremor_item->set_focus_widget(desktop->canvas);
         _tremor_adj->signal_value_changed().connect(sigc::mem_fun(*this, &CalligraphyToolbar::tremor_value_changed));
         _widget_map["tremor"] = G_OBJECT(_tremor_adj->gobj());
-        // ege_adjustment_action_set_appearance( eact, TOOLBAR_SLIDER_HINT );
         add(*tremor_item);
         tremor_item->set_sensitive(true);
     }
@@ -279,7 +274,6 @@ CalligraphyToolbar::CalligraphyToolbar(SPDesktop *desktop)
         wiggle_item->set_focus_widget(desktop->canvas);
         _wiggle_adj->signal_value_changed().connect(sigc::mem_fun(*this, &CalligraphyToolbar::wiggle_value_changed));
         _widget_map["wiggle"] = G_OBJECT(_wiggle_adj->gobj());
-        // ege_adjustment_action_set_appearance( eact, TOOLBAR_SLIDER_HINT );
         add(*wiggle_item);
         wiggle_item->set_sensitive(true);
     }
@@ -300,8 +294,7 @@ CalligraphyToolbar::width_value_changed()
     Unit const *unit = _tracker->getActiveUnit();
     g_return_if_fail(unit != nullptr);
     auto prefs = Inkscape::Preferences::get();
-    _tracker->getCurrentLabel() == "%" ? prefs->setBool("/tools/calligraphic/abs_width", false)
-                                         : prefs->setBool("/tools/calligraphic/abs_width", true);
+    prefs->setBool("/tools/calligraphic/abs_width", _tracker->getCurrentLabel() != "%");
     prefs->setDouble("/tools/calligraphic/width", Quantity::convert(_width_adj->get_value(), unit, "px"));
     update_presets_list();
 }
@@ -520,8 +513,7 @@ void CalligraphyToolbar::unit_changed(int /* NotUsed */)
     Unit const *unit = _tracker->getActiveUnit();
     g_return_if_fail(unit != nullptr);
     Inkscape::Preferences *prefs = Inkscape::Preferences::get();
-    _tracker->getCurrentLabel() == "%" ? prefs->setBool("/tools/calligraphic/abs_width", false)
-                                        : prefs->setBool("/tools/calligraphic/abs_width", true);
+    prefs->setBool("/tools/calligraphic/abs_width", _tracker->getCurrentLabel() != "%");
     prefs->setDouble("/tools/calligraphic/width",
                      CLAMP(prefs->getDouble("/tools/calligraphic/width"), Quantity::convert(0.001, unit, "px"),
                            Quantity::convert(100, unit, "px")));
@@ -593,10 +585,7 @@ void CalligraphyToolbar::save_profile(GtkWidget * /*widget*/)
         g_free(profile_id);
     }
 
-    for (auto map_item : _widget_map) {
-        auto widget_name = map_item.first;
-        auto widget      = map_item.second;
-
+    for (auto const &[widget_name, widget] : _widget_map) {
         if (widget) {
             if (GTK_IS_ADJUSTMENT(widget)) {
                 GtkAdjustment* adj = GTK_ADJUSTMENT(widget);

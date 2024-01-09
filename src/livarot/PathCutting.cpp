@@ -14,6 +14,7 @@
  *  Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
+#include <cmath>
 #include <cstring>
 #include <string>
 #include <cstdio>
@@ -26,12 +27,13 @@
 #include <2geom/affine.h>
 #include <2geom/sbasis-to-bezier.h>
 #include <2geom/curves.h>
+#include <vector>
 #include "helper/geom-curves.h"
 #include "helper/geom.h"
 
 #include "svg/svg.h"
 
-void  Path::DashPolyline(float head,float tail,float body,int nbD,float *dashs,bool stPlain,float stOffset)
+void  Path::DashPolyline(float head,float tail,float body,int nbD, const float dashs[],bool stPlain,float stOffset)
 {
   if ( nbD <= 0 || body <= 0.0001 ) return; // pas de tirets, en fait
 
@@ -59,42 +61,40 @@ void  Path::DashPolyline(float head,float tail,float body,int nbD,float *dashs,b
 
 void  Path::DashPolylineFromStyle(SPStyle *style, float scale, float min_len)
 {
-    if (!style->stroke_dasharray.values.empty()) {
+    if (style->stroke_dasharray.values.empty() || !style->stroke_dasharray.is_valid()) return;
 
-        double dlen = 0.0;
-        // Find total length
-        for (auto & value : style->stroke_dasharray.values) {
-            dlen += value.value * scale;
+    double dlen = 0.0;
+    // Find total length
+    for (auto & value : style->stroke_dasharray.values) {
+        dlen += value.value * scale;
+    }
+    if (dlen >= min_len) {
+        // Extract out dash pattern (relative positions)
+        double dash_offset = style->stroke_dashoffset.value * scale;
+        size_t n_dash = style->stroke_dasharray.values.size();
+        std::vector<double> dash(n_dash);
+        for (unsigned i = 0; i < n_dash; i++) {
+            dash[i] = style->stroke_dasharray.values[i].value * scale;
         }
-        if (dlen >= min_len) {
-            // Extract out dash pattern (relative positions)
-            double dash_offset = style->stroke_dashoffset.value * scale;
-            size_t n_dash = style->stroke_dasharray.values.size();
-            double *dash = g_new(double, n_dash);
-            for (unsigned i = 0; i < n_dash; i++) {
-                dash[i] = style->stroke_dasharray.values[i].value * scale;
-            }
 
-            // Convert relative positions to absolute positions
-            int    nbD = n_dash;
-            float  *dashs=(float*)malloc((nbD+1)*sizeof(float));
-            while ( dash_offset >= dlen ) dash_offset-=dlen;
-            dashs[0]=dash[0];
-            for (int i=1; i<nbD; i++) {
-                dashs[i]=dashs[i-1]+dash[i];
-            }
-
-            // modulo dlen
-            this->DashPolyline(0.0, 0.0, dlen, nbD, dashs, true, dash_offset);
-
-            free(dashs);
-            g_free(dash);
+        // Convert relative positions to absolute positions
+        int nbD = n_dash;
+        std::vector<float> dashes(n_dash);
+        if (dlen > 0) {
+            while (dash_offset >= dlen) dash_offset -= dlen;
         }
+        dashes[0] = dash[0];
+        for (int i = 1; i < nbD; ++i) {
+            dashes[i] = dashes[i-1] + dash[i];
+        }
+
+        // modulo dlen
+        DashPolyline(0.0, 0.0, dlen, nbD, dashes.data(), true, dash_offset);
     }
 }
 
 
-void Path::DashSubPath(int spL, int spP, std::vector<path_lineto> const &orig_pts, float head,float tail,float body,int nbD,float *dashs,bool stPlain,float stOffset)
+void Path::DashSubPath(int spL, int spP, std::vector<path_lineto> const &orig_pts, float head,float tail,float body,int nbD, const float dashs[],bool stPlain,float stOffset)
 {
   if ( spL <= 0 || spP == -1 ) return;
   
@@ -459,18 +459,8 @@ void  Path::LoadPathVector(Geom::PathVector const &pv, Geom::Affine const &tr, b
     SetBackData (false);
     Reset();
 
-    // FIXME: 2geom is currently unable to maintain SVGElliptical arcs through transformation, and
-    // sometimes it crashes on a continuity error during conversions, therefore convert to beziers here.
-    // (the fix is of course to fix 2geom and then remove this if-statement, and just execute the 'else'-clause)
-    if (doTransformation) {
-        Geom::PathVector pvbezier = pathv_to_linear_and_cubic_beziers(pv);
-        for(const auto & it : pvbezier) {
-            LoadPath(it, tr, doTransformation, true);
-        }
-    } else {
-        for(const auto & it : pv) {
-            LoadPath(it, tr, doTransformation, true);
-        }
+    for(const auto & it : pv) {
+        LoadPath(it, tr, doTransformation, true);
     }
 }
 

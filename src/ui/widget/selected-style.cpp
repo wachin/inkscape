@@ -40,12 +40,12 @@
 #include "ui/dialog/dialog-container.h"
 #include "ui/dialog/dialog-base.h"
 #include "ui/dialog/fill-and-stroke.h"
+#include "ui/icon-names.h"
 #include "ui/tools/tool-base.h"
-#include "ui/widget/canvas.h"   // Forced redraws.
 #include "ui/widget/color-preview.h"
 #include "ui/widget/gradient-image.h"
 
-#include "widgets/ege-paint-def.h"
+#include "widgets/paintdef.h"
 #include "widgets/spw-utilities.h"
 
 using Inkscape::Util::unit_table;
@@ -100,17 +100,9 @@ enum ui_drop_target_info {
     APP_OSWB_COLOR
 };
 
-//TODO: warning: deprecated conversion from string constant to ‘gchar*’
-//
-//Turn out to be warnings that we should probably leave in place. The
-// pointers/types used need to be read-only. So until we correct the using
-// code, those warnings are actually desired. They say "Hey! Fix this". We
-// definitely don't want to hide/ignore them. --JonCruz
-static const GtkTargetEntry ui_drop_target_entries [] = {
-    {g_strdup("application/x-oswb-color"), 0, APP_OSWB_COLOR}
+static const std::vector<Gtk::TargetEntry> ui_drop_target_entries = {
+    Gtk::TargetEntry("application/x-oswb-color", Gtk::TargetFlags(0), APP_OSWB_COLOR)
 };
-
-static guint nui_drop_target_entries = G_N_ELEMENTS(ui_drop_target_entries);
 
 /* convenience function */
 static Dialog::FillAndStroke *get_fill_and_stroke_panel(SPDesktop *desktop);
@@ -495,21 +487,15 @@ void SelectedStyle::dragDataReceived( GtkWidget */*widget*/,
     bool worked = false;
     Glib::ustring colorspec;
     if (gtk_selection_data_get_format(data) == 8) {
-        ege::PaintDef color;
+        PaintDef color;
         worked = color.fromMIMEData("application/x-oswb-color",
-                                    reinterpret_cast<char const *>(gtk_selection_data_get_data(data)),
-                                    gtk_selection_data_get_length(data),
-                                    gtk_selection_data_get_format(data));
+                                    reinterpret_cast<char const*>(gtk_selection_data_get_data(data)),
+                                    gtk_selection_data_get_length(data));
         if (worked) {
-            if (color.getType() == ege::PaintDef::CLEAR) {
-                colorspec = ""; // TODO check if this is sufficient
-            } else if (color.getType() == ege::PaintDef::NONE) {
+            if (color.get_type() == PaintDef::NONE) {
                 colorspec = "none";
             } else {
-                unsigned int r = color.getR();
-                unsigned int g = color.getG();
-                unsigned int b = color.getB();
-
+                auto [r, g, b] = color.get_rgb();
                 gchar* tmp = g_strdup_printf("#%02x%02x%02x", r, g, b);
                 colorspec = tmp;
                 g_free(tmp);
@@ -522,7 +508,7 @@ void SelectedStyle::dragDataReceived( GtkWidget */*widget*/,
 
         sp_desktop_set_style(tracker->parent->_desktop, css);
         sp_repr_css_attr_unref(css);
-        DocumentUndo::done(tracker->parent->_desktop->getDocument(), SP_VERB_NONE, _("Drop color"));
+        DocumentUndo::done(tracker->parent->_desktop->getDocument(), _("Drop color"), "");
     }
 }
 
@@ -531,8 +517,7 @@ void SelectedStyle::on_fill_remove() {
     sp_repr_css_set_property (css, "fill", "none");
     sp_desktop_set_style (_desktop, css, true, true);
     sp_repr_css_attr_unref (css);
-    DocumentUndo::done(_desktop->getDocument(), SP_VERB_DIALOG_FILL_STROKE,
-                        _("Remove fill"));
+    DocumentUndo::done(_desktop->getDocument(), _("Remove fill"), INKSCAPE_ICON("dialog-fill-and-stroke"));
 }
 
 void SelectedStyle::on_stroke_remove() {
@@ -540,8 +525,7 @@ void SelectedStyle::on_stroke_remove() {
     sp_repr_css_set_property (css, "stroke", "none");
     sp_desktop_set_style (_desktop, css, true, true);
     sp_repr_css_attr_unref (css);
-    DocumentUndo::done(_desktop->getDocument(), SP_VERB_DIALOG_FILL_STROKE,
-                       _("Remove stroke"));
+    DocumentUndo::done(_desktop->getDocument(), _("Remove stroke"), INKSCAPE_ICON("dialog-fill-and-stroke"));
 }
 
 void SelectedStyle::on_fill_unset() {
@@ -549,8 +533,8 @@ void SelectedStyle::on_fill_unset() {
     sp_repr_css_unset_property (css, "fill");
     sp_desktop_set_style (_desktop, css, true, true);
     sp_repr_css_attr_unref (css);
-    DocumentUndo::done(_desktop->getDocument(), SP_VERB_DIALOG_FILL_STROKE,
-                       _("Unset fill"));
+    DocumentUndo::done(_desktop->getDocument(), _("Unset fill"), INKSCAPE_ICON("dialog-fill-and-stroke"));
+
 }
 
 void SelectedStyle::on_stroke_unset() {
@@ -565,8 +549,7 @@ void SelectedStyle::on_stroke_unset() {
     sp_repr_css_unset_property (css, "stroke-dasharray");
     sp_desktop_set_style (_desktop, css, true, true);
     sp_repr_css_attr_unref (css);
-    DocumentUndo::done(_desktop->getDocument(), SP_VERB_DIALOG_FILL_STROKE,
-                       _("Unset stroke"));
+    DocumentUndo::done(_desktop->getDocument(), _("Unset stroke"), INKSCAPE_ICON("dialog-fill-and-stroke"));
 }
 
 void SelectedStyle::on_fill_opaque() {
@@ -574,8 +557,7 @@ void SelectedStyle::on_fill_opaque() {
     sp_repr_css_set_property (css, "fill-opacity", "1");
     sp_desktop_set_style (_desktop, css, true);
     sp_repr_css_attr_unref (css);
-    DocumentUndo::done(_desktop->getDocument(), SP_VERB_DIALOG_FILL_STROKE,
-                       _("Make fill opaque"));
+    DocumentUndo::done(_desktop->getDocument(), _("Make fill opaque"), INKSCAPE_ICON("dialog-fill-and-stroke"));
 }
 
 void SelectedStyle::on_stroke_opaque() {
@@ -583,8 +565,7 @@ void SelectedStyle::on_stroke_opaque() {
     sp_repr_css_set_property (css, "stroke-opacity", "1");
     sp_desktop_set_style (_desktop, css, true);
     sp_repr_css_attr_unref (css);
-    DocumentUndo::done(_desktop->getDocument(), SP_VERB_DIALOG_FILL_STROKE,
-                       _("Make fill opaque"));
+    DocumentUndo::done(_desktop->getDocument(), _("Make fill opaque"), INKSCAPE_ICON("dialog-fill-and-stroke"));
 }
 
 void SelectedStyle::on_fill_lastused() {
@@ -595,8 +576,7 @@ void SelectedStyle::on_fill_lastused() {
     sp_repr_css_set_property (css, "fill", c);
     sp_desktop_set_style (_desktop, css);
     sp_repr_css_attr_unref (css);
-    DocumentUndo::done(_desktop->getDocument(), SP_VERB_DIALOG_FILL_STROKE,
-                       _("Apply last set color to fill"));
+    DocumentUndo::done(_desktop->getDocument(), _("Apply last set color to fill"), INKSCAPE_ICON("dialog-fill-and-stroke"));
 }
 
 void SelectedStyle::on_stroke_lastused() {
@@ -607,8 +587,7 @@ void SelectedStyle::on_stroke_lastused() {
     sp_repr_css_set_property (css, "stroke", c);
     sp_desktop_set_style (_desktop, css);
     sp_repr_css_attr_unref (css);
-    DocumentUndo::done(_desktop->getDocument(), SP_VERB_DIALOG_FILL_STROKE,
-                       _("Apply last set color to stroke"));
+    DocumentUndo::done(_desktop->getDocument(), _("Apply last set color to stroke"), INKSCAPE_ICON("dialog-fill-and-stroke"));
 }
 
 void SelectedStyle::on_fill_lastselected() {
@@ -618,8 +597,7 @@ void SelectedStyle::on_fill_lastselected() {
     sp_repr_css_set_property (css, "fill", c);
     sp_desktop_set_style (_desktop, css);
     sp_repr_css_attr_unref (css);
-    DocumentUndo::done(_desktop->getDocument(), SP_VERB_DIALOG_FILL_STROKE,
-                       _("Apply last selected color to fill"));
+    DocumentUndo::done(_desktop->getDocument(), _("Apply last selected color to fill"), INKSCAPE_ICON("dialog-fill-and-stroke"));
 }
 
 void SelectedStyle::on_stroke_lastselected() {
@@ -629,8 +607,7 @@ void SelectedStyle::on_stroke_lastselected() {
     sp_repr_css_set_property (css, "stroke", c);
     sp_desktop_set_style (_desktop, css);
     sp_repr_css_attr_unref (css);
-    DocumentUndo::done(_desktop->getDocument(), SP_VERB_DIALOG_FILL_STROKE,
-                       _("Apply last selected color to stroke"));
+    DocumentUndo::done(_desktop->getDocument(), _("Apply last selected color to stroke"), INKSCAPE_ICON("dialog-fill-and-stroke"));
 }
 
 void SelectedStyle::on_fill_invert() {
@@ -655,8 +632,7 @@ void SelectedStyle::on_fill_invert() {
     sp_repr_css_set_property (css, "fill", c);
     sp_desktop_set_style (_desktop, css);
     sp_repr_css_attr_unref (css);
-    DocumentUndo::done(_desktop->getDocument(), SP_VERB_DIALOG_FILL_STROKE,
-                       _("Invert fill"));
+    DocumentUndo::done(_desktop->getDocument(), _("Invert fill"), INKSCAPE_ICON("dialog-fill-and-stroke"));
 }
 
 void SelectedStyle::on_stroke_invert() {
@@ -679,8 +655,7 @@ void SelectedStyle::on_stroke_invert() {
     sp_repr_css_set_property (css, "stroke", c);
     sp_desktop_set_style (_desktop, css);
     sp_repr_css_attr_unref (css);
-    DocumentUndo::done(_desktop->getDocument(), SP_VERB_DIALOG_FILL_STROKE,
-                       _("Invert stroke"));
+    DocumentUndo::done(_desktop->getDocument(), _("Invert stroke"), INKSCAPE_ICON("dialog-fill-and-stroke"));
 }
 
 void SelectedStyle::on_fill_white() {
@@ -691,8 +666,7 @@ void SelectedStyle::on_fill_white() {
     sp_repr_css_set_property (css, "fill-opacity", "1");
     sp_desktop_set_style (_desktop, css);
     sp_repr_css_attr_unref (css);
-    DocumentUndo::done(_desktop->getDocument(), SP_VERB_DIALOG_FILL_STROKE,
-                       _("White fill"));
+    DocumentUndo::done(_desktop->getDocument(), _("White fill"), INKSCAPE_ICON("dialog-fill-and-stroke"));
 }
 
 void SelectedStyle::on_stroke_white() {
@@ -703,8 +677,7 @@ void SelectedStyle::on_stroke_white() {
     sp_repr_css_set_property (css, "stroke-opacity", "1");
     sp_desktop_set_style (_desktop, css);
     sp_repr_css_attr_unref (css);
-    DocumentUndo::done(_desktop->getDocument(), SP_VERB_DIALOG_FILL_STROKE,
-                       _("White stroke"));
+    DocumentUndo::done(_desktop->getDocument(), _("White stroke"), INKSCAPE_ICON("dialog-fill-and-stroke"));
 }
 
 void SelectedStyle::on_fill_black() {
@@ -715,8 +688,7 @@ void SelectedStyle::on_fill_black() {
     sp_repr_css_set_property (css, "fill-opacity", "1.0");
     sp_desktop_set_style (_desktop, css);
     sp_repr_css_attr_unref (css);
-    DocumentUndo::done(_desktop->getDocument(), SP_VERB_DIALOG_FILL_STROKE,
-                       _("Black fill"));
+    DocumentUndo::done(_desktop->getDocument(), _("Black fill"), INKSCAPE_ICON("dialog-fill-and-stroke"));
 }
 
 void SelectedStyle::on_stroke_black() {
@@ -727,8 +699,7 @@ void SelectedStyle::on_stroke_black() {
     sp_repr_css_set_property (css, "stroke-opacity", "1.0");
     sp_desktop_set_style (_desktop, css);
     sp_repr_css_attr_unref (css);
-    DocumentUndo::done(_desktop->getDocument(), SP_VERB_DIALOG_FILL_STROKE,
-                       _("Black stroke"));
+    DocumentUndo::done(_desktop->getDocument(), _("Black stroke"), INKSCAPE_ICON("dialog-fill-and-stroke"));
 }
 
 void SelectedStyle::on_fill_copy() {
@@ -770,8 +741,7 @@ void SelectedStyle::on_fill_paste() {
         sp_repr_css_set_property (css, "fill", text.c_str());
         sp_desktop_set_style (_desktop, css);
         sp_repr_css_attr_unref (css);
-        DocumentUndo::done(_desktop->getDocument(), SP_VERB_DIALOG_FILL_STROKE,
-                           _("Paste fill"));
+        DocumentUndo::done(_desktop->getDocument(), _("Paste fill"), INKSCAPE_ICON("dialog-fill-and-stroke"));
     }
 }
 
@@ -788,8 +758,7 @@ void SelectedStyle::on_stroke_paste() {
         sp_repr_css_set_property (css, "stroke", text.c_str());
         sp_desktop_set_style (_desktop, css);
         sp_repr_css_attr_unref (css);
-        DocumentUndo::done(_desktop->getDocument(), SP_VERB_DIALOG_FILL_STROKE,
-                           _("Paste stroke"));
+        DocumentUndo::done(_desktop->getDocument(), _("Paste stroke"), INKSCAPE_ICON("dialog-fill-and-stroke"));
     }
 }
 
@@ -868,8 +837,7 @@ SelectedStyle::on_opacity_click(GdkEventButton *event)
         sp_repr_css_set_property (css, "opacity", opacity);
         sp_desktop_set_style (_desktop, css);
         sp_repr_css_attr_unref (css);
-        DocumentUndo::done(_desktop->getDocument(), SP_VERB_DIALOG_FILL_STROKE,
-                           _("Change opacity"));
+        DocumentUndo::done(_desktop->getDocument(), _("Change opacity"), INKSCAPE_ICON("dialog-fill-and-stroke"));
         return true;
     }
 
@@ -895,8 +863,7 @@ void SelectedStyle::on_popup_preset(int i) {
     // FIXME: update dash patterns!
     sp_desktop_set_style (_desktop, css, true);
     sp_repr_css_attr_unref (css);
-    DocumentUndo::done(_desktop->getDocument(), SP_VERB_DIALOG_SWATCHES,
-                       _("Change stroke width"));
+    DocumentUndo::done(_desktop->getDocument(), _("Change stroke width"), INKSCAPE_ICON("swatches"));
 }
 
 void
@@ -931,28 +898,23 @@ SelectedStyle::update()
             place->add(_na[i]);
             place->set_tooltip_text(__na[i]);
             _mode[i] = SS_NA;
-            if ( _dropEnabled[i] ) {
-                gtk_drag_dest_unset( GTK_WIDGET((i==SS_FILL) ? _fill_place.gobj():_stroke_place.gobj()) );
+            if (_dropEnabled[i]) {
+                auto widget = i == SS_FILL ? &_fill_place : &_stroke_place;
+                widget->drag_dest_unset();
                 _dropEnabled[i] = false;
             }
             break;
         case QUERY_STYLE_SINGLE:
         case QUERY_STYLE_MULTIPLE_AVERAGED:
-        case QUERY_STYLE_MULTIPLE_SAME:
-            if ( !_dropEnabled[i] ) {
-                gtk_drag_dest_set( GTK_WIDGET( (i==SS_FILL) ? _fill_place.gobj():_stroke_place.gobj()),
-                                   GTK_DEST_DEFAULT_ALL,
-                                   ui_drop_target_entries,
-                                   nui_drop_target_entries,
-                                   GdkDragAction(GDK_ACTION_COPY | GDK_ACTION_MOVE) );
+        case QUERY_STYLE_MULTIPLE_SAME: {
+            if (!_dropEnabled[i]) {
+                auto widget = i == SS_FILL ? &_fill_place : &_stroke_place;
+                widget->drag_dest_set(ui_drop_target_entries,
+                                      Gtk::DestDefaults::DEST_DEFAULT_ALL,
+                                      Gdk::DragAction::ACTION_COPY | Gdk::DragAction::ACTION_MOVE);
                 _dropEnabled[i] = true;
             }
-            SPIPaint *paint;
-            if (i == SS_FILL) {
-                paint = &(query.fill);
-            } else {
-                paint = &(query.stroke);
-            }
+            auto paint = i == SS_FILL ? query.fill.upcast() : query.stroke.upcast();
             if (paint->set && paint->isPaintserver()) {
                 SPPaintServer *server = (i == SS_FILL)? SP_STYLE_FILL_SERVER (&query) : SP_STYLE_STROKE_SERVER (&query);
                 if ( server ) {
@@ -961,31 +923,31 @@ SelectedStyle::update()
                     _paintserver_id[i] += srepr->attribute("id");
                     _paintserver_id[i] += ")";
 
-                    if (SP_IS_LINEARGRADIENT(server)) {
-                        SPGradient *vector = SP_GRADIENT(server)->getVector();
+                    if (is<SPLinearGradient>(server)) {
+                        auto vector = cast<SPGradient>(server)->getVector();
                         _gradient_preview_l[i]->set_gradient(vector);
                         place->add(_gradient_box_l[i]);
                         place->set_tooltip_text(__lgradient[i]);
                         _mode[i] = SS_LGRADIENT;
-                    } else if (SP_IS_RADIALGRADIENT(server)) {
-                        SPGradient *vector = SP_GRADIENT(server)->getVector();
+                    } else if (is<SPRadialGradient>(server)) {
+                        auto vector = cast<SPGradient>(server)->getVector();
                         _gradient_preview_r[i]->set_gradient(vector);
                         place->add(_gradient_box_r[i]);
                         place->set_tooltip_text(__rgradient[i]);
                         _mode[i] = SS_RGRADIENT;
 #ifdef WITH_MESH
-                    } else if (SP_IS_MESHGRADIENT(server)) {
-                        SPGradient *array = SP_GRADIENT(server)->getArray();
+                    } else if (is<SPMeshGradient>(server)) {
+                        auto array = cast<SPGradient>(server)->getArray();
                         _gradient_preview_m[i]->set_gradient(array);
                         place->add(_gradient_box_m[i]);
                         place->set_tooltip_text(__mgradient[i]);
                         _mode[i] = SS_MGRADIENT;
 #endif
-                    } else if (SP_IS_PATTERN(server)) {
+                    } else if (is<SPPattern>(server)) {
                         place->add(_pattern[i]);
                         place->set_tooltip_text(__pattern[i]);
                         _mode[i] = SS_PATTERN;
-                    } else if (SP_IS_HATCH(server)) {
+                    } else if (is<SPHatch>(server)) {
                         place->add(_hatch[i]);
                         place->set_tooltip_text(__hatch[i]);
                         _mode[i] = SS_HATCH;
@@ -1024,6 +986,7 @@ SelectedStyle::update()
                 flag_place->set_tooltip_text(__multiple[i]);
             }
             break;
+        }
         case QUERY_STYLE_MULTIPLE_DIFFERENT:
             place->add(_many[i]);
             place->set_tooltip_text(__many[i]);
@@ -1165,21 +1128,9 @@ void SelectedStyle::on_opacity_changed ()
     Inkscape::CSSOStringStream os;
     os << CLAMP ((_opacity_adjustment->get_value() / 100), 0.0, 1.0);
     sp_repr_css_set_property (css, "opacity", os.str().c_str());
-
-    // FIXME: workaround for GTK breakage: display interruptibility sometimes results in GTK
-    // sending multiple value-changed events. As if when Inkscape interrupts redraw for main loop
-    // iterations, GTK discovers that this callback hasn't finished yet, and for some weird reason
-    // decides to add yet another value-changed event to the queue. Totally braindead if you ask
-    // me. As a result, scrolling the spinbutton once results in runaway change until it hits 1.0
-    // or 0.0. (And no, this is not a race with ::update, I checked that.)
-    // Sigh. So we disable interruptibility while we're setting the new value.
-    _desktop->getCanvas()->forced_redraws_start(0);
     sp_desktop_set_style (_desktop, css);
     sp_repr_css_attr_unref (css);
-    DocumentUndo::maybeDone(_desktop->getDocument(), "fillstroke:opacity", SP_VERB_DIALOG_FILL_STROKE,
-                            _("Change opacity"));
-    // resume interruptibility
-    _desktop->getCanvas()->forced_redraws_stop();
+    DocumentUndo::maybeDone(_desktop->getDocument(), "fillstroke:opacity", _("Change opacity"), INKSCAPE_ICON("dialog-fill-and-stroke"));
     _opacity_blocked = false;
 }
 
@@ -1277,7 +1228,9 @@ RotateableSwatch::do_motion(double by, guint modifier) {
             cursor_filename = "adjust_alpha.svg";
         }
 
-        load_svg_cursor(get_display(), get_window(), cursor_filename);
+        auto window = get_window();
+        auto cursor = load_svg_cursor(get_display(), window, cursor_filename);
+        get_window()->set_cursor(cursor);
     }
 
     guint32 cc;
@@ -1294,26 +1247,22 @@ RotateableSwatch::do_motion(double by, guint modifier) {
     diff = color_adjust(hsla, by, cc, modifier);
 
     if (modifier == 3) { // alpha
-        DocumentUndo::maybeDone(parent->getDesktop()->getDocument(), undokey,
-                                SP_VERB_DIALOG_FILL_STROKE, (_("Adjust alpha")));
+        DocumentUndo::maybeDone(parent->getDesktop()->getDocument(), undokey, (_("Adjust alpha")), INKSCAPE_ICON("dialog-fill-and-stroke"));
         double ch = hsla[3];
         parent->getDesktop()->event_context->message_context->setF(Inkscape::IMMEDIATE_MESSAGE, _("Adjusting <b>alpha</b>: was %.3g, now <b>%.3g</b> (diff %.3g); with <b>Ctrl</b> to adjust lightness, with <b>Shift</b> to adjust saturation, without modifiers to adjust hue"), ch - diff, ch, diff);
 
     } else if (modifier == 2) { // saturation
-        DocumentUndo::maybeDone(parent->getDesktop()->getDocument(), undokey,
-                                SP_VERB_DIALOG_FILL_STROKE, (_("Adjust saturation")));
+        DocumentUndo::maybeDone(parent->getDesktop()->getDocument(), undokey, (_("Adjust saturation")), INKSCAPE_ICON("dialog-fill-and-stroke"));
         double ch = hsla[1];
         parent->getDesktop()->event_context->message_context->setF(Inkscape::IMMEDIATE_MESSAGE, _("Adjusting <b>saturation</b>: was %.3g, now <b>%.3g</b> (diff %.3g); with <b>Ctrl</b> to adjust lightness, with <b>Alt</b> to adjust alpha, without modifiers to adjust hue"), ch - diff, ch, diff);
 
     } else if (modifier == 1) { // lightness
-        DocumentUndo::maybeDone(parent->getDesktop()->getDocument(), undokey,
-                                SP_VERB_DIALOG_FILL_STROKE, (_("Adjust lightness")));
+        DocumentUndo::maybeDone(parent->getDesktop()->getDocument(), undokey, (_("Adjust lightness")), INKSCAPE_ICON("dialog-fill-and-stroke"));
         double ch = hsla[2];
         parent->getDesktop()->event_context->message_context->setF(Inkscape::IMMEDIATE_MESSAGE, _("Adjusting <b>lightness</b>: was %.3g, now <b>%.3g</b> (diff %.3g); with <b>Shift</b> to adjust saturation, with <b>Alt</b> to adjust alpha, without modifiers to adjust hue"), ch - diff, ch, diff);
 
     } else { // hue
-        DocumentUndo::maybeDone(parent->getDesktop()->getDocument(), undokey,
-                                SP_VERB_DIALOG_FILL_STROKE, (_("Adjust hue")));
+        DocumentUndo::maybeDone(parent->getDesktop()->getDocument(), undokey, (_("Adjust hue")), INKSCAPE_ICON("dialog-fill-and-stroke"));
         double ch = hsla[0];
         parent->getDesktop()->event_context->message_context->setF(Inkscape::IMMEDIATE_MESSAGE, _("Adjusting <b>hue</b>: was %.3g, now <b>%.3g</b> (diff %.3g); with <b>Shift</b> to adjust saturation, with <b>Alt</b> to adjust alpha, with <b>Ctrl</b> to adjust lightness"), ch - diff, ch, diff);
     }
@@ -1340,19 +1289,16 @@ RotateableSwatch::do_release(double by, guint modifier) {
     }
 
     if (modifier == 3) { // alpha
-        DocumentUndo::maybeDone(parent->getDesktop()->getDocument(), undokey,
-                                SP_VERB_DIALOG_FILL_STROKE, ("Adjust alpha"));
+        DocumentUndo::maybeDone(parent->getDesktop()->getDocument(), undokey, ("Adjust alpha"), INKSCAPE_ICON("dialog-fill-and-stroke"));
+
     } else if (modifier == 2) { // saturation
-        DocumentUndo::maybeDone(parent->getDesktop()->getDocument(), undokey,
-                                SP_VERB_DIALOG_FILL_STROKE, ("Adjust saturation"));
+        DocumentUndo::maybeDone(parent->getDesktop()->getDocument(), undokey, ("Adjust saturation"), INKSCAPE_ICON("dialog-fill-and-stroke"));
 
     } else if (modifier == 1) { // lightness
-        DocumentUndo::maybeDone(parent->getDesktop()->getDocument(), undokey,
-                                SP_VERB_DIALOG_FILL_STROKE, ("Adjust lightness"));
+        DocumentUndo::maybeDone(parent->getDesktop()->getDocument(), undokey, ("Adjust lightness"), INKSCAPE_ICON("dialog-fill-and-stroke"));
 
     } else { // hue
-        DocumentUndo::maybeDone(parent->getDesktop()->getDocument(), undokey,
-                                SP_VERB_DIALOG_FILL_STROKE, ("Adjust hue"));
+        DocumentUndo::maybeDone(parent->getDesktop()->getDocument(), undokey, ("Adjust hue"), INKSCAPE_ICON("dialog-fill-and-stroke"));
     }
 
     if (!strcmp(undokey, "ssrot1")) {
@@ -1418,8 +1364,7 @@ RotateableStrokeWidth::do_motion(double by, guint modifier) {
     if (modifier == 3) { // Alt, do nothing
     } else {
         double diff = value_adjust(startvalue, by, modifier, false);
-        DocumentUndo::maybeDone(parent->getDesktop()->getDocument(), undokey,
-                                SP_VERB_DIALOG_FILL_STROKE, (_("Adjust stroke width")));
+        DocumentUndo::maybeDone(parent->getDesktop()->getDocument(), undokey, (_("Adjust stroke width")), INKSCAPE_ICON("dialog-fill-and-stroke"));
         parent->getDesktop()->event_context->message_context->setF(Inkscape::IMMEDIATE_MESSAGE, _("Adjusting <b>stroke width</b>: was %.3g, now <b>%.3g</b> (diff %.3g)"), startvalue, startvalue + diff, diff);
     }
 }
@@ -1432,8 +1377,7 @@ RotateableStrokeWidth::do_release(double by, guint modifier) {
     } else {
         value_adjust(startvalue, by, modifier, true);
         startvalue_set = false;
-        DocumentUndo::maybeDone(parent->getDesktop()->getDocument(), undokey,
-                                SP_VERB_DIALOG_FILL_STROKE, (_("Adjust stroke width")));
+        DocumentUndo::maybeDone(parent->getDesktop()->getDocument(), undokey, (_("Adjust stroke width")), INKSCAPE_ICON("dialog-fill-and-stroke"));
     }
 
     if (!strcmp(undokey, "swrot1")) {
@@ -1452,12 +1396,8 @@ RotateableStrokeWidth::do_scroll(double by, guint modifier) {
 
 Dialog::FillAndStroke *get_fill_and_stroke_panel(SPDesktop *desktop)
 {
-    Dialog::DialogBase *dialog = desktop->getContainer()->get_dialog("FillStroke");
-    if (!dialog) {
-        desktop->getContainer()->new_dialog("FillStroke");
-        return dynamic_cast<Dialog::FillAndStroke *>(desktop->getContainer()->get_dialog("FillStroke"));
-    }
-    return dynamic_cast<Dialog::FillAndStroke *>(dialog);
+    desktop->getContainer()->new_dialog("FillStroke");
+    return dynamic_cast<Dialog::FillAndStroke *>(desktop->getContainer()->get_dialog("FillStroke"));
 }
 
 } // namespace Widget

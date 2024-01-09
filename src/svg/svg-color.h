@@ -19,6 +19,8 @@ void sp_svg_write_color(char *buf, unsigned int buflen, unsigned int rgba32);
 
 bool sp_svg_read_icc_color( char const *str, char const **end_ptr, SVGICCColor* dest );
 bool sp_svg_read_icc_color( char const *str, SVGICCColor* dest );
-void icc_color_to_sRGB(SVGICCColor* dest, unsigned char* r, unsigned char* g, unsigned char* b);
+void icc_color_to_sRGB(SVGICCColor const *dest, unsigned char *r, unsigned char *g, unsigned char *b);
+
+bool sp_ink_read_opacity(char const *str, guint32 *color, guint32 default_color);
 
 #endif /* !SVG_SVG_COLOR_H_SEEN */

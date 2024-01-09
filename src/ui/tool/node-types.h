@@ -32,6 +32,14 @@ enum SegmentType {
     SEGMENT_CUBIC_BEZIER ///< Bezier curve with two control points
 };
 
+enum class AlignTargetNode {
+    LAST_NODE,
+    FIRST_NODE,
+    MID_NODE,
+    MIN_NODE,
+    MAX_NODE
+};
+
 } // namespace UI
 } // namespace Inkscape
 

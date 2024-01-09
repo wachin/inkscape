@@ -42,6 +42,8 @@ public:
                             guint32 color);
 
     float median_width();
+    Geom::Point knot_get(size_t index);
+    Geom::Point knot_reposition(size_t index, Geom::PathVector pathv);
 
     bool providesKnotHolderEntities() const override { return true; }
     void addKnotHolderEntities(KnotHolder *knotholder, SPItem *item) override;
@@ -51,12 +53,14 @@ public:
     Geom::Piecewise<Geom::D2<Geom::SBasis> > const & get_pwd2() const { return last_pwd2; }
     Geom::Piecewise<Geom::D2<Geom::SBasis> > const & get_pwd2_normal() const { return last_pwd2_normal; }
 
-    void recalculate_controlpoints_for_new_pwd2(Geom::Piecewise<Geom::D2<Geom::SBasis> > const & pwd2_in);
+    void recalculate_controlpoints(Geom::PathVector pv);
     std::vector<Geom::Point> reverse_controlpoints(bool write);
     void set_scale_width(double scale_width){_scale_width = scale_width;};
     double _scale_width;
+    ParamType paramType() const override { return ParamType::POWERSTROKE_POINT_ARRAY; };
     friend class PowerStrokePointArrayParamKnotHolderEntity;
-
+    bool unplaced = false;
+    size_t current_path = Glib::ustring::npos;
 private:
     Inkscape::CanvasItemCtrlShape knot_shape = Inkscape::CANVAS_ITEM_CTRL_SHAPE_DIAMOND;
     Inkscape::CanvasItemCtrlMode knot_mode = Inkscape::CANVAS_ITEM_CTRL_MODE_XOR;

@@ -202,7 +202,7 @@ public:
   void update_handles( unsigned int corner, std::vector< unsigned int > selected_corners, Geom::Point old_p, MeshNodeOperation op );
 
   // Return outline path
-  std::unique_ptr<SPCurve> outline_path() const;
+  SPCurve outline_path() const;
 
   // Transform array
   void transform(Geom::Affine const &m);

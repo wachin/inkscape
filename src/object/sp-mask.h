@@ -14,109 +14,92 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
+#include <memory>
+#include <vector>
 #include <2geom/rect.h>
 #include "sp-object-group.h"
 #include "uri-references.h"
+#include "display/drawing-item-ptr.h"
 #include "xml/node.h"
 
 namespace Inkscape {
-
 class Drawing;
 class DrawingItem;
-
-
+class DrawingGroup;
 } // namespace Inkscape
 
-struct SPMaskView {
-	SPMaskView *next;
-	unsigned int key;
-	Inkscape::DrawingItem *arenaitem;
-	Geom::OptRect bbox;
-};
-
-class SPMask : public SPObjectGroup {
+class SPMask final
+    : public SPObjectGroup
+{
 public:
 	SPMask();
 	~SPMask() override;
+    int tag() const override { return tag_of<decltype(*this)>; }
 
-	unsigned int maskUnits_set : 1;
-	unsigned int maskUnits : 1;
+    bool mask_content_units() const { return maskContentUnits; }
 
-	unsigned int maskContentUnits_set : 1;
-	unsigned int maskContentUnits : 1;
+    // Fixme: Hack used by cairo-renderer.
+    Geom::OptRect get_last_bbox() const { return views.back().bbox; }
 
-	SPMaskView *display;
+    static char const *create(std::vector<Inkscape::XML::Node*> &reprs, SPDocument *document);
 
-	Inkscape::DrawingItem *sp_mask_show(Inkscape::Drawing &drawing, unsigned int key);
-	void sp_mask_hide(unsigned int key);
+    Inkscape::DrawingItem *show(Inkscape::Drawing &drawing, unsigned key, Geom::OptRect const &bbox);
+    void hide(unsigned key);
+    void setBBox(unsigned key, Geom::OptRect const &bbox);
 
-    Geom::OptRect geometricBounds(Geom::Affine const &transform);
-
-    Geom::OptRect visualBounds(Geom::Affine const &transform) ;
-
-	void sp_mask_set_bbox(unsigned int key, Geom::OptRect const &bbox);
+    Geom::OptRect geometricBounds(Geom::Affine const &transform) const;
+    Geom::OptRect visualBounds(Geom::Affine const &transform) const;
 
 protected:
-	void build(SPDocument* doc, Inkscape::XML::Node* repr) override;
+    void build(SPDocument *doc, Inkscape::XML::Node *repr) override;
 	void release() override;
+    void set(SPAttr key, char const *value) override;
+    void update(SPCtx *ctx, unsigned flags) override;
+    void modified(unsigned flags) override;
+    Inkscape::XML::Node *write(Inkscape::XML::Document *doc, Inkscape::XML::Node *repr, unsigned flags) override;
 
-	void child_added(Inkscape::XML::Node* child, Inkscape::XML::Node* ref) override;
+    void child_added(Inkscape::XML::Node *child, Inkscape::XML::Node *ref) override;
 
-	void set(SPAttr key, const char* value) override;
+private:
+    bool maskUnits_set : 1;
+    bool maskUnits : 1;
 
-	void update(SPCtx* ctx, unsigned int flags) override;
-	void modified(unsigned int flags) override;
+    bool maskContentUnits_set : 1;
+    bool maskContentUnits : 1;
 
-	Inkscape::XML::Node* write(Inkscape::XML::Document* doc, Inkscape::XML::Node* repr, unsigned int flags) override;
+    struct View
+    {
+        DrawingItemPtr<Inkscape::DrawingGroup> drawingitem;
+        Geom::OptRect bbox;
+        unsigned key;
+        View(DrawingItemPtr<Inkscape::DrawingGroup> drawingitem, Geom::OptRect const &bbox, unsigned key);
+    };
+    std::vector<View> views;
+    void update_view(View &v);
 };
 
-MAKE_SP_OBJECT_TYPECHECK_FUNCTIONS(SP_IS_MASK, SPMask)
-
-class SPMaskReference : public Inkscape::URIReference {
+class SPMaskReference
+    : public Inkscape::URIReference
+{
 public:
-	SPMaskReference(SPObject *obj) : URIReference(obj) {}
-	SPMask *getObject() const {
-		return static_cast<SPMask *>(URIReference::getObject());
+    SPMaskReference(SPObject *obj)
+        : URIReference(obj) {}
+
+    SPMask *getObject() const
+    {
+        return static_cast<SPMask*>(URIReference::getObject());
 	}
+
+    sigc::connection modified_connection;
+
 protected:
     /**
      * If the owner element of this reference (the element with <... mask="...">)
      * is a child of the mask it refers to, return false.
      * \return false if obj is not a mask or if obj is a parent of this
-     *         reference's owner element.  True otherwise.
+     *         reference's owner element. True otherwise.
      */
-	bool _acceptObject(SPObject *obj) const override {
-		if (!SP_IS_MASK(obj)) {
-		    return false;
-	    }
-	    SPObject * const owner = this->getOwner();
-        if (!URIReference::_acceptObject(obj)) {
-	  //XML Tree being used directly here while it shouldn't be...
-	  Inkscape::XML::Node * const owner_repr = owner->getRepr();
-	  //XML Tree being used directly here while it shouldn't be...
-	  Inkscape::XML::Node * const obj_repr = obj->getRepr();
-            char const * owner_name = "";
-            char const * owner_mask = "";
-            char const * obj_name = "";
-            char const * obj_id = "";
-            if (owner_repr != nullptr) {
-                owner_name = owner_repr->name();
-                owner_mask = owner_repr->attribute("mask");
-            }
-            if (obj_repr != nullptr) {
-                obj_name = obj_repr->name();
-                obj_id = obj_repr->attribute("id");
-            }
-            printf("WARNING: Ignoring recursive mask reference "
-                      "<%s mask=\"%s\"> in <%s id=\"%s\">",
-                      owner_name, owner_mask,
-                      obj_name, obj_id);
-            return false;
-        }
-        return true;
-	}
+    bool _acceptObject(SPObject *obj) const override;
 };
-
-const char *sp_mask_create (std::vector<Inkscape::XML::Node*> &reprs, SPDocument *document);
 
 #endif // SEEN_SP_MASK_H

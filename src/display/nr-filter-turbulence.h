@@ -22,6 +22,7 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
+#include <memory>
 #include <2geom/point.h>
 
 #include "display/nr-filter-primitive.h"
@@ -31,7 +32,8 @@
 namespace Inkscape {
 namespace Filters {
 
-enum FilterTurbulenceType {
+enum FilterTurbulenceType
+{
     TURBULENCE_FRACTALNOISE,
     TURBULENCE_TURBULENCE,
     TURBULENCE_ENDTYPE
@@ -39,15 +41,15 @@ enum FilterTurbulenceType {
 
 class TurbulenceGenerator;
 
-class FilterTurbulence : public FilterPrimitive {
+class FilterTurbulence : public FilterPrimitive
+{
 public:
     FilterTurbulence();
-    static FilterPrimitive *create();
     ~FilterTurbulence() override;
 
-    void render_cairo(FilterSlot &slot) override;
-    double complexity(Geom::Affine const &ctm) override;
-    bool uses_background() override { return false; }
+    void render_cairo(FilterSlot &slot) const override;
+    double complexity(Geom::Affine const &ctm) const override;
+    bool uses_background() const override { return false; }
 
     void set_baseFrequency(int axis, double freq);
     void set_numOctaves(int num);
@@ -56,11 +58,10 @@ public:
     void set_type(FilterTurbulenceType t);
     void set_updated(bool u);
 
-    Glib::ustring name() override { return Glib::ustring("Turbulence"); }
+    Glib::ustring name() const override { return Glib::ustring("Turbulence"); }
 
 private:
-
-    TurbulenceGenerator *gen;
+    std::unique_ptr<TurbulenceGenerator> gen;
 
     void turbulenceInit(long seed);
 
@@ -70,20 +71,18 @@ private:
     bool stitchTiles;
     FilterTurbulenceType type;
     bool updated;
-    unsigned char *pix_data;
 
     double fTileWidth;
     double fTileHeight;
 
     double fTileX;
     double fTileY;
-
 };
 
-} /* namespace Filters */
-} /* namespace Inkscape */
+} // namespace Filters
+} // namespace Inkscape
 
-#endif /* __NR_FILTER_TURBULENCE_H__ */
+#endif // SEEN_NR_FILTER_TURBULENCE_H
 /*
   Local Variables:
   mode:c++

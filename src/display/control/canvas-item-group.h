@@ -3,9 +3,8 @@
 #define SEEN_CANVAS_ITEM_GROUP_H
 
 /**
- * A CanvasItem that contains other CanvasItem's.
+ * A CanvasItem that contains other CanvasItems.
  */
-
 /*
  * Author:
  *   Tavmjong Bah
@@ -17,44 +16,43 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
-//#include <2geom/rect.h>
-#include <boost/intrusive/list.hpp>
-
 #include "canvas-item.h"
 
 namespace Inkscape {
 
-class CanvasItemGroup : public CanvasItem {
-
+class CanvasItemGroup final : public CanvasItem
+{
 public:
-    CanvasItemGroup(CanvasItemGroup* group = nullptr);
-    ~CanvasItemGroup() override;
+    CanvasItemGroup(CanvasItemGroup *group);
+    CanvasItemGroup(CanvasItemContext *context);
 
-    // Structure
-    void add(CanvasItem *item);
-    void remove(CanvasItem *item, bool Delete = true);
-
-    void update(Geom::Affine const &affine) override;
-
-    // Display
-    void render(Inkscape::CanvasItemBuffer *buf) override;
+    // Geometry
+    void visit_page_rects(std::function<void(Geom::Rect const &)> const &) const override;
 
     // Selection
-    CanvasItem* pick_item(Geom::Point &p);
-
-    CanvasItemList & get_items() { return items; } 
-
-    // Properties
-    void update_canvas_item_ctrl_sizes(int size_index);
+    CanvasItem *pick_item(Geom::Point const &p);
 
 protected:
+    friend class CanvasItem; // access to items
+    friend class CanvasItemContext; // access to destructor
 
-private:
-public:
-    // TODO: Make private (used in canvas-item.cpp).
-    CanvasItemList items; // Used to speed deletion.
+    ~CanvasItemGroup() override;
+
+    void _update(bool propagate) override;
+    void _mark_net_invisible() override;
+    void _render(Inkscape::CanvasItemBuffer &buf) const override;
+
+    /**
+     * Type for linked list storing CanvasItems.
+     * Used to speed deletion when a group contains a large number of items (as in nodes for a complex path).
+     */
+    using CanvasItemList = boost::intrusive::list<
+        Inkscape::CanvasItem,
+        boost::intrusive::member_hook<Inkscape::CanvasItem, boost::intrusive::list_member_hook<>,
+                                      &Inkscape::CanvasItem::member_hook>>;
+
+    CanvasItemList items;
 };
-
 
 } // namespace Inkscape
 

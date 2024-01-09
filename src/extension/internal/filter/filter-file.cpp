@@ -68,6 +68,9 @@ void Filter::filters_all_files()
     for(auto &filename: get_filenames(USER, FILTERS, {".svg"})) {
         filters_load_file(filename, _("Personal"));
     }
+    for(auto &filename: get_filenames(SHARED, FILTERS, {".svg"})) {
+        filters_load_file(filename, _("Personal"));
+    }
     for(auto &filename: get_filenames(SYSTEM, FILTERS, {".svg"})) {
         filters_load_file(filename, _("Bundled"));
     }

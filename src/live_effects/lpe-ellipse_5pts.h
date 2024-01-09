@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-#ifndef INKSCAPE_LPE_ELLIPSE_5PTS_H
-#define INKSCAPE_LPE_ELLIPSE_5PTS_H
-
 /** \file
- * LPE "Ellipse through 5 points" implementation
+ * LPE "Ellipse through 5 points" implementation.
  */
+#ifndef SEEN_LPE_ELLIPSE_5PTS_H
+#define SEEN_LPE_ELLIPSE_5PTS_H
 
 /*
  * Authors:
@@ -16,28 +15,33 @@
  */
 
 #include "live_effects/effect.h"
-#include "live_effects/parameter/parameter.h"
-#include "live_effects/parameter/point.h"
+#include "message.h"
 
-namespace Inkscape {
-namespace LivePathEffect {
+namespace Inkscape::LivePathEffect {
 
-class LPEEllipse5Pts : public Effect {
+class LPEEllipse5Pts : public Effect
+{
 public:
     LPEEllipse5Pts(LivePathEffectObject *lpeobject);
-    ~LPEEllipse5Pts() override;
+    ~LPEEllipse5Pts() override { _clearWarning(); }
 
-    Geom::PathVector doEffect_path (Geom::PathVector const & path_in) override;
+    Geom::PathVector doEffect_path(Geom::PathVector const &path_in) override;
 
 private:
-    LPEEllipse5Pts(const LPEEllipse5Pts&) = delete;
-    LPEEllipse5Pts& operator=(const LPEEllipse5Pts&) = delete;
+    LPEEllipse5Pts(LPEEllipse5Pts const &) = delete;
+    LPEEllipse5Pts& operator=(LPEEllipse5Pts const &) = delete;
+
+    void _flashWarning(char const *message);
+    void _clearWarning();
+
+    inline static MessageId const INVALID = 0x00'DEADBEEF'00;
+    MessageId _error = INVALID;
+    Geom::PathVector const _unit_circle;
 };
 
-} //namespace LivePathEffect
-} //namespace Inkscape
+} // namespace Inkscape::LivePathEffect
 
-#endif
+#endif // SEEN_LPE_ELLIPSE_5PTS_H
 
 /*
   Local Variables:

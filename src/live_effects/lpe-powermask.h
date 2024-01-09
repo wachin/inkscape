@@ -23,7 +23,7 @@ public:
     void doOnApply (SPLPEItem const * lpeitem) override;
     void doBeforeEffect (SPLPEItem const* lpeitem) override;
     void doEffect (SPCurve * curve) override;
-    void doOnRemove (SPLPEItem const* /*lpeitem*/) override;
+    void doOnRemove(SPLPEItem const* /*lpeitem*/) override;
     void doOnVisibilityToggled(SPLPEItem const* lpeitem) override;
     void toggleMaskVisibility();
     void tryForkMask();

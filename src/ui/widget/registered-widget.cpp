@@ -18,8 +18,6 @@
 
 #include <gtkmm/radiobutton.h>
 
-#include "verbs.h"
-
 #include "object/sp-root.h"
 
 #include "svg/svg-color.h"
@@ -34,11 +32,6 @@ namespace Widget {
 /*#########################################
  * Registered CHECKBUTTON
  */
-
-RegisteredCheckButton::~RegisteredCheckButton()
-{
-    _toggled_connection.disconnect();
-}
 
 RegisteredCheckButton::RegisteredCheckButton (const Glib::ustring& label, const Glib::ustring& tip, const Glib::ustring& key, Registry& wr, bool right, Inkscape::XML::Node* repr_in, SPDocument *doc_in, char const *active_str, char const *inactive_str)
     : RegisteredWidget<Gtk::CheckButton>()
@@ -59,7 +52,6 @@ RegisteredCheckButton::RegisteredCheckButton (const Glib::ustring& label, const 
     else      set_halign(Gtk::ALIGN_START);
 
     set_valign(Gtk::ALIGN_CENTER);
-    _toggled_connection = signal_toggled().connect (sigc::mem_fun (*this, &RegisteredCheckButton::on_toggled));
 }
 
 void
@@ -99,11 +91,6 @@ RegisteredCheckButton::on_toggled()
  * Registered TOGGLEBUTTON
  */
 
-RegisteredToggleButton::~RegisteredToggleButton()
-{
-    _toggled_connection.disconnect();
-}
-
 RegisteredToggleButton::RegisteredToggleButton (const Glib::ustring& /*label*/, const Glib::ustring& tip, const Glib::ustring& key, Registry& wr, bool right, Inkscape::XML::Node* repr_in, SPDocument *doc_in, char const *icon_active, char const *icon_inactive)
     : RegisteredWidget<Gtk::ToggleButton>()
 {
@@ -115,7 +102,6 @@ RegisteredToggleButton::RegisteredToggleButton (const Glib::ustring& /*label*/, 
     else      set_halign(Gtk::ALIGN_START);
 
     set_valign(Gtk::ALIGN_CENTER);
-    _toggled_connection = signal_toggled().connect (sigc::mem_fun (*this, &RegisteredToggleButton::on_toggled));
 }
 
 void
@@ -414,15 +400,13 @@ RegisteredColorPicker::on_changed (guint32 rgba)
     } else {
         sp_svg_write_color(c, sizeof(c), rgba);
     }
-    bool saved = DocumentUndo::getUndoSensitive(local_doc);
-    DocumentUndo::setUndoSensitive(local_doc, false);
-    local_repr->setAttribute(_ckey, c);
-    local_repr->setAttributeCssDouble(_akey.c_str(), (rgba & 0xff) / 255.0);
-    DocumentUndo::setUndoSensitive(local_doc, saved);
-
+    {
+        DocumentUndo::ScopedInsensitive _no_undo(local_doc);
+        local_repr->setAttribute(_ckey, c);
+        local_repr->setAttributeCssDouble(_akey.c_str(), (rgba & 0xff) / 255.0);
+    }
     local_doc->setModifiedSinceSave();
-    DocumentUndo::done(local_doc, SP_VERB_NONE,
-                       /* TODO: annotate */ "registered-widget.cpp: RegisteredColorPicker::on_changed");
+    DocumentUndo::done(local_doc, "registered-widget.cpp: RegisteredColorPicker::on_changed", ""); // TODO Fix description.
 
     _wr->setUpdating (false);
 }

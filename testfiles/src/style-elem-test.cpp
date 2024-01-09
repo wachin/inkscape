@@ -55,14 +55,14 @@ TEST_F(ObjectTest, StyleElems) {
     SPRoot *root = doc->getRoot();
     ASSERT_TRUE(root->getRepr() != nullptr);
 
-    SPStyleElem *one = dynamic_cast<SPStyleElem *>(doc->getObjectById("style01"));
+    auto one = cast<SPStyleElem>(doc->getObjectById("style01"));
     ASSERT_TRUE(one != nullptr);
 
     for (auto &style : one->get_styles()) {
         EXPECT_EQ(style->fill.get_value(), Glib::ustring("#ff0000"));
     }
 
-    SPStyleElem *two = dynamic_cast<SPStyleElem *>(doc->getObjectById("style02"));
+    auto two = cast<SPStyleElem>(doc->getObjectById("style02"));
     ASSERT_TRUE(one != nullptr);
 
     for (auto &style : two->get_styles()) {

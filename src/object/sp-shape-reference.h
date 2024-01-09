@@ -33,7 +33,7 @@ public:
 
 protected:
     bool _acceptObject(SPObject *obj) const override {
-        return SP_IS_SHAPE(obj) && URIReference::_acceptObject(obj);
+        return is<SPShape>(obj) && URIReference::_acceptObject(obj);
     };
 
   private:

@@ -26,6 +26,7 @@ class SPItem;
 class SPClipPath;
 class SPMask;
 class SPHatchPath;
+class SPPage;
 
 namespace Inkscape {
 namespace Extension {
@@ -50,15 +51,26 @@ public:
     /** Initializes the CairoRenderContext according to the specified
     SPDocument. A set*Target function can only be called on the context
     before setupDocument. */
-    bool setupDocument(CairoRenderContext *ctx, SPDocument *doc, bool pageBoundingBox, double bleedmargin_px, SPItem *base);
+    bool setupDocument(CairoRenderContext *ctx, SPDocument *doc, SPItem *base = nullptr);
+
 
     /** Traverses the object tree and invokes the render methods. */
-    void renderItem(CairoRenderContext *ctx, SPItem *item);
+    void renderItem(CairoRenderContext *ctx, SPItem *item, SPItem *clone = nullptr, SPPage *page = nullptr);
     void renderHatchPath(CairoRenderContext *ctx, SPHatchPath const &hatchPath, unsigned key);
+    bool renderPages(CairoRenderContext *ctx, SPDocument *doc, bool stretch_to_fit);
+    bool renderPage(CairoRenderContext *ctx, SPDocument *doc, SPPage *page, bool stretch_to_fit);
 
 private:
     /** Extract metadata from doc and set it on ctx. */
     void setMetadata(CairoRenderContext *ctx, SPDocument *doc);
+
+    /** Decide whether the given item should be rendered as a bitmap. */
+    static bool _shouldRasterize(CairoRenderContext *ctx, SPItem const *item);
+
+    /** Render a single item in a fully set up context. */
+    static void _doRender(SPItem *item, CairoRenderContext *ctx, SPItem *origin = nullptr,
+                          SPPage *page = nullptr);
+
 };
 
 // FIXME: this should be a static method of CairoRenderer

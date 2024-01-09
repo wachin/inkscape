@@ -27,8 +27,7 @@ LPETextLabel::LPETextLabel(LivePathEffectObject *lpeobject) :
     registerParameter(&label);
 }
 
-LPETextLabel::~LPETextLabel()
-= default;
+LPETextLabel::~LPETextLabel() = default;
 
 Geom::Piecewise<Geom::D2<Geom::SBasis> >
 LPETextLabel::doEffect_pwd2 (Geom::Piecewise<Geom::D2<Geom::SBasis> > const & pwd2_in)

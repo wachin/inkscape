@@ -11,7 +11,6 @@
  *
  * The contents of this file may be used under the GNU General Public License Version 2 or later.
  * Read the file 'COPYING' for more information.
- *
  */
 
 #ifdef _WIN32
@@ -32,8 +31,7 @@ int main(int argc, char *argv[])
     _setmode(_fileno(stdout), _O_BINARY); // binary mode seems required for this to work properly
 #endif
 
-    auto application = InkviewApplication::create();
-    int ret = application->run(argc, argv);
+    auto ret = InkviewApplication().run(argc, argv);
 
 #ifdef _WIN32
     // switch back to initial console encoding

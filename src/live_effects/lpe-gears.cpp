@@ -222,8 +222,7 @@ LPEGears::LPEGears(LivePathEffectObject *lpeobject) :
     registerParameter(&min_radius);
 }
 
-LPEGears::~LPEGears()
-= default;
+LPEGears::~LPEGears() = default;
 
 Geom::PathVector
 LPEGears::doEffect_path (Geom::PathVector const &path_in)

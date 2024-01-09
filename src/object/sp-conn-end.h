@@ -41,9 +41,6 @@ public:
     /** A sigc connection for transformed signal, used to do move compensation. */
     sigc::connection _transformed_connection;
 
-    /** A sigc connection for owning group transformed, used to do move compensation. */
-    sigc::connection _group_connection;
-
     void setAttacherHref(char const * value);
     void setAttacherSubHref(char const * value);
 
@@ -59,7 +56,6 @@ void sp_conn_reroute_path(SPPath *const path);
 void sp_conn_reroute_path_immediate(SPPath *const path);
 void sp_conn_redraw_path(SPPath *const path);
 void sp_conn_end_detach(SPObject *const owner, unsigned const handle_ix);
-
 
 #endif /* !SEEN_SP_CONN_END */
 

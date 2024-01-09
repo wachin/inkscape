@@ -21,6 +21,7 @@ class SPObjectGroup : public SPObject {
 public:
 	SPObjectGroup();
 	~SPObjectGroup() override;
+    int tag() const override { return tag_of<decltype(*this)>; }
 
 protected:
 	void child_added(Inkscape::XML::Node* child, Inkscape::XML::Node* ref) override;
@@ -30,8 +31,6 @@ protected:
 
 	Inkscape::XML::Node* write(Inkscape::XML::Document *xml_doc, Inkscape::XML::Node *repr, unsigned int flags) override;
 };
-
-MAKE_SP_OBJECT_TYPECHECK_FUNCTIONS(SP_IS_OBJECTGROUP, SPObjectGroup)
 
 #endif // SEEN_SP_OBJECTGROUP_H
 /*

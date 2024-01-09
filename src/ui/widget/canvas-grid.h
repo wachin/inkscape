@@ -14,16 +14,25 @@
 #include <gtkmm.h>
 #include <gtkmm/label.h>
 #include <gtkmm/overlay.h>
-#include "ui/dialog/command-palette.h"
+#include <gtkmm/menubutton.h>
+#include <gtkmm/builder.h>
 
+class SPPage;
+class SPDocument;
 class SPCanvas;
 class SPDesktopWidget;
 
 namespace Inkscape {
 namespace UI {
+
+namespace Dialog {
+class CommandPalette;
+}
+
 namespace Widget {
 
 class Canvas;
+class CanvasNotice;
 class Ruler;
 
 /**
@@ -32,9 +41,10 @@ class Ruler;
  */ 
 class CanvasGrid : public Gtk::Grid
 {
+    using parent_type = Gtk::Grid;
 public:
-
     CanvasGrid(SPDesktopWidget *dtw);
+    ~CanvasGrid() override;
 
     void ShowScrollbars(bool state = true);
     void ToggleScrollbars();
@@ -46,41 +56,44 @@ public:
     void ShowCommandPalette(bool state = true);
     void ToggleCommandPalette();
 
-    Inkscape::UI::Widget::Canvas *GetCanvas() { return _canvas; };
+    void showNotice(Glib::ustring const &msg, unsigned timeout = 0);
+
+    Inkscape::UI::Widget::Canvas *GetCanvas() { return _canvas.get(); };
 
     // Hopefully temp.
-    Inkscape::UI::Widget::Ruler *GetHRuler() { return _vruler; };
-    Inkscape::UI::Widget::Ruler *GetVRuler() { return _hruler; };
-    Glib::RefPtr<Gtk::Adjustment> GetHAdj() { return _hadj; };
-    Glib::RefPtr<Gtk::Adjustment> GetVAdj() { return _vadj; };
-    Gtk::ToggleButton *GetGuideLock()  { return _guide_lock; }
-    Gtk::ToggleButton *GetCmsAdjust()  { return _cms_adjust; }
-    Gtk::ToggleButton *GetStickyZoom() { return _sticky_zoom; };
+    Inkscape::UI::Widget::Ruler *GetHRuler() { return _vruler.get(); };
+    Inkscape::UI::Widget::Ruler *GetVRuler() { return _hruler.get(); };
+    Gtk::Adjustment *GetHAdj() { return _hadj.get(); };
+    Gtk::Adjustment *GetVAdj() { return _vadj.get(); };
+    Gtk::ToggleButton *GetGuideLock()  { return &_guide_lock; }
+    Gtk::ToggleButton *GetCmsAdjust()  { return &_cms_adjust; }
+    Gtk::ToggleButton *GetStickyZoom();
 
 private:
-
     // Signal callbacks
-    void OnSizeAllocate(Gtk::Allocation& allocation);
+    void on_size_allocate(Gtk::Allocation& allocation) override;
     bool SignalEvent(GdkEvent *event);
+    void on_realize() override;
 
-    // The Widgets
-    Inkscape::UI::Widget::Canvas *_canvas;
-
-    Gtk::Overlay      _canvas_overlay;
-
-    Dialog::CommandPalette _command_palette;
+    // The widgets
+    std::unique_ptr<Inkscape::UI::Widget::Canvas> _canvas;
+    std::unique_ptr<Dialog::CommandPalette> _command_palette;
+    CanvasNotice *_notice;
+    Gtk::Overlay _canvas_overlay;
+    Gtk::Grid _subgrid;
 
     Glib::RefPtr<Gtk::Adjustment> _hadj;
     Glib::RefPtr<Gtk::Adjustment> _vadj;
-    Gtk::Scrollbar    *_hscrollbar;
-    Gtk::Scrollbar    *_vscrollbar;
+    Gtk::Scrollbar _hscrollbar;
+    Gtk::Scrollbar _vscrollbar;
 
-    Inkscape::UI::Widget::Ruler *_hruler;
-    Inkscape::UI::Widget::Ruler *_vruler;
+    std::unique_ptr<Inkscape::UI::Widget::Ruler> _hruler;
+    std::unique_ptr<Inkscape::UI::Widget::Ruler> _vruler;
 
-    Gtk::ToggleButton *_guide_lock;
-    Gtk::ToggleButton *_cms_adjust;
-    Gtk::ToggleButton *_sticky_zoom;
+    Gtk::ToggleButton _guide_lock;
+    Gtk::ToggleButton _cms_adjust;
+    Gtk::MenuButton _quick_actions;
+    Glib::RefPtr<Gtk::Builder> _display_popup;
 
     // To be replaced by stateful Gio::Actions
     bool _show_scrollbars = true;
@@ -88,15 +101,21 @@ private:
 
     // Hopefully temp
     SPDesktopWidget *_dtw;
+    SPDocument *_document = nullptr;
 
     // Store allocation so we don't redraw too often.
     Gtk::Allocation _allocation;
+
+    // Connections for page and selection tracking
+    sigc::connection _page_selected_connection;
+    sigc::connection _page_modified_connection;
+    sigc::connection _sel_changed_connection;
+    sigc::connection _sel_modified_connection;
 };
 
 } // namespace Widget
 } // namespace UI
 } // namespace Inkscape
-
 
 #endif // INKSCAPE_UI_WIDGET_CANVASGRID_H
 

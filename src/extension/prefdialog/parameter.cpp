@@ -52,7 +52,7 @@ public:
         , InxParameter(xml, ext)
     {}
 
-    Gtk::Widget *get_widget(sigc::signal<void> *changeSignal) override
+    Gtk::Widget *get_widget(sigc::signal<void ()> *changeSignal) override
     {
         return this->WidgetLabel::get_widget(changeSignal);
     }
@@ -120,7 +120,9 @@ int InxParameter::get_int() const
 {
     ParamInt const *intpntr = dynamic_cast<ParamInt const *>(this);
     if (!intpntr) {
-        throw param_not_int_param();
+        // This allows option groups to contain integers. Consider just using this.
+        Inkscape::Preferences *prefs = Inkscape::Preferences::get();
+        return prefs->getInt(this->pref_name());
     }
     return intpntr->get();
 }
@@ -287,6 +289,22 @@ std::string InxParameter::value_to_string() const
     g_critical("InxParameter::value_to_string called from parameter '%s' in extension '%s'", _name, _extension->get_id());
     g_assert_not_reached();
     return "";
+}
+
+void InxParameter::string_to_value(const std::string &in)
+{
+    g_critical("InxParameter::string_to_value called from parameter '%s' in extension '%s'", _name,
+               _extension->get_id());
+    g_assert_not_reached();
+}
+
+const std::string &InxParameter::set(const std::string &in)
+{
+    // Default and generic setter where in and out are consistant
+    string_to_value(in);
+    Inkscape::Preferences *prefs = Inkscape::Preferences::get();
+    prefs->setString(pref_name(), value_to_string());
+    return in;
 }
 
 }  // namespace Extension

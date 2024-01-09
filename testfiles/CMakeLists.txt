@@ -2,6 +2,8 @@
 # -----------------------------------------------------------------------------
 
 # custom "check" target with proper dependencies (builds inkscape and tests)
+file(TO_NATIVE_PATH "/" _separator)
+ADD_DEFINITIONS(-DINKSCAPE_TESTS_DIR="${CMAKE_SOURCE_DIR}/testfiles")
 add_custom_target(check COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure
                         DEPENDS tests
                         WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
@@ -51,38 +53,43 @@ if(${CMAKE_SIZEOF_VOID_P} EQUAL 8)
     set(LPE_TESTS_64bit
         #0.92 or lower LPEs
         # (test not stable on 32bit Windows)
-        lpe-bendpath-test
-        lpe-bspline-test
-        lpe-envelope-test
-        lpe-patternalongpath-test
-        lpe-powerstroke-test
-        lpe-sketch-test
-        lpe-taperstroke-test
+        lpe64-test
     )
 endif()
 
 set(TEST_SOURCES
+    async_channel-test
+    async_funclog-test
+    async_progress-test
     uri-test
     util-test
     drag-and-drop-svgz
+    drawing-pattern-test
     extract-uri-test
     attributes-test
     color-profile-test
     dir-util-test
+    min-bbox-test
+    oklab-color-test
     sp-object-test
+    sp-object-tags-test
     object-set-test
     object-style-test
     path-boolop-test
+    path-reverse-lpe-test
     rebase-hrefs-test
+    stream-test
     style-elem-test
     style-internal-test
     style-test
     svg-affine-test
+    svg-box-test
     svg-color-test
     svg-length-test
     svg-stringstream-test
     sp-gradient-test
     svg-path-geom-test
+    visual-bounds-test
     object-test
     sp-glyph-kerning-test
     cairo-utils-test
@@ -91,43 +98,7 @@ set(TEST_SOURCES
     2geom-characterization-test
     xml-test
     sp-item-group-test
-    #0.92 or lower LPEs
-    lpe-attach-path-test
-    lpe-bounding-box-test
-    lpe-clone-original-test
-    lpe-constructgrid-test
-    lpe-ellipse_5pts-test
-    lpe-fill-between-many-test
-    lpe-fill-between-strokes-test
-    lpe-gears-test
-    lpe-interpolate-test
-    lpe-interpolate_points-test
-    lpe-jointype-test
-    lpe-knot-test
-    lpe-lattice2-test
-    lpe-mirror_symmetry-test
-    lpe-perspective-envelope-test
-    lpe-copy_rotate-test
-    lpe-roughen-test
-    lpe-roughhatches-test
-    lpe-ruler-test
-    lpe-showhandles-test
-    lpe-simplify-test
-    lpe-spiro-test
-    lpe-stitchsubpaths-test
-    lpe-transform_2pts-test
-    lpe-vonkoch-test
-    #1.0 LPEs
-    lpe-measure-segments-test
-    lpe-fillet-chamfer-test
-    lpe-powerclip-test
-    lpe-powermask-test
-    lpe-pts2ellipse-test
-    lpe-offset-test
-    lpe-dashed-stroke-test
-    #1.1 LPEs
-    lpe-bool-test
-    lpe-slice-test
+    lpe-test
     ${LPE_TESTS_64bit}
     )
 
@@ -146,10 +117,10 @@ foreach(test_source ${TEST_SOURCES})
 endforeach()
 
 
-### CLI and rendering tests
+### CLI rendering tests and LPE
 add_subdirectory(cli_tests)
 add_subdirectory(rendering_tests)
-
+add_subdirectory(lpe_tests)
 
 ### Fuzz test
 if(WITH_FUZZ)

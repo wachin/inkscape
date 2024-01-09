@@ -74,7 +74,7 @@ void SPFlowregion::update(SPCtx *ctx, unsigned int flags) {
 
     for (auto child:l) {
         g_assert(child != nullptr);
-        SPItem *item = dynamic_cast<SPItem *>(child);
+        auto item = cast<SPItem>(child);
 
         if (childflags || (child->uflags & (SP_OBJECT_MODIFIED_FLAG | SP_OBJECT_CHILD_MODIFIED_FLAG))) {
             if (item) {
@@ -142,7 +142,7 @@ Inkscape::XML::Node *SPFlowregion::write(Inkscape::XML::Document *xml_doc, Inksc
 
         std::vector<Inkscape::XML::Node *> l;
         for (auto& child: children) {
-            if ( !dynamic_cast<SPTitle *>(&child) && !dynamic_cast<SPDesc *>(&child) ) {
+            if (!is<SPTitle>(&child) && !is<SPDesc>(&child)) {
                 Inkscape::XML::Node *crepr = child.updateRepr(xml_doc, nullptr, flags);
 
                 if (crepr) {
@@ -157,7 +157,7 @@ Inkscape::XML::Node *SPFlowregion::write(Inkscape::XML::Document *xml_doc, Inksc
         }
 
         for (auto& child: children) {
-            if ( !dynamic_cast<SPTitle *>(&child) && !dynamic_cast<SPDesc *>(&child) ) {
+            if (!is<SPTitle>(&child) && !is<SPDesc>(&child)) {
                 child.updateRepr(flags);
             }
         }
@@ -228,7 +228,7 @@ void SPFlowregionExclude::update(SPCtx *ctx, unsigned int flags) {
         g_assert(child != nullptr);
 
         if (flags || (child->uflags & (SP_OBJECT_MODIFIED_FLAG | SP_OBJECT_CHILD_MODIFIED_FLAG))) {
-            SPItem *item = dynamic_cast<SPItem *>(child);
+            auto item = cast<SPItem>(child);
             if (item) {
                 SPItem const &chi = *item;
                 cctx.i2doc = chi.transform * ictx->i2doc;
@@ -344,29 +344,29 @@ static void UnionShape(Shape *&base_shape, Shape const *add_shape)
 
 static void         GetDest(SPObject* child,Shape **computed)
 {
-    auto item = dynamic_cast<SPItem *>(child);
+    auto item = cast<SPItem>(child);
     if (item == nullptr)
         return;
 
-    std::unique_ptr<SPCurve> curve;
+    std::optional<SPCurve> curve;
     Geom::Affine tr_mat;
 
     SPObject* u_child = child;
-    SPUse *use = dynamic_cast<SPUse *>(item);
+    auto use = cast<SPUse>(item);
     if ( use ) {
         u_child = use->child;
         tr_mat = use->getRelativeTransform(child->parent);
     } else {
         tr_mat = item->transform;
     }
-    SPShape *shape = dynamic_cast<SPShape *>(u_child);
+    auto shape = cast<SPShape>(u_child);
     if ( shape ) {
         if (!shape->curve()) {
             shape->set_shape();
         }
-        curve = SPCurve::copy(shape->curve());
+        curve = SPCurve::ptr_to_opt(shape->curve());
     } else {
-        SPText *text = dynamic_cast<SPText *>(u_child);
+        auto text = cast<SPText>(u_child);
         if ( text ) {
             curve = text->getNormalizedBpath();
         }

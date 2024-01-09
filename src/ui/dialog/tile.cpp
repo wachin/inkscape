@@ -15,15 +15,14 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
+#include "tile.h"
+
+#include <glibmm/i18n.h>
+
 #include "ui/dialog/grid-arrange-tab.h"
 #include "ui/dialog/polar-arrange-tab.h"
 #include "ui/dialog/align-and-distribute.h"
 #include "ui/icon-names.h"
-
-#include <glibmm/i18n.h>
-
-#include "tile.h"
-#include "verbs.h"
 
 namespace Inkscape {
 namespace UI {
@@ -45,10 +44,14 @@ ArrangeDialog::ArrangeDialog()
 {
     _align_tab = Gtk::manage(new AlignAndDistribute(this));
     _arrangeBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL));
+    _arrangeBox->set_valign(Gtk::ALIGN_START);
     _notebook = Gtk::manage(new Gtk::Notebook());
     _gridArrangeTab = Gtk::manage(new GridArrangeTab(this));
     _polarArrangeTab = Gtk::manage(new PolarArrangeTab(this));
 
+    set_valign(Gtk::ALIGN_START);
+
+    _notebook->set_valign(Gtk::ALIGN_START);
     _notebook->append_page(*_align_tab, create_tab_label(C_("Arrange dialog", "Align"), INKSCAPE_ICON("dialog-align-and-distribute")));
     // TRANSLATORS: "Grid" refers to grid (columns/rows) arrangement
     _notebook->append_page(*_gridArrangeTab, create_tab_label(C_("Arrange dialog", "Grid"), INKSCAPE_ICON("arrange-grid")));
@@ -65,19 +68,20 @@ ArrangeDialog::ArrangeDialog()
     _arrangeButton->signal_clicked().connect(sigc::mem_fun(*this, &ArrangeDialog::_apply));
     _arrangeButton->set_use_underline(true);
     _arrangeButton->set_tooltip_text(_("Arrange selected objects"));
+    _arrangeButton->get_style_context()->add_class("wide-apply-button");
+    _arrangeButton->set_no_show_all();
 
     Gtk::ButtonBox *button_box = Gtk::manage(new Gtk::ButtonBox());
-    button_box->set_layout(Gtk::BUTTONBOX_END);
+    button_box->set_layout(Gtk::BUTTONBOX_CENTER);
     button_box->set_spacing(6);
     button_box->set_border_width(4);
-    button_box->set_valign(Gtk::ALIGN_START);
+    button_box->set_valign(Gtk::ALIGN_FILL);
 
     button_box->pack_end(*_arrangeButton);
-    pack_end(*button_box);
+    pack_start(*button_box);
 
     show();
     show_all_children();
-    set_no_show_all();
     update_arrange_btn();
 }
 
@@ -113,11 +117,7 @@ void ArrangeDialog::_apply()
 void ArrangeDialog::desktopReplaced()
 {
     _gridArrangeTab->setDesktop(getDesktop());
-    _align_tab->desktopReplaced();
-}
-
-void ArrangeDialog::selectionChanged(Inkscape::Selection* sel) {
-    _align_tab->selectionChanged(sel);
+    _align_tab->desktop_changed(getDesktop());
 }
 
 } //namespace Dialog

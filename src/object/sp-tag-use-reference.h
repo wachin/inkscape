@@ -24,7 +24,6 @@ namespace XML {
 }
 }
 
-
 class SPTagUseReference : public Inkscape::URIReference {
 public:
     SPTagUseReference(SPObject *owner) : URIReference(owner) {}

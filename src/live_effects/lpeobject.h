@@ -10,58 +10,65 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
-
 #include "effect-enum.h"
-
 #include "object/sp-object.h"
+#include "xml/node-observer.h"
 
 namespace Inkscape {
-    namespace XML {
-        class Node;
-        struct Document;
-    }
-    namespace LivePathEffect {
-        class Effect;
-    }
-}
+namespace XML { class Node; struct Document; }
+namespace LivePathEffect { class Effect; }
+} // namespace Inkscape
 
-#define LIVEPATHEFFECT(obj) ((LivePathEffectObject*)obj)
-#define IS_LIVEPATHEFFECT(obj) (dynamic_cast<const LivePathEffectObject*>((SPObject*)obj))
+class LPENodeObserver : public Inkscape::XML::NodeObserver
+{
+    friend class LivePathEffectObject;
+    ~LPENodeObserver() override = default; // can only exist as a direct base of LivePathEffectObject
 
-class LivePathEffectObject : public SPObject {
+    void notifyAttributeChanged(Inkscape::XML::Node &node, GQuark key, Inkscape::Util::ptr_shared oldval, Inkscape::Util::ptr_shared newval) final;
+};
+
+class LivePathEffectObject final
+    : public SPObject
+    , private LPENodeObserver
+{
 public:
-	LivePathEffectObject();
-	~LivePathEffectObject() override;
+    LivePathEffectObject();
+    ~LivePathEffectObject() override;
+    int tag() const override { return tag_of<decltype(*this)>; }
 
-    Inkscape::LivePathEffect::EffectType effecttype;
+    Inkscape::LivePathEffect::EffectType effecttype{Inkscape::LivePathEffect::INVALID_LPE};
 
-    bool effecttype_set;
+    bool effecttype_set{false};
+    bool deleted{false};
+    bool isOnClipboard() const { return _isOnClipboard; };
     // dont check values only structure and ID
     bool is_similar(LivePathEffectObject *that);
 
-    LivePathEffectObject * fork_private_if_necessary(unsigned int nr_of_allowed_users = 1);
+    LivePathEffectObject *fork_private_if_necessary(unsigned int nr_of_allowed_users = 1);
 
     /* Note that the returned pointer can be NULL in a valid LivePathEffectObject contained in a valid list of lpeobjects in an lpeitem!
      * So one should always check whether the returned value is NULL or not */
-    Inkscape::LivePathEffect::Effect * get_lpe() {
-        return lpe;
-    }
-    Inkscape::LivePathEffect::Effect const * get_lpe() const {
-        return lpe;
-    };
+    Inkscape::LivePathEffect::Effect *get_lpe() { return lpe; }
+    Inkscape::LivePathEffect::Effect const *get_lpe() const { return lpe; };
 
-    Inkscape::LivePathEffect::Effect *lpe; // this can be NULL in a valid LivePathEffectObject
+    Inkscape::LivePathEffect::Effect *lpe{nullptr}; // this can be NULL in a valid LivePathEffectObject
 
 protected:
-	void build(SPDocument* doc, Inkscape::XML::Node* repr) override;
-	void release() override;
+    void build(SPDocument *doc, Inkscape::XML::Node *repr) override;
+    void release() override;
 
-	void set(SPAttr key, char const* value) override;
+    void set(SPAttr key, char const *value) override;
 
-	Inkscape::XML::Node* write(Inkscape::XML::Document* doc, Inkscape::XML::Node* repr, unsigned int flags) override;
+    Inkscape::XML::Node *write(Inkscape::XML::Document *doc, Inkscape::XML::Node *repr, unsigned int flags) override;
+
+private:
+    void setOnClipboard();
+    bool _isOnClipboard = false;
+    friend LPENodeObserver; // for static_cast
+    LPENodeObserver &nodeObserver() { return *this; }
 };
 
-#endif
+#endif // INKSCAPE_LIVEPATHEFFECT_OBJECT_H
 
 /*
   Local Variables:

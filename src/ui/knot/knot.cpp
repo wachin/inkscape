@@ -28,7 +28,9 @@
 #include "message-context.h"
 
 #include "display/control/canvas-item-ctrl.h"
+#include "ui/tools/tool-base.h"
 #include "ui/tools/node-tool.h"
+#include "ui/widget/canvas.h" // autoscroll
 
 using Inkscape::DocumentUndo;
 
@@ -76,20 +78,14 @@ SPKnot::SPKnot(SPDesktop *desktop, gchar const *tip, Inkscape::CanvasItemCtrlTyp
     image[SP_KNOT_STATE_DRAGGING] = nullptr;
     image[SP_KNOT_STATE_SELECTED] = nullptr;
 
-    cursor[SP_KNOT_STATE_NORMAL] = nullptr;
-    cursor[SP_KNOT_STATE_MOUSEOVER] = nullptr;
-    cursor[SP_KNOT_STATE_DRAGGING] = nullptr;
-    cursor[SP_KNOT_STATE_SELECTED] = nullptr;
-
-    ctrl = new Inkscape::CanvasItemCtrl(desktop->getCanvasControls(), type); // Shape, mode set
-    Glib::ustring ctrl_name = "CanvasItemCtrl:Knot: " + name;
-    ctrl->set_name(ctrl_name);
+    ctrl = make_canvasitem<Inkscape::CanvasItemCtrl>(desktop->getCanvasControls(), type); // Shape, mode set
+    ctrl->set_name("CanvasItemCtrl:Knot:" + name);
 
     // Are these needed?
     ctrl->set_fill(0xffffff00);
     ctrl->set_stroke(0x01000000);
 
-    _event_connection = ctrl->connect_event(sigc::mem_fun(this, &SPKnot::eventHandler));
+    _event_connection = ctrl->connect_event(sigc::mem_fun(*this, &SPKnot::eventHandler));
 
     knot_created_callback(this);
 }
@@ -104,16 +100,10 @@ SPKnot::~SPKnot() {
         gdk_seat_ungrab(seat);
     }
 
-    if (ctrl) {
-        delete ctrl;
-    }
-
-    for (auto & i : this->cursor) {
-        if (i) {
-            g_object_unref(i);
-            i = nullptr;
-        }
-    }
+    // Make sure the knot is not grabbed, as it's destructing can be deferred causing
+    // issues like https://gitlab.com/inkscape/inkscape/-/issues/4239
+    ctrl->ungrab();
+    ctrl.reset();
 
     if (this->tip) {
         g_free(this->tip);
@@ -121,7 +111,7 @@ SPKnot::~SPKnot() {
     }
 
     // FIXME: cannot snap to destroyed knot (lp:1309050)
-    //sp_event_context_discard_delayed_snap_event(this->desktop->event_context);
+    // this->desktop->event_context->discard_delayed_snap_event();
     knot_deleted_callback(this);
 }
 
@@ -135,14 +125,15 @@ void SPKnot::startDragging(Geom::Point const &p, gint x, gint y, guint32 etime) 
     this->drag_origin = this->pos;
 
     if (!nograb && ctrl) {
-        ctrl->grab(KNOT_EVENT_MASK, cursor[SP_KNOT_STATE_DRAGGING]);
+        ctrl->grab(KNOT_EVENT_MASK, _cursors[SP_KNOT_STATE_DRAGGING]);
     }
     this->setFlag(SP_KNOT_GRABBED, true);
 
     grabbed = true;
 }
 
-void SPKnot::selectKnot(bool select){
+void SPKnot::selectKnot(bool select)
+{
     setFlag(SP_KNOT_SELECTED, select);
 }
 
@@ -186,10 +177,7 @@ bool SPKnot::eventHandler(GdkEvent *event)
             !desktop->event_context->is_space_panning()) {
 
             // If we have any pending snap event, then invoke it now
-            if (desktop->event_context->_delayed_snap_event) {
-                sp_event_context_snap_watchdog_callback(desktop->event_context->_delayed_snap_event);
-            }
-            sp_event_context_discard_delayed_snap_event(desktop->event_context);
+            desktop->event_context->process_delayed_snap_event();
             pressure = 0;
 
             if (transform_escaped) {
@@ -220,11 +208,6 @@ bool SPKnot::eventHandler(GdkEvent *event)
     case GDK_MOTION_NOTIFY:
 
         if (!(event->motion.state & GDK_BUTTON1_MASK) && flags & SP_KNOT_DRAGGING) {
-            // If we have any pending snap event, then invoke it now
-            if (desktop->event_context->_delayed_snap_event) {
-                sp_event_context_snap_watchdog_callback(desktop->event_context->_delayed_snap_event);
-            }
-            sp_event_context_discard_delayed_snap_event(desktop->event_context);
             pressure = 0;
 
             if (transform_escaped) {
@@ -264,7 +247,8 @@ bool SPKnot::eventHandler(GdkEvent *event)
             // motion notify coordinates as given (no snapping back to origin)
             within_tolerance = false;
 
-            if (gdk_event_get_axis (event, GDK_AXIS_PRESSURE, &pressure)) {
+            // Note: Synthesized events don't have a device.
+            if (event->motion.device && gdk_event_get_axis(event, GDK_AXIS_PRESSURE, &pressure)) {
                 pressure = CLAMP (pressure, 0, 1);
             } else {
                 pressure = 0.5;
@@ -275,7 +259,8 @@ bool SPKnot::eventHandler(GdkEvent *event)
                 grabbed_signal.emit(this, event->button.state);
             }
 
-            sp_event_context_snap_delay_handler(desktop->event_context, nullptr, this, (GdkEventMotion *)event, Inkscape::UI::Tools::DelayedSnapEvent::KNOT_HANDLER);
+            desktop->event_context->snap_delay_handler(nullptr, this, reinterpret_cast<GdkEventMotion*>(event),
+                                                       Inkscape::UI::Tools::DelayedSnapEvent::KNOT_HANDLER);
             sp_knot_handler_request_position(event, this);
             moved = true;
         }
@@ -287,6 +272,7 @@ bool SPKnot::eventHandler(GdkEvent *event)
         if (tip && desktop && desktop->event_context) {
             desktop->event_context->defaultMessageContext()->set(Inkscape::NORMAL_MESSAGE, tip);
         }
+        desktop->event_context->use_cursor(_cursors[SP_KNOT_STATE_MOUSEOVER]);
 
         grabbed = false;
         moved = false;
@@ -299,6 +285,7 @@ bool SPKnot::eventHandler(GdkEvent *event)
         if (tip && desktop && desktop->event_context) {
             desktop->event_context->defaultMessageContext()->clear();
         }
+        desktop->event_context->use_cursor(_cursors[SP_KNOT_STATE_NORMAL]);
 
         grabbed = false;
         moved = false;
@@ -327,7 +314,7 @@ bool SPKnot::eventHandler(GdkEvent *event)
                 grabbed = false;
                 moved = false;
 
-                sp_event_context_discard_delayed_snap_event(desktop->event_context);
+                desktop->event_context->discard_delayed_snap_event();
                 break;
             default:
                 consumed = false;
@@ -354,7 +341,7 @@ void sp_knot_handler_request_position(GdkEvent *event, SPKnot *knot) {
     Geom::Point p = motion_dt - knot->grabbed_rel_pos;
 
     knot->requestPosition(p, event->motion.state);
-    knot->desktop->scroll_to_point (motion_dt);
+    knot->desktop->getCanvas()->enable_autoscroll();
     knot->desktop->set_coordinate_status(knot->pos); // display the coordinate of knot, not cursor - they may be different!
 
     if (event->motion.state & GDK_BUTTON1_MASK) {
@@ -446,7 +433,6 @@ void SPKnot::updateCtrl() {
         }
         ctrl->set_angle(angle);
         ctrl->set_anchor(anchor);
-        ctrl->set_pixbuf(static_cast<GdkPixbuf *>(pixbuf));
     }
 
     _setCtrlState();
@@ -487,10 +473,6 @@ void SPKnot::setMode(Inkscape::CanvasItemCtrlMode m) {
     mode = m;
 }
 
-void SPKnot::setPixbuf(gpointer p) {
-    pixbuf = p;
-}
-
 void SPKnot::setAngle(double i) {
     angle = i;
 }
@@ -516,46 +498,9 @@ void SPKnot::setImage(guchar* normal, guchar* mouseover, guchar* dragging, gucha
     image[SP_KNOT_STATE_SELECTED] = selected;
 }
 
-void SPKnot::setCursor(GdkCursor* normal, GdkCursor* mouseover, GdkCursor* dragging, GdkCursor* selected) {
-    if (cursor[SP_KNOT_STATE_NORMAL]) {
-        g_object_unref(cursor[SP_KNOT_STATE_NORMAL]);
-    }
-
-    cursor[SP_KNOT_STATE_NORMAL] = normal;
-
-    if (normal) {
-        g_object_ref(normal);
-    }
-
-    if (cursor[SP_KNOT_STATE_MOUSEOVER]) {
-        g_object_unref(cursor[SP_KNOT_STATE_MOUSEOVER]);
-    }
-
-    cursor[SP_KNOT_STATE_MOUSEOVER] = mouseover;
-
-    if (mouseover) {
-        g_object_ref(mouseover);
-    }
-
-    if (cursor[SP_KNOT_STATE_DRAGGING]) {
-        g_object_unref(cursor[SP_KNOT_STATE_DRAGGING]);
-    }
-
-    cursor[SP_KNOT_STATE_DRAGGING] = dragging;
-
-    if (dragging) {
-        g_object_ref(dragging);
-    }
-    
-    if (cursor[SP_KNOT_STATE_SELECTED]) {
-        g_object_unref(cursor[SP_KNOT_STATE_SELECTED]);
-    }
-
-    cursor[SP_KNOT_STATE_SELECTED] = selected;
-
-    if (selected) {
-        g_object_ref(selected);
-    }
+void SPKnot::setCursor(SPKnotStateType type, Glib::RefPtr<Gdk::Cursor> cursor)
+{
+    _cursors[type] = cursor;
 }
 
 /*

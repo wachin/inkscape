@@ -39,7 +39,7 @@ WidgetSpacer::WidgetSpacer(Inkscape::XML::Node *xml, Inkscape::Extension::Extens
 }
 
 /** \brief  Create a label for the description */
-Gtk::Widget *WidgetSpacer::get_widget(sigc::signal<void> *changeSignal)
+Gtk::Widget *WidgetSpacer::get_widget(sigc::signal<void ()> *changeSignal)
 {
     if (_hidden) {
         return nullptr;

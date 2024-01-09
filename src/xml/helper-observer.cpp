@@ -67,7 +67,7 @@ void SignalObserver::notifyElementNameChanged(Node&, GQuark, GQuark)
     signal_changed()();
 }
 
-sigc::signal<void>& SignalObserver::signal_changed()
+sigc::signal<void ()>& SignalObserver::signal_changed()
 {
     return _signal_changed;
 }

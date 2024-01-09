@@ -22,10 +22,11 @@
 namespace Inkscape {
 namespace Filters {
    
-DistantLight::DistantLight(SPFeDistantLight *light, guint32 lighting_color) {
+DistantLight::DistantLight(DistantLightData const &light, guint32 lighting_color)
+{
     color = lighting_color;
-    azimuth = M_PI / 180 * light->azimuth;
-    elevation = M_PI / 180 * light->elevation;
+    azimuth = M_PI / 180 * light.azimuth;
+    elevation = M_PI / 180 * light.elevation;
 }
 
 DistantLight::~DistantLight() = default;
@@ -42,11 +43,11 @@ void DistantLight::light_components(NR::Fvector &lc) {
     lc[LIGHT_BLUE] = SP_RGBA32_B_U(color);
 }
 
-PointLight::PointLight(SPFePointLight *light, guint32 lighting_color, const Geom::Affine &trans, int device_scale) {
+PointLight::PointLight(PointLightData const &light, guint32 lighting_color, const Geom::Affine &trans, int device_scale) {
     color = lighting_color;
-    l_x = light->x * device_scale;
-    l_y = light->y * device_scale;
-    l_z = light->z * device_scale;
+    l_x = light.x * device_scale;
+    l_y = light.y * device_scale;
+    l_z = light.z * device_scale;
     NR::convert_coord(l_x, l_y, l_z, trans);
 }
 
@@ -65,24 +66,24 @@ void PointLight::light_components(NR::Fvector &lc) {
     lc[LIGHT_BLUE] = SP_RGBA32_B_U(color);
 }
 
-SpotLight::SpotLight(SPFeSpotLight *light, guint32 lighting_color, const Geom::Affine &trans, int device_scale) {
+SpotLight::SpotLight(SpotLightData const &light, guint32 lighting_color, const Geom::Affine &trans, int device_scale)
+{
     double p_x, p_y, p_z;
     color = lighting_color;
-    l_x = light->x * device_scale;
-    l_y = light->y * device_scale;
-    l_z = light->z * device_scale;
-    p_x = light->pointsAtX * device_scale;
-    p_y = light->pointsAtY * device_scale;
-    p_z = light->pointsAtZ * device_scale;
-    cos_lca = std::cos(M_PI / 180 * light->limitingConeAngle);
-    speExp = light->specularExponent;
+    l_x = light.x * device_scale;
+    l_y = light.y * device_scale;
+    l_z = light.z * device_scale;
+    p_x = light.pointsAtX * device_scale;
+    p_y = light.pointsAtY * device_scale;
+    p_z = light.pointsAtZ * device_scale;
+    cos_lca = std::cos(M_PI / 180 * light.limitingConeAngle);
+    speExp = light.specularExponent;
     NR::convert_coord(l_x, l_y, l_z, trans);
     NR::convert_coord(p_x, p_y, p_z, trans);
     S[X_3D] = p_x - l_x;
     S[Y_3D] = p_y - l_y;
     S[Z_3D] = p_z - l_z;
     NR::normalize_vector(S);
-    
 }
 
 SpotLight::~SpotLight() = default;

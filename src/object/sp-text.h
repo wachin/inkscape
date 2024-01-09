@@ -19,12 +19,12 @@
 
 #include "desktop.h"
 #include "sp-item.h"
-#include "sp-string.h" // Provides many other headers with SP_IS_STRING
+#include "sp-string.h" // Provides many other headers with is<SPString>
 #include "text-tag-attributes.h"
+#include "display/curve.h"
 
 #include "libnrtype/Layout-TNG.h"
-
-#include "xml/node-event-vector.h"
+#include "libnrtype/style-attachments.h"
 
 #include <memory>
 
@@ -32,15 +32,17 @@
 #define SP_TEXT_CONTENT_MODIFIED_FLAG SP_OBJECT_USER_MODIFIED_FLAG_A
 #define SP_TEXT_LAYOUT_MODIFIED_FLAG SP_OBJECT_USER_MODIFIED_FLAG_A
 
+class SPShape;
 
 /* SPText */
-class SPText : public SPItem {
+class SPText final : public SPItem {
 public:
 	SPText();
 	~SPText() override;
+    int tag() const override { return tag_of<decltype(*this)>; }
 
     /** Converts the text object to its component curves */
-    std::unique_ptr<SPCurve> getNormalizedBpath() const;
+    SPCurve getNormalizedBpath() const;
 
     /** Completely recalculates the layout. */
     void rebuildLayout();
@@ -48,6 +50,7 @@ public:
     //semiprivate:  (need to be accessed by the C-style functions still)
     TextTagAttributes attributes;
     Inkscape::Text::Layout layout;
+    std::unordered_map<unsigned, Inkscape::Text::StyleAttachments> view_style_attachments;
 
     /** when the object is transformed it's nicer to change the font size
     and coordinates when we can, rather than just applying a matrix
@@ -59,8 +62,8 @@ public:
     static void _adjustFontsizeRecursive(SPItem *item, double ex, bool is_root = true);
     /**
     This two functions are useful because layout calculations need text visible for example
-    Calculating a invisible char position object or pasting text with paragraps that overflow
-    shape defined. I have doubts abot trransform into a toggle function*/
+    Calculating a invisible char position object or pasting text with paragraphs that overflow
+    shape defined. I have doubts about transform into a toggle function*/
     void show_shape_inside();
     void hide_shape_inside();
 
@@ -70,7 +73,18 @@ public:
     bool _optimizeTextpathText = false;
 
     /** Union all exclusion shapes. */
-    Shape* getExclusionShape() const;
+    std::unique_ptr<Shape> getExclusionShape() const;
+    /** Add a single inclusion shape with padding */
+    Shape* getInclusionShape(SPShape *shape) const;
+    /** Compute the final effective shapes:
+     *  All inclusion shapes shrunk by the padding,
+     *  from which we subtract the exclusion shapes expanded by their padding.
+     *
+     *  @return A vector of pointers to a newly allocated Shape objects which must be eventually freed manually.
+     */
+    std::vector<Shape *> makeEffectiveShapes() const;
+
+    std::optional<Geom::Point> getBaselinePoint() const;
 
 private:
 
@@ -111,6 +125,7 @@ private:
     void hide(unsigned int key) override;
     void snappoints(std::vector<Inkscape::SnapCandidatePoint> &p, Inkscape::SnapPreferences const *snapprefs) const override;
     Geom::Affine set_transform(Geom::Affine const &transform) override;
+    void getLinked(std::vector<SPObject *> &objects, bool ignore_clones) const override;
 
     // For 'inline-size', need to also remove any 'x' and 'y' added by SVG 1.1 fallback.
     void remove_svg11_fallback();
@@ -124,14 +139,12 @@ private:
     Geom::OptRect get_frame();                        // Gets inline-size or shape-inside frame.
     Inkscape::XML::Node* get_first_rectangle();       // Gets first shape-inside rectangle (if it exists).
     SPItem *get_first_shape_dependency();
+    const std::vector<SPItem *> get_all_shape_dependencies() const;
     void remove_newlines();                           // Removes newlines in text.
 };
 
 SPItem *create_text_with_inline_size (SPDesktop *desktop, Geom::Point p0, Geom::Point p1);
 SPItem *create_text_with_rectangle   (SPDesktop *desktop, Geom::Point p0, Geom::Point p1);
-
-MAKE_SP_OBJECT_DOWNCAST_FUNCTIONS(SP_TEXT, SPText)
-MAKE_SP_OBJECT_TYPECHECK_FUNCTIONS(SP_IS_TEXT, SPText)
 
 #endif
 

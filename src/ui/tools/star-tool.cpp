@@ -30,16 +30,14 @@
 #include "document.h"
 #include "message-context.h"
 #include "selection.h"
-#include "verbs.h"
 
 #include "include/macros.h"
 
 #include "object/sp-namedview.h"
 #include "object/sp-star.h"
 
+#include "ui/icon-names.h"
 #include "ui/shape-editor.h"
-
-#include "xml/node-event-vector.h"
 
 using Inkscape::DocumentUndo;
 
@@ -47,14 +45,8 @@ namespace Inkscape {
 namespace UI {
 namespace Tools {
 
-const std::string& StarTool::getPrefsPath() {
-	return StarTool::prefsPath;
-}
-
-const std::string StarTool::prefsPath = "/tools/shapes/star";
-
-StarTool::StarTool()
-    : ToolBase("star.svg")
+StarTool::StarTool(SPDesktop *desktop)
+    : ToolBase(desktop, "/tools/shapes/star", "star.svg")
     , star(nullptr)
     , magnitude(5)
     , proportion(0.5)
@@ -62,21 +54,42 @@ StarTool::StarTool()
     , rounded(0)
     , randomized(0)
 {
+    sp_event_context_read(this, "isflatsided");
+    sp_event_context_read(this, "magnitude");
+    sp_event_context_read(this, "proportion");
+    sp_event_context_read(this, "rounded");
+    sp_event_context_read(this, "randomized");
+
+    this->shape_editor = new ShapeEditor(desktop);
+
+    SPItem *item = desktop->getSelection()->singleItem();
+    if (item) {
+        this->shape_editor->set_item(item);
+    }
+
+    Inkscape::Selection *selection = desktop->getSelection();
+
+    this->sel_changed_connection.disconnect();
+
+    this->sel_changed_connection = selection->connectChanged(sigc::mem_fun(*this, &StarTool::selection_changed));
+
+    Inkscape::Preferences *prefs = Inkscape::Preferences::get();
+    if (prefs->getBool("/tools/shapes/selcue")) {
+        this->enableSelectionCue();
+    }
+
+    if (prefs->getBool("/tools/shapes/gradientdrag")) {
+        this->enableGrDrag();
+    }
 }
 
-void StarTool::finish() {
+StarTool::~StarTool() {
     ungrabCanvasEvents();
 
     this->finishItem();
     this->sel_changed_connection.disconnect();
 
-    ToolBase::finish();
-}
-
-StarTool::~StarTool() {
     this->enableGrDrag(false);
-
-    this->sel_changed_connection.disconnect();
 
     delete this->shape_editor;
     this->shape_editor = nullptr;
@@ -100,37 +113,6 @@ void StarTool::selection_changed(Inkscape::Selection* selection) {
     this->shape_editor->set_item(selection->singleItem());
 }
 
-void StarTool::setup() {
-    ToolBase::setup();
-
-    sp_event_context_read(this, "isflatsided");
-    sp_event_context_read(this, "magnitude");
-    sp_event_context_read(this, "proportion");
-    sp_event_context_read(this, "rounded");
-    sp_event_context_read(this, "randomized");
-
-    this->shape_editor = new ShapeEditor(this->desktop);
-
-    SPItem *item = this->desktop->getSelection()->singleItem();
-    if (item) {
-        this->shape_editor->set_item(item);
-    }
-
-    Inkscape::Selection *selection = this->desktop->getSelection();
-
-    this->sel_changed_connection.disconnect();
-
-    this->sel_changed_connection = selection->connectChanged(sigc::mem_fun(this, &StarTool::selection_changed));
-
-    Inkscape::Preferences *prefs = Inkscape::Preferences::get();
-    if (prefs->getBool("/tools/shapes/selcue")) {
-        this->enableSelectionCue();
-    }
-
-    if (prefs->getBool("/tools/shapes/gradientdrag")) {
-        this->enableGrDrag();
-    }
-}
 
 void StarTool::set(const Inkscape::Preferences::Entry& val) {
     Glib::ustring path = val.getEntryName();
@@ -151,8 +133,7 @@ void StarTool::set(const Inkscape::Preferences::Entry& val) {
 bool StarTool::root_handler(GdkEvent* event) {
     static bool dragging;
 
-    SPDesktop *desktop = this->desktop;
-    Inkscape::Selection *selection = desktop->getSelection();
+    Inkscape::Selection *selection = _desktop->getSelection();
     Inkscape::Preferences *prefs = Inkscape::Preferences::get();
 
     this->tolerance = prefs->getIntLimited("/options/dragtolerance/value", 0, 0, 100);
@@ -164,11 +145,11 @@ bool StarTool::root_handler(GdkEvent* event) {
         if (event->button.button == 1) {
             dragging = true;
 
-            this->center = Inkscape::setup_for_drag_start(desktop, this, event);
+            this->center = this->setup_for_drag_start(event);
 
             /* Snap center */
-            SnapManager &m = desktop->namedview->snap_manager;
-            m.setup(desktop, true);
+            SnapManager &m = _desktop->namedview->snap_manager;
+            m.setup(_desktop, true);
             m.freeSnapReturnByRef(this->center, Inkscape::SNAPSOURCE_NODE_HANDLE);
             m.unSetup();
 
@@ -190,7 +171,7 @@ bool StarTool::root_handler(GdkEvent* event) {
             this->within_tolerance = false;
 
             Geom::Point const motion_w(event->motion.x, event->motion.y);
-            Geom::Point motion_dt(desktop->w2d(motion_w));
+            Geom::Point motion_dt(_desktop->w2d(motion_w));
 
             this->drag(motion_dt, event->motion.state);
 
@@ -198,11 +179,11 @@ bool StarTool::root_handler(GdkEvent* event) {
 
             ret = TRUE;
         } else if (!this->sp_event_context_knot_mouseover()) {
-            SnapManager &m = desktop->namedview->snap_manager;
-            m.setup(desktop);
+            SnapManager &m = _desktop->namedview->snap_manager;
+            m.setup(_desktop);
 
             Geom::Point const motion_w(event->motion.x, event->motion.y);
-            Geom::Point motion_dt(desktop->w2d(motion_w));
+            Geom::Point motion_dt(_desktop->w2d(motion_w));
 
             m.preSnap(Inkscape::SnapCandidatePoint(motion_dt, Inkscape::SNAPSOURCE_NODE_HANDLE));
             m.unSetup();
@@ -211,19 +192,19 @@ bool StarTool::root_handler(GdkEvent* event) {
     case GDK_BUTTON_RELEASE:
         this->xp = this->yp = 0;
 
-        if (event->button.button == 1) {
+        if (dragging && event->button.button == 1) {
             dragging = false;
 
-            sp_event_context_discard_delayed_snap_event(this);
+            this->discard_delayed_snap_event();
 
-            if (!this->within_tolerance) {
+            if (star) {
                 // we've been dragging, finish the star
                 this->finishItem();
             } else if (this->item_to_select) {
                 // no dragging, select clicked item if any
                 if (event->button.state & GDK_SHIFT_MASK) {
                     selection->toggle(this->item_to_select);
-                } else {
+                } else if (!selection->includes(this->item_to_select)) {
                     selection->set(this->item_to_select);
                 }
             } else {
@@ -255,7 +236,7 @@ bool StarTool::root_handler(GdkEvent* event) {
         case GDK_KEY_x:
         case GDK_KEY_X:
             if (MOD__ALT_ONLY(event)) {
-                desktop->setToolboxFocusTo ("altx-star");
+                _desktop->setToolboxFocusTo("altx-star");
                 ret = TRUE;
             }
             break;
@@ -263,7 +244,7 @@ bool StarTool::root_handler(GdkEvent* event) {
         case GDK_KEY_Escape:
         	if (dragging) {
         		dragging = false;
-        		sp_event_context_discard_delayed_snap_event(this);
+        		this->discard_delayed_snap_event();
         		// if drawing, cancel, otherwise pass it up for deselecting
         		this->cancel();
         		ret = TRUE;
@@ -276,7 +257,7 @@ bool StarTool::root_handler(GdkEvent* event) {
 
                 dragging = false;
 
-                sp_event_context_discard_delayed_snap_event(this);
+                this->discard_delayed_snap_event();
 
                 if (!this->within_tolerance) {
                     // we've been dragging, finish the star
@@ -328,43 +309,39 @@ bool StarTool::root_handler(GdkEvent* event) {
 
 void StarTool::drag(Geom::Point p, guint state)
 {
-    SPDesktop *desktop = this->desktop;
-
     Inkscape::Preferences *prefs = Inkscape::Preferences::get();
     int const snaps = prefs->getInt("/options/rotationsnapsperpi/value", 12);
 
     if (!this->star) {
-        if (Inkscape::have_viable_layer(desktop, defaultMessageContext()) == false) {
+        if (Inkscape::have_viable_layer(_desktop, defaultMessageContext()) == false) {
             return;
         }
 
         // Create object
-        Inkscape::XML::Document *xml_doc = this->desktop->doc()->getReprDoc();
+        Inkscape::XML::Document *xml_doc = _desktop->doc()->getReprDoc();
         Inkscape::XML::Node *repr = xml_doc->createElement("svg:path");
         repr->setAttribute("sodipodi:type", "star");
 
         // Set style
-        sp_desktop_apply_style_tool(desktop, repr, "/tools/shapes/star", false);
+        sp_desktop_apply_style_tool(_desktop, repr, "/tools/shapes/star", false);
 
-        this->star = SP_STAR(desktop->currentLayer()->appendChildRepr(repr));
+        this->star = cast<SPStar>(currentLayer()->appendChildRepr(repr));
 
         Inkscape::GC::release(repr);
-        this->star->transform = SP_ITEM(desktop->currentLayer())->i2doc_affine().inverse();
+        this->star->transform = currentLayer()->i2doc_affine().inverse();
         this->star->updateRepr();
-
-        forced_redraws_start(5);
     }
 
     /* Snap corner point with no constraints */
-    SnapManager &m = desktop->namedview->snap_manager;
+    SnapManager &m = _desktop->namedview->snap_manager;
 
-    m.setup(desktop, true, this->star);
+    m.setup(_desktop, true, this->star);
     Geom::Point pt2g = p;
     m.freeSnapReturnByRef(pt2g, Inkscape::SNAPSOURCE_NODE_HANDLE);
     m.unSetup();
 
-    Geom::Point const p0 = desktop->dt2doc(this->center);
-    Geom::Point const p1 = desktop->dt2doc(pt2g);
+    Geom::Point const p0 = _desktop->dt2doc(this->center);
+    Geom::Point const p1 = _desktop->dt2doc(pt2g);
 
     double const sides = (gdouble) this->magnitude;
     Geom::Point const d = p1 - p0;
@@ -382,7 +359,7 @@ void StarTool::drag(Geom::Point p, guint state)
 
     /* status text */
     Inkscape::Util::Quantity q = Inkscape::Util::Quantity(r1, "px");
-    Glib::ustring rads = q.string(desktop->namedview->display_units);
+    Glib::ustring rads = q.string(_desktop->namedview->display_units);
     this->message_context->setF(Inkscape::IMMEDIATE_MESSAGE,
                                ( this->isflatsided?
                                  _("<b>Polygon</b>: radius %s, angle %.2f&#176;; with <b>Ctrl</b> to snap angle") :
@@ -406,19 +383,22 @@ void StarTool::finishItem() {
         this->star->setCenter(this->center);
         this->star->set_shape();
         this->star->updateRepr(SP_OBJECT_WRITE_EXT);
+        // compensate stroke scaling couldn't be done in doWriteTransform
+        double const expansion = this->star->transform.descrim();
         this->star->doWriteTransform(this->star->transform, nullptr, true);
-        forced_redraws_stop();
+        this->star->adjust_stroke_width_recursive(expansion);
 
-        desktop->getSelection()->set(this->star);
-        DocumentUndo::done(desktop->getDocument(), SP_VERB_CONTEXT_STAR,
-                           _("Create star"));
+        // update while creating inside a LPE group
+        sp_lpe_item_update_patheffect(this->star, true, true);
+        _desktop->getSelection()->set(this->star);
+        DocumentUndo::done(_desktop->getDocument(), _("Create star"), INKSCAPE_ICON("draw-polygon-star"));
 
         this->star = nullptr;
     }
 }
 
 void StarTool::cancel() {
-    desktop->getSelection()->clear();
+    _desktop->getSelection()->clear();
     ungrabCanvasEvents();
 
     if (this->star != nullptr) {
@@ -431,9 +411,7 @@ void StarTool::cancel() {
     this->yp = 0;
     this->item_to_select = nullptr;
 
-    forced_redraws_stop();
-
-    DocumentUndo::cancel(desktop->getDocument());
+    DocumentUndo::cancel(_desktop->getDocument());
 }
 
 }

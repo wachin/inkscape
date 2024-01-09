@@ -25,6 +25,12 @@ namespace Inkscape {
 namespace UI {
 namespace Dialog {
 
+enum class TabsStatus {
+    NONE,
+    SINGLE,
+    ALL
+};
+
 class DialogContainer;
 class DialogWindow;
 
@@ -50,37 +56,58 @@ public:
     void close_tab_callback();
     void close_notebook_callback();
     DialogWindow* pop_tab_callback();
-
+    Gtk::ScrolledWindow * get_current_scrolledwindow(bool skip_scroll_provider);
+    void set_requested_height(int height);
 private:
     // Widgets
     DialogContainer *_container;
     Gtk::Menu _menu;
+    Gtk::Menu _menutabs;
     Gtk::Notebook _notebook;
-    Gtk::RadioMenuItem _labels_auto_button;
 
     // State variables
-    bool _labels_auto;
     bool _label_visible;
+    bool _labels_auto;
+    bool _labels_off;
+    bool _labels_set_off = false;
     bool _detaching_duplicate;
+    bool _reload_context = true;
+    gint _prev_alloc_width = 0;
+    gint _none_tab_width = 0;
+    gint _single_tab_width = 0;
+    gint _icon_width = 0;
+    TabsStatus tabstatus = TabsStatus::NONE;
+    TabsStatus prev_tabstatus = TabsStatus::NONE;
     Gtk::Widget *_selected_page;
     std::vector<sigc::connection> _conn;
+    std::vector<sigc::connection> _connmenu;
     std::multimap<Gtk::Widget *, sigc::connection> _tab_connections;
 
+    static std::list<DialogNotebook *> _instances;
+    void add_highlight_header();
+    void remove_highlight_header();
+
     // Signal handlers - notebook
-    void on_drag_end(const Glib::RefPtr<Gdk::DragContext> context);
+    void on_drag_begin(const Glib::RefPtr<Gdk::DragContext> &context) override;
+    void on_drag_end(const Glib::RefPtr<Gdk::DragContext> &context) override;
     void on_page_added(Gtk::Widget *page, int page_num);
     void on_page_removed(Gtk::Widget *page, int page_num);
     void on_size_allocate_scroll(Gtk::Allocation &allocation);
     void on_size_allocate_notebook(Gtk::Allocation &allocation);
-    void on_labels_toggled();
     bool on_tab_click_event(GdkEventButton *event, Gtk::Widget *page);
     void on_close_button_click_event(Gtk::Widget *page);
     void on_page_switch(Gtk::Widget *page, guint page_number);
-
     // Helpers
+    bool provide_scroll(Gtk::Widget &page);
+    void preventOverflow();
+    void change_page(size_t pagenum);
+    void reload_tab_menu();
     void toggle_tab_labels_callback(bool show);
     void add_close_tab_callback(Gtk::Widget *page);
     void remove_close_tab_callback(Gtk::Widget *page);
+    void get_preferred_height_for_width_vfunc(int width, int& minimum_height, int& natural_height) const override;
+    void get_preferred_height_vfunc(int& minimum_height, int& natural_height) const override;
+    int _natural_height = 0;
 };
 
 } // namespace Dialog

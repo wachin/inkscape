@@ -25,8 +25,8 @@ SPMeshpatch* SPMeshpatch::getNextMeshpatch()
     SPMeshpatch *result = nullptr;
 
     for (SPObject* obj = getNext(); obj && !result; obj = obj->getNext()) {
-        if (SP_IS_MESHPATCH(obj)) {
-            result = SP_MESHPATCH(obj);
+        if (is<SPMeshpatch>(obj)) {
+            result = cast<SPMeshpatch>(obj);
         }
     }
 
@@ -39,8 +39,8 @@ SPMeshpatch* SPMeshpatch::getPrevMeshpatch()
 
     for (SPObject* obj = getPrev(); obj; obj = obj->getPrev()) {
         // The closest previous SPObject that is an SPMeshpatch *should* be ourself.
-        if (SP_IS_MESHPATCH(obj)) {
-            SPMeshpatch* meshpatch = SP_MESHPATCH(obj);
+        if (is<SPMeshpatch>(obj)) {
+            auto meshpatch = cast<SPMeshpatch>(obj);
             // Sanity check to ensure we have a proper sibling structure.
             if (meshpatch->getNextMeshpatch() == this) {
                 result = meshpatch;

@@ -25,17 +25,7 @@ namespace Inkscape {
 namespace Extension {
 namespace Implementation {
 
-Gtk::Widget *
-Implementation::prefs_input(Inkscape::Extension::Input *module, gchar const */*filename*/) {
-    return module->autogui(nullptr, nullptr);
-}
-
-Gtk::Widget *
-Implementation::prefs_output(Inkscape::Extension::Output *module) {
-    return module->autogui(nullptr, nullptr);
-}
-
-Gtk::Widget *Implementation::prefs_effect(Inkscape::Extension::Effect *module, Inkscape::UI::View::View * view, sigc::signal<void> * changeSignal, ImplementationDocumentCache * /*docCache*/)
+Gtk::Widget *Implementation::prefs_effect(Inkscape::Extension::Effect *module, Inkscape::UI::View::View * view, sigc::signal<void ()> * changeSignal, ImplementationDocumentCache * /*docCache*/)
 {
     if (module->widget_visible_count() == 0) {
         return nullptr;

@@ -12,6 +12,7 @@
 #include <glibmm/i18n.h>
 
 #include <libnrtype/font-instance.h>
+#include "libnrtype/font-factory.h"
 
 #include "font-variants.h"
 
@@ -29,7 +30,7 @@ namespace Widget {
   class Feature
   {
   public:
-      Feature( const Glib::ustring& name, OTSubstitution& glyphs, int options, Glib::ustring family, Gtk::Grid& grid, int &row, FontVariants* parent)
+      Feature(Glib::ustring const &name, OTSubstitution const &glyphs, int options, Glib::ustring family, Gtk::Grid& grid, int &row, FontVariants* parent)
           : _name (name)
       {
           Gtk::Label* table_name = Gtk::manage (new Gtk::Label());
@@ -765,184 +766,185 @@ namespace Widget {
   FontVariants::update_opentype (Glib::ustring& font_spec) {
 
       // Disable/Enable based on available OpenType tables.
-      font_instance* res = font_factory::Default()->FaceFromFontSpecification( font_spec.c_str() );
-      if( res ) {
+      auto res = FontFactory::get().FaceFromFontSpecification(font_spec.c_str());
+      if (res) {
 
-          std::map<Glib::ustring, OTSubstitution>::iterator it;
+          auto const &tab = res->get_opentype_tables();
+          std::remove_reference<decltype(tab)>::type::const_iterator it;
 
-          if((it = res->openTypeTables.find("liga"))!= res->openTypeTables.end() ||
-             (it = res->openTypeTables.find("clig"))!= res->openTypeTables.end()) {
+          if((it = tab.find("liga"))!= tab.end() ||
+             (it = tab.find("clig"))!= tab.end()) {
               _ligatures_common.set_sensitive();
           } else {
               _ligatures_common.set_sensitive( false );
           }
 
-          if((it = res->openTypeTables.find("dlig"))!= res->openTypeTables.end()) {
+          if((it = tab.find("dlig"))!= tab.end()) {
               _ligatures_discretionary.set_sensitive();
           } else {
               _ligatures_discretionary.set_sensitive( false );
           }
 
-          if((it = res->openTypeTables.find("hlig"))!= res->openTypeTables.end()) {
+          if((it = tab.find("hlig"))!= tab.end()) {
               _ligatures_historical.set_sensitive();
           } else {
               _ligatures_historical.set_sensitive( false );
           }
 
-          if((it = res->openTypeTables.find("calt"))!= res->openTypeTables.end()) {
+          if((it = tab.find("calt"))!= tab.end()) {
               _ligatures_contextual.set_sensitive();
           } else {
               _ligatures_contextual.set_sensitive( false );
           }
 
-          if((it = res->openTypeTables.find("subs"))!= res->openTypeTables.end()) {
+          if((it = tab.find("subs"))!= tab.end()) {
               _position_sub.set_sensitive();
           } else {
               _position_sub.set_sensitive( false );
           }
 
-          if((it = res->openTypeTables.find("sups"))!= res->openTypeTables.end()) {
+          if((it = tab.find("sups"))!= tab.end()) {
               _position_super.set_sensitive();
           } else {
               _position_super.set_sensitive( false );
           }
 
-          if((it = res->openTypeTables.find("smcp"))!= res->openTypeTables.end()) {
+          if((it = tab.find("smcp"))!= tab.end()) {
               _caps_small.set_sensitive();
           } else {
               _caps_small.set_sensitive( false );
           }
 
-          if((it = res->openTypeTables.find("c2sc"))!= res->openTypeTables.end() &&
-             (it = res->openTypeTables.find("smcp"))!= res->openTypeTables.end()) {
+          if((it = tab.find("c2sc"))!= tab.end() &&
+             (it = tab.find("smcp"))!= tab.end()) {
               _caps_all_small.set_sensitive();
           } else {
               _caps_all_small.set_sensitive( false );
           }
 
-          if((it = res->openTypeTables.find("pcap"))!= res->openTypeTables.end()) {
+          if((it = tab.find("pcap"))!= tab.end()) {
               _caps_petite.set_sensitive();
           } else {
               _caps_petite.set_sensitive( false );
           }
 
-          if((it = res->openTypeTables.find("c2sc"))!= res->openTypeTables.end() &&
-             (it = res->openTypeTables.find("pcap"))!= res->openTypeTables.end()) {
+          if((it = tab.find("c2sc"))!= tab.end() &&
+             (it = tab.find("pcap"))!= tab.end()) {
               _caps_all_petite.set_sensitive();
           } else {
               _caps_all_petite.set_sensitive( false );
           }
 
-          if((it = res->openTypeTables.find("unic"))!= res->openTypeTables.end()) {
+          if((it = tab.find("unic"))!= tab.end()) {
               _caps_unicase.set_sensitive();
           } else {
               _caps_unicase.set_sensitive( false );
           }
 
-          if((it = res->openTypeTables.find("titl"))!= res->openTypeTables.end()) {
+          if((it = tab.find("titl"))!= tab.end()) {
               _caps_titling.set_sensitive();
           } else {
               _caps_titling.set_sensitive( false );
           }
 
-          if((it = res->openTypeTables.find("lnum"))!= res->openTypeTables.end()) {
+          if((it = tab.find("lnum"))!= tab.end()) {
               _numeric_lining.set_sensitive();
           } else {
               _numeric_lining.set_sensitive( false );
           }
 
-          if((it = res->openTypeTables.find("onum"))!= res->openTypeTables.end()) {
+          if((it = tab.find("onum"))!= tab.end()) {
               _numeric_old_style.set_sensitive();
           } else {
               _numeric_old_style.set_sensitive( false );
           }
 
-          if((it = res->openTypeTables.find("pnum"))!= res->openTypeTables.end()) {
+          if((it = tab.find("pnum"))!= tab.end()) {
               _numeric_proportional.set_sensitive();
           } else {
               _numeric_proportional.set_sensitive( false );
           }
 
-          if((it = res->openTypeTables.find("tnum"))!= res->openTypeTables.end()) {
+          if((it = tab.find("tnum"))!= tab.end()) {
               _numeric_tabular.set_sensitive();
           } else {
               _numeric_tabular.set_sensitive( false );
           }
 
-          if((it = res->openTypeTables.find("frac"))!= res->openTypeTables.end()) {
+          if((it = tab.find("frac"))!= tab.end()) {
               _numeric_diagonal.set_sensitive();
           } else {
               _numeric_diagonal.set_sensitive( false );
           }
 
-          if((it = res->openTypeTables.find("afrac"))!= res->openTypeTables.end()) {
+          if((it = tab.find("afrac"))!= tab.end()) {
               _numeric_stacked.set_sensitive();
           } else {
               _numeric_stacked.set_sensitive( false );
           }
 
-          if((it = res->openTypeTables.find("ordn"))!= res->openTypeTables.end()) {
+          if((it = tab.find("ordn"))!= tab.end()) {
               _numeric_ordinal.set_sensitive();
           } else {
               _numeric_ordinal.set_sensitive( false );
           }
 
-          if((it = res->openTypeTables.find("zero"))!= res->openTypeTables.end()) {
+          if((it = tab.find("zero"))!= tab.end()) {
               _numeric_slashed_zero.set_sensitive();
           } else {
               _numeric_slashed_zero.set_sensitive( false );
           }
 
           // East-Asian
-          if((it = res->openTypeTables.find("jp78"))!= res->openTypeTables.end()) {
+          if((it = tab.find("jp78"))!= tab.end()) {
               _asian_jis78.set_sensitive();
           } else {
               _asian_jis78.set_sensitive( false );
           }
 
-          if((it = res->openTypeTables.find("jp83"))!= res->openTypeTables.end()) {
+          if((it = tab.find("jp83"))!= tab.end()) {
               _asian_jis83.set_sensitive();
           } else {
               _asian_jis83.set_sensitive( false );
           }
 
-          if((it = res->openTypeTables.find("jp90"))!= res->openTypeTables.end()) {
+          if((it = tab.find("jp90"))!= tab.end()) {
               _asian_jis90.set_sensitive();
           } else {
               _asian_jis90.set_sensitive( false );
           }
 
-          if((it = res->openTypeTables.find("jp04"))!= res->openTypeTables.end()) {
+          if((it = tab.find("jp04"))!= tab.end()) {
               _asian_jis04.set_sensitive();
           } else {
               _asian_jis04.set_sensitive( false );
           }
 
-          if((it = res->openTypeTables.find("smpl"))!= res->openTypeTables.end()) {
+          if((it = tab.find("smpl"))!= tab.end()) {
               _asian_simplified.set_sensitive();
           } else {
               _asian_simplified.set_sensitive( false );
           }
 
-          if((it = res->openTypeTables.find("trad"))!= res->openTypeTables.end()) {
+          if((it = tab.find("trad"))!= tab.end()) {
               _asian_traditional.set_sensitive();
           } else {
               _asian_traditional.set_sensitive( false );
           }
 
-          if((it = res->openTypeTables.find("fwid"))!= res->openTypeTables.end()) {
+          if((it = tab.find("fwid"))!= tab.end()) {
               _asian_full_width.set_sensitive();
           } else {
               _asian_full_width.set_sensitive( false );
           }
 
-          if((it = res->openTypeTables.find("pwid"))!= res->openTypeTables.end()) {
+          if((it = tab.find("pwid"))!= tab.end()) {
               _asian_proportional_width.set_sensitive();
           } else {
               _asian_proportional_width.set_sensitive( false );
           }
 
-          if((it = res->openTypeTables.find("ruby"))!= res->openTypeTables.end()) {
+          if((it = tab.find("ruby"))!= tab.end()) {
               _asian_ruby.set_sensitive();
           } else {
               _asian_ruby.set_sensitive( false );
@@ -954,7 +956,7 @@ namespace Widget {
           Glib::ustring markup_hlig;
           Glib::ustring markup_calt;
 
-          for (auto table: res->openTypeTables) {
+          for (auto &table : tab) {
 
               if (table.first == "liga" ||
                   table.first == "clig" ||
@@ -964,7 +966,7 @@ namespace Widget {
 
                   Glib::ustring markup;
                   markup += "<span font_family='";
-                  markup += sp_font_description_get_family(res->descr);
+                  markup += sp_font_description_get_family(res->get_descr());
                   markup += "'>";
                   markup += Glib::Markup::escape_text(table.second.output);
                   markup += "</span>";
@@ -992,11 +994,11 @@ namespace Widget {
           Glib::ustring markup_ordn;
           Glib::ustring markup_zero;
 
-          for (auto table: res->openTypeTables) {
+          for (auto &table : res->get_opentype_tables()) {
 
               Glib::ustring markup;
               markup += "<span font_family='";
-              markup += sp_font_description_get_family(res->descr);
+              markup += sp_font_description_get_family(res->get_descr());
               markup += "' font_features='";
               markup += table.first;
               markup += "'>";
@@ -1030,7 +1032,7 @@ namespace Widget {
           _numeric_slashed_zero_label.set_markup ( markup_zero.c_str() );
 
           // Make list of tables not handled above.
-          std::map<Glib::ustring, OTSubstitution> table_copy = res->openTypeTables;
+          auto table_copy = res->get_opentype_tables();
           if( (it = table_copy.find("liga")) != table_copy.end() ) table_copy.erase( it );
           if( (it = table_copy.find("clig")) != table_copy.end() ) table_copy.erase( it );
           if( (it = table_copy.find("dlig")) != table_copy.end() ) table_copy.erase( it );
@@ -1107,7 +1109,7 @@ namespace Widget {
           int grid_row = 0;
 
           // GSUB lookup type 1 (1 to 1 mapping).
-          for (auto table: res->openTypeTables) {
+          for (auto &table: res->get_opentype_tables()) {
               if (table.first == "case" ||
                   table.first == "hist" ||
                   (table.first[0] == 's' && table.first[1] == 's' && !(table.first[2] == 't'))) {
@@ -1115,14 +1117,14 @@ namespace Widget {
                   if( (it = table_copy.find(table.first)) != table_copy.end() ) table_copy.erase( it );
 
                   _features[table.first] = new Feature (table.first, table.second, 2,
-                                                        sp_font_description_get_family(res->descr),
+                                                        sp_font_description_get_family(res->get_descr()),
                                                         _feature_grid, grid_row, this);
                   grid_row++;
               }
           }
 
           // GSUB lookup type 3 (1 to many mapping). Optionally type 1.
-          for (auto table: res->openTypeTables) {
+          for (auto &table : res->get_opentype_tables()) {
               if (table.first == "salt" ||
                   table.first == "swsh" ||
                   table.first == "cwsh" ||
@@ -1151,7 +1153,7 @@ namespace Widget {
                   }
 
                   _features[table.first] = new Feature (table.first, table.second, number+1,
-                                                        sp_font_description_get_family(res->descr),
+                                                        sp_font_description_get_family(res->get_descr()),
                                                         _feature_grid, grid_row, this);
                   grid_row++;
               }
@@ -1176,8 +1178,8 @@ namespace Widget {
           }
 
       } else {
-          std::cerr << "FontVariants::update(): Couldn't find font_instance for: "
-                    << font_spec << std::endl;
+          std::cerr << "FontVariants::update(): Couldn't find FontInstance for: "
+                    << font_spec.raw() << std::endl;
       }
 
       _ligatures_changed = false;

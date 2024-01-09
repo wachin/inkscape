@@ -20,7 +20,6 @@
 
 class SPDesktop;
 class SPNamedView;
-class SPItem;
 class SPObject;
 class SPPath;
 class SPDesktop;
@@ -53,14 +52,14 @@ public:
     void freeSnap(IntermSnapResults &isr,
                   Inkscape::SnapCandidatePoint const &p,
                   Geom::OptRect const &bbox_to_snap,
-                  std::vector<SPItem const *> const *it,
+                  std::vector<SPObject const *> const *it,
                   std::vector<SnapCandidatePoint> *unselected_nodes) const override;
 
     void constrainedSnap(IntermSnapResults &isr,
                   Inkscape::SnapCandidatePoint const &p,
                   Geom::OptRect const &bbox_to_snap,
                   SnapConstraint const &c,
-                  std::vector<SPItem const *> const *it,
+                  std::vector<SPObject const *> const *it,
                   std::vector<SnapCandidatePoint> *unselected_nodes) const override;
 
 private:
@@ -78,6 +77,9 @@ private:
                          Geom::Point const &p_proj_on_constraint = Geom::Point()) const;
 
     SnapSourceType source2alignment(SnapSourceType s) const;
+
+    bool _allowSourceToSnapToTarget(SnapSourceType source, SnapTargetType target, bool strict_snapping) const;
+
 }; // end of AlignmentSnapper class
 
 } // end of namespace Inkscape

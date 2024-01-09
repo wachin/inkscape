@@ -20,7 +20,7 @@ namespace Debug {
 
 namespace {
 
-typedef std::vector<Heap *, GC::Alloc<Heap *, GC::MANUAL> > HeapCollection;
+typedef std::vector<Heap *, GC::Alloc<Heap *, GC::SCANNED, GC::MANUAL> > HeapCollection;
 
 HeapCollection &heaps() {
     static bool is_initialized=false;

@@ -93,14 +93,10 @@ public:
       { return _tips_message_context.get(); }
 
     void emitResized(gdouble width, gdouble height);
-    void requestRedraw();
 
     virtual void onResized (double, double) {};
-    virtual void onRedrawRequested() {};
     virtual void onStatusMessage (Inkscape::MessageType type, gchar const *message) {};
     virtual void onDocumentFilenameSet (gchar const* filename) {};
-    virtual void onDocumentResized (double, double) {};
-    virtual bool shutdown() { return false; };
 
 protected:
     SPDocument *_doc;
@@ -120,16 +116,13 @@ protected:
      */
     virtual void setDocument(SPDocument *doc);
 
-    sigc::signal<void,double,double>   _resized_signal;
-    sigc::signal<void,gchar const*>    _document_filename_set_signal;
-    sigc::signal<void>                 _redraw_requested_signal;
+    sigc::signal<void (double,double)>   _resized_signal;
+    sigc::signal<void (gchar const*)>    _document_filename_set_signal;
 
 private:
     sigc::connection _resized_connection;
-    sigc::connection _redraw_requested_connection;
     sigc::connection _message_changed_connection;  // foreign
     sigc::connection _document_uri_set_connection; // foreign
-    sigc::connection _document_resized_connection; // foreign
 };
 
 }}}

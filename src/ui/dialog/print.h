@@ -38,10 +38,6 @@ namespace Inkscape {
 namespace UI {
 namespace Dialog {
 
-struct PrinterSettings {
-    Glib::RefPtr<Gtk::PrintSettings> _gtk_print_settings;
-};
-
 class Print {
 public:
     Print(SPDocument *doc, SPItem *base);
@@ -50,6 +46,8 @@ public:
 protected:
 
 private:
+    void set_paper_size(const Glib::RefPtr<Gtk::PageSetup> &, double width, double height);
+
     Glib::RefPtr<Gtk::PrintOperation> _printop;
     SPDocument *_doc;
     SPItem     *_base;
@@ -57,7 +55,9 @@ private:
 
     struct workaround_gtkmm _workaround;
 
-    void draw_page(const Glib::RefPtr<Gtk::PrintContext>& context, int /*page_nr*/);
+    void setup_page(const Glib::RefPtr<Gtk::PrintContext>& context, int page_nr,
+                    const Glib::RefPtr<Gtk::PageSetup> &setup);
+    void draw_page(const Glib::RefPtr<Gtk::PrintContext>& context, int page_nr);
     Gtk::Widget *create_custom_widget();
     void begin_print(const Glib::RefPtr<Gtk::PrintContext>&);
 };

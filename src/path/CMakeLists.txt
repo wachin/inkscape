@@ -8,6 +8,10 @@ set(path_SRC
   path-outline.cpp
   path-simplify.cpp
   path-util.cpp
+  splinefit/bezier-fit.cpp
+  splinefit/splinefit.c
+  splinefit/splinefont.c
+  splinefit/splinerefigure.c
 
   # -------
   # Headers
@@ -16,6 +20,8 @@ set(path_SRC
   path-outline.h
   path-simplify.h
   path-util.h
+  splinefit/splinefit.h
+  splinefit/splinefont.h
 )
 
 add_inkscape_source("${path_SRC}")

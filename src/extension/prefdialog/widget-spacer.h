@@ -33,7 +33,7 @@ class WidgetSpacer : public InxWidget {
 public:
     WidgetSpacer(Inkscape::XML::Node *xml, Inkscape::Extension::Extension *ext);
 
-    Gtk::Widget *get_widget(sigc::signal<void> *changeSignal) override;
+    Gtk::Widget *get_widget(sigc::signal<void ()> *changeSignal) override;
 
 private:
     /** size of the spacer in px */

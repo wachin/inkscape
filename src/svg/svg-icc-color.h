@@ -18,11 +18,11 @@
  *
  * Referenced by SPIPaint.
  */
-struct SVGICCColor {
+struct SVGICCColor
+{
     std::string colorProfile;
     std::vector<double> colors;
 };
-
 
 #endif /* !SVG_ICC_COLOR_H_SEEN */
 

@@ -1,130 +1,121 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 /** @file
- * @brief Live Path Effect editing dialog
+ * @brief A dialog for Live Path Effects (LPE)
  */
-/* Author:
- *   Johan Engelen <j.b.c.engelen@ewi.utwente.nl>
+/* Authors:
+ *   Jabiertxof
+ *   Adam Belis (UX/Design)
  *
- * Copyright (C) 2007 Author
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
-#ifndef INKSCAPE_UI_DIALOG_LIVE_PATH_EFFECT_H
-#define INKSCAPE_UI_DIALOG_LIVE_PATH_EFFECT_H
+#ifndef LIVEPATHEFFECTEDITOR_H
+#define LIVEPATHEFFECTEDITOR_H
 
-#include <gtkmm/buttonbox.h>
-#include <gtkmm/eventbox.h>
-#include <gtkmm/frame.h>
-#include <gtkmm/label.h>
-#include <gtkmm/liststore.h>
-#include <gtkmm/scrolledwindow.h>
-#include <gtkmm/toolbar.h>
-#include <gtkmm/treeview.h>
-
+#include <memory>
+#include <gtkmm/builder.h>
 #include "live_effects/effect-enum.h"
-#include "object/sp-item.h"
-#include "selection.h"
+#include "preferences.h"
 #include "ui/dialog/dialog-base.h"
-#include "ui/widget/combo-enums.h"
-#include "ui/widget/frame.h"
+#include "ui/widget/completion-popup.h"
+#include "ui/column-menu-builder.h"
 
-class SPLPEItem;
-
-namespace Inkscape {
-
-namespace LivePathEffect {
-    class Effect;
-    class LPEObjectReference;
+namespace Gtk {
+class Button;
 }
 
+namespace Inkscape {
 namespace UI {
 namespace Dialog {
 
+/*
+ * @brief The LivePathEffectEditor class
+ */
 class LivePathEffectEditor : public DialogBase
 {
 public:
+    // No default constructor, noncopyable, nonassignable
     LivePathEffectEditor();
     ~LivePathEffectEditor() override;
-
+    LivePathEffectEditor(LivePathEffectEditor const &d) = delete;
+    LivePathEffectEditor operator=(LivePathEffectEditor const &d) = delete;
     static LivePathEffectEditor &getInstance() { return *new LivePathEffectEditor(); }
-
-    void selectionChanged(Inkscape::Selection *selection) override;
-    void selectionModified(Inkscape::Selection *selection, guint flags) override;
-
-    void onSelectionChanged(Inkscape::Selection *selection);
-
-    virtual void on_effect_selection_changed();
+    void move_list(gint origin, gint dest);
+    std::vector<std::pair<Gtk::Expander *, std::shared_ptr<Inkscape::LivePathEffect::LPEObjectReference> > > _LPEExpanders;
+    void showParams(std::pair<Gtk::Expander *, std::shared_ptr<Inkscape::LivePathEffect::LPEObjectReference> > expanderdata, bool changed);
+    bool updating = false;
+    SPLPEItem *current_lpeitem = nullptr;
+    std::pair<Gtk::Expander *, std::shared_ptr<Inkscape::LivePathEffect::LPEObjectReference> > current_lperef = std::make_pair(nullptr, nullptr);
+    static const LivePathEffect::EnumEffectData<LivePathEffect::EffectType> *getActiveData();
+    bool selection_changed_lock = false;
+    bool dnd = false;
+private:
+    Glib::RefPtr<Gtk::Builder> _builder;
+public:
+    Gtk::ListBox& LPEListBox;
+    gint dndx = 0;
+    gint dndy = 0;
+protected:
+    bool apply(GdkEventButton *evt, Glib::RefPtr<Gtk::Builder> builder_effect,
+               const LivePathEffect::EnumEffectData<LivePathEffect::EffectType> *to_add);
+    void reload_effect_list();
+    void onButtonEvent(GdkEventButton* evt);
 
 private:
+    void add_lpes(Inkscape::UI::Widget::CompletionPopup& popup, bool symbolic);
+    void clear_lpe_list();
+    void selectionChanged(Inkscape::Selection *selection) override;
+    void selectionModified(Inkscape::Selection *selection, guint flags) override;
+    void onSelectionChanged(Inkscape::Selection *selection);
+    bool toggleFavInLpe(GdkEventButton * evt, Glib::ustring name, Gtk::Button *favbutton);
+    bool closeExpander(GdkEventButton * evt);
+    void onAddGallery();
+    void expanded_notify(Gtk::Expander *expander);
+    void onAdd(Inkscape::LivePathEffect::EffectType etype);
+    bool showWarning(std::string const &msg);
+    void toggleVisible(Inkscape::LivePathEffect::Effect *lpe , Gtk::EventBox *visbutton);
+    bool is_appliable(LivePathEffect::EffectType etypen, Glib::ustring item_type, bool has_clip, bool has_mask);
+    void removeEffect(Gtk::Expander * expander);
     void effect_list_reload(SPLPEItem *lpeitem);
-    void set_sensitize_all(bool sensitive);
-    void showParams(LivePathEffect::Effect& effect);
-    void showText(Glib::ustring const &str);
-    void selectInList(LivePathEffect::Effect* effect);
 
-    // callback methods for buttons on grids page.
-    void onAdd();
-    void onRemove();
-    void onUp();
-    void onDown();
+    SPLPEItem * clonetolpeitem();
+    void selection_info();
+    Inkscape::UI::Widget::CompletionPopup _lpes_popup;
+    void map_handler();
+    void clearMenu();
+    void setMenu();
+    bool lpeFlatten(std::shared_ptr<Inkscape::LivePathEffect::LPEObjectReference> lperef);
+    Gtk::Box& _LPEContainer;
+    Gtk::Box& _LPEAddContainer;
+    Gtk::Label&_LPESelectionInfo;
+    Gtk::ListBox&_LPEParentBox;
+    Gtk::Box&_LPECurrentItem;
+    PathEffectList effectlist;
+    Glib::RefPtr<Gtk::ListStore> _LPEList;
+    Glib::RefPtr<Gtk::ListStore> _LPEListFilter;
+    const LivePathEffect::EnumEffectDataConverter<LivePathEffect::EffectType> &converter;
+    Gtk::Widget *effectwidget = nullptr;
+    Gtk::Widget *popupwidg = nullptr;
+    GtkWidget *currentdrag = nullptr;
+    bool _reload_menu = false;
+    gint _buttons_width = 0;
+    bool _freezeexpander = false;
+    Glib::ustring _item_type;
+    bool _has_clip;
+    bool _has_mask;
+    bool _frezee = false;
+    bool _experimental = false;
 
-    class ModelColumns : public Gtk::TreeModel::ColumnRecord
-    {
-      public:
-        ModelColumns()
-        {
-            add(col_name);
-            add(lperef);
-            add(col_visible);
-        }
-        ~ModelColumns() override = default;
-
-        Gtk::TreeModelColumn<Glib::ustring> col_name;
-        Gtk::TreeModelColumn<LivePathEffect::LPEObjectReference *> lperef;
-        Gtk::TreeModelColumn<bool> col_visible;
-    };
-
-    bool lpe_list_locked;
-    bool selection_changed_lock;
-    //Inkscape::UI::Widget::ComboBoxEnum<LivePathEffect::EffectType> combo_effecttype;
-
-    Gtk::Widget * effectwidget;
-    Gtk::Label status_label;
-    UI::Widget::Frame effectcontrol_frame;
-    Gtk::Box effectapplication_hbox;
-    Gtk::Box effectcontrol_vbox;
-    Gtk::EventBox effectcontrol_eventbox;
-    Gtk::Box effectlist_vbox;
-    ModelColumns columns;
-    Gtk::ScrolledWindow scrolled_window;
-    Gtk::TreeView effectlist_view;
-    Glib::RefPtr<Gtk::ListStore> effectlist_store;
-    Glib::RefPtr<Gtk::TreeSelection> effectlist_selection;
-
-    void on_visibility_toggled( Glib::ustring const& str);
-    bool _on_button_release(GdkEventButton* button_event);
-    Gtk::ButtonBox toolbar_hbox;
-    Gtk::Button button_add;
-    Gtk::Button button_remove;
-    Gtk::Button button_up;
-    Gtk::Button button_down;
-
-    SPLPEItem * current_lpeitem;
-
-    LivePathEffect::LPEObjectReference * current_lperef;
-
-    friend void lpeeditor_selection_changed (Inkscape::Selection * selection, gpointer data);
-    friend void lpeeditor_selection_modified (Inkscape::Selection * selection, guint /*flags*/, gpointer data);
-
-    LivePathEffectEditor(LivePathEffectEditor const &d) = delete;
-    LivePathEffectEditor& operator=(LivePathEffectEditor const &d) = delete;
+    Gtk::Button &_LPEGallery;
+    std::unique_ptr<Preferences::PreferencesObserver> const _showgallery_observer;
+    void on_showgallery_notify(Preferences::Entry const &new_val);
 };
 
 } // namespace Dialog
 } // namespace UI
 } // namespace Inkscape
 
-#endif // INKSCAPE_UI_DIALOG_LIVE_PATH_EFFECT_H
+#endif // LIVEPATHEFFECTEDITOR_H
 
 /*
   Local Variables:

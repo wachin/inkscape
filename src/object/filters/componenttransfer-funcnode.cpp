@@ -14,191 +14,148 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
-#include <glib.h>
-
 #include "attributes.h"
 #include "document.h"
 #include "componenttransfer.h"
 #include "componenttransfer-funcnode.h"
+#include "util/numeric/converters.h"
 #include "xml/repr.h"
-#include "helper-fns.h"
 
-/* FeFuncNode class */
-SPFeFuncNode::SPFeFuncNode(SPFeFuncNode::Channel channel)
-    : SPObject(), type(Inkscape::Filters::COMPONENTTRANSFER_TYPE_IDENTITY),
-      slope(1), intercept(0), amplitude(1), exponent(1), offset(0), channel(channel) {
-}
-
-SPFeFuncNode::~SPFeFuncNode() = default;
-
-/**
- * Reads the Inkscape::XML::Node, and initializes SPDistantLight variables.  For this to get called,
- * our name must be associated with a repr via "sp_object_type_register".  Best done through
- * sp-object-repr.cpp's repr_name_entries array.
- */
-void SPFeFuncNode::build(SPDocument *document, Inkscape::XML::Node *repr) {
+void SPFeFuncNode::build(SPDocument *document, Inkscape::XML::Node *repr)
+{
 	SPObject::build(document, repr);
 
-    //Read values of key attributes from XML nodes into object.
-    this->readAttr(SPAttr::TYPE);
-    this->readAttr(SPAttr::TABLEVALUES);
-    this->readAttr(SPAttr::SLOPE);
-    this->readAttr(SPAttr::INTERCEPT);
-    this->readAttr(SPAttr::AMPLITUDE);
-    this->readAttr(SPAttr::EXPONENT);
-    this->readAttr(SPAttr::OFFSET);
+    readAttr(SPAttr::TYPE);
+    readAttr(SPAttr::TABLEVALUES);
+    readAttr(SPAttr::SLOPE);
+    readAttr(SPAttr::INTERCEPT);
+    readAttr(SPAttr::AMPLITUDE);
+    readAttr(SPAttr::EXPONENT);
+    readAttr(SPAttr::OFFSET);
 
-
-//is this necessary?
-    document->addResource("fefuncnode", this); //maybe feFuncR, fefuncG, feFuncB and fefuncA ?
+    document->addResource("fefuncnode", this);
 }
 
-/**
- * Drops any allocated memory.
- */
-void SPFeFuncNode::release() {
-    if ( this->document ) {
-        // Unregister ourselves
-        this->document->removeResource("fefuncnode", this);
+void SPFeFuncNode::release()
+{
+    if (document) {
+        document->removeResource("fefuncnode", this);
     }
 
-//TODO: release resources here
+    tableValues.clear();
+
+    SPObject::release();
 }
 
-static Inkscape::Filters::FilterComponentTransferType sp_feComponenttransfer_read_type(gchar const *value){
+static Inkscape::Filters::FilterComponentTransferType sp_feComponenttransfer_read_type(char const *value)
+{
     if (!value) {
     	return Inkscape::Filters::COMPONENTTRANSFER_TYPE_ERROR; //type attribute is REQUIRED.
     }
 
-    switch(value[0]){
+    switch (value[0]) {
         case 'i':
-            if (strncmp(value, "identity", 8) == 0) {
+            if (!std::strcmp(value, "identity")) {
             	return Inkscape::Filters::COMPONENTTRANSFER_TYPE_IDENTITY;
             }
             break;
         case 't':
-            if (strncmp(value, "table", 5) == 0) {
+            if (!std::strcmp(value, "table")) {
             	return Inkscape::Filters::COMPONENTTRANSFER_TYPE_TABLE;
             }
             break;
         case 'd':
-            if (strncmp(value, "discrete", 8) == 0) {
+            if (!std::strcmp(value, "discrete")) {
             	return Inkscape::Filters::COMPONENTTRANSFER_TYPE_DISCRETE;
             }
             break;
         case 'l':
-            if (strncmp(value, "linear", 6) == 0) {
+            if (!std::strcmp(value, "linear")) {
             	return Inkscape::Filters::COMPONENTTRANSFER_TYPE_LINEAR;
             }
             break;
         case 'g':
-            if (strncmp(value, "gamma", 5) == 0) {
+            if (!std::strcmp(value, "gamma")) {
             	return Inkscape::Filters::COMPONENTTRANSFER_TYPE_GAMMA;
             }
+            break;
+        default:
             break;
     }
 
     return Inkscape::Filters::COMPONENTTRANSFER_TYPE_ERROR; //type attribute is REQUIRED.
 }
 
-/**
- * Sets a specific value in the SPFeFuncNode.
- */
-void SPFeFuncNode::set(SPAttr key, gchar const *value) {
-    Inkscape::Filters::FilterComponentTransferType type;
-    double read_num;
+void SPFeFuncNode::set(SPAttr key, char const *value)
+{
+    switch (key) {
+        case SPAttr::TYPE: {
+            auto const new_type = sp_feComponenttransfer_read_type(value);
 
-    switch(key) {
-        case SPAttr::TYPE:
-            type = sp_feComponenttransfer_read_type(value);
-
-            if(type != this->type) {
-                this->type = type;
-                this->parent->requestModified(SP_OBJECT_MODIFIED_FLAG);
+            if (type != new_type) {
+                type = new_type;
+                requestModified(SP_OBJECT_MODIFIED_FLAG);
             }
             break;
-        case SPAttr::TABLEVALUES:
-            if (value){
-                this->tableValues = helperfns_read_vector(value);
-                this->parent->requestModified(SP_OBJECT_MODIFIED_FLAG);
+        }
+        case SPAttr::TABLEVALUES: {
+            if (value) {
+                tableValues = Inkscape::Util::read_vector(value);
+            } else {
+                tableValues.clear();
             }
+            requestModified(SP_OBJECT_MODIFIED_FLAG);
             break;
-        case SPAttr::SLOPE:
-            read_num = value ? helperfns_read_number(value) : 1;
+        }
+        case SPAttr::SLOPE: {
+            auto new_slope = value ? Inkscape::Util::read_number(value) : 1;
 
-            if (read_num != this->slope) {
-                this->slope = read_num;
-                this->parent->requestModified(SP_OBJECT_MODIFIED_FLAG);
+            if (slope != new_slope) {
+                slope = new_slope;
+                requestModified(SP_OBJECT_MODIFIED_FLAG);
             }
             break;
-        case SPAttr::INTERCEPT:
-            read_num = value ? helperfns_read_number(value) : 0;
+        }
+        case SPAttr::INTERCEPT: {
+            auto new_intercept = value ? Inkscape::Util::read_number(value) : 0;
 
-            if (read_num != this->intercept) {
-                this->intercept = read_num;
-                this->parent->requestModified(SP_OBJECT_MODIFIED_FLAG);
+            if (intercept != new_intercept) {
+                intercept = new_intercept;
+                requestModified(SP_OBJECT_MODIFIED_FLAG);
             }
             break;
-        case SPAttr::AMPLITUDE:
-            read_num = value ? helperfns_read_number(value) : 1;
+        }
+        case SPAttr::AMPLITUDE: {
+            auto new_amplitude = value ? Inkscape::Util::read_number(value) : 1;
 
-            if (read_num != this->amplitude) {
-                this->amplitude = read_num;
-                this->parent->requestModified(SP_OBJECT_MODIFIED_FLAG);
+            if (amplitude != new_amplitude) {
+                amplitude = new_amplitude;
+                requestModified(SP_OBJECT_MODIFIED_FLAG);
             }
             break;
-        case SPAttr::EXPONENT:
-            read_num = value ? helperfns_read_number(value) : 1;
+        }
+        case SPAttr::EXPONENT: {
+            auto new_exponent = value ? Inkscape::Util::read_number(value) : 1;
 
-            if (read_num != this->exponent) {
-                this->exponent = read_num;
-                this->parent->requestModified(SP_OBJECT_MODIFIED_FLAG);
+            if (exponent != new_exponent) {
+                exponent = new_exponent;
+                requestModified(SP_OBJECT_MODIFIED_FLAG);
             }
             break;
-        case SPAttr::OFFSET:
-            read_num = value ? helperfns_read_number(value) : 0;
+        }
+        case SPAttr::OFFSET: {
+            auto new_offset = value ? Inkscape::Util::read_number(value) : 0;
 
-            if (read_num != this->offset) {
-                this->offset = read_num;
-                this->parent->requestModified(SP_OBJECT_MODIFIED_FLAG);
+            if (offset != new_offset) {
+                offset = new_offset;
+                requestModified(SP_OBJECT_MODIFIED_FLAG);
             }
             break;
+        }
         default:
         	SPObject::set(key, value);
             break;
     }
-}
-
-/**
- * Receives update notifications.
- */
-void SPFeFuncNode::update(SPCtx *ctx, guint flags) {
-    std::cout << "SPFeFuncNode::update" << std::endl;
-    if (flags & SP_OBJECT_MODIFIED_FLAG) {
-        this->readAttr(SPAttr::TYPE);
-        this->readAttr(SPAttr::TABLEVALUES);
-        this->readAttr(SPAttr::SLOPE);
-        this->readAttr(SPAttr::INTERCEPT);
-        this->readAttr(SPAttr::AMPLITUDE);
-        this->readAttr(SPAttr::EXPONENT);
-        this->readAttr(SPAttr::OFFSET);
-    }
-
-    SPObject::update(ctx, flags);
-}
-
-/**
- * Writes its settings to an incoming repr object, if any.
- */
-Inkscape::XML::Node* SPFeFuncNode::write(Inkscape::XML::Document *doc, Inkscape::XML::Node *repr, guint flags) {
-    std::cout << "SPFeFuncNode::write" << std::endl;
-    if (!repr) {
-        repr = this->getRepr()->duplicate(doc);
-    }
-
-    SPObject::write(doc, repr, flags);
-
-    return repr;
 }
 
 /*

@@ -11,8 +11,10 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
-
 #include <sigc++/signal.h>
+#include <sigc++/connection.h>
+#include "display/control/canvas-item-ptr.h"
+#include "helper/auto-connection.h"
 
 namespace Inkscape {
 
@@ -23,30 +25,27 @@ namespace Display {
 /**
  * Provides a class to put a canvasitem temporarily on-canvas.
  */
-class TemporaryItem  {
+class TemporaryItem final
+{
 public:
-    TemporaryItem(Inkscape::CanvasItem *item, unsigned int lifetime, bool destroy_on_deselect = false);
-    virtual ~TemporaryItem();
+    TemporaryItem(CanvasItem *item, int lifetime_msecs);
+    TemporaryItem(TemporaryItem const &) = delete;
+    TemporaryItem &operator=(TemporaryItem const &) = delete;
+    ~TemporaryItem();
 
-    TemporaryItem(const TemporaryItem&) = delete;
-    TemporaryItem& operator=(const TemporaryItem&) = delete;
-
-    sigc::signal<void, TemporaryItem *> signal_timeout;
+    sigc::signal<void (TemporaryItem *)> signal_timeout;
 
 protected:
     friend class TemporaryItemList;
 
-    Inkscape::CanvasItem   * canvasitem = nullptr;   /** The item we are holding on to */
-    unsigned int timeout_id;     /** ID by which glib knows the timeout event */
-    bool destroy_on_deselect; // only destroy when parent item is deselected, not when mouse leaves
-
-    static int _timeout(void* data); ///< callback for when lifetime expired
+    CanvasItemPtr<CanvasItem> canvasitem; ///< The item we are holding on to.
+    auto_connection timeout_conn;
 };
 
 } //namespace Display
 } //namespace Inkscape
 
-#endif
+#endif // INKSCAPE_CANVAS_TEMPORARY_ITEM_H
 
 /*
   Local Variables:

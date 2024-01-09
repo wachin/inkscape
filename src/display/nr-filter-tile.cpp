@@ -20,17 +20,11 @@
 namespace Inkscape {
 namespace Filters {
 
-FilterTile::FilterTile()
-= default;
+FilterTile::FilterTile() = default;
 
-FilterPrimitive * FilterTile::create() {
-    return new FilterTile();
-}
+FilterTile::~FilterTile() = default;
 
-FilterTile::~FilterTile()
-= default;
-
-void FilterTile::render_cairo(FilterSlot &slot)
+void FilterTile::render_cairo(FilterSlot &slot) const
 {
     // This input source contains only the "rendering" tile.
     cairo_surface_t *in = slot.getcairo(_input);
@@ -45,7 +39,7 @@ void FilterTile::render_cairo(FilterSlot &slot)
     // This is the feTile source area as determined by the input primitive area (see SVG spec).
     Geom::Rect tile_area = slot.get_primitive_area(_input);
 
-    if( tile_area.width() == 0.0 || tile_area.height() == 0.0 ) {
+    if (tile_area.width() == 0.0 || tile_area.height() == 0.0) {
 
         slot.set(_output, in);
         std::cerr << "FileTile::render_cairo: tile has zero width or height" << std::endl;
@@ -85,15 +79,14 @@ void FilterTile::render_cairo(FilterSlot &slot)
         // cairo_surface_write_to_png( tile, filename.str().c_str() );
         
         // Determine number of feTile rows and columns
-        Geom::Rect pr = filter_primitive_area( slot.get_units() );
-        int tile_cols = ceil( pr.width()  / tile_area.width() );
-        int tile_rows = ceil( pr.height() / tile_area.height() );
+        Geom::Rect pr = filter_primitive_area(slot.get_units());
+        int tile_cols = std::ceil(pr.width()  / tile_area.width());
+        int tile_rows = std::ceil(pr.height() / tile_area.height());
 
         // Do tiling (TO DO: restrict to slot area.)
-        for( int col=0; col < tile_cols; ++col ) {
-            for( int row=0; row < tile_rows; ++row ) {
-
-                Geom::Point offset( col*tile_area.width(), row*tile_area.height() );
+        for (int col = 0; col < tile_cols; ++col) {
+            for (int row = 0; row < tile_rows; ++row) {
+                Geom::Point offset(col * tile_area.width(), row * tile_area.height());
                 offset *= trans;
                 offset[Geom::X] -= trans[4];
                 offset[Geom::Y] -= trans[5];
@@ -112,22 +105,22 @@ void FilterTile::render_cairo(FilterSlot &slot)
     }
 }
 
-void FilterTile::area_enlarge(Geom::IntRect &area, Geom::Affine const &trans)
+void FilterTile::area_enlarge(Geom::IntRect &area, Geom::Affine const &trans) const
 {
     // Set to very large rectangle so we get tile source. It will be clipped later.
 
     // Note, setting to infinite using Geom::IntRect::infinite() causes overflow/underflow problems.
-    Geom::IntCoord max = std::numeric_limits<Geom::IntCoord>::max()/4;
-    area = Geom::IntRect(-max,-max,max,max);
+    Geom::IntCoord max = std::numeric_limits<Geom::IntCoord>::max() / 4;
+    area = Geom::IntRect(-max, -max, max, max);
 }
 
-double FilterTile::complexity(Geom::Affine const &)
+double FilterTile::complexity(Geom::Affine const &) const
 {
     return 1.0;
 }
 
-} /* namespace Filters */
-} /* namespace Inkscape */
+} // namespace Filters
+} // namespace Inkscape
 
 /*
   Local Variables:

@@ -22,10 +22,12 @@
 #define SVG_COMMON_INPUT_PARAMS \
             "<param name='import_mode_svg' type='optiongroup' gui-text='" N_("SVG Image Import Type:") "' >\n" \
                     "<option value='include' >" N_("Include SVG image as editable object(s) in the current file") "</option>\n" \
-                    "<option value='embed' >" N_("Embed the SVG file in a image tag (not editable in this document)") "</option>\n" \
-                    "<option value='link' >" N_("Link the SVG file in a image tag (not editable in this document).") "</option>\n" \
+                    "<option value='pages' >" N_("Add SVG as new page(s) in the current file") "</option>\n" \
+                    "<option value='embed' >" N_("Embed the SVG file in an image tag (not editable in this document)") "</option>\n" \
+                    "<option value='link' >" N_("Link the SVG file in an image tag (not editable in this document).") "</option>\n" \
+                    "<option value='new' >" N_("Open SVG image as separate document") "</option>\n" \
                   "</param>\n" \
-            "<param name='svgdpi' type='float' precision='2' min='1' max='999999' gui-text='DPI for rendered SVG'>96.00</param>\n" \
+            "<param name='svgdpi' type='float' precision='2' min='1' max='999999' gui-text='" N_("DPI for rendered SVG") "'>96.00</param>\n" \
             "<param name='scale' appearance='combo' type='optiongroup' gui-text='" N_("Image Rendering Mode:") "' gui-description='" N_("When an image is upscaled, apply smoothing or keep blocky (pixelated). (Will not work in all browsers.)") "' >\n" \
                     "<option value='auto' >" N_("None (auto)") "</option>\n" \
                     "<option value='optimizeQuality' >" N_("Smooth (optimizeQuality)") "</option>\n" \

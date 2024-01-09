@@ -14,6 +14,7 @@
 
 #include <message-stack.h>
 #include <sstream>
+#include <iomanip>
 
 #include <gtkmm/scale.h>
 #include <gtkmm/notebook.h>
@@ -24,9 +25,9 @@
 
 #include "desktop.h"
 #include "document-undo.h"
+#include "layer-manager.h"
 #include "selection.h"
 #include "svg-fonts-dialog.h"
-#include "verbs.h"
 
 #include "display/nr-svgfonts.h"
 #include "include/gtkmm_version.h"
@@ -35,9 +36,13 @@
 #include "object/sp-font.h"
 #include "object/sp-glyph-kerning.h"
 #include "object/sp-glyph.h"
+#include "object/sp-guide.h"
 #include "object/sp-missing-glyph.h"
+#include "object/sp-path.h"
 #include "svg/svg.h"
+#include "util/units.h"
 #include "xml/repr.h"
+#include "document.h"
 
 SvgFontDrawingArea::SvgFontDrawingArea():
     _x(0),
@@ -74,7 +79,13 @@ bool SvgFontDrawingArea::on_draw(const Cairo::RefPtr<Cairo::Context> &cr) {
     auto context = get_style_context();
     Gdk::RGBA fg = context->get_color(get_state_flags());
     cr->set_source_rgb(fg.get_red(), fg.get_green(), fg.get_blue());
-    cr->show_text (_text.c_str());
+    // crash on macos: https://gitlab.com/inkscape/inkscape/-/issues/266
+    try {
+        cr->show_text(_text.c_str());
+    }
+    catch (std::exception& ex) {
+        g_warning("Error drawing custom SVG font text: %s", ex.what());
+    }
   }
   return true;
 }
@@ -82,6 +93,44 @@ bool SvgFontDrawingArea::on_draw(const Cairo::RefPtr<Cairo::Context> &cr) {
 namespace Inkscape {
 namespace UI {
 namespace Dialog {
+
+
+void SvgGlyphRenderer::render_vfunc(
+        const Cairo::RefPtr<Cairo::Context>& cr, Gtk::Widget& widget,
+        const Gdk::Rectangle& background_area, const Gdk::Rectangle& cell_area, Gtk::CellRendererState flags) {
+
+    if (!_font || !_tree) return;
+
+    cr->set_font_face(Cairo::RefPtr<Cairo::FontFace>(new Cairo::FontFace(_font->get_font_face(), false /* does not have reference */)));
+    cr->set_font_size(_font_size);
+    Glib::ustring glyph = _property_glyph.get_value();
+    Cairo::TextExtents ext;
+    cr->get_text_extents(glyph, ext);
+    cr->move_to(cell_area.get_x() + (_width - ext.width) / 2, cell_area.get_y() + 1);
+    auto context = _tree->get_style_context();
+    Gtk::StateFlags sflags = _tree->get_state_flags();
+    if (flags & Gtk::CELL_RENDERER_SELECTED) {
+        sflags |= Gtk::STATE_FLAG_SELECTED;
+    }
+    Gdk::RGBA fg = context->get_color(sflags);
+    cr->set_source_rgb(fg.get_red(), fg.get_green(), fg.get_blue());
+    // crash on macos: https://gitlab.com/inkscape/inkscape/-/issues/266
+    try {
+        cr->show_text(glyph);
+    }
+    catch (std::exception& ex) {
+        g_warning("Error drawing custom SVG font glyphs: %s", ex.what());
+    }
+}
+
+bool SvgGlyphRenderer::activate_vfunc(
+        GdkEvent* event, Gtk::Widget& widget, const Glib::ustring& path, const Gdk::Rectangle& background_area,
+        const Gdk::Rectangle& cell_area, Gtk::CellRendererState flags) {
+
+    Glib::ustring glyph = _property_glyph.get_value();
+    _signal_clicked.emit(event, glyph);
+    return false;
+}
 
 SvgFontsDialog::AttrEntry::AttrEntry(SvgFontsDialog* d, gchar* lbl, Glib::ustring tooltip, const SPAttr attr)
 {
@@ -94,19 +143,20 @@ SvgFontsDialog::AttrEntry::AttrEntry(SvgFontsDialog* d, gchar* lbl, Glib::ustrin
     entry.signal_changed().connect(sigc::mem_fun(*this, &SvgFontsDialog::AttrEntry::on_attr_changed));
 }
 
-void SvgFontsDialog::AttrEntry::set_text(char* t){
+void SvgFontsDialog::AttrEntry::set_text(const char* t){
     if (!t) return;
     entry.set_text(t);
 }
 
 // 'font-family' has a problem as it is also a presentation attribute for <text>
 void SvgFontsDialog::AttrEntry::on_attr_changed(){
+    if (dialog->_update.pending()) return;
 
     SPObject* o = nullptr;
     for (auto& node: dialog->get_selected_spfont()->children) {
         switch(this->attr){
             case SPAttr::FONT_FAMILY:
-                if (SP_IS_FONTFACE(&node)){
+                if (is<SPFontFace>(&node)){
                     o = &node;
                     continue;
                 }
@@ -123,8 +173,7 @@ void SvgFontsDialog::AttrEntry::on_attr_changed(){
 
         Glib::ustring undokey = "svgfonts:";
         undokey += name;
-        DocumentUndo::maybeDone(o->document, undokey.c_str(), SP_VERB_DIALOG_SVG_FONTS,
-                                _("Set SVG Font attribute"));
+        DocumentUndo::maybeDone(o->document, undokey.c_str(), _("Set SVG Font attribute"), "");
     }
 
 }
@@ -139,7 +188,7 @@ SvgFontsDialog::AttrSpin::AttrSpin(SvgFontsDialog* d, gchar* lbl, Glib::ustring 
     _label->show();
     _label->set_halign(Gtk::ALIGN_START);
     spin.set_range(0, 4096);
-    spin.set_increments(16, 0);
+    spin.set_increments(10, 0);
     spin.signal_value_changed().connect(sigc::mem_fun(*this, &SvgFontsDialog::AttrSpin::on_attr_changed));
 }
 
@@ -152,6 +201,7 @@ void SvgFontsDialog::AttrSpin::set_value(double v){
 }
 
 void SvgFontsDialog::AttrSpin::on_attr_changed(){
+    if (dialog->_update.pending()) return;
 
     SPObject* o = nullptr;
     switch (this->attr) {
@@ -173,7 +223,7 @@ void SvgFontsDialog::AttrSpin::on_attr_changed(){
         case SPAttr::CAP_HEIGHT:
         case SPAttr::X_HEIGHT:
             for (auto& node: dialog->get_selected_spfont()->children){
-                if (SP_IS_FONTFACE(&node)){
+                if (is<SPFontFace>(&node)){
                     o = &node;
                     continue;
                 }
@@ -193,8 +243,7 @@ void SvgFontsDialog::AttrSpin::on_attr_changed(){
 
         Glib::ustring undokey = "svgfonts:";
         undokey += name;
-        DocumentUndo::maybeDone(o->document, undokey.c_str(), SP_VERB_DIALOG_SVG_FONTS,
-                                _("Set SVG Font attribute"));
+        DocumentUndo::maybeDone(o->document, undokey.c_str(), _("Set SVG Font attribute"), "");
     }
 
 }
@@ -210,19 +259,24 @@ Gtk::Box* SvgFontsDialog::AttrCombo(gchar* lbl, const SPAttr /*attr*/){
 /*** SvgFontsDialog ***/
 
 GlyphComboBox::GlyphComboBox() {
-    set_wrap_width(4);
 }
 
 void GlyphComboBox::update(SPFont* spfont){
     if (!spfont) return;
 
+    // remove wrapping - it has severe performance penalty for appending items
+    set_wrap_width(0);
+
     this->remove_all();
 
     for (auto& node: spfont->children) {
-        if (SP_IS_GLYPH(&node)){
+        if (is<SPGlyph>(&node)){
             this->append((static_cast<SPGlyph*>(&node))->unicode);
         }
     }
+
+    // set desired wrpping now
+    set_wrap_width(4);
 }
 
 void SvgFontsDialog::on_kerning_value_changed(){
@@ -240,7 +294,7 @@ void SvgFontsDialog::on_kerning_value_changed(){
 
     //XML Tree being directly used here while it shouldn't be.
     this->kerning_pair->setAttribute("k", Glib::Ascii::dtostr(get_selected_spfont()->horiz_adv_x - kerning_slider->get_value()));
-    DocumentUndo::maybeDone(getDocument(), undokey.c_str(), SP_VERB_DIALOG_SVG_FONTS, _("Adjust kerning value"));
+    DocumentUndo::maybeDone(getDocument(), undokey.c_str(), _("Adjust kerning value"), "");
 
     //populate_kerning_pairs_box();
     kerning_preview.redraw();
@@ -268,16 +322,215 @@ void SvgFontsDialog::fonts_list_button_release(GdkEventButton* event)
     }
 }
 
-void SvgFontsDialog::create_glyphs_popup_menu(Gtk::Widget& parent, sigc::slot<void> rem)
+void SvgFontsDialog::sort_glyphs(SPFont* font) {
+    if (!font) return;
+
+    {
+        auto scoped(_update.block());
+        font->sort_glyphs();
+    }
+    update_glyphs();
+}
+
+// return U+<code> ... string
+Glib::ustring create_unicode_name(const Glib::ustring& unicode, int max_chars) {
+    std::ostringstream ost;
+    if (unicode.empty()) {
+        ost << "-";
+    }
+    else {
+        auto it = unicode.begin();
+        for (int i = 0; i < max_chars && it != unicode.end(); ++i) {
+            if (i > 0) {
+                ost << " ";
+            }
+            unsigned int code = *it++;
+            ost << "U+" << std::hex << std::uppercase << std::setw(6) << std::setfill('0') << code;
+        }
+        if (it != unicode.end()) {
+            ost << "..."; // there's more, but we skip them
+        }
+    }
+    return ost.str();
+}
+
+// synthetic name consists for unicode hex numbers derived from glyph's "unicode" attribute
+Glib::ustring get_glyph_synthetic_name(const SPGlyph& glyph) {
+    auto unicode_name = create_unicode_name(glyph.unicode, 3);
+    // U+<code> plus character
+    return unicode_name + " " + glyph.unicode;
+}
+
+// full name consists of user-defined name combined with synthetic one
+Glib::ustring get_glyph_full_name(const SPGlyph& glyph) {
+    auto name = get_glyph_synthetic_name(glyph);
+    if (!glyph.glyph_name.empty()) {
+        // unicode name first, followed by user name - for sorting layers
+        return name + " " + glyph.glyph_name;
+    }
+    else {
+        return name;
+    }
+}
+
+// look for a layer by its label; looking only in direct sublayers of  'root_layer'
+SPItem* find_layer(SPDesktop* desktop, SPObject* root_layer, const Glib::ustring& name) {
+    if (!desktop) return nullptr;
+
+    const auto& layers = desktop->layerManager();
+    auto root = root_layer == nullptr ? layers.currentRoot() : root_layer;
+    if (!root) return nullptr;
+
+    // check only direct child layers
+    auto it = std::find_if(root->children.begin(), root->children.end(), [&](SPObject& obj) {
+        return layers.isLayer(&obj) && obj.label() && strcmp(obj.label(), name.c_str()) == 0;
+    });
+    if (it != root->children.end()) {
+        return static_cast<SPItem*>(&*it);
+    }
+
+    return nullptr; // not found
+}
+
+std::vector<SPGroup*> get_direct_sublayers(SPObject* layer) {
+    std::vector<SPGroup*> layers;
+    if (!layer) return layers;
+
+    for (auto&& item : layer->children) {
+        if (auto l = LayerManager::asLayer(&item)) {
+            layers.push_back(l);
+        }
+    }
+
+    return layers;
+}
+
+void rename_glyph_layer(SPDesktop* desktop, SPItem* layer, const Glib::ustring& font, const Glib::ustring& name) {
+    if (!desktop || !layer || font.empty() || name.empty()) return;
+
+    auto parent_layer = find_layer(desktop, desktop->layerManager().currentRoot(), font);
+    if (!parent_layer) return;
+
+    // before renaming the layer find new place to move it into to keep sorted order intact
+    auto glyph_layers = get_direct_sublayers(parent_layer);
+
+    auto it = std::lower_bound(glyph_layers.rbegin(), glyph_layers.rend(), name, [&](auto&& layer, const Glib::ustring n) {
+        auto label = layer->label();
+        if (!label) return false;
+
+        Glib::ustring temp(label);
+        return std::lexicographical_compare(temp.begin(), temp.end(), n.begin(), n.end());
+    });
+    SPObject* after = nullptr;
+    if (it != glyph_layers.rend()) {
+        after = *it;
+    }
+
+    // SPItem changeOrder messes up inserting into first position, so dropping to Node level
+    if (layer != after && parent_layer->getRepr() && layer->getRepr()) {
+        parent_layer->getRepr()->changeOrder(layer->getRepr(), after ? after->getRepr() : nullptr);
+    }
+
+    desktop->layerManager().renameLayer(layer, name.c_str(), false);
+}
+
+SPItem* get_layer_for_glyph(SPDesktop* desktop, const Glib::ustring& font, const Glib::ustring& name) {
+    if (!desktop || name.empty() || font.empty()) return nullptr;
+
+    auto parent_layer = find_layer(desktop, desktop->layerManager().currentRoot(), font);
+    if (!parent_layer) return nullptr;
+
+    return find_layer(desktop, parent_layer, name);
+}
+
+SPItem* get_or_create_layer_for_glyph(SPDesktop* desktop, const Glib::ustring& font, const Glib::ustring& name) {
+    if (!desktop || name.empty() || font.empty()) return nullptr;
+
+    auto& layers = desktop->layerManager();
+    auto parent_layer = find_layer(desktop, layers.currentRoot(), font);
+    if (!parent_layer) {
+        // create a new layer for a font
+        parent_layer = static_cast<SPItem*>(create_layer(layers.currentRoot(), layers.currentRoot(), Inkscape::LayerRelativePosition::LPOS_CHILD));
+        if (!parent_layer) return nullptr;
+
+        layers.renameLayer(parent_layer, font.c_str(), false);
+    }
+
+    if (auto layer = find_layer(desktop, parent_layer, name)) {
+        return layer;
+    }
+
+    // find the right place for a new layer, so they appear sorted
+    auto glyph_layers = get_direct_sublayers(parent_layer);
+    // auto& glyph_layers = parent_layer->children;
+    auto it = std::lower_bound(glyph_layers.rbegin(), glyph_layers.rend(), name, [&](auto&& layer, const Glib::ustring n) {
+        auto label = layer->label();
+        if (!label) return false;
+
+        Glib::ustring temp(label);
+        return std::lexicographical_compare(temp.begin(), temp.end(), n.begin(), n.end());
+    });
+    SPObject* insert = parent_layer;
+    Inkscape::LayerRelativePosition pos = Inkscape::LayerRelativePosition::LPOS_ABOVE;
+    if (it != glyph_layers.rend()) {
+        insert = *it;
+    }
+    else {
+        // auto first = std::find_if(glyph_layers.begin(), glyph_layers.end(), [&](auto&& obj) {
+            // return layers.isLayer(&obj);
+        // });
+        if (!glyph_layers.empty()) {
+            insert = glyph_layers.front();
+            pos = Inkscape::LayerRelativePosition::LPOS_BELOW;
+        }
+    }
+
+    // create a new layer for a glyph
+    auto layer = create_layer(parent_layer, insert, pos);
+    if (!layer) return nullptr;
+
+    layers.renameLayer(layer, name.c_str(), false);
+
+    DocumentUndo::done(desktop->getDocument(), _("Add layer"), "");
+    return cast<SPItem>(layer);
+}
+
+void SvgFontsDialog::create_glyphs_popup_menu(Gtk::Widget& parent, sigc::slot<void ()> rem)
 {
-    auto mi = Gtk::manage(new Gtk::MenuItem(_("_Remove"), true));
+    // - edit glyph (show its layer)
+    // - sort glyphs and their layers
+    // - remove current glyph
+    auto mi = Gtk::make_managed<Gtk::MenuItem>(_("_Edit current glyph"), true);
+    mi->show();
+    mi->signal_activate().connect([=](){
+        edit_glyph(get_selected_glyph());
+    });
+    _GlyphsContextMenu.append(*mi);
+
+    mi = Gtk::make_managed<Gtk::SeparatorMenuItem>();
+    mi->show();
+    _GlyphsContextMenu.append(*mi);
+
+    mi = Gtk::make_managed<Gtk::MenuItem>(_("_Sort glyphs"), true);
+    mi->show();
+    mi->signal_activate().connect([=](){
+        sort_glyphs(get_selected_spfont());
+    });
+    _GlyphsContextMenu.append(*mi);
+
+    mi = Gtk::make_managed<Gtk::SeparatorMenuItem>();
+    mi->show();
+    _GlyphsContextMenu.append(*mi);
+
+    mi = Gtk::make_managed<Gtk::MenuItem>(_("_Remove"), true);
     _GlyphsContextMenu.append(*mi);
     mi->signal_activate().connect(rem);
     mi->show();
+
     _GlyphsContextMenu.accelerate(parent);
 }
 
-void SvgFontsDialog::create_kerning_pairs_popup_menu(Gtk::Widget& parent, sigc::slot<void> rem)
+void SvgFontsDialog::create_kerning_pairs_popup_menu(Gtk::Widget& parent, sigc::slot<void ()> rem)
 {
     auto mi = Gtk::manage(new Gtk::MenuItem(_("_Remove"), true));
     _KerningPairsContextMenu.append(*mi);
@@ -286,7 +539,7 @@ void SvgFontsDialog::create_kerning_pairs_popup_menu(Gtk::Widget& parent, sigc::
     _KerningPairsContextMenu.accelerate(parent);
 }
 
-void SvgFontsDialog::create_fonts_popup_menu(Gtk::Widget& parent, sigc::slot<void> rem)
+void SvgFontsDialog::create_fonts_popup_menu(Gtk::Widget& parent, sigc::slot<void ()> rem)
 {
     auto mi = Gtk::manage(new Gtk::MenuItem(_("_Remove"), true));
     _FontsContextMenu.append(*mi);
@@ -307,16 +560,31 @@ void SvgFontsDialog::update_sensitiveness(){
     }
 }
 
-/* Add all fonts in the getDocument() to the combobox. */
-void SvgFontsDialog::update_fonts()
+Glib::ustring get_font_label(SPFont* font) {
+    if (!font) return Glib::ustring();
+
+    const gchar* label = font->label();
+    const gchar* id = font->getId();
+    return Glib::ustring(label ? label : (id ? id : "font"));
+};
+
+/** Add all fonts in the getDocument() to the combobox.
+ * This function is called when new document is selected as well as when SVG "definition" section changes.
+ * Try to detect if font(s) have actually been modified to eliminate some expensive refreshes.
+ */
+void SvgFontsDialog::update_fonts(bool document_replaced)
 {
-    std::vector<SPObject *> fonts = getDocument()->getResourceList( "font" );
+    std::vector<SPObject*> fonts;
+    if (auto document = getDocument()) {
+        fonts = document->getResourceList( "font" );
+    }
 
     auto children = _model->children();
     bool equal = false;
+    bool selected_font = false;
 
     // compare model and resources
-    if (children.size() == fonts.size()) {
+    if (!document_replaced && children.size() == fonts.size()) {
         equal = true; // assume they are the same
         auto it = fonts.begin();
         for (auto&& node : children) {
@@ -330,39 +598,42 @@ void SvgFontsDialog::update_fonts()
         }
     }
 
-    auto get_label = [](SPFont* font) {
-        const gchar* label = font->label();
-        const gchar* id = font->getId();
-        return Glib::ustring(label ? label : (id ? id : "font"));
-    };
-
     // rebuild model if list of fonts is different
     if (!equal) {
         _model->clear();
         for (auto font : fonts) {
             Gtk::TreeModel::Row row = *_model->append();
-            SPFont* f = SP_FONT(font);
+            auto f = cast<SPFont>(font);
             row[_columns.spfont] = f;
             row[_columns.svgfont] = new SvgFont(f);
-            row[_columns.label] = get_label(f);
+            row[_columns.label] = get_font_label(f);
         }
         if (!fonts.empty()) {
             // select a font, this dialog is disabled without a font
             auto selection = _FontsList.get_selection();
-            if (selection) selection->select(_model->get_iter("0"));
+            if (selection) {
+                selection->select(_model->get_iter("0"));
+                selected_font = true;
+            }
         }
     }
     else {
         // list of fonts is the same, but attributes may have changed
         auto it = fonts.begin();
         for (auto&& node : children) {
-            if (auto font = dynamic_cast<SPFont*>(*it++)) {
-                node[_columns.label] = get_label(font);
+            if (auto font = cast<SPFont>(*it++)) {
+                node[_columns.label] = get_font_label(font);
             }
         }
     }
 
-    update_sensitiveness();
+    if (document_replaced && !selected_font) {
+        // replace fonts, they are stale
+        font_selected(nullptr, nullptr);
+    }
+    else {
+        update_sensitiveness();
+    }
 }
 
 void SvgFontsDialog::on_preview_text_changed(){
@@ -388,36 +659,41 @@ void SvgFontsDialog::on_kerning_pair_selection_changed(){
 
 void SvgFontsDialog::update_global_settings_tab(){
     SPFont* font = get_selected_spfont();
-    if (!font) return;
+    if (!font) {
+        //TODO: perhaps reset all values when there's no font
+        _familyname_entry->set_text("");
+        return;
+    }
 
     _horiz_adv_x_spin->set_value(font->horiz_adv_x);
     _horiz_origin_x_spin->set_value(font->horiz_origin_x);
     _horiz_origin_y_spin->set_value(font->horiz_origin_y);
 
     for (auto& obj: font->children) {
-        if (SP_IS_FONTFACE(&obj)){
-            _familyname_entry->set_text((SP_FONTFACE(&obj))->font_family);
-            _units_per_em_spin->set_value((SP_FONTFACE(&obj))->units_per_em);
-            _ascent_spin->set_value((SP_FONTFACE(&obj))->ascent);
-            _descent_spin->set_value((SP_FONTFACE(&obj))->descent);
-            _x_height_spin->set_value((SP_FONTFACE(&obj))->x_height);
-            _cap_height_spin->set_value((SP_FONTFACE(&obj))->cap_height);
+        if (is<SPFontFace>(&obj)){
+            _familyname_entry->set_text((cast<SPFontFace>(&obj))->font_family);
+            _units_per_em_spin->set_value((cast<SPFontFace>(&obj))->units_per_em);
+            _ascent_spin->set_value((cast<SPFontFace>(&obj))->ascent);
+            _descent_spin->set_value((cast<SPFontFace>(&obj))->descent);
+            _x_height_spin->set_value((cast<SPFontFace>(&obj))->x_height);
+            _cap_height_spin->set_value((cast<SPFontFace>(&obj))->cap_height);
         }
     }
 }
 
-void SvgFontsDialog::on_font_selection_changed(){
-    SPFont* spfont = this->get_selected_spfont();
-    if (!spfont) return;
+void SvgFontsDialog::font_selected(SvgFont* svgfont, SPFont* spfont) {
+    // in update
+    auto scoped(_update.block());
 
-    SvgFont* svgfont = this->get_selected_svgfont();
     first_glyph.update(spfont);
     second_glyph.update(spfont);
     kerning_preview.set_svgfont(svgfont);
     _font_da.set_svgfont(svgfont);
     _font_da.redraw();
+    _glyph_renderer->set_svg_font(svgfont);
+    _glyph_cell_renderer->set_svg_font(svgfont);
 
-    kerning_slider->set_range(0, spfont->horiz_adv_x);
+    kerning_slider->set_range(0, spfont ? spfont->horiz_adv_x : 0);
     kerning_slider->set_draw_value(false);
     kerning_slider->set_value(0);
 
@@ -425,6 +701,12 @@ void SvgFontsDialog::on_font_selection_changed(){
     populate_glyphs_box();
     populate_kerning_pairs_box();
     update_sensitiveness();
+}
+
+void SvgFontsDialog::on_font_selection_changed(){
+    SPFont* spfont = get_selected_spfont();
+    SvgFont* svgfont = get_selected_svgfont();
+    font_selected(svgfont, spfont);
 }
 
 SPGlyphKerning* SvgFontsDialog::get_selected_kerning_pair()
@@ -451,12 +733,116 @@ SPFont* SvgFontsDialog::get_selected_spfont()
     return nullptr;
 }
 
+Gtk::TreeModel::iterator SvgFontsDialog::get_selected_glyph_iter() {
+    if (_GlyphsListScroller.get_visible()) {
+        if (auto selection = _GlyphsList.get_selection()) {
+            Gtk::TreeModel::iterator it = selection->get_selected();
+            return it;
+        }
+    }
+    else {
+        std::vector<Gtk::TreePath> selected = _glyphs_grid.get_selected_items();
+        if (selected.size() == 1) {
+            Gtk::ListStore::iterator it = _GlyphsListStore->get_iter(selected.front());
+            return it;
+        }
+    }
+    return Gtk::TreeModel::iterator();
+}
+
 SPGlyph* SvgFontsDialog::get_selected_glyph()
 {
-    Gtk::TreeModel::iterator i = _GlyphsList.get_selection()->get_selected();
-    if(i)
-        return (*i)[_GlyphsListColumns.glyph_node];
+    if (auto it = get_selected_glyph_iter()) {
+        return (*it)[_GlyphsListColumns.glyph_node];
+    }
     return nullptr;
+}
+
+void SvgFontsDialog::set_selected_glyph(SPGlyph* glyph) {
+    if (!glyph) return;
+
+    _GlyphsListStore->foreach_iter([=](const Gtk::TreeModel::iterator& it) {
+        if (it->get_value(_GlyphsListColumns.glyph_node) == glyph) {
+            if (auto selection = _GlyphsList.get_selection()) {
+                selection->select(it);
+            }
+            auto selected_item = _GlyphsListStore->get_path(it);
+            _glyphs_grid.select_path(selected_item);
+            return true; // stop
+        }
+        return false; // continue
+    });
+}
+
+SPGuide* get_guide(SPDocument& doc, const Glib::ustring& id) {
+    auto object = doc.getObjectById(id);
+    if (!object) return nullptr;
+
+    // get guide line
+    if (auto guide = cast<SPGuide>(object)) {
+        return guide;
+    }
+    // remove colliding object
+    object->deleteObject();
+    return nullptr;
+}
+
+SPGuide* create_guide(SPDocument& doc, double x0, double y0, double x1, double y1) {
+    return SPGuide::createSPGuide(&doc, Geom::Point(x0, y1), Geom::Point(x1, y1));
+}
+
+void set_up_typography_canvas(SPDocument* document, double em, double asc, double cap, double xheight, double des) {
+    if (!document || em <= 0) return;
+
+    // set size and viewbox
+    auto size = Inkscape::Util::Quantity(em, "px");
+    bool change_size = false;
+    document->setWidthAndHeight(size, size, change_size);
+    document->setViewBox(Geom::Rect::from_xywh(0, 0, em, em));
+
+    // baseline
+    double base = des;
+    double ascPos = base + asc;
+    double capPos = base + cap;
+    double xPos = base + xheight;
+    double desPos = base - des;
+
+    if (!document->is_yaxisdown()) {
+        base = size.quantity - des;
+        ascPos = base - asc;
+        capPos = base - cap;
+        xPos = base - xheight;
+        desPos = base + des;
+    }
+
+    // add/move guide lines
+    struct { double pos; const char* name; const char* id; } guides[5] = {
+        {ascPos, _("ascender"), "ink-font-guide-ascender"},
+        {capPos, _("caps"), "ink-font-guide-caps"},
+        {xPos, _("x-height"), "ink-font-guide-x-height"},
+        {base, _("baseline"), "ink-font-guide-baseline"},
+        {desPos, _("descender"), "ink-font-guide-descender"},
+    };
+
+    double left = 0;
+    double right = em;
+
+    for (auto&& g : guides) {
+        double y = em - g.pos;
+        auto guide = get_guide(*document, g.id);
+        if (guide) {
+            guide->set_locked(false, true);
+            guide->moveto(Geom::Point(left, y), true);
+        }
+        else {
+            guide = create_guide(*document, left, y, right, y);
+            guide->getRepr()->setAttributeOrRemoveIfEmpty("id", g.id);
+        }
+        guide->set_label(g.name, true);
+        guide->set_locked(true, true);
+    }
+
+    DocumentUndo::done(document, _("Set up typography canvas"), "");
 }
 
 const int MARGIN_SPACE = 4;
@@ -489,11 +875,11 @@ Gtk::Box* SvgFontsDialog::global_settings_tab(){
     _horiz_origin_y_spin = new AttrSpin( this, (gchar*) _("Horizontal origin Y:"), _("Default Y-coordinate of the origin of a glyph (for horizontal text)"), SPAttr::HORIZ_ORIGIN_Y);
     _font_face_label     = new Gtk::Label(Glib::ustring("<b>") + _("Font face attributes") + "</b>", Gtk::ALIGN_START, Gtk::ALIGN_CENTER);
     _familyname_entry    = new AttrEntry(this, (gchar*) _("Family name:"), _("Name of the font as it appears in font selectors and css font-family properties"), SPAttr::FONT_FAMILY);
-    _units_per_em_spin   = new AttrSpin( this, (gchar*) _("Units per em:"), _("Display units per <italic>em</italic> (nominally width of 'M' character)"), SPAttr::UNITS_PER_EM);
-    _ascent_spin         = new AttrSpin( this, (gchar*) _("Ascent:"),      _("Amount of space taken up by ascenders like the tall line on the letter 'h'"), SPAttr::ASCENT);
-    _descent_spin        = new AttrSpin( this, (gchar*) _("Descent:"),     _("Amount of space taken up by descenders like the tail on the letter 'g'"), SPAttr::DESCENT);
-    _cap_height_spin     = new AttrSpin( this, (gchar*) _("Cap height:"),  _("The height of a capital letter above the baseline like the letter 'H' or 'I'"), SPAttr::CAP_HEIGHT);
-    _x_height_spin       = new AttrSpin( this, (gchar*) _("x height:"),    _("The height of a lower-case letter above the baseline like the letter 'x'"), SPAttr::X_HEIGHT);
+    _units_per_em_spin   = new AttrSpin( this, (gchar*) _("Em-size:"), _("Display units per <italic>em</italic> (nominally width of 'M' character)"), SPAttr::UNITS_PER_EM);
+    _ascent_spin         = new AttrSpin( this, (gchar*) _("Ascender:"),      _("Amount of space taken up by ascenders like the tall line on the letter 'h'"), SPAttr::ASCENT);
+    _cap_height_spin     = new AttrSpin( this, (gchar*) _("Caps height:"),  _("The height of a capital letter above the baseline like the letter 'H' or 'I'"), SPAttr::CAP_HEIGHT);
+    _x_height_spin       = new AttrSpin( this, (gchar*) _("x-height:"),    _("The height of a lower-case letter above the baseline like the letter 'x'"), SPAttr::X_HEIGHT);
+    _descent_spin        = new AttrSpin( this, (gchar*) _("Descender:"),     _("Amount of space taken up by descenders like the tail on the letter 'g'"), SPAttr::DESCENT);
 
     //_descent_spin->set_range(-4096,0);
     _font_label->set_use_markup();
@@ -520,12 +906,26 @@ Gtk::Box* SvgFontsDialog::global_settings_tab(){
     _grid.attach(*_familyname_entry->get_label(), 0, row);
     _grid.attach(*_familyname_entry->get_entry(), 1, row++, 2);
 
-    SvgFontsDialog::AttrSpin* face[] = {_units_per_em_spin, _ascent_spin, _descent_spin, _cap_height_spin, _x_height_spin};
+    SvgFontsDialog::AttrSpin* face[] = {_units_per_em_spin, _ascent_spin, _cap_height_spin, _x_height_spin, _descent_spin};
     for (auto spin : face) {
         spin->get_label()->set_margin_start(indent);
         _grid.attach(*spin->get_label(), 0, row);
         _grid.attach(*spin->getSpin(), 1, row++);
     }
+    auto setup = Gtk::make_managed<Gtk::Button>(_("Set up canvas"));
+    _grid.attach(*setup, 0, row++, 2);
+    setup->set_halign(Gtk::ALIGN_START);
+    setup->signal_clicked().connect([=](){
+        // set up typography canvas
+        set_up_typography_canvas(
+            getDocument(),
+            _units_per_em_spin->getSpin()->get_value(),
+            _ascent_spin->getSpin()->get_value(),
+            _cap_height_spin->getSpin()->get_value(),
+            _x_height_spin->getSpin()->get_value(),
+            _descent_spin->getSpin()->get_value()
+        );
+    });
 
     global_vbox.set_border_width(2);
     global_vbox.pack_start(_grid, false, true);
@@ -537,37 +937,52 @@ Gtk::Box* SvgFontsDialog::global_settings_tab(){
     return &global_vbox;
 }
 
+void SvgFontsDialog::set_glyph_row(const Gtk::TreeRow& row, SPGlyph& glyph) {
+    auto unicode_name = create_unicode_name(glyph.unicode, 3);
+    row[_GlyphsListColumns.glyph_node] = &glyph;
+    row[_GlyphsListColumns.glyph_name] = glyph.glyph_name;
+    row[_GlyphsListColumns.unicode]    = glyph.unicode;
+    row[_GlyphsListColumns.UplusCode]  = unicode_name;
+    row[_GlyphsListColumns.advance]    = glyph.horiz_adv_x;
+    row[_GlyphsListColumns.name_markup] = "<small>" + Glib::Markup::escape_text(get_glyph_synthetic_name(glyph)) + "</small>";
+}
+
 void
 SvgFontsDialog::populate_glyphs_box()
 {
     if (!_GlyphsListStore) return;
 
+    _GlyphsListStore->freeze_notify();
+
     // try to keep selected glyph
     Gtk::TreeModel::Path selected_item;
-    if (auto selection = _GlyphsList.get_selection()) {
-        if (auto selected = selection->get_selected()) {
-            selected_item = _GlyphsListStore->get_path(selected);
-        }
+    if (auto selected = get_selected_glyph_iter()) {
+        selected_item = _GlyphsListStore->get_path(selected);
     }
     _GlyphsListStore->clear();
 
-    SPFont* spfont = this->get_selected_spfont();
+    SPFont* spfont = get_selected_spfont();
     _glyphs_observer.set(spfont);
 
-    for (auto& node: spfont->children) {
-        if (SP_IS_GLYPH(&node)){
-            Gtk::TreeModel::Row row = *(_GlyphsListStore->append());
-            row[_GlyphsListColumns.glyph_node] =  static_cast<SPGlyph*>(&node);
-            row[_GlyphsListColumns.glyph_name] = (static_cast<SPGlyph*>(&node))->glyph_name;
-            row[_GlyphsListColumns.unicode]    = (static_cast<SPGlyph*>(&node))->unicode;
-            row[_GlyphsListColumns.advance]    = (static_cast<SPGlyph*>(&node))->horiz_adv_x;
+    if (spfont) {
+        for (auto& node: spfont->children) {
+            if (is<SPGlyph>(&node)) {
+                auto& glyph = static_cast<SPGlyph&>(node);
+                Gtk::TreeModel::Row row = *_GlyphsListStore->append();
+                set_glyph_row(row, glyph);
+            }
+        }
+
+        if (!selected_item.empty()) {
+            if (auto selection = _GlyphsList.get_selection()) {
+                selection->select(selected_item);
+                _GlyphsList.scroll_to_row(selected_item);
+            }
+            _glyphs_grid.select_path(selected_item);
         }
     }
 
-    if (!selected_item.empty()) {
-        _GlyphsList.get_selection()->select(selected_item);
-        _GlyphsList.scroll_to_row(selected_item);
-    }
+    _GlyphsListStore->thaw_notify();
 }
 
 void
@@ -577,81 +992,121 @@ SvgFontsDialog::populate_kerning_pairs_box()
 
     _KerningPairsListStore->clear();
 
-    SPFont* spfont = this->get_selected_spfont();
-
-    for (auto& node: spfont->children) {
-        if (SP_IS_HKERN(&node)){
-            Gtk::TreeModel::Row row = *(_KerningPairsListStore->append());
-            row[_KerningPairsListColumns.first_glyph] = (static_cast<SPGlyphKerning*>(&node))->u1->attribute_string().c_str();
-            row[_KerningPairsListColumns.second_glyph] = (static_cast<SPGlyphKerning*>(&node))->u2->attribute_string().c_str();
-            row[_KerningPairsListColumns.kerning_value] = (static_cast<SPGlyphKerning*>(&node))->k;
-            row[_KerningPairsListColumns.spnode] = static_cast<SPGlyphKerning*>(&node);
+    if (SPFont* spfont = get_selected_spfont()) {
+        for (auto& node: spfont->children) {
+            if (is<SPHkern>(&node)){
+                Gtk::TreeModel::Row row = *(_KerningPairsListStore->append());
+                row[_KerningPairsListColumns.first_glyph] = (static_cast<SPGlyphKerning*>(&node))->u1->attribute_string().c_str();
+                row[_KerningPairsListColumns.second_glyph] = (static_cast<SPGlyphKerning*>(&node))->u2->attribute_string().c_str();
+                row[_KerningPairsListColumns.kerning_value] = (static_cast<SPGlyphKerning*>(&node))->k;
+                row[_KerningPairsListColumns.spnode] = static_cast<SPGlyphKerning*>(&node);
+            }
         }
     }
 }
 
-SPGlyph *new_glyph(SPDocument* document, SPFont *font, const int count)
-{
-    g_return_val_if_fail(font != nullptr, NULL);
-    Inkscape::XML::Document *xml_doc = document->getReprDoc();
+// update existing glyph in the tree model
+void SvgFontsDialog::update_glyph(SPGlyph* glyph) {
+    if (_update.pending() || !glyph) return;
 
-    // create a new glyph
-    Inkscape::XML::Node *repr;
-    repr = xml_doc->createElement("svg:glyph");
-
-    std::ostringstream os;
-    os << _("glyph") << " " << count;
-    repr->setAttribute("glyph-name", os.str());
-
-    // Append the new glyph node to the current font
-    font->getRepr()->appendChild(repr);
-    Inkscape::GC::release(repr);
-
-    // get corresponding object
-    SPGlyph *g = SP_GLYPH( document->getObjectByRepr(repr) );
-
-    g_assert(g != nullptr);
-    g_assert(SP_IS_GLYPH(g));
-
-    return g;
+    _GlyphsListStore->foreach_iter([&](const Gtk::TreeModel::iterator& it) {
+        if (it->get_value(_GlyphsListColumns.glyph_node) == glyph) {
+            const Gtk::TreeRow& row = *it;
+            set_glyph_row(row, *glyph);
+            return true; // stop
+        }
+        return false; // continue
+    });
 }
 
-void SvgFontsDialog::update_glyphs(){
+void SvgFontsDialog::update_glyphs(SPGlyph* changed_glyph) {
+    if (_update.pending()) return;
+
     SPFont* font = get_selected_spfont();
     if (!font) return;
-    populate_glyphs_box();
+
+    if (changed_glyph) {
+        update_glyph(changed_glyph);
+    }
+    else {
+        populate_glyphs_box();
+    }
+
     populate_kerning_pairs_box();
-    first_glyph.update(font);
-    second_glyph.update(font);
-    get_selected_svgfont()->refresh();
+    refresh_svgfont();
+}
+
+void SvgFontsDialog::refresh_svgfont() {
+    if (auto font = get_selected_svgfont()) {
+        font->refresh();
+    }
     _font_da.redraw();
 }
 
 void SvgFontsDialog::add_glyph(){
-    const int count = _GlyphsListStore->children().size();
-    if (auto document = getDocument()) {
-        new_glyph(document, get_selected_spfont(), count+1);
-        DocumentUndo::done(document, SP_VERB_DIALOG_SVG_FONTS, _("Add glyph"));
-        update_glyphs();
-    }
-}
+    auto document = getDocument();
+    if (!document) return;
+    auto font = get_selected_spfont();
+    if (!font) return;
 
-Geom::PathVector
-SvgFontsDialog::flip_coordinate_system(Geom::PathVector pathv){
-    double units_per_em = 1024;
-    for (auto& obj: get_selected_spfont()->children) {
-        if (SP_IS_FONTFACE(&obj)){
-            //XML Tree being directly used here while it shouldn't be.
-            units_per_em = obj.getRepr()->getAttributeDouble("units-per-em", units_per_em);
+    auto glyphs = _GlyphsListStore->children();
+    // initialize "unicode" field; if there are glyphs look for the last one and take next unicode
+    gunichar unicode = ' ';
+    if (!glyphs.empty()) {
+        const auto& last = glyphs[glyphs.size() - 1];
+        if (SPGlyph* last_glyph = last[_GlyphsListColumns.glyph_node]) {
+            const Glib::ustring& code = last_glyph->unicode;
+            if (!code.empty()) {
+                auto value = code[0];
+                // skip control chars 7f-9f
+                if (value == 0x7e) value = 0x9f;
+                // wrap around
+                if (value == 0x10ffff) value = 0x1f;
+                unicode = value + 1;
+            }
         }
     }
-    double baseline_offset = units_per_em - get_selected_spfont()->horiz_origin_y;
-    //This matrix flips y-axis and places the origin at baseline
-    Geom::Affine m(Geom::Coord(1),Geom::Coord(0),Geom::Coord(0),Geom::Coord(-1),Geom::Coord(0),Geom::Coord(baseline_offset));
-    return pathv*m;
+    auto str = Glib::ustring(1, unicode);
+
+    // empty name to begin with
+    SPGlyph* glyph = font->create_new_glyph("", str.c_str());
+    DocumentUndo::done(document, _("Add glyph"), "");
+
+    // select newly added glyph
+    set_selected_glyph(glyph);
 }
 
-void SvgFontsDialog::set_glyph_description_from_selected_path(){
+double get_font_units_per_em(const SPFont* font) {
+    double units_per_em = 0.0;
+    if (font) {
+        for (auto& obj: font->children) {
+            if (is<SPFontFace>(&obj)){
+                //XML Tree being directly used here while it shouldn't be.
+                units_per_em = obj.getRepr()->getAttributeDouble("units-per-em", units_per_em);
+                break;
+            }
+        }
+    }
+    return units_per_em;
+}
+
+Geom::PathVector flip_coordinate_system(Geom::PathVector pathv, const SPFont* font, double units_per_em) {
+    if (!font) return pathv;
+
+    if (units_per_em <= 0) {
+        g_warning("Units per em not defined, path will be misplaced.");
+    }
+
+    double baseline_offset = units_per_em - font->horiz_origin_y;
+    // This matrix flips y-axis and places the origin at baseline
+    Geom::Affine m(1, 0, 0, -1, 0, baseline_offset);
+    return pathv * m;
+}
+
+void SvgFontsDialog::set_glyph_description_from_selected_path() {
+    auto font = get_selected_spfont();
+    if (!font) return;
+
     auto selection = getSelection();
     if (!selection)
         return;
@@ -680,14 +1135,18 @@ void SvgFontsDialog::set_glyph_description_from_selected_path(){
 
     Geom::PathVector pathv = sp_svg_read_pathv(node->attribute("d"));
 
-	//XML Tree being directly used here while it shouldn't be.
-    glyph->setAttribute("d", sp_svg_write_path(flip_coordinate_system(pathv)));
-    DocumentUndo::done(getDocument(), SP_VERB_DIALOG_SVG_FONTS, _("Set glyph curves"));
+    auto units_per_em = get_font_units_per_em(font);
+    //XML Tree being directly used here while it shouldn't be.
+    glyph->setAttribute("d", sp_svg_write_path(flip_coordinate_system(pathv, font, units_per_em)));
+    DocumentUndo::done(getDocument(), _("Set glyph curves"), "");
 
-    update_glyphs();
+    update_glyphs(glyph);
 }
 
 void SvgFontsDialog::missing_glyph_description_from_selected_path(){
+    auto font = get_selected_spfont();
+    if (!font) return;
+
     auto selection = getSelection();
     if (!selection)
         return;
@@ -705,74 +1164,98 @@ void SvgFontsDialog::missing_glyph_description_from_selected_path(){
         char *msg = _("The selected object does not have a <b>path</b> description.");
         msgStack->flash(Inkscape::ERROR_MESSAGE, msg);
         return;
-    } //TODO: //Is there a better way to tell it to to the user?
+    } //TODO: //Is there a better way to tell it to the user?
 
     Geom::PathVector pathv = sp_svg_read_pathv(node->attribute("d"));
 
-    for (auto& obj: get_selected_spfont()->children) {
-        if (SP_IS_MISSING_GLYPH(&obj)){
-
+    auto units_per_em = get_font_units_per_em(font);
+    for (auto& obj: font->children) {
+        if (is<SPMissingGlyph>(&obj)){
             //XML Tree being directly used here while it shouldn't be.
-            obj.setAttribute("d", sp_svg_write_path(flip_coordinate_system(pathv)));
-            DocumentUndo::done(getDocument(), SP_VERB_DIALOG_SVG_FONTS, _("Set glyph curves"));
+            obj.setAttribute("d", sp_svg_write_path(flip_coordinate_system(pathv, font, units_per_em)));
+            DocumentUndo::done(getDocument(),  _("Set glyph curves"), "");
         }
     }
 
-    update_glyphs();
+    refresh_svgfont();
 }
 
 void SvgFontsDialog::reset_missing_glyph_description(){
     for (auto& obj: get_selected_spfont()->children) {
-        if (SP_IS_MISSING_GLYPH(&obj)){
+        if (is<SPMissingGlyph>(&obj)){
             //XML Tree being directly used here while it shouldn't be.
             obj.setAttribute("d", "M0,0h1000v1024h-1000z");
-            DocumentUndo::done(getDocument(), SP_VERB_DIALOG_SVG_FONTS, _("Reset missing-glyph"));
+            DocumentUndo::done(getDocument(), _("Reset missing-glyph"), "");
         }
     }
-    update_glyphs();
+    refresh_svgfont();
+}
+
+void change_glyph_attribute(SPDesktop* desktop, SPGlyph& glyph, std::function<void ()> change) {
+    assert(glyph.parent);
+
+    auto name = get_glyph_full_name(glyph);
+    auto font_label = glyph.parent->label();
+    auto layer = get_layer_for_glyph(desktop, font_label, name);
+
+    change();
+
+    if (!layer) return;
+
+    name = get_glyph_full_name(glyph);
+    font_label = glyph.parent->label();
+    rename_glyph_layer(desktop, layer, font_label, name);
 }
 
 void SvgFontsDialog::glyph_name_edit(const Glib::ustring&, const Glib::ustring& str){
-    Gtk::TreeModel::iterator i = _GlyphsList.get_selection()->get_selected();
-    if (!i) return;
+    SPGlyph* glyph = get_selected_glyph();
+    if (!glyph) return;
 
-    SPGlyph* glyph = (*i)[_GlyphsListColumns.glyph_node];
-    //XML Tree being directly used here while it shouldn't be.
-    glyph->setAttribute("glyph-name", str);
+    if (glyph->glyph_name == str) return; // no change
 
-    DocumentUndo::done(getDocument(), SP_VERB_DIALOG_SVG_FONTS, _("Edit glyph name"));
-    update_glyphs();
+    change_glyph_attribute(getDesktop(), *glyph, [=](){
+        //XML Tree being directly used here while it shouldn't be.
+        glyph->setAttribute("glyph-name", str);
+
+        DocumentUndo::done(getDocument(), _("Edit glyph name"), "");
+        update_glyphs(glyph);
+    });
 }
 
 void SvgFontsDialog::glyph_unicode_edit(const Glib::ustring&, const Glib::ustring& str){
-    Gtk::TreeModel::iterator i = _GlyphsList.get_selection()->get_selected();
-    if (!i) return;
+    SPGlyph* glyph = get_selected_glyph();
+    if (!glyph) return;
 
-    SPGlyph* glyph = (*i)[_GlyphsListColumns.glyph_node];
-    //XML Tree being directly used here while it shouldn't be.
-    glyph->setAttribute("unicode", str);
+    if (glyph->unicode == str) return; // no change
 
-    DocumentUndo::done(getDocument(), SP_VERB_DIALOG_SVG_FONTS, _("Set glyph unicode"));
+    change_glyph_attribute(getDesktop(), *glyph, [=]() {
+        // XML Tree being directly used here while it shouldn't be.
+        glyph->setAttribute("unicode", str);
 
-    update_glyphs();
+        DocumentUndo::done(getDocument(), _("Set glyph unicode"), "");
+        update_glyphs(glyph);
+    });
 }
 
 void SvgFontsDialog::glyph_advance_edit(const Glib::ustring&, const Glib::ustring& str){
-    Gtk::TreeModel::iterator i = _GlyphsList.get_selection()->get_selected();
-    if (!i) return;
+    SPGlyph* glyph = get_selected_glyph();
+    if (!glyph) return;
 
-    SPGlyph* glyph = (*i)[_GlyphsListColumns.glyph_node];
+    if (auto val = glyph->getAttribute("horiz-adv-x")) {
+        if (str == val) return; // no change
+    }
+
     //XML Tree being directly used here while it shouldn't be.
     std::istringstream is(str.raw());
     double value;
     // Check if input valid
     if ((is >> value)) {
         glyph->setAttribute("horiz-adv-x", str);
-        DocumentUndo::done(getDocument(), SP_VERB_DIALOG_SVG_FONTS, _("Set glyph advance"));
+        DocumentUndo::done(getDocument(),  _("Set glyph advance"), "");
 
-        update_glyphs();
+        update_glyphs(glyph);
     } else {
-        std::cerr << "SvgFontDialog::glyph_advance_edit: Error in input: " << str << std::endl;
+        std::cerr << "SvgFontDialog::glyph_advance_edit: Error in input: " << str.raw() << std::endl;
     }
 }
 
@@ -782,50 +1265,104 @@ void SvgFontsDialog::remove_selected_font(){
 
     //XML Tree being directly used here while it shouldn't be.
     sp_repr_unparent(font->getRepr());
-    DocumentUndo::done(getDocument(), SP_VERB_DIALOG_SVG_FONTS, _("Remove font"));
+    DocumentUndo::done(getDocument(), _("Remove font"), "");
 
-    update_fonts();
+    update_fonts(false);
 }
 
 void SvgFontsDialog::remove_selected_glyph(){
-    if(!_GlyphsList.get_selection()) return;
+    SPGlyph* glyph = get_selected_glyph();
+    if (!glyph) return;
 
-    Gtk::TreeModel::iterator i = _GlyphsList.get_selection()->get_selected();
-    if(!i) return;
-
-    SPGlyph* glyph = (*i)[_GlyphsListColumns.glyph_node];
-
-	//XML Tree being directly used here while it shouldn't be.
+    //XML Tree being directly used here while it shouldn't be.
     sp_repr_unparent(glyph->getRepr());
-    DocumentUndo::done(getDocument(), SP_VERB_DIALOG_SVG_FONTS, _("Remove glyph"));
+    DocumentUndo::done(getDocument(), _("Remove glyph"), "");
 
     update_glyphs();
 }
 
-void SvgFontsDialog::remove_selected_kerning_pair(){
-    if(!_KerningPairsList.get_selection()) return;
+void SvgFontsDialog::remove_selected_kerning_pair() {
+    SPGlyphKerning* pair = get_selected_kerning_pair();
+    if (!pair) return;
 
-    Gtk::TreeModel::iterator i = _KerningPairsList.get_selection()->get_selected();
-    if(!i) return;
-
-    SPGlyphKerning* pair = (*i)[_KerningPairsListColumns.spnode];
-
-	//XML Tree being directly used here while it shouldn't be.
+    //XML Tree being directly used here while it shouldn't be.
     sp_repr_unparent(pair->getRepr());
-    DocumentUndo::done(getDocument(), SP_VERB_DIALOG_SVG_FONTS, _("Remove kerning pair"));
+    DocumentUndo::done(getDocument(), _("Remove kerning pair"), "");
 
     update_glyphs();
 }
 
-Gtk::Box* SvgFontsDialog::glyphs_tab(){
+Inkscape::XML::Node* create_path_from_glyph(const SPGlyph& glyph) {
+    Geom::PathVector pathv = sp_svg_read_pathv(glyph.getAttribute("d"));
+    auto path = glyph.document->getReprDoc()->createElement("svg:path");
+    // auto path = new SPPath();
+    auto font = cast<SPFont>(glyph.parent);
+    auto units_per_em = get_font_units_per_em(font);
+    path->setAttribute("d", sp_svg_write_path(flip_coordinate_system(pathv, font, units_per_em)));
+    return path;
+}
+
+// switch to a glyph layer (and create this dedicated layer if necessary)
+void SvgFontsDialog::edit_glyph(SPGlyph* glyph) {
+    if (!glyph || !glyph->parent) return;
+
+    auto desktop = getDesktop();
+    if (!desktop) return;
+    auto document = getDocument();
+    if (!document) return;
+
+    // glyph's full name to match layer name
+    auto name = get_glyph_full_name(*glyph);
+    if (name.empty()) return;
+    // font's name to match parent layer name
+    auto font_label = get_font_label(cast<SPFont>(glyph->parent));
+    if (font_label.empty()) return;
+
+    auto layer = get_or_create_layer_for_glyph(desktop, font_label, name);
+    if (!layer) return;
+
+    // is layer empty?
+    if (!layer->hasChildren()) {
+        // since layer is empty try to initialize it by copying font glyph into it
+        auto path = create_path_from_glyph(*glyph);
+        if (path) {
+            // layer->attach(path, nullptr);
+            layer->addChild(path);
+        }
+    }
+
+    auto& layers = desktop->layerManager();
+    // set layer as "solo" - only one visible and unlocked
+    if (layers.isLayer(layer) && layer != layers.currentRoot()) {
+        layers.setCurrentLayer(layer, true);
+        layers.toggleLayerSolo(layer, true);
+        layers.toggleLockOtherLayers(layer, true);
+        DocumentUndo::done(document, _("Toggle layer solo"), "");
+    }
+}
+
+void SvgFontsDialog::set_glyphs_view_mode(bool list) {
+    if (list) {
+        _glyphs_icon_scroller.hide();
+        _GlyphsListScroller.show();
+    }
+    else {
+        _GlyphsListScroller.hide();
+        _glyphs_icon_scroller.show();
+    }
+}
+
+Gtk::Box* SvgFontsDialog::glyphs_tab() {
     _GlyphsList.signal_button_release_event().connect_notify(sigc::mem_fun(*this, &SvgFontsDialog::glyphs_list_button_release));
+    _glyphs_grid.signal_button_release_event().connect_notify([=](GdkEventButton* event){ glyphs_list_button_release(event); });
     create_glyphs_popup_menu(_GlyphsList, sigc::mem_fun(*this, &SvgFontsDialog::remove_selected_glyph));
 
     auto missing_glyph = Gtk::make_managed<Gtk::Expander>();
     missing_glyph->set_label(_("Missing glyph"));
     Gtk::Box* missing_glyph_hbox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 4));
     missing_glyph->add(*missing_glyph_hbox);
-    Gtk::Label* missing_glyph_label = Gtk::manage(new Gtk::Label(_("Missing glyph:")));
+    missing_glyph->set_valign(Gtk::ALIGN_CENTER);
+
     missing_glyph_hbox->set_hexpand(false);
     missing_glyph_hbox->pack_start(missing_glyph_button, false,false);
     missing_glyph_hbox->pack_start(missing_glyph_reset_button, false,false);
@@ -842,43 +1379,150 @@ Gtk::Box* SvgFontsDialog::glyphs_tab(){
 
     _GlyphsListScroller.set_policy(Gtk::POLICY_NEVER, Gtk::POLICY_ALWAYS);
     _GlyphsListScroller.add(_GlyphsList);
-    _GlyphsListStore = Gtk::ListStore::create(_GlyphsListColumns);
+    fix_inner_scroll(&_GlyphsListScroller);
     _GlyphsList.set_model(_GlyphsListStore);
-    _GlyphsList.append_column_editable(_("Glyph name"),      _GlyphsListColumns.glyph_name);
-    _GlyphsList.append_column_editable(_("Matching string"), _GlyphsListColumns.unicode);
+    _GlyphsList.set_enable_search(false);
+
+    _glyph_renderer = Gtk::manage(new SvgGlyphRenderer());
+    const int size = 20; // arbitrarily chosen to keep glyphs small but still legible
+    _glyph_renderer->set_font_size(size * 9 / 10);
+    _glyph_renderer->set_cell_size(size * 3 / 2, size);
+    _glyph_renderer->set_tree(&_GlyphsList);
+    _glyph_renderer->signal_clicked().connect([=](const GdkEvent*, const Glib::ustring& unicodes) {
+        // set preview: show clicked glyph only
+        _preview_entry.set_text(unicodes);
+    });
+    auto col_index = _GlyphsList.append_column(_("Glyph"), *_glyph_renderer) - 1;
+    if (auto column = _GlyphsList.get_column(col_index)) {
+        column->add_attribute(_glyph_renderer->property_glyph(), _GlyphsListColumns.unicode);
+    }
+    _GlyphsList.append_column_editable(_("Name"), _GlyphsListColumns.glyph_name);
+    _GlyphsList.append_column_editable(_("Characters"), _GlyphsListColumns.unicode);
+    _GlyphsList.append_column(_("Unicode"), _GlyphsListColumns.UplusCode);
     _GlyphsList.append_column_numeric_editable(_("Advance"), _GlyphsListColumns.advance, "%.2f");
+    _GlyphsList.show();
+    _GlyphsList.signal_row_activated().connect([=](const Gtk::TreeModel::Path& path, Gtk::TreeViewColumn*) {
+        edit_glyph(get_selected_glyph());
+    });
+
     Gtk::Box* hb = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 4));
     add_glyph_button.set_image_from_icon_name("list-add");
+    add_glyph_button.set_tooltip_text(_("Add new glyph"));
     add_glyph_button.signal_clicked().connect(sigc::mem_fun(*this, &SvgFontsDialog::add_glyph));
     remove_glyph_button.set_image_from_icon_name("list-remove");
+    remove_glyph_button.set_tooltip_text(_("Delete current glyph"));
     remove_glyph_button.signal_clicked().connect([=](){ remove_selected_glyph(); });
 
+    glyph_from_path_button.set_label(_("Get curves"));
+    glyph_from_path_button.set_always_show_image();
+    glyph_from_path_button.set_image_from_icon_name("glyph-copy-from");
+    glyph_from_path_button.set_tooltip_text(_("Get curves from selection to replace current glyph"));
+    glyph_from_path_button.signal_clicked().connect(sigc::mem_fun(*this, &SvgFontsDialog::set_glyph_description_from_selected_path));
+
+    auto edit = Gtk::make_managed<Gtk::Button>();
+    edit->set_label(_("Edit"));
+    edit->set_always_show_image();
+    edit->set_image_from_icon_name("edit");
+    edit->set_tooltip_text(_("Switch to a layer with the same name as current glyph"));
+    edit->signal_clicked().connect([=]() {
+        edit_glyph(get_selected_glyph());
+    });
+
     hb->pack_start(glyph_from_path_button, false, false);
+    hb->pack_start(*edit, false, false);
     hb->pack_end(remove_glyph_button, false, false);
     hb->pack_end(add_glyph_button, false, false);
 
+    _glyph_cell_renderer = Gtk::manage(new SvgGlyphRenderer());
+    _glyph_cell_renderer->set_tree(&_glyphs_grid);
+    const int cell_width = 70;
+    const int cell_height = 50;
+    _glyph_cell_renderer->set_cell_size(cell_width, cell_height);
+    _glyph_cell_renderer->set_font_size(cell_height * 8 / 10); // font size: 80% of height
+    _glyphs_icon_scroller.add(_glyphs_grid);
+    _glyphs_icon_scroller.set_policy(Gtk::POLICY_AUTOMATIC, Gtk::POLICY_AUTOMATIC);
+    _glyphs_grid.set_name("GlyphsGrid");
+    _glyphs_grid.set_model(_GlyphsListStore);
+    _glyphs_grid.set_item_width(cell_width);
+    _glyphs_grid.set_selection_mode(Gtk::SELECTION_SINGLE);
+    _glyphs_grid.show_all_children();
+    _glyphs_grid.set_margin(0);
+    _glyphs_grid.set_item_padding(0);
+    _glyphs_grid.set_row_spacing(0);
+    _glyphs_grid.set_column_spacing(0);
+    _glyphs_grid.set_columns(-1);
+    _glyphs_grid.set_markup_column(_GlyphsListColumns.name_markup);
+    _glyphs_grid.pack_start(*_glyph_cell_renderer);
+    _glyphs_grid.add_attribute(*_glyph_cell_renderer, "glyph", _GlyphsListColumns.unicode);
+    _glyphs_grid.show();
+    _glyphs_grid.signal_item_activated().connect([=](const Gtk::TreeModel::Path& path) {
+        edit_glyph(get_selected_glyph());
+    });
+
+    // keep selection in sync between the two views: list and grid
+    _glyphs_grid.signal_selection_changed().connect([=]() {
+        if (_glyphs_icon_scroller.get_visible()) {
+            if (auto selected = get_selected_glyph_iter()) {
+                if (auto selection = _GlyphsList.get_selection()) {
+                    selection->select(selected);
+                }
+            }
+        }
+    });
+    if (auto selection = _GlyphsList.get_selection()) {
+        selection->signal_changed().connect([=]() {
+            if (_GlyphsListScroller.get_visible()) {
+                if (auto selected = get_selected_glyph_iter()) {
+                    auto selected_item = _GlyphsListStore->get_path(selected);
+                    _glyphs_grid.select_path(selected_item);
+                }
+            }
+        });
+    }
+
+    // display mode switching buttons
+    auto hbox = Gtk::make_managed<Gtk::Box>(Gtk::ORIENTATION_HORIZONTAL, 4);
+    Gtk::RadioButtonGroup group;
+    auto list = Gtk::make_managed<Gtk::RadioButton>(group);
+    list->set_mode(false);
+    list->set_image_from_icon_name("glyph-list");
+    list->set_tooltip_text(_("Glyph list view"));
+    list->set_valign(Gtk::ALIGN_START);
+    list->signal_toggled().connect([=]() { set_glyphs_view_mode(true); });
+    auto grid = Gtk::make_managed<Gtk::RadioButton>(group);
+    grid->set_mode(false);
+    grid->set_image_from_icon_name("glyph-grid");
+    grid->set_tooltip_text(_("Glyph grid view"));
+    grid->set_valign(Gtk::ALIGN_START);
+    grid->signal_toggled().connect([=]() { set_glyphs_view_mode(false); });
+    hbox->pack_start(*missing_glyph);
+    hbox->pack_end(*grid, false, false);
+    hbox->pack_end(*list, false, false);
+
     glyphs_vbox.pack_start(*hb, false, false);
     glyphs_vbox.pack_start(_GlyphsListScroller, true, true);
-    glyphs_vbox.pack_start(*missing_glyph, false,false);
+    glyphs_vbox.pack_start(_glyphs_icon_scroller, true, true);
+    glyphs_vbox.pack_start(*hbox, false,false);
 
-    glyph_from_path_button.set_label(_("Get curves from selection"));
-    glyph_from_path_button.set_always_show_image();
-    auto img = Gtk::make_managed<Gtk::Image>();
-    img->set_from_icon_name("glyph-copy-from", Gtk::ICON_SIZE_BUTTON);
-    img->set_margin_right(5);
-    glyph_from_path_button.set_image(*img);
-    glyph_from_path_button.signal_clicked().connect(sigc::mem_fun(*this, &SvgFontsDialog::set_glyph_description_from_selected_path));
+    _GlyphsListScroller.set_no_show_all();
+    _glyphs_icon_scroller.set_no_show_all();
+    (_show_glyph_list ? list : grid)->set_active();
+    set_glyphs_view_mode(_show_glyph_list);
 
-    static_cast<Gtk::CellRendererText*>( _GlyphsList.get_column_cell_renderer(0))->signal_edited().connect(
+    for (auto&& col : _GlyphsList.get_columns()) {
+        col->set_resizable();
+    }
+
+    static_cast<Gtk::CellRendererText*>(_GlyphsList.get_column_cell_renderer(ColName))->signal_edited().connect(
         sigc::mem_fun(*this, &SvgFontsDialog::glyph_name_edit));
 
-    static_cast<Gtk::CellRendererText*>( _GlyphsList.get_column_cell_renderer(1))->signal_edited().connect(
+    static_cast<Gtk::CellRendererText*>(_GlyphsList.get_column_cell_renderer(ColString))->signal_edited().connect(
         sigc::mem_fun(*this, &SvgFontsDialog::glyph_unicode_edit));
 
-    static_cast<Gtk::CellRendererText*>( _GlyphsList.get_column_cell_renderer(2))->signal_edited().connect(
+    static_cast<Gtk::CellRendererText*>(_GlyphsList.get_column_cell_renderer(ColAdvance))->signal_edited().connect(
         sigc::mem_fun(*this, &SvgFontsDialog::glyph_advance_edit));
 
-    _glyphs_observer.signal_changed().connect(sigc::mem_fun(*this, &SvgFontsDialog::update_glyphs));
+    _glyphs_observer.signal_changed().connect([=]() { update_glyphs(); });
 
     return &glyphs_vbox;
 }
@@ -892,7 +1536,7 @@ void SvgFontsDialog::add_kerning_pair(){
     for (auto& node: get_selected_spfont()->children) {
         //TODO: It is not really correct to get only the first byte of each string.
         //TODO: We should also support vertical kerning
-        if (SP_IS_HKERN(&node) && (static_cast<SPGlyphKerning*>(&node))->u1->contains((gchar) first_glyph.get_active_text().c_str()[0])
+        if (is<SPHkern>(&node) && (static_cast<SPGlyphKerning*>(&node))->u1->contains((gchar) first_glyph.get_active_text().c_str()[0])
             && (static_cast<SPGlyphKerning*>(&node))->u2->contains((gchar) second_glyph.get_active_text().c_str()[0]) ){
             this->kerning_pair = static_cast<SPGlyphKerning*>(&node);
             continue;
@@ -915,7 +1559,7 @@ void SvgFontsDialog::add_kerning_pair(){
     Inkscape::GC::release(repr);
 
     // get corresponding object
-    this->kerning_pair = SP_HKERN( getDocument()->getObjectByRepr(repr) );
+    kerning_pair = cast<SPHkern>(getDocument()->getObjectByRepr(repr));
 
     // select newly added pair
     if (auto selection = _KerningPairsList.get_selection()) {
@@ -928,7 +1572,7 @@ void SvgFontsDialog::add_kerning_pair(){
         });
     }
 
-    DocumentUndo::done(getDocument(), SP_VERB_DIALOG_SVG_FONTS, _("Add kerning pair"));
+    DocumentUndo::done(getDocument(), _("Add kerning pair"), "");
 }
 
 Gtk::Box* SvgFontsDialog::kerning_tab(){
@@ -954,10 +1598,9 @@ Gtk::Box* SvgFontsDialog::kerning_tab(){
     kerning_vbox.pack_start(_KerningPairsListScroller, true,true);
     _KerningPairsListScroller.set_policy(Gtk::POLICY_NEVER, Gtk::POLICY_ALWAYS);
     _KerningPairsListScroller.add(_KerningPairsList);
-    _KerningPairsListStore = Gtk::ListStore::create(_KerningPairsListColumns);
     _KerningPairsList.set_model(_KerningPairsListStore);
-    _KerningPairsList.append_column(_("First Unicode range"), _KerningPairsListColumns.first_glyph);
-    _KerningPairsList.append_column(_("Second Unicode range"), _KerningPairsListColumns.second_glyph);
+    _KerningPairsList.append_column(_("First glyph"), _KerningPairsListColumns.first_glyph);
+    _KerningPairsList.append_column(_("Second glyph"), _KerningPairsListColumns.second_glyph);
 //    _KerningPairsList.append_column_numeric_editable(_("Kerning Value"), _KerningPairsListColumns.kerning_value, "%f");
 
     kerning_vbox.pack_start((Gtk::Widget&) kerning_preview, false,false);
@@ -985,29 +1628,32 @@ SPFont *new_font(SPDocument *document)
     // create a new font
     Inkscape::XML::Node *repr = xml_doc->createElement("svg:font");
 
-    //By default, set the horizontal advance to 1024 units
-    repr->setAttribute("horiz-adv-x", "1024");
+    //By default, set the horizontal advance to 1000 units
+    repr->setAttribute("horiz-adv-x", "1000");
 
     // Append the new font node to defs
     defs->getRepr()->appendChild(repr);
 
-    //create a missing glyph
+    // add some default values
     Inkscape::XML::Node *fontface;
     fontface = xml_doc->createElement("svg:font-face");
-    fontface->setAttribute("units-per-em", "1024");
+    fontface->setAttribute("units-per-em", "1000");
+    fontface->setAttribute("ascent", "750");
+    fontface->setAttribute("cap-height", "600");
+    fontface->setAttribute("x-height", "400");
+    fontface->setAttribute("descent", "200");
     repr->appendChild(fontface);
 
     //create a missing glyph
     Inkscape::XML::Node *mg;
     mg = xml_doc->createElement("svg:missing-glyph");
-    mg->setAttribute("d", "M0,0h1000v1024h-1000z");
+    mg->setAttribute("d", "M0,0h1000v1000h-1000z");
     repr->appendChild(mg);
 
     // get corresponding object
-    SPFont *f = SP_FONT( document->getObjectByRepr(repr) );
+    auto f = cast<SPFont>( document->getObjectByRepr(repr) );
 
     g_assert(f != nullptr);
-    g_assert(SP_IS_FONT(f));
     Inkscape::GC::release(mg);
     Inkscape::GC::release(repr);
     return f;
@@ -1016,13 +1662,13 @@ SPFont *new_font(SPDocument *document)
 void set_font_family(SPFont* font, char* str){
     if (!font) return;
     for (auto& obj: font->children) {
-        if (SP_IS_FONTFACE(&obj)){
+        if (is<SPFontFace>(&obj)){
             //XML Tree being directly used here while it shouldn't be.
             obj.setAttribute("font-family", str);
         }
     }
 
-    DocumentUndo::done(font->document, SP_VERB_DIALOG_SVG_FONTS, _("Set font family"));
+    DocumentUndo::done(font->document, _("Set font family"), "");
 }
 
 void SvgFontsDialog::add_font(){
@@ -1036,16 +1682,16 @@ void SvgFontsDialog::add_font(){
 
     os2 << "SVGFont " << count;
     for (auto& obj: font->children) {
-        if (SP_IS_FONTFACE(&obj)){
+        if (is<SPFontFace>(&obj)){
             //XML Tree being directly used here while it shouldn't be.
             obj.setAttribute("font-family", os2.str());
         }
     }
 
-    update_fonts();
-//    select_font(font);
+    update_fonts(false);
+    on_font_selection_changed();
 
-    DocumentUndo::done(doc, SP_VERB_DIALOG_SVG_FONTS, _("Add font"));
+    DocumentUndo::done(doc, _("Add font"), "");
 }
 
 SvgFontsDialog::SvgFontsDialog()
@@ -1055,12 +1701,17 @@ SvgFontsDialog::SvgFontsDialog()
  , kerning_vbox(Gtk::ORIENTATION_VERTICAL)
 {
     kerning_slider = Gtk::manage(new Gtk::Scale(Gtk::ORIENTATION_HORIZONTAL));
-    _add.signal_clicked().connect(sigc::mem_fun(*this, &SvgFontsDialog::add_font));
-    _remove.signal_clicked().connect([=](){ remove_selected_font(); });
+
+    // kerning pairs store
+    _KerningPairsListStore = Gtk::ListStore::create(_KerningPairsListColumns);
+
+    // list of glyphs in a current font; this store is reused if there are multiple fonts
+    _GlyphsListStore = Gtk::ListStore::create(_GlyphsListColumns);
 
     // List of SVGFonts declared in a document:
     _model = Gtk::ListStore::create(_columns);
     _FontsList.set_model(_model);
+    _FontsList.set_enable_search(false);
     _FontsList.append_column_editable(_("_Fonts"), _columns.label);
     _FontsList.get_selection()->signal_changed().connect(sigc::mem_fun(*this, &SvgFontsDialog::on_font_selection_changed));
     // connect to the cell renderer's edit signal; there's also model's row_changed, but it is less specific
@@ -1071,10 +1722,13 @@ SvgFontsDialog::SvgFontsDialog()
                 auto font = it->get_value(_columns.spfont);
                 font->setLabel(new_name.c_str());
                 Glib::ustring undokey = "svgfonts:fontName";
-                DocumentUndo::maybeDone(font->document, undokey.c_str(), SP_VERB_DIALOG_SVG_FONTS, _("Set SVG font name"));
+                DocumentUndo::maybeDone(font->document, undokey.c_str(), _("Set SVG font name"), "");
             }
         });
     }
+
+    _add.signal_clicked().connect(sigc::mem_fun(*this, &SvgFontsDialog::add_font));
+    _remove.signal_clicked().connect([=](){ remove_selected_font(); });
 
     Gtk::Notebook *tabs = Gtk::manage(new Gtk::Notebook());
     tabs->set_scrollable();
@@ -1082,6 +1736,15 @@ SvgFontsDialog::SvgFontsDialog()
     tabs->append_page(*global_settings_tab(), _("_Global settings"), true);
     tabs->append_page(*glyphs_tab(), _("_Glyphs"), true);
     tabs->append_page(*kerning_tab(), _("_Kerning"), true);
+    tabs->signal_switch_page().connect([=](Gtk::Widget*, guint page) {
+        if (page == 2) {
+            // update kerning glyph combos
+            if (SPFont* font = get_selected_spfont()) {
+                first_glyph.update(font);
+                second_glyph.update(font);
+            }
+        }
+    });
 
     pack_start(*tabs, true, true, 0);
 
@@ -1110,10 +1773,9 @@ void SvgFontsDialog::documentReplaced()
     _defs_observer_connection.disconnect();
     if (auto document = getDocument()) {
         _defs_observer.set(document->getDefs());
-        _defs_observer_connection =
-            _defs_observer.signal_changed().connect(sigc::mem_fun(*this, &SvgFontsDialog::update_fonts));
+        _defs_observer_connection = _defs_observer.signal_changed().connect([=](){ update_fonts(false); });
     }
-    update_fonts();
+    update_fonts(true);
 }
 
 } // namespace Dialog

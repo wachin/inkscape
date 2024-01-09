@@ -10,6 +10,8 @@
 
 #include <iomanip>
 #include <sstream>
+#include <unordered_map>
+#include <boost/functional/hash.hpp>
 
 #include "cursor-utils.h"
 
@@ -33,8 +35,16 @@ using Inkscape::IO::Resource::ICONS;
 
 namespace Inkscape {
 
+// SVG cursor unique ID/key
+typedef std::tuple<std::string, std::string, std::string, guint32, guint32, double, double, bool, int> Key;
+
+struct KeyHasher {
+    std::size_t operator () (const Key& k) const { return boost::hash_value(k); }
+};
+
 /**
- * Loads and sets an SVG cursor from the specified file name.
+ * Loads an SVG cursor from the specified file name.
+ *
  * Returns pointer to cursor (or null cursor if we could not load a cursor).
  */
 Glib::RefPtr<Gdk::Cursor>
@@ -71,6 +81,31 @@ load_svg_cursor(Glib::RefPtr<Gdk::Display> display,
     // Our default
     theme_names.emplace_back("hicolor");
 
+    // quantize opacity to limit number of cursor variations we generate
+    fill_opacity   = std::floor(std::clamp(fill_opacity,   0.0, 1.0) * 100) / 100;
+    stroke_opacity = std::floor(std::clamp(stroke_opacity, 0.0, 1.0) * 100) / 100;
+
+    const auto enable_drop_shadow = prefs->getBool("/options/cursor-drop-shadow", true);
+
+    // Find the rendered size of the icon.
+    int scale = 1;
+    // cursor scaling? note: true by default - this has to be in sync with inkscape-preferences where it is true
+    bool cursor_scaling = prefs->getBool("/options/cursorscaling", true); // Fractional scaling is broken but we can't detect it.
+    if (cursor_scaling) {
+        scale = window->get_scale_factor(); // Adjust for HiDPI screens.
+    }
+
+    static std::unordered_map<Key, Glib::RefPtr<Gdk::Cursor>, KeyHasher> cursor_cache;
+    Key cursor_key;
+
+    const auto cache_enabled = prefs->getBool("/options/cache_svg_cursors", true);
+    if (cache_enabled) {
+        // construct a key
+        cursor_key = std::make_tuple(std::string(theme_names[0]), std::string(theme_names[1]), file_name, fill, stroke, fill_opacity, stroke_opacity, enable_drop_shadow, scale);
+        if (auto cursor = cursor_cache[cursor_key]) {
+            return cursor;
+        }
+    }
 
     // Find theme paths.
     auto screen = display->get_default_screen();
@@ -80,8 +115,8 @@ load_svg_cursor(Glib::RefPtr<Gdk::Display> display,
     // Loop over theme names and paths, looking for file.
     Glib::RefPtr<Gio::File> file;
     std::string full_file_path;
-    for (auto theme_name : theme_names) {
-        for (auto theme_path : theme_paths) {
+    for (auto const &theme_name : theme_names) {
+        for (auto const &theme_path : theme_paths) {
             full_file_path = Glib::build_filename(theme_path, theme_name, "cursors", file_name);
             // std::cout << "Checking: " << full_file_path << std::endl;
             file = Gio::File::create_for_path(full_file_path);
@@ -122,29 +157,13 @@ load_svg_cursor(Glib::RefPtr<Gdk::Display> display,
                   << std::setfill ('0') << std::setw(6)
                   << std::hex << (stroke >> 8);
 
-    std::string fill_opacity_string = std::to_string(fill_opacity);
-    std::string stroke_opacity_string = std::to_string(stroke_opacity);
-
     sp_repr_css_set_property(css, "fill",   fill_stream.str().c_str());
     sp_repr_css_set_property(css, "stroke", stroke_stream.str().c_str());
-    sp_repr_css_set_property(css, "fill-opacity",   fill_opacity_string.c_str());
-    sp_repr_css_set_property(css, "stroke-opacity", stroke_opacity_string.c_str());
+    sp_repr_css_set_property_double(css, "fill-opacity",   fill_opacity);
+    sp_repr_css_set_property_double(css, "stroke-opacity", stroke_opacity);
     root->changeCSS(css, "style");
     sp_repr_css_attr_unref(css);
 
-    // Find the rendered size of the icon.
-    int scale = 1;
-    bool cursor_scaling = false;
-#ifndef GDK_WINDOWING_QUARTZ
-    // Default cursor size (get_default_cursor_size()) fixed to 32 on Quartz. Cursor scaling handled elsewhere.
-
-    cursor_scaling = prefs->getBool("/options/cursorscaling"); // Fractional scaling is broken but we can't detect it.
-    if (cursor_scaling) {
-        scale = window->get_scale_factor(); // Adjust for HiDPI screens.
-    }
-#endif
-
-    auto enable_drop_shadow = prefs->getBool("/options/cursor-drop-shadow", true);
     if (!enable_drop_shadow) {
         // turn off drop shadow, if any
         Glib::ustring shadow("drop-shadow");
@@ -185,7 +204,6 @@ load_svg_cursor(Glib::RefPtr<Gdk::Display> display,
             if (surface && surface->cobj()) {
                 cairo_surface_set_device_scale(surface->cobj(), scale, scale);
                 cursor = Gdk::Cursor::create(display, surface, hotspot_x, hotspot_y);
-                window->set_cursor(cursor);
             }
             else {
                 std::cerr << "load_svg_cursor: failed to get surface for: " << full_file_path << std::endl;
@@ -197,11 +215,16 @@ load_svg_cursor(Glib::RefPtr<Gdk::Display> display,
 
             if (pixbuf) {
                 cursor = Gdk::Cursor::create(display, pixbuf, hotspot_x, hotspot_y);
-                window->set_cursor(cursor);
             }
         }
     } else {
         std::cerr << "load_svg_cursor: failed to create pixbuf for: " << full_file_path << std::endl;
+    }
+
+    document.reset();
+
+    if (cache_enabled) {
+        cursor_cache[cursor_key] = cursor;
     }
 
     return cursor;

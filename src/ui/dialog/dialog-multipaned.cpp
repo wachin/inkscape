@@ -22,10 +22,12 @@
 #include <numeric>
 
 #include "ui/dialog/dialog-notebook.h"
+#include "ui/util.h"
 #include "ui/widget/canvas-grid.h"
 #include "dialog-window.h"
 
-#define DROPZONE_SIZE 16
+#define DROPZONE_SIZE 5
+#define DROPZONE_EXPANSION 15
 #define HANDLE_SIZE 12
 #define HANDLE_CROSS_SIZE 25
 
@@ -49,16 +51,80 @@ namespace Dialog {
  * moved).
  */
 
+int get_handle_size() {
+    return HANDLE_SIZE;
+}
+
 /* ============ MyDropZone ============ */
 
-MyDropZone::MyDropZone(Gtk::Orientation orientation, int size = DROPZONE_SIZE)
+std::list<MyDropZone *> MyDropZone::_instances_list;
+
+MyDropZone::MyDropZone(Gtk::Orientation orientation)
     : Glib::ObjectBase("MultipanedDropZone")
     , Gtk::Orientable()
     , Gtk::EventBox()
 {
     set_name("MultipanedDropZone");
     set_orientation(orientation);
+    set_size(DROPZONE_SIZE);
 
+    get_style_context()->add_class("backgnd-passive");
+
+    signal_drag_motion().connect([=](const Glib::RefPtr<Gdk::DragContext>& ctx, int x, int y, guint time) {
+        if (!_active) {
+            _active = true;
+            add_highlight();
+            set_size(DROPZONE_SIZE + DROPZONE_EXPANSION);
+        }
+        return true;
+    });
+
+    signal_drag_leave().connect([=](const Glib::RefPtr<Gdk::DragContext>&, guint time) {
+        if (_active) {
+            _active = false;
+            set_size(DROPZONE_SIZE);
+        }
+    });
+
+    _instances_list.push_back(this);
+}
+
+MyDropZone::~MyDropZone()
+{
+    _instances_list.remove(this);
+}
+
+void MyDropZone::add_highlight_instances()
+{
+    for (auto *instance : _instances_list) {
+        instance->add_highlight();
+    }
+}
+
+void MyDropZone::remove_highlight_instances()
+{
+    for (auto *instance : _instances_list) {
+        instance->remove_highlight();
+        // instance->set_size(DROPZONE_SIZE);
+    }
+}
+
+void MyDropZone::add_highlight()
+{
+    const auto &style = get_style_context();
+    style->remove_class("backgnd-passive");
+    style->add_class("backgnd-active");
+}
+
+void MyDropZone::remove_highlight()
+{
+    const auto &style = get_style_context();
+    style->remove_class("backgnd-active");
+    style->add_class("backgnd-passive");
+}
+
+void MyDropZone::set_size(int size)
+{
     if (get_orientation() == Gtk::ORIENTATION_HORIZONTAL) {
         set_size_request(size, -1);
     } else {
@@ -68,7 +134,7 @@ MyDropZone::MyDropZone(Gtk::Orientation orientation, int size = DROPZONE_SIZE)
 
 /* ============  MyHandle  ============ */
 
-MyHandle::MyHandle(Gtk::Orientation orientation, int size = HANDLE_SIZE)
+MyHandle::MyHandle(Gtk::Orientation orientation, int size = get_handle_size())
     : Glib::ObjectBase("MultipanedHandle")
     , Gtk::Orientable()
     , Gtk::EventBox()
@@ -366,6 +432,15 @@ DialogMultipaned::~DialogMultipaned()
         }
     }
 
+    // need to remove CanvasGrid from this container to avoid on idle repainting and crash:
+    //   Gtk:ERROR:../gtk/gtkwidget.c:5871:gtk_widget_get_frame_clock: assertion failed: (window != NULL)
+    //   Bail out! Gtk:ERROR:../gtk/gtkwidget.c:5871:gtk_widget_get_frame_clock: assertion failed: (window != NULL)
+    for (auto child : children) {
+        if (dynamic_cast<Inkscape::UI::Widget::CanvasGrid*>(child)) {
+            remove(*child);
+        }
+    }
+
     children.clear();
 }
 
@@ -587,6 +662,9 @@ void DialogMultipaned::get_preferred_width_vfunc(int &minimum_width, int &natura
             }
         }
     }
+    if (_natural_width > natural_width) {
+        natural_width = _natural_width;
+    }
 }
 
 void DialogMultipaned::get_preferred_height_vfunc(int &minimum_height, int &natural_height) const
@@ -626,6 +704,10 @@ void DialogMultipaned::get_preferred_width_for_height_vfunc(int height, int &min
                 natural_width += child_natural_width;
             }
         }
+    }
+
+    if (_natural_width > natural_width) {
+        natural_width = _natural_width;
     }
 }
 
@@ -676,131 +758,160 @@ void DialogMultipaned::on_size_allocate(Gtk::Allocation &allocation)
         children[_drag_handle + 1]->size_allocate(allocation2);
         _drag_handle = -1;
     }
+    // initially widgets get created with a 1x1 size; ignore it and wait for the final resize
+    else if (allocation.get_width() > 1 && allocation.get_height() > 1) {
+        _natural_width = allocation.get_width();
+    }
 
-    {
-        std::vector<bool> expandables;              // Is child expandable?
-        std::vector<int> sizes_minimums;            // Difference between allocated space and minimum space.
-        std::vector<int> sizes_naturals;            // Difference between allocated space and natural space.
-        std::vector<int> sizes(children.size(), 0); // The new allocation sizes
-        std::vector<int> sizes_current;             // The current sizes along main axis
-        int left = horizontal ? allocation.get_width() : allocation.get_height();
+    std::vector<bool> expandables;              // Is child expandable?
+    std::vector<int> sizes_minimums;            // Difference between allocated space and minimum space.
+    std::vector<int> sizes_naturals;            // Difference between allocated space and natural space.
+    std::vector<int> sizes_current;             // The current sizes along main axis
+    int left = horizontal ? allocation.get_width() : allocation.get_height();
 
-        int index = 0;
+    int index = 0;
+    bool force_resize = false;  // initially panels are not sized yet, so we will apply their natural sizes
+    int canvas_index = -1;
+    for (auto child : children) {
+        bool visible = child->get_visible();
 
-        int canvas_index = -1;
-        for (auto &child : children) {
-            bool visible;
-            DialogMultipaned *paned = dynamic_cast<DialogMultipaned *>(child);
-            Inkscape::UI::Widget::CanvasGrid *canvas = dynamic_cast<Inkscape::UI::Widget::CanvasGrid *>(child);
-            if (canvas) {
-                canvas_index = index;
-            }
-
-            {
-                visible = child->get_visible();
-                expandables.push_back(child->compute_expand(get_orientation()));
-
-                Gtk::Requisition req_minimum;
-                Gtk::Requisition req_natural;
-                child->get_preferred_size(req_minimum, req_natural);
-                if (child == _resizing_widget1 || child == _resizing_widget2) {
-                    // ignore limits for widget being resized interactively and use their current size
-                    req_minimum.width = req_minimum.height = 0;
-                    auto alloc = child->get_allocation();
-                    req_natural.width = alloc.get_width();
-                    req_natural.height = alloc.get_height();
-                }
-
-                sizes_minimums.push_back(visible ? horizontal ? req_minimum.width : req_minimum.height : 0);
-                sizes_naturals.push_back(visible ? horizontal ? req_natural.width : req_natural.height : 0);
-            }
-
-            Gtk::Allocation child_allocation = child->get_allocation();
-            sizes_current.push_back(visible ? horizontal ? child_allocation.get_width() : child_allocation.get_height()
-                                            : 0);
-            index++;
+        if (dynamic_cast<Inkscape::UI::Widget::CanvasGrid*>(child)) {
+            canvas_index = index;
         }
 
-        // Precalculate the minimum, natural and current totals
-        int sum_minimums = std::accumulate(sizes_minimums.begin(), sizes_minimums.end(), 0);
-        int sum_naturals = std::accumulate(sizes_naturals.begin(), sizes_naturals.end(), 0);
-        int sum_current = std::accumulate(sizes_current.begin(), sizes_current.end(), 0);
+        expandables.push_back(child->compute_expand(get_orientation()));
 
-        if (sum_naturals <= left) {
+        Gtk::Requisition req_minimum;
+        Gtk::Requisition req_natural;
+        child->get_preferred_size(req_minimum, req_natural);
+        if (child == _resizing_widget1 || child == _resizing_widget2) {
+            // ignore limits for widget being resized interactively and use their current size
+            req_minimum.width = req_minimum.height = 0;
+            auto alloc = child->get_allocation();
+            req_natural.width = alloc.get_width();
+            req_natural.height = alloc.get_height();
+        }
+
+        sizes_minimums.push_back(visible ? horizontal ? req_minimum.width : req_minimum.height : 0);
+        sizes_naturals.push_back(visible ? horizontal ? req_natural.width : req_natural.height : 0);
+
+        Gtk::Allocation child_allocation = child->get_allocation();
+        int size = 0;
+        if (visible) {
+            if (dynamic_cast<MyHandle*>(child)) {
+                // resizing handles should never be smaller than their min size:
+                size = horizontal ? req_minimum.width : req_minimum.height;
+            }
+            else {
+                // all other widgets can get smaller than their min size
+                size = horizontal ? child_allocation.get_width() : child_allocation.get_height();
+                auto min = horizontal ? req_minimum.width : req_minimum.height;
+                // enforce some minimum size, so newly inserted panels don't collapse to nothing
+                if (size < min) size = std::min(20, min); // arbitrarily chosen 20px
+            }
+        }
+        sizes_current.push_back(size);
+        index++;
+
+        if (sizes_current.back() < sizes_minimums.back()) force_resize = true;
+    }
+
+    std::vector<int> sizes = sizes_current; // The new allocation sizes
+
+    const int sum_current = std::accumulate(sizes_current.begin(), sizes_current.end(), 0);
+    {
+        // Precalculate the minimum, natural and current totals
+        const int sum_minimums = std::accumulate(sizes_minimums.begin(), sizes_minimums.end(), 0);
+        const int sum_naturals = std::accumulate(sizes_naturals.begin(), sizes_naturals.end(), 0);
+
+        // initial resize requested?
+        if (force_resize && sum_naturals <= left) {
             sizes = sizes_naturals;
             left -= sum_naturals;
-        } else if (sum_minimums <= left && left < sum_naturals) {
-            sizes = sizes_minimums;
-            left -= sum_minimums;
-        }
-
-        if (canvas_index >= 0) { // give remaining space to canvas element
-            sizes[canvas_index] += left;
-        } else { // or, if in a sub-dialogmultipaned, give it evenly to widgets
-
-            int d = 0;
-            for (int i = 0; i < (int)children.size(); ++i) {
-                if (expandables[i]) {
-                    d++;
-                }
-            }
-
-            if (d > 0) {
-                int idx = 0;
-                for (int i = 0; i < (int)children.size(); ++i) {
-                    if (expandables[i]) {
-                        sizes[i] += (left / d);
-                        if (idx < (left % d))
-                            sizes[i]++;
-                        idx++;
+        } else if (sum_minimums <= left && left < sum_current) {
+            // requested size exeeds available space; try shrinking it by starting from the last element
+            sizes = sizes_current;
+            auto excess = sum_current - left;
+            for (int i = static_cast<int>(sizes.size() - 1); excess > 0 && i >= 0; --i) {
+                auto extra = sizes_current[i] - sizes_minimums[i];
+                if (extra > 0) {
+                    if (extra >= excess) {
+                        // we are done, enough space found
+                        sizes[i] -= excess;
+                        excess = 0;
+                    }
+                    else {
+                        // shrink as far as possible, then continue to the next panel
+                        sizes[i] -= extra;
+                        excess -= extra;
                     }
                 }
             }
-        }
-        left = 0;
 
-        // Check if we actually need to change the sizes on the main axis
-        left = horizontal ? allocation.get_width() : allocation.get_height();
-        if (left == sum_current) {
-            bool valid = true;
-            for (int i = 0; i < (int)children.size(); ++i) {
-                valid = valid && (sizes_minimums[i] <= sizes_current[i]) &&        // is it over the minimums?
-                        (expandables[i] || sizes_current[i] <= sizes_naturals[i]); // but does it want to be expanded?
-                if (!valid)
-                    break;
+            if (excess > 0) {
+                sizes = sizes_minimums;
+                left -= sum_minimums;
             }
-            if (valid)
-                sizes = sizes_current; // The current sizes are good, don't change anything;
-        }
-
-        // Set x and y values of allocations (widths should be correct).
-        int current_x = allocation.get_x();
-        int current_y = allocation.get_y();
-
-        // Allocate
-        for (int i = 0; i < (int)children.size(); ++i) {
-            Gtk::Allocation child_allocation = children[i]->get_allocation();
-            child_allocation.set_x(current_x);
-            child_allocation.set_y(current_y);
-
-            int size = sizes[i];
-
-            if (horizontal) {
-                child_allocation.set_width(size);
-                current_x += size;
-                child_allocation.set_height(allocation.get_height());
-            } else {
-                child_allocation.set_height(size);
-                current_y += size;
-                child_allocation.set_width(allocation.get_width());
+            else {
+                left = 0;
             }
-
-            children[i]->size_allocate(child_allocation);
+        }
+        else {
+            left = std::max(0, left - sum_current);
         }
     }
 
-    _resizing_widget1 = nullptr;
-    _resizing_widget2 = nullptr;
+    if (canvas_index >= 0) { // give remaining space to canvas element
+        sizes[canvas_index] += left;
+    } else { // or, if in a sub-dialogmultipaned, give it to the last panel
+
+        for (int i = static_cast<int>(children.size()) - 1; i >= 0; --i) {
+            if (expandables[i]) {
+                sizes[i] += left;
+                break;
+            }
+        }
+    }
+
+    // Check if we actually need to change the sizes on the main axis
+    left = horizontal ? allocation.get_width() : allocation.get_height();
+    if (left == sum_current) {
+        bool valid = true;
+        for (size_t i = 0; i < children.size(); ++i) {
+            valid = sizes_minimums[i] <= sizes_current[i] &&        // is it over the minimums?
+                    (expandables[i] || sizes_current[i] <= sizes_naturals[i]); // but does it want to be expanded?
+            if (!valid)
+                break;
+        }
+        if (valid) {
+            sizes = sizes_current; // The current sizes are good, don't change anything;
+        }
+    }
+
+    // Set x and y values of allocations (widths should be correct).
+    int current_x = allocation.get_x();
+    int current_y = allocation.get_y();
+
+    // Allocate
+    for (size_t i = 0; i < children.size(); ++i) {
+        Gtk::Allocation child_allocation = children[i]->get_allocation();
+        child_allocation.set_x(current_x);
+        child_allocation.set_y(current_y);
+
+        int size = sizes[i];
+
+        if (horizontal) {
+            child_allocation.set_width(size);
+            current_x += size;
+            child_allocation.set_height(allocation.get_height());
+        } else {
+            child_allocation.set_height(size);
+            current_y += size;
+            child_allocation.set_width(allocation.get_width());
+        }
+
+        children[i]->size_allocate(child_allocation);
+    }
 }
 
 void DialogMultipaned::forall_vfunc(gboolean, GtkCallback callback, gpointer callback_data)
@@ -1175,21 +1286,25 @@ void DialogMultipaned::on_append_drag_data(const Glib::RefPtr<Gdk::DragContext> 
 }
 
 // Signals
-sigc::signal<void, const Glib::RefPtr<Gdk::DragContext>> DialogMultipaned::signal_prepend_drag_data()
+sigc::signal<void (const Glib::RefPtr<Gdk::DragContext>)> DialogMultipaned::signal_prepend_drag_data()
 {
-    resize_children();
+    resize_widget_children(this);
     return _signal_prepend_drag_data;
 }
 
-sigc::signal<void, const Glib::RefPtr<Gdk::DragContext>> DialogMultipaned::signal_append_drag_data()
+sigc::signal<void (const Glib::RefPtr<Gdk::DragContext>)> DialogMultipaned::signal_append_drag_data()
 {
-    resize_children();
+    resize_widget_children(this);
     return _signal_append_drag_data;
 }
 
-sigc::signal<void> DialogMultipaned::signal_now_empty()
+sigc::signal<void ()> DialogMultipaned::signal_now_empty()
 {
     return _signal_now_empty;
+}
+
+void DialogMultipaned::set_restored_width(int width) {
+    _natural_width = width;
 }
 
 } // namespace Dialog

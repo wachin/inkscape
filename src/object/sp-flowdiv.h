@@ -17,10 +17,11 @@
 #include "sp-item.h"
 
 // these 3 are derivatives of SPItem to get the automatic style handling
-class SPFlowdiv : public SPItem {
+class SPFlowdiv final : public SPItem {
 public:
 	SPFlowdiv();
 	~SPFlowdiv() override;
+    int tag() const override { return tag_of<decltype(*this)>; }
 
 protected:
 	void build(SPDocument *document, Inkscape::XML::Node *repr) override;
@@ -32,10 +33,11 @@ protected:
 	Inkscape::XML::Node* write(Inkscape::XML::Document *xml_doc, Inkscape::XML::Node *repr, unsigned int flags) override;
 };
 
-class SPFlowtspan : public SPItem {
+class SPFlowtspan final : public SPItem {
 public:
 	SPFlowtspan();
 	~SPFlowtspan() override;
+    int tag() const override { return tag_of<decltype(*this)>; }
 
 protected:
 	void build(SPDocument *document, Inkscape::XML::Node *repr) override;
@@ -47,10 +49,11 @@ protected:
 	Inkscape::XML::Node* write(Inkscape::XML::Document *xml_doc, Inkscape::XML::Node *repr, unsigned int flags) override;
 };
 
-class SPFlowpara : public SPItem {
+class SPFlowpara final : public SPItem {
 public:
 	SPFlowpara();
 	~SPFlowpara() override;
+    int tag() const override { return tag_of<decltype(*this)>; }
 
 protected:
 	void build(SPDocument *document, Inkscape::XML::Node *repr) override;
@@ -63,10 +66,11 @@ protected:
 };
 
 // these do not need any style
-class SPFlowline : public SPObject {
+class SPFlowline final : public SPObject {
 public:
 	SPFlowline();
 	~SPFlowline() override;
+    int tag() const override { return tag_of<decltype(*this)>; }
 
 protected:
 	void release() override;
@@ -75,10 +79,11 @@ protected:
 	Inkscape::XML::Node* write(Inkscape::XML::Document *xml_doc, Inkscape::XML::Node *repr, unsigned int flags) override;
 };
 
-class SPFlowregionbreak : public SPObject {
+class SPFlowregionbreak final : public SPObject {
 public:
 	SPFlowregionbreak();
 	~SPFlowregionbreak() override;
+    int tag() const override { return tag_of<decltype(*this)>; }
 
 protected:
 	void release() override;
@@ -86,11 +91,5 @@ protected:
 
 	Inkscape::XML::Node* write(Inkscape::XML::Document *xml_doc, Inkscape::XML::Node *repr, unsigned int flags) override;
 };
-
-MAKE_SP_OBJECT_TYPECHECK_FUNCTIONS(SP_IS_FLOWDIV, SPFlowdiv)
-MAKE_SP_OBJECT_TYPECHECK_FUNCTIONS(SP_IS_FLOWTSPAN, SPFlowtspan)
-MAKE_SP_OBJECT_TYPECHECK_FUNCTIONS(SP_IS_FLOWPARA, SPFlowpara)
-MAKE_SP_OBJECT_TYPECHECK_FUNCTIONS(SP_IS_FLOWLINE, SPFlowline)
-MAKE_SP_OBJECT_TYPECHECK_FUNCTIONS(SP_IS_FLOWREGIONBREAK, SPFlowregionbreak)
 
 #endif

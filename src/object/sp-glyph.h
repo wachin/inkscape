@@ -30,10 +30,11 @@ enum glyphOrientation {
  * SVG <glyph> element
  */
 
-class SPGlyph : public SPObject {
+class SPGlyph final : public SPObject {
 public:
     SPGlyph();
     ~SPGlyph() override = default;
+    int tag() const override { return tag_of<decltype(*this)>; }
 
     // FIXME encapsulation
     Glib::ustring unicode;
@@ -53,11 +54,7 @@ protected:
     void set(SPAttr key, const char* value) override;
     void update(SPCtx* ctx, unsigned int flags) override;
     Inkscape::XML::Node* write(Inkscape::XML::Document* doc, Inkscape::XML::Node* repr, unsigned int flags) override;
-
 };
-
-MAKE_SP_OBJECT_DOWNCAST_FUNCTIONS(SP_GLYPH, SPGlyph)
-MAKE_SP_OBJECT_TYPECHECK_FUNCTIONS(SP_IS_GLYPH, SPGlyph)
 
 #endif // !SEEN_SP_GLYPH_H
 

@@ -20,23 +20,23 @@ namespace Filters {
 
 class FilterSlot;
 
-class FilterTile : public FilterPrimitive {
+class FilterTile : public FilterPrimitive
+{
 public:
     FilterTile();
-    static FilterPrimitive *create();
     ~FilterTile() override;
 
-    void render_cairo(FilterSlot &slot) override;
-    void area_enlarge(Geom::IntRect &area, Geom::Affine const &trans) override;
-    double complexity(Geom::Affine const &ctm) override;
+    void render_cairo(FilterSlot &slot) const override;
+    void area_enlarge(Geom::IntRect &area, Geom::Affine const &trans) const override;
+    double complexity(Geom::Affine const &ctm) const override;
 
-    Glib::ustring name() override { return Glib::ustring("Tile"); }
+    Glib::ustring name() const override { return Glib::ustring("Tile"); }
 };
 
-} /* namespace Filters */
-} /* namespace Inkscape */
+} // namespace Filters
+} // namespace Inkscape
 
-#endif /* __NR_FILTER_TILE_H__ */
+#endif // SEEN_NR_FILTER_TILE_H
 /*
   Local Variables:
   mode:c++

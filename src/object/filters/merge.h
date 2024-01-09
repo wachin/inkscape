@@ -13,28 +13,24 @@
 
 #include "sp-filter-primitive.h"
 
-#define SP_FEMERGE(obj) (dynamic_cast<SPFeMerge*>((SPObject*)obj))
-#define SP_IS_FEMERGE(obj) (dynamic_cast<const SPFeMerge*>((SPObject*)obj) != NULL)
-
-class SPFeMerge : public SPFilterPrimitive {
+class SPFeMerge final
+    : public SPFilterPrimitive
+{
 public:
-	SPFeMerge();
-    ~SPFeMerge() override;
+    int tag() const override { return tag_of<decltype(*this)>; }
 
 protected:
-	void build(SPDocument* doc, Inkscape::XML::Node* repr) override;
-	void release() override;
+    void modified(unsigned flags) override;
 
-	void set(SPAttr key, const gchar* value) override;
+    void child_added(Inkscape::XML::Node *child, Inkscape::XML::Node *ref) override;
+    void remove_child(Inkscape::XML::Node *child) override;
+    void order_changed(Inkscape::XML::Node *child, Inkscape::XML::Node *old_ref, Inkscape::XML::Node *new_ref) override;
 
-	void update(SPCtx* ctx, unsigned int flags) override;
-
-	Inkscape::XML::Node* write(Inkscape::XML::Document* doc, Inkscape::XML::Node* repr, guint flags) override;
-
-	void build_renderer(Inkscape::Filters::Filter* filter) override;
+    void resolve_slots(SlotResolver &) override;
+    std::unique_ptr<Inkscape::Filters::FilterPrimitive> build_renderer(Inkscape::DrawingItem *item) const override;
 };
 
-#endif /* !SP_FEMERGE_H_SEEN */
+#endif // SP_FEMERGE_H_SEEN
 
 /*
   Local Variables:

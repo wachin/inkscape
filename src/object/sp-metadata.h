@@ -17,10 +17,11 @@
 
 /* Metadata base class */
 
-class SPMetadata : public SPObject {
+class SPMetadata final : public SPObject {
 public:
 	SPMetadata();
 	~SPMetadata() override;
+    int tag() const override { return tag_of<decltype(*this)>; }
 
 protected:
 	void build(SPDocument* doc, Inkscape::XML::Node* repr) override;
@@ -32,8 +33,6 @@ protected:
 };
 
 SPMetadata * sp_document_metadata (SPDocument *document);
-
-MAKE_SP_OBJECT_DOWNCAST_FUNCTIONS(SP_METADATA, SPMetadata)
 
 #endif
 // vim: filetype=cpp:expandtab:shiftwidth=4:tabstop=8:softtabstop=4 :

@@ -17,17 +17,12 @@
  */
 
 #include "extension.h"
-#include "implementation/implementation.h"
-#include "implementation/script.h"
-#include "implementation/xslt.h"
 
-#include <glibmm/fileutils.h>
-#include <glibmm/miscutils.h>
-
-#include <glib/gstdio.h>
 #include <glib/gprintf.h>
-
+#include <glib/gstdio.h>
+#include <glibmm/fileutils.h>
 #include <glibmm/i18n.h>
+#include <glibmm/miscutils.h>
 #include <gtkmm/box.h>
 #include <gtkmm/frame.h>
 #include <gtkmm/grid.h>
@@ -35,17 +30,17 @@
 
 #include "db.h"
 #include "dependency.h"
+#include "implementation/implementation.h"
+#include "implementation/script.h"
+#include "implementation/xslt.h"
 #include "inkscape.h"
-#include "timer.h"
-
 #include "io/resource.h"
 #include "io/sys.h"
-
 #include "prefdialog/parameter.h"
+#include "prefdialog/prefdialog.h"
 #include "prefdialog/widget.h"
-
+#include "timer.h"
 #include "xml/repr.h"
-
 
 namespace Inkscape {
 namespace Extension {
@@ -240,7 +235,6 @@ Extension::set_state (state_t in_state)
 
                 break;
             case STATE_UNLOADED:
-                // std::cout << "Unloading: " << name << std::endl;
                 imp->unload(this);
                 _state = STATE_UNLOADED;
 
@@ -512,6 +506,15 @@ void Extension::lookup_translation_catalog() {
         }
     }
 
+#ifdef _WIN32
+    // obtain short path, bindtextdomain doesn't understand UTF-8
+    if (!_gettext_catalog_dir.empty()) {
+        auto shortpath = g_win32_locale_filename_from_utf8(_gettext_catalog_dir.c_str());
+        _gettext_catalog_dir = shortpath;
+        g_free(shortpath);
+    }
+#endif
+
     // register catalog with gettext if found, disable translation for this extension otherwise
     if (!_gettext_catalog_dir.empty()) {
         const char *current_dir = bindtextdomain(_translationdomain, nullptr);
@@ -566,7 +569,10 @@ void Extension::set_environment(const SPDocument *doc) {
     Glib::unsetenv("INKEX_GETTEXT_DIRECTORY");
 
     // This is needed so extensions can interact with the user's profile, keep settings etc.
-    Glib::setenv("INKSCAPE_PROFILE_DIR", std::string(Inkscape::IO::Resource::profile_path()));
+    Glib::setenv("INKSCAPE_PROFILE_DIR", Inkscape::IO::Resource::profile_path());
+
+    // This is needed if an extension calls inkscape itself
+    Glib::setenv("SELF_CALL", "true");
 
     // This is needed so files can be saved relative to their document location (see image-extract)
     if (doc) {
@@ -682,6 +688,19 @@ Extension::get_param_bool(const gchar *name) const
 }
 
 /**
+ * \return   The value of the param or the alternate if the param doesn't exist.
+ * \brief    Like get_param_bool but with a default on param_not_exist error.
+ */
+bool Extension::get_param_bool(const gchar *name, bool alt) const
+{
+    try {
+        return get_param_bool(name);
+    } catch (Extension::param_not_exist) {
+        return alt;
+    }
+}
+
+/**
     \return   The integer value for the parameter specified
     \brief    Gets a parameter identified by name with the integer placed in value.
     \param    name   The name of the parameter to get
@@ -697,6 +716,20 @@ Extension::get_param_int(const gchar *name) const
 }
 
 /**
+ * \return   The value of the param or the alternate if the param doesn't exist.
+ * \brief    Like get_param_int but with a default on param_not_exist error.
+ */
+int Extension::get_param_int(const gchar *name, int alt) const
+{
+    try {
+        return get_param_int(name);
+    } catch (Extension::param_not_exist) {
+        return alt;
+    }
+}
+
+
+/**
     \return   The double value for the float parameter specified
     \brief    Gets a float parameter identified by name with the double placed in value.
     \param    name   The name of the parameter to get
@@ -709,6 +742,19 @@ Extension::get_param_float(const gchar *name) const
     const InxParameter *param;
     param = get_param(name);
     return param->get_float();
+}
+
+/**
+ * \return   The value of the param or the alternate if the param doesn't exist.
+ * \brief    Like get_param_float but with a default on param_not_exist error.
+ */
+double Extension::get_param_float(const gchar *name, double alt) const
+{
+    try {
+        return get_param_float(name);
+    } catch (Extension::param_not_exist) {
+        return alt;
+    }
 }
 
 /**
@@ -727,6 +773,19 @@ Extension::get_param_string(const gchar *name) const
 }
 
 /**
+ * \return   The value of the param or the alternate if the param doesn't exist.
+ * \brief    Like get_param_string but with a default on param_not_exist error.
+ */
+const char *Extension::get_param_string(const gchar *name, const char *alt) const
+{
+    try {
+        return get_param_string(name);
+    } catch (Extension::param_not_exist) {
+        return alt;
+    }
+}
+
+/**
     \return   The string value for the parameter specified
     \brief    Gets a parameter identified by name with the string placed in value.
     \param    name   The name of the parameter to get
@@ -739,6 +798,19 @@ Extension::get_param_optiongroup(const gchar *name) const
     const InxParameter *param;
     param = get_param(name);
     return param->get_optiongroup();
+}
+
+/**
+ * \return   The value of the param or the alternate if the param doesn't exist.
+ * \brief    Like get_param_optiongroup but with a default on param_not_exist error.
+ */
+const char *Extension::get_param_optiongroup(const gchar *name, const char *alt) const
+{
+    try {
+        return get_param_optiongroup(name);
+    } catch (Extension::param_not_exist) {
+        return alt;
+    }
 }
 
 /**
@@ -866,17 +938,30 @@ Extension::set_param_color(const gchar *name, const guint32 color)
     return param->set_color(color);
 }
 
+/**
+    \brief    Parses the given string value and sets a parameter identified by name.
+    \param    name   The name of the parameter to set
+    \param    value  The value to set the parameter to
+ */
+void Extension::set_param_any(const gchar *name, std::string value)
+{
+    get_param(name)->set(value);
+}
+
+void Extension::set_param_hidden(const gchar *name, bool hidden)
+{
+    get_param(name)->set_hidden(hidden);
+}
 
 /** \brief A function to open the error log file. */
 void
 Extension::error_file_open ()
 {
-    gchar *ext_error_file = Inkscape::IO::Resource::log_path(EXTENSION_ERROR_LOG_FILENAME);
-    error_file = Inkscape::IO::fopen_utf8name(ext_error_file, "w+");
+    auto ext_error_file = Inkscape::IO::Resource::log_path(EXTENSION_ERROR_LOG_FILENAME);
+    error_file = Inkscape::IO::fopen_utf8name(ext_error_file.c_str(), "w+");
     if (!error_file) {
-        g_warning(_("Could not create extension error log file '%s'"), ext_error_file);
+        g_warning(_("Could not create extension error log file '%s'"), ext_error_file.c_str());
     }
-    g_free(ext_error_file);
 };
 
 /** \brief A function to close the error log file. */
@@ -937,7 +1022,7 @@ public:
     If there are no visible parameters, this function just returns NULL.
 */
 Gtk::Widget *
-Extension::autogui (SPDocument *doc, Inkscape::XML::Node *node, sigc::signal<void> *changeSignal)
+Extension::autogui (SPDocument *doc, Inkscape::XML::Node *node, sigc::signal<void ()> *changeSignal)
 {
     if (!_gui || widget_visible_count() == 0) {
         return nullptr;
@@ -1028,6 +1113,35 @@ unsigned int Extension::widget_visible_count ( )
         }
     }
     return _visible_count;
+}
+
+/**
+ * Create a dialog for preference for this extension.
+ * Will skip if not using GUI.
+ *
+ * @return True if preferences have been shown or not using GUI, False is canceled.
+ */
+bool Extension::prefs()
+{
+    if (!INKSCAPE.use_gui()) {
+        return true;
+    }
+
+    if (!loaded())
+        set_state(Extension::STATE_LOADED);
+    if (!loaded())
+        return false;
+
+    if (auto controls = autogui(nullptr, nullptr)) {
+        auto dialog = new PrefDialog(get_name(), controls);
+        int response = dialog->run();
+        dialog->hide();
+        delete dialog;
+        return (response == Gtk::RESPONSE_OK);
+    }
+
+    // No controls, no prefs
+    return true;
 }
 
 }  /* namespace Extension */

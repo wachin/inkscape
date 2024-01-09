@@ -26,8 +26,8 @@
 #include <map>
 #include <vector>
 
-#include "3rdparty/libcroco/cr-declaration.h"
-#include "3rdparty/libcroco/cr-prop-list.h"
+#include "3rdparty/libcroco/src/cr-declaration.h"
+#include "3rdparty/libcroco/src/cr-prop-list.h"
 
 enum class SPAttr;
 
@@ -40,13 +40,11 @@ class Node;
 }
 }
 
-
 /// An SVG style object.
-class SPStyle {
-
+class SPStyle
+{
 public:
-
-    SPStyle(SPDocument *document = nullptr, SPObject *object = nullptr);// document is ignored if valid object given
+    SPStyle(SPDocument *document = nullptr, SPObject *object = nullptr); // document is ignored if valid object given
     ~SPStyle();
     const std::vector<SPIBase *> properties();
     void clear();
@@ -55,37 +53,30 @@ public:
     void readFromObject(SPObject *object);
     void readFromPrefs(Glib::ustring const &path);
     bool isSet(SPAttr id);
-    void readIfUnset(SPAttr id, char const *val, SPStyleSrc const &source = SPStyleSrc::STYLE_PROP );
+    void readIfUnset(SPAttr id, char const *val, SPStyleSrc const &source = SPStyleSrc::STYLE_PROP);
 
 private:
-    Glib::ustring write(unsigned int flags, SPStyleSrc style_src_req, SPStyle const *base = nullptr) const;
+    Glib::ustring write(unsigned flags, SPStyleSrc style_src_req, SPStyle const *base = nullptr) const;
 
 public:
-    Glib::ustring write(unsigned int flags = SP_STYLE_FLAG_IFSET) const;
+    Glib::ustring write(unsigned flags = SP_STYLE_FLAG_IFSET) const;
     Glib::ustring write(SPStyleSrc style_src_req) const;
     Glib::ustring writeIfDiff(SPStyle const *base) const;
 
-    void cascade( SPStyle const *const parent );
-    void merge(   SPStyle const *const parent );
-    void mergeString( char const *const p );
-    void mergeStatement( CRStatement *statement );
-    bool operator==(const SPStyle& rhs);
-
-    int style_ref()   { ++_refcount; return _refcount; }
-    int style_unref() { --_refcount; return _refcount; }
-    int refCount() { return _refcount; }
+    void cascade(SPStyle const *parent);
+    void merge(  SPStyle const *parent);
+    void mergeString(char const *p);
+    void mergeCSS(SPCSSAttr *css);
+    void mergeStatement(CRStatement *statement);
+    bool operator==(SPStyle const &rhs);
 
 private:
-    void _mergeString( char const *const p );
-    void _mergeDeclList( CRDeclaration const *const decl_list, SPStyleSrc const &source );
-    void _mergeDecl(     CRDeclaration const *const decl,      SPStyleSrc const &source );
-    void _mergeProps( CRPropList *const props );
-    void _mergeObjectStylesheet( SPObject const *const object );
-    void _mergeObjectStylesheet( SPObject const *const object, SPDocument *const document );
-
-private:
-    int _refcount;
-    static int _count; // Poor man's leak detector
+    void _mergeString(char const *p);
+    void _mergeDeclList(CRDeclaration const *decl_list, SPStyleSrc const &source);
+    void _mergeDecl(    CRDeclaration const *decl,      SPStyleSrc const &source);
+    void _mergeProps(CRPropList *props);
+    void _mergeObjectStylesheet(SPObject const *object);
+    void _mergeObjectStylesheet(SPObject const *object, SPDocument *document);
 
 // FIXME: Make private
 public:
@@ -103,7 +94,6 @@ private:
     using T = TypedSPI<Id, Base>;
 
 public:
-
     /* ----------------------- THE PROPERTIES ------------------------- */
     /*                    Match order in style.cpp.                     */
 
@@ -130,7 +120,7 @@ public:
     T<SPAttr::FONT_FAMILY, SPIString> font_family;
     /** Font shorthand */
     T<SPAttr::FONT, SPIFont> font;
-    /** Full font name, as font_factory::ConstructFontSpecification would give, for internal use. */
+    /** Full font name, as FontFactory::ConstructFontSpecification would give, for internal use. */
     T<SPAttr::INKSCAPE_FONT_SPEC, SPIString> font_specification;
 
     /* Font variants -------------------- */
@@ -308,6 +298,10 @@ public:
     /// style belongs to a cloned object
     bool cloned;
 
+    /// (hack) Temporarily set to true to block filter changes from updating
+    /// the object's bbox in situations where this update is undesirable.
+    bool block_filter_bbox_updates = false;
+
     sigc::connection release_connection;
 
     sigc::connection filter_modified_connection;
@@ -319,30 +313,36 @@ public:
     sigc::connection stroke_ps_changed_connection;
 
     /**
-     * Emitted when paint server object, fill paint refers to, is changed. That is
-     * when the reference starts pointing to a different address in memory.
+     * Emitted when the fill paint server changes, meaning it starts pointing
+     * to a different object.
      *
-     * NB It is different from fill_ps_modified signal. When paint server is modified
-     * it means some of it's attributes or children change.
+     * Note that this is different from the fill_ps_modified signal, which happens
+     * when some of its attributes or children have changed.
      */
-    sigc::signal<void, SPObject *, SPObject *> signal_fill_ps_changed;
-    /**
-     * Emitted when paint server object, fill paint refers to, is changed. That is
-     * when the reference starts pointing to a different address in memory.
-     */
-    sigc::signal<void, SPObject *, SPObject *> signal_stroke_ps_changed;
+    sigc::signal<void (SPObject *, SPObject *)> signal_fill_ps_changed;
 
-    SPFilter       *getFilter()          { return (filter.href) ? filter.href->getObject() : nullptr; }
-    SPFilter const *getFilter()    const { return (filter.href) ? filter.href->getObject() : nullptr; }
-    Inkscape::URI const *getFilterURI() const { return (filter.href) ? filter.href->getURI() : nullptr; }
+    /**
+     * Emitted when the stroke paint server changes, meaning it starts pointing
+     * to a different object.
+     */
+    sigc::signal<void (SPObject *, SPObject *)> signal_stroke_ps_changed;
+
+    /**
+     * Emitted when the filter changes, meaning it starts pointing to a different object.
+     */
+    sigc::signal<void (SPObject *, SPObject *)> signal_filter_changed;
+
+    SPFilter            *getFilter()          { return (filter.href) ? filter.href->getObject() : nullptr; }
+    SPFilter const      *getFilter()    const { return (filter.href) ? filter.href->getObject() : nullptr; }
+    Inkscape::URI const *getFilterURI() const { return (filter.href) ? filter.href->getURI()    : nullptr; }
 
     SPPaintServer       *getFillPaintServer()         { return (fill.value.href) ? fill.value.href->getObject() : nullptr; }
     SPPaintServer const *getFillPaintServer()   const { return (fill.value.href) ? fill.value.href->getObject() : nullptr; }
-    Inkscape::URI const *getFillURI()           const { return (fill.value.href) ? fill.value.href->getURI() : nullptr; }
+    Inkscape::URI const *getFillURI()           const { return (fill.value.href) ? fill.value.href->getURI()    : nullptr; }
 
     SPPaintServer       *getStrokePaintServer()       { return (stroke.value.href) ? stroke.value.href->getObject() : nullptr; }
     SPPaintServer const *getStrokePaintServer() const { return (stroke.value.href) ? stroke.value.href->getObject() : nullptr; }
-    Inkscape::URI const *getStrokeURI()         const { return (stroke.value.href) ? stroke.value.href->getURI() : nullptr; }
+    Inkscape::URI const *getStrokeURI()         const { return (stroke.value.href) ? stroke.value.href->getURI()    : nullptr; }
 
     /**
      * Return a font feature string useful for Pango.
@@ -358,10 +358,6 @@ public:
     /* ----------------------- EXTENDED PROPERTIES ------------------------- */
     std::map<std::string, std::string> extended_properties;
 };
-
-SPStyle *sp_style_ref(SPStyle *style); // SPStyle::ref();
-
-SPStyle *sp_style_unref(SPStyle *style); // SPStyle::unref();
 
 void sp_style_set_to_uri(SPStyle *style, bool isfill, Inkscape::URI const *uri); // ?
 

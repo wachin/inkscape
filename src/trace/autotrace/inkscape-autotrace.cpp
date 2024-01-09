@@ -11,8 +11,12 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  *
  */
+#include <iomanip>
+#include <2geom/path-sink.h>
+#include <glibmm/i18n.h>
 
 #include "inkscape-autotrace.h"
+#include "async/progress.h"
 
 extern "C" {
 #include "3rdparty/autotrace/autotrace.h"
@@ -20,207 +24,191 @@ extern "C" {
 #include "3rdparty/autotrace/spline.h"
 }
 
-#include <glibmm/i18n.h>
-#include <gtkmm/main.h>
-#include <iomanip>
-
-#include "trace/filterset.h"
-#include "trace/imagemap-gdk.h"
-#include "trace/quantize.h"
-
-#include "desktop.h"
-#include "message-stack.h"
-#include <inkscape.h>
-
-#include "object/sp-path.h"
-
-#include <svg/path-string.h>
-
-using Glib::ustring;
-
-// static void updateGui()
-// {
-//     //## Allow the GUI to update
-//     Gtk::Main::iteration(false); // at least once, non-blocking
-//     while (Gtk::Main::events_pending())
-//         Gtk::Main::iteration();
-// }
-
 namespace Inkscape {
-
 namespace Trace {
-
 namespace Autotrace {
+namespace {
 
-static guchar* to_3channels(GdkPixbuf* input) {
-    if (!input) {
-        return nullptr;
-    }
-    int imgsize = gdk_pixbuf_get_height(input) * gdk_pixbuf_get_width(input);
-    guchar *out = (guchar*)malloc(3 * imgsize);
-    if (!out) {
-        g_warning("Autotrace::to_3channels: can not allocate memory for %d pixel image.", imgsize);
-        return nullptr;
-    }
-    int x=0;
-    guchar* pix = gdk_pixbuf_get_pixels (input);
-    int rs = gdk_pixbuf_get_rowstride (input);
-    for(int row=0;row<gdk_pixbuf_get_height(input);row++) {
-        for (int col=0;col<gdk_pixbuf_get_width(input);col++) {
-            guchar alpha = *(pix + row * rs + col * 4 + 3);
-            guchar white = 255 - alpha;
-            for(int chan=0;chan<3;chan++) {
-                // guchar *pnew = (pix + row * rs + col * 3 + chan);
-                guchar *pold = (pix + row * rs + col * 4 + chan);
-                out[x++] = (guchar)(((int)(*pold) * (int)alpha / 256) + white);
-            }
-        }
-    }
-    return out;
-}
-
+struct at_splines_deleter { void operator()(at_splines_type *p) { at_splines_free(p); }; };
+using at_splines_uniqptr = std::unique_ptr<at_splines_type, at_splines_deleter>;
 
 /**
- *
+ * Eliminate the alpha channel by overlaying on top of white, and ensure the result is in packed RGB8 format.
+ * If nothing needs to be done, the original pixbuf is returned, otherwise a new pixbuf is returned.
  */
-AutotraceTracingEngine::AutotraceTracingEngine()
-    : keepGoing(1)
-    , traceType(TRACE_OUTLINE)
-    , invert(false)
+Glib::RefPtr<Gdk::Pixbuf> to_rgb8_packed(Glib::RefPtr<Gdk::Pixbuf> const &pixbuf)
 {
-    /* get default parameters */
+    int width     = pixbuf->get_width();
+    int height    = pixbuf->get_height();
+    int rowstride = pixbuf->get_rowstride();
+    int nchannels = pixbuf->get_n_channels();
+    auto data     = pixbuf->get_pixels();
+
+    if (nchannels == 3 && rowstride == width * 3) {
+        return pixbuf;
+    }
+
+    int imgsize = width * height;
+    auto out = new unsigned char[3 * imgsize];
+    auto q = out;
+
+    for (int y = 0; y < height; y++) {
+        auto p = data + rowstride * y;
+        for (int x = 0; x < width; x++) {
+            unsigned char alpha = nchannels == 3 ? 255 : p[3];
+            unsigned char white = 255 - alpha;
+            for (int c = 0; c < 3; c++) {
+                *(q++) = (int)p[c] * alpha / 256 + white;
+            }
+            p += nchannels;
+        }
+    }
+
+    return Gdk::Pixbuf::create_from_data(out, Gdk::COLORSPACE_RGB, false, 8, width, height, width * 3, [out] (auto) { delete [] out; });
+}
+
+} // namespace
+
+AutotraceTracingEngine::AutotraceTracingEngine()
+{
+    // Create options struct, automatically filled with defaults.
     opts = at_fitting_opts_new();
-    opts->background_color = at_color_new(255,255,255);
+    opts->background_color = at_color_new(255, 255, 255);
     autotrace_init();
 }
 
-AutotraceTracingEngine::~AutotraceTracingEngine() { at_fitting_opts_free(opts); }
-
-
-
-// TODO
-Glib::RefPtr<Gdk::Pixbuf> AutotraceTracingEngine::preview(Glib::RefPtr<Gdk::Pixbuf> thePixbuf) { 
-    //auto x = thePixbuf.copy();
-    guchar *pb = to_3channels(thePixbuf->gobj());
-    if (!pb) {
-        return Glib::RefPtr<Gdk::Pixbuf>();
-    }
-    return Gdk::Pixbuf::create_from_data(pb, thePixbuf->get_colorspace(), false, 8, thePixbuf->get_width(),
-                                         thePixbuf->get_height(), (thePixbuf->get_width() * 3),
-                                         [](const guint8 *pb) { free(const_cast<guint8 *>(pb)); });
+AutotraceTracingEngine::~AutotraceTracingEngine()
+{
+    at_fitting_opts_free(opts);
 }
 
-int test_cancel (void* keepGoing){return !(* ((int*)keepGoing));}
-
-/**
- *  This is the working method of this interface, and all
- *  implementing classes.  Take a GdkPixbuf, trace it, and
- *  return the path data that is compatible with the d="" attribute
- *  of an SVG <path> element.
- */
-std::vector<TracingEngineResult> AutotraceTracingEngine::trace(Glib::RefPtr<Gdk::Pixbuf> pixbuf)
+Glib::RefPtr<Gdk::Pixbuf> AutotraceTracingEngine::preview(Glib::RefPtr<Gdk::Pixbuf> const &pixbuf)
 {
-    GdkPixbuf *pb1 = pixbuf->gobj();
-    guchar *pb = to_3channels(pb1);
-    if (!pb) {
-        return std::vector<TracingEngineResult>();
-    }
+    // Todo: Actually generate a meaningful preview.
+    return to_rgb8_packed(pixbuf);
+}
+
+TraceResult AutotraceTracingEngine::trace(Glib::RefPtr<Gdk::Pixbuf> const &pixbuf, Async::Progress<double> &progress)
+{
+    auto pb = to_rgb8_packed(pixbuf);
     
-    at_bitmap *bitmap =
-//        at_bitmap_new(gdk_pixbuf_get_width(pb), gdk_pixbuf_get_height(pb), gdk_pixbuf_get_n_channels(pb));
-//    bitmap->bitmap = gdk_pixbuf_get_pixels(pb);
-    at_bitmap_new(gdk_pixbuf_get_width(pb1), gdk_pixbuf_get_height(pb1), 3);
-    free(bitmap->bitmap); // should create at_bitmap with bitmap->bitmap = pb
-    bitmap->bitmap = pb;
+    at_bitmap bitmap;
+    bitmap.height = pb->get_height();
+    bitmap.width  = pb->get_width();
+    bitmap.bitmap = pb->get_pixels();
+    bitmap.np     = 3;
+
+    auto throttled = Async::ProgressStepThrottler(progress, 0.02);
+    auto sub_trace = Async::SubProgress(throttled, 0.0, 0.8);
     
-    at_splines_type *splines = at_splines_new_full(bitmap, opts, NULL, NULL, NULL, NULL, test_cancel, &keepGoing);
+    auto splines = at_splines_uniqptr(at_splines_new_full(
+        &bitmap, opts,
+        nullptr, nullptr,
+        [] (gfloat frac, gpointer data) { reinterpret_cast<decltype(sub_trace)*>(data)->report(frac); }, &sub_trace,
+        [] (gpointer data) -> gboolean { return !reinterpret_cast<decltype(sub_trace)*>(data)->keepgoing(); }, &sub_trace
+    ));
     // at_output_write_func wfunc = at_output_get_handler_by_suffix("svg");
     // at_spline_writer *wfunc = at_output_get_handler_by_suffix("svg");
+    // at_splines_write(wfunc, stdout, "", NULL, splines, NULL, NULL);
 
+    sub_trace.report_or_throw(1.0);
+    auto sub_convert = Async::SubProgress(throttled, 0.8, 0.2);
 
     int height = splines->height;
-    // const at_splines_type spline = *splines;
-    at_spline_list_array_type spline = *splines;
-
-    unsigned this_list;
     at_spline_list_type list;
     at_color last_color = { 0, 0, 0 };
 
-    std::stringstream theStyle;
-    std::stringstream thePath;
-    char color[10];
-    int nNodes = 0;
+    std::string style;
+    Geom::PathBuilder pathbuilder;
+    TraceResult res;
 
-    std::vector<TracingEngineResult> res;
+    auto get_style = [&] {
+        char color[10];
+        std::sprintf(color, "#%02x%02x%02x;", list.color.r, list.color.g, list.color.b);
 
-    // at_splines_write(wfunc, stdout, "", NULL, splines, NULL, NULL);
+        std::stringstream ss;
+        ss << (splines->centerline || list.open ? "stroke:" : "fill:") << color
+           << (splines->centerline || list.open ? "fill:" : "stroke:") << "none";
 
-    for (this_list = 0; this_list < SPLINE_LIST_ARRAY_LENGTH(spline); this_list++) {
-        unsigned this_spline;
-        at_spline_type first;
+        return ss.str();
+    };
 
-        list = SPLINE_LIST_ARRAY_ELT(spline, this_list);
-        first = SPLINE_LIST_ELT(list, 0);
+    auto to_geom = [=] (at_real_coord const &c) {
+        return Geom::Point(c.x, height - c.y);
+    };
 
-        if (this_list == 0 || !at_color_equal(&list.color, &last_color)) {
-            if (this_list > 0) {
-                if (!(spline.centerline || list.open)) {
-                    thePath << "z";
-                    nNodes++;
+    int const num_splines = SPLINE_LIST_ARRAY_LENGTH(*splines);
+    for (int list_i = 0; list_i < num_splines; list_i++) {
+        sub_convert.report_or_throw((double)list_i / num_splines);
+
+        list = SPLINE_LIST_ARRAY_ELT(*splines, list_i);
+
+        if (list_i == 0 || !at_color_equal(&list.color, &last_color)) {
+            if (list_i > 0) {
+                if (!(splines->centerline || list.open)) {
+                    pathbuilder.closePath();
+                } else {
+                    pathbuilder.flush();
                 }
-                TracingEngineResult ter(theStyle.str(), thePath.str(), nNodes);
-                res.push_back(ter);
-                theStyle.clear();
-                thePath.clear();
-                nNodes = 0;
+                res.emplace_back(std::move(style), pathbuilder.peek());
+                pathbuilder.clear();
             }
-            sprintf(color, "#%02x%02x%02x;", list.color.r, list.color.g, list.color.b);
 
-            theStyle << ((spline.centerline || list.open) ? "stroke:" : "fill:") << color
-                     << ((spline.centerline || list.open) ? "fill:" : "stroke:") << "none";
+            style = get_style();
         }
-        thePath << "M" << START_POINT(first).x << " " << height - START_POINT(first).y;
-        nNodes++;
-        for (this_spline = 0; this_spline < SPLINE_LIST_LENGTH(list); this_spline++) {
-            at_spline_type s = SPLINE_LIST_ELT(list, this_spline);
 
-            if (SPLINE_DEGREE(s) == AT_LINEARTYPE) {
-                thePath << "L" << END_POINT(s).x << " " << height - END_POINT(s).y;
-                nNodes++;
+        auto const first = SPLINE_LIST_ELT(list, 0);
+        pathbuilder.moveTo(to_geom(START_POINT(first)));
+
+        for (int spline_i = 0; spline_i < SPLINE_LIST_LENGTH(list); spline_i++) {
+            auto const spline = SPLINE_LIST_ELT(list, spline_i);
+
+            if (SPLINE_DEGREE(spline) == AT_LINEARTYPE) {
+                pathbuilder.lineTo(to_geom(END_POINT(spline)));
+            } else {
+                pathbuilder.curveTo(to_geom(CONTROL1(spline)), to_geom(CONTROL2(spline)), to_geom(END_POINT(spline)));
             }
-            else {
-                thePath << "C" << CONTROL1(s).x << " " << height - CONTROL1(s).y << " " << CONTROL2(s).x << " "
-                        << height - CONTROL2(s).y << " " << END_POINT(s).x << " " << height - END_POINT(s).y;
-                nNodes++;
-            }
+
             last_color = list.color;
         }
     }
-    if (!(spline.centerline || list.open))
-        thePath << "z";
-    nNodes++;
-    if (SPLINE_LIST_ARRAY_LENGTH(spline) > 0) {
-        TracingEngineResult ter(theStyle.str(), thePath.str(), nNodes);
-        res.push_back(ter);
-        theStyle.clear();
-        thePath.clear();
-        nNodes = 0;
+
+    if (SPLINE_LIST_ARRAY_LENGTH(*splines) > 0) {
+        if (!(splines->centerline || list.open)) {
+            pathbuilder.closePath();
+        } else {
+            pathbuilder.flush();
+        }
+        res.emplace_back(std::move(style), pathbuilder.peek());
     }
 
     return res;
 }
 
-
-/**
- *  Abort the thread that is executing getPathDataFromPixbuf()
- */
-void AutotraceTracingEngine::abort()
+void AutotraceTracingEngine::setColorCount(unsigned color_count)
 {
-    // g_message("PotraceTracingEngine::abort()\n");
-    keepGoing = 0;
+    opts->color_count = color_count;
 }
 
+void AutotraceTracingEngine::setCenterLine(bool centerline)
+{
+    opts->centerline = centerline;
+}
 
+void AutotraceTracingEngine::setPreserveWidth(bool preserve_width)
+{
+    opts->preserve_width = preserve_width;
+}
+
+void AutotraceTracingEngine::setFilterIterations(unsigned filter_iterations)
+{
+    opts->filter_iterations = filter_iterations;
+}
+
+void AutotraceTracingEngine::setErrorThreshold(float error_threshold)
+{
+    opts->error_threshold = error_threshold;
+}
 
 } // namespace Autotrace
 } // namespace Trace

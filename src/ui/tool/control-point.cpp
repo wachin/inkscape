@@ -26,8 +26,7 @@
 #include "ui/tool/control-point.h"
 #include "ui/tool/event-utils.h"
 #include "ui/tool/transform-handle-set.h"
-
-#include "ui/widget/canvas.h" // Forced redraws
+#include "ui/widget/canvas.h" // autoscroll
 
 namespace Inkscape {
 namespace UI {
@@ -46,7 +45,7 @@ ControlPoint::ColorSet ControlPoint::_default_color_set = {
 
 ControlPoint *ControlPoint::mouseovered_point = nullptr;
 
-sigc::signal<void, ControlPoint*> ControlPoint::signal_mouseover_change;
+sigc::signal<void (ControlPoint*)> ControlPoint::signal_mouseover_change;
 
 Geom::Point ControlPoint::_drag_event_origin(Geom::infinity(), Geom::infinity());
 
@@ -80,10 +79,10 @@ ControlPoint::ControlPoint(SPDesktop *d, Geom::Point const &initial_pos, SPAncho
     , _cset(cset)
     , _position(initial_pos)
 {
-    _canvas_item_ctrl = new Inkscape::CanvasItemCtrl(group ? group : _desktop->getCanvasControls(),
+    _canvas_item_ctrl = make_canvasitem<Inkscape::CanvasItemCtrl>(group ? group : _desktop->getCanvasControls(),
                                                 Inkscape::CANVAS_ITEM_CTRL_SHAPE_BITMAP);
     _canvas_item_ctrl->set_name("CanvasItemCtrl:ControlPoint");
-    _canvas_item_ctrl->set_pixbuf(pixbuf->gobj());
+    _canvas_item_ctrl->set_pixbuf(std::move(pixbuf));
     _canvas_item_ctrl->set_fill(  _cset.normal.fill);
     _canvas_item_ctrl->set_stroke(_cset.normal.stroke);
     _canvas_item_ctrl->set_anchor(anchor);
@@ -99,7 +98,7 @@ ControlPoint::ControlPoint(SPDesktop *d, Geom::Point const &initial_pos, SPAncho
     , _cset(cset)
     , _position(initial_pos)
 {
-    _canvas_item_ctrl = new Inkscape::CanvasItemCtrl(group ? group : _desktop->getCanvasControls(), type);
+    _canvas_item_ctrl = make_canvasitem<Inkscape::CanvasItemCtrl>(group ? group : _desktop->getCanvasControls(), type);
     _canvas_item_ctrl->set_name("CanvasItemCtrl:ControlPoint");
     _canvas_item_ctrl->set_fill(  _cset.normal.fill);
     _canvas_item_ctrl->set_stroke(_cset.normal.stroke);
@@ -118,7 +117,6 @@ ControlPoint::~ControlPoint()
     //g_signal_handler_disconnect(G_OBJECT(_canvas_item_ctrl), _event_handler_connection);
     _event_handler_connection.disconnect();
     _canvas_item_ctrl->hide();
-    delete _canvas_item_ctrl;
 }
 
 void ControlPoint::_commonInit()
@@ -188,11 +186,6 @@ void ControlPoint::_setAnchor(SPAnchorType anchor)
 //     g_object_set(_canvas_item_ctrl, "anchor", anchor, nullptr);
 }
 
-void ControlPoint::_setPixbuf(Glib::RefPtr<Gdk::Pixbuf> p)
-{
-    _canvas_item_ctrl->set_pixbuf(Glib::unwrap(p));
-}
-
 // re-routes events into the virtual function   TODO: Refactor this nonsense.
 bool ControlPoint::_event_handler(GdkEvent *event, ControlPoint *point)
 {
@@ -247,7 +240,7 @@ bool ControlPoint::_eventHandler(Inkscape::UI::Tools::ToolBase *event_context, G
             pointer_offset = _position - _desktop->w2d(_drag_event_origin);
             _drag_initiated = false;
             // route all events to this handler
-            _canvas_item_ctrl->grab(_grab_event_mask, nullptr); // cursor is null
+            _canvas_item_ctrl->grab(_grab_event_mask); // cursor is null
             _event_grab = true;
             _setState(STATE_CLICKED);
             return true;
@@ -274,11 +267,7 @@ bool ControlPoint::_eventHandler(Inkscape::UI::Tools::ToolBase *event_context, G
                 _drag_origin = _position;
                 transferred = grabbed(&event->motion);
                 // _drag_initiated might change during the above virtual call
-                if (!_drag_initiated) {
-                    // this guarantees smooth redraws while dragging
-                    _desktop->getCanvas()->forced_redraws_start(5);
-                    _drag_initiated = true;
-                }
+                _drag_initiated = true;
             }
 
             if (!transferred) {
@@ -289,11 +278,10 @@ bool ControlPoint::_eventHandler(Inkscape::UI::Tools::ToolBase *event_context, G
                 move(new_pos);
                 _updateDragTip(&event->motion); // update dragging tip after moving to new position
 
-                _desktop->scroll_to_point(new_pos);
+                _desktop->getCanvas()->enable_autoscroll();
                 _desktop->set_coordinate_status(_position);
-                sp_event_context_snap_delay_handler(event_context, nullptr,
-                    (gpointer) this, &event->motion,
-                    Inkscape::UI::Tools::DelayedSnapEvent::CONTROL_POINT_HANDLER);
+                event_context->snap_delay_handler(nullptr, this, &event->motion,
+                                                  Inkscape::UI::Tools::DelayedSnapEvent::CONTROL_POINT_HANDLER);
             }
             return true;
         }
@@ -305,12 +293,9 @@ bool ControlPoint::_eventHandler(Inkscape::UI::Tools::ToolBase *event_context, G
             // (This is needed because we might not have snapped on the latest GDK_MOTION_NOTIFY event
             // if the mouse speed was too high. This is inherent to the snap-delay mechanism.
             // We must snap at some point in time though, and this is our last chance)
-            // PS: For other contexts this is handled already in sp_event_context_item_handler or
-            // sp_event_context_root_handler
-            //if (_desktop && _desktop->event_context && _desktop->event_context->_delayed_snap_event) {
-            if (event_context->_delayed_snap_event) {
-                sp_event_context_snap_watchdog_callback(event_context->_delayed_snap_event);
-            }
+            // PS: For other contexts this is handled already in start_item_handler or start_root_handler
+            // if (_desktop && _desktop->event_context && _desktop->event_context->_delayed_snap_event) {
+            event_context->process_delayed_snap_event();
 
             _canvas_item_ctrl->ungrab();
             _setMouseover(this, event->button.state);
@@ -318,7 +303,6 @@ bool ControlPoint::_eventHandler(Inkscape::UI::Tools::ToolBase *event_context, G
 
             if (_drag_initiated) {
                 // it is the end of a drag
-                _desktop->getCanvas()->forced_redraws_stop();
                 _drag_initiated = false;
                 ungrabbed(&event->button);
                 return true;
@@ -345,9 +329,6 @@ bool ControlPoint::_eventHandler(Inkscape::UI::Tools::ToolBase *event_context, G
         if (_event_grab && !event->grab_broken.keyboard) {
             {
                 ungrabbed(nullptr);
-                if (_drag_initiated) {
-                    _desktop->getCanvas()->forced_redraws_stop();
-                }
             }
             _setState(STATE_NORMAL);
             _event_grab = false;
@@ -366,7 +347,7 @@ bool ControlPoint::_eventHandler(Inkscape::UI::Tools::ToolBase *event_context, G
             if (!_drag_initiated) break;
 
             // temporarily disable snapping - we might snap to a different place than we were initially
-            sp_event_context_discard_delayed_snap_event(event_context);
+            event_context->discard_delayed_snap_event();
             SnapPreferences &snapprefs = _desktop->namedview->snap_manager.snapprefs;
             bool snap_save = snapprefs.getSnapEnabledGlobally();
             snapprefs.setSnapEnabledGlobally(false);
@@ -394,7 +375,6 @@ bool ControlPoint::_eventHandler(Inkscape::UI::Tools::ToolBase *event_context, G
 
             _canvas_item_ctrl->ungrab();
             _clearMouseover(); // this will also reset state to normal
-            _desktop->getCanvas()->forced_redraws_stop();
             _event_grab = false;
             _drag_initiated = false;
 
@@ -509,12 +489,9 @@ void ControlPoint::transferGrab(ControlPoint *prev_point, GdkEventMotion *event)
 
     grabbed(event);
     prev_point->_canvas_item_ctrl->ungrab();
-    _canvas_item_ctrl->grab(_grab_event_mask, nullptr); // cursor is null
+    _canvas_item_ctrl->grab(_grab_event_mask); // cursor is null
 
-    if (!_drag_initiated) {
-        _desktop->getCanvas()->forced_redraws_start(5);
-        _drag_initiated = true;
-    }
+    _drag_initiated = true;
 
     prev_point->_setState(STATE_NORMAL);
     _setMouseover(this, event->state);

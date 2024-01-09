@@ -22,25 +22,21 @@
 namespace Inkscape {
 namespace Filters {
 
-FilterConvolveMatrix::FilterConvolveMatrix()
-= default;
+FilterConvolveMatrix::FilterConvolveMatrix() = default;
 
-FilterPrimitive * FilterConvolveMatrix::create() {
-    return new FilterConvolveMatrix();
-}
+FilterConvolveMatrix::~FilterConvolveMatrix() = default;
 
-FilterConvolveMatrix::~FilterConvolveMatrix()
-= default;
-
-enum PreserveAlphaMode {
+enum PreserveAlphaMode
+{
     PRESERVE_ALPHA,
     NO_PRESERVE_ALPHA
 };
 
 template <PreserveAlphaMode preserve_alpha>
-struct ConvolveMatrix : public SurfaceSynth {
+struct ConvolveMatrix : public SurfaceSynth
+{
     ConvolveMatrix(cairo_surface_t *s, int targetX, int targetY, int orderX, int orderY,
-            double divisor, double bias, std::vector<double> const &kernel)
+                   double divisor, double bias, std::vector<double> const &kernel)
         : SurfaceSynth(s)
         , _kernel(kernel.size())
         , _targetX(targetX)
@@ -57,7 +53,8 @@ struct ConvolveMatrix : public SurfaceSynth {
         std::reverse(_kernel.begin(), _kernel.end());
     }
 
-    guint32 operator()(int x, int y) const {
+    guint32 operator()(int x, int y) const
+    {
         int startx = std::max(0, x - _targetX);
         int starty = std::max(0, y - _targetY);
         int endx = std::min(_w, startx + _orderX);
@@ -100,7 +97,7 @@ private:
     double _bias;
 };
 
-void FilterConvolveMatrix::render_cairo(FilterSlot &slot)
+void FilterConvolveMatrix::render_cairo(FilterSlot &slot) const
 {
     static bool bias_warning = false;
     static bool edge_warning = false;
@@ -124,16 +121,11 @@ void FilterConvolveMatrix::render_cairo(FilterSlot &slot)
     // We may need to transform input surface to correct color interpolation space. The input surface
     // might be used as input to another primitive but it is likely that all the primitives in a given
     // filter use the same color interpolation space so we don't copy the input before converting.
-    SPColorInterpolation ci_fp = SP_CSS_COLOR_INTERPOLATION_AUTO;
-    if( _style ) {
-        ci_fp = (SPColorInterpolation)_style->color_interpolation_filters.computed;
-        set_cairo_surface_ci(out, ci_fp);
-    }
-    set_cairo_surface_ci( input, ci_fp );
+    set_cairo_surface_ci(out, color_interpolation);
+    set_cairo_surface_ci(input, color_interpolation);
 
-    if (bias!=0 && !bias_warning) {
-        g_warning("It is unknown whether Inkscape's implementation of bias in feConvolveMatrix "
-                  "is correct!");
+    if (bias != 0 && !bias_warning) {
+        g_warning("It is unknown whether Inkscape's implementation of bias in feConvolveMatrix is correct!");
         bias_warning = true;
         // The SVG specification implies that feConvolveMatrix is defined for premultiplied
         // colors (which makes sense). It also says that bias should simply be added to the result
@@ -143,7 +135,7 @@ void FilterConvolveMatrix::render_cairo(FilterSlot &slot)
         // but this does appear to go against the standard.
         // Note that Batik simply does not support bias!=0
     }
-    if (edgeMode!=CONVOLVEMATRIX_EDGEMODE_NONE && !edge_warning) {
+    if (edgeMode != CONVOLVEMATRIX_EDGEMODE_NONE && !edge_warning) {
         g_warning("Inkscape only supports edgeMode=\"none\" (and a filter uses a different one)!");
         edge_warning = true;
     }
@@ -176,43 +168,52 @@ void FilterConvolveMatrix::render_cairo(FilterSlot &slot)
     cairo_surface_destroy(out);
 }
 
-void FilterConvolveMatrix::set_targetX(int coord) {
+void FilterConvolveMatrix::set_targetX(int coord)
+{
     targetX = coord;
 }
 
-void FilterConvolveMatrix::set_targetY(int coord) {
+void FilterConvolveMatrix::set_targetY(int coord)
+{
     targetY = coord;
 }
 
-void FilterConvolveMatrix::set_orderX(int coord) {
+void FilterConvolveMatrix::set_orderX(int coord)
+{
     orderX = coord;
 }
 
-void FilterConvolveMatrix::set_orderY(int coord) {
+void FilterConvolveMatrix::set_orderY(int coord)
+{
     orderY = coord;
 }
 
-void FilterConvolveMatrix::set_divisor(double d) {
+void FilterConvolveMatrix::set_divisor(double d)
+{
     divisor = d;
 }
 
-void FilterConvolveMatrix::set_bias(double b) {
+void FilterConvolveMatrix::set_bias(double b)
+{
     bias = b;
 }
 
-void FilterConvolveMatrix::set_kernelMatrix(std::vector<gdouble> &km) {
-    kernelMatrix = km;
+void FilterConvolveMatrix::set_kernelMatrix(std::vector<gdouble> km)
+{
+    kernelMatrix = std::move(km);
 }
 
-void FilterConvolveMatrix::set_edgeMode(FilterConvolveMatrixEdgeMode mode){
+void FilterConvolveMatrix::set_edgeMode(FilterConvolveMatrixEdgeMode mode)
+{
     edgeMode = mode;
 }
 
-void FilterConvolveMatrix::set_preserveAlpha(bool pa){
+void FilterConvolveMatrix::set_preserveAlpha(bool pa)
+{
     preserveAlpha = pa;
 }
 
-void FilterConvolveMatrix::area_enlarge(Geom::IntRect &area, Geom::Affine const &/*trans*/)
+void FilterConvolveMatrix::area_enlarge(Geom::IntRect &area, Geom::Affine const &/*trans*/) const
 {
     //Seems to me that since this filter's operation is resolution dependent,
     // some spurious pixels may still appear at the borders when low zooming or rotating. Needs a better fix.
@@ -220,16 +221,16 @@ void FilterConvolveMatrix::area_enlarge(Geom::IntRect &area, Geom::Affine const 
     // This makes sure the last row/column in the original image corresponds
     // to the last row/column in the new image that can be convolved without
     // adjusting the boundary conditions).
-    area.setMax(area.max() + Geom::IntPoint(orderX - targetX - 1, orderY - targetY -1));
+    area.setMax(area.max() + Geom::IntPoint(orderX - targetX - 1, orderY - targetY - 1));
 }
 
-double FilterConvolveMatrix::complexity(Geom::Affine const &)
+double FilterConvolveMatrix::complexity(Geom::Affine const &) const
 {
     return kernelMatrix.size();
 }
 
-} /* namespace Filters */
-} /* namespace Inkscape */
+} // namespace Filters
+} // namespace Inkscape
 
 /*
   Local Variables:

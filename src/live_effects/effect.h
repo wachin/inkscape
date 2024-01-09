@@ -48,10 +48,13 @@ enum LPEPathFlashType {
     DEFAULT
 };
 
-enum LPEAction {
-    LPE_ERASE = 0,
+enum LPEAction
+{
+    LPE_NONE = 0,
+    LPE_ERASE,
     LPE_TO_OBJECTS,
-    LPE_VISIBILITY
+    LPE_VISIBILITY,
+    LPE_UPDATE
 };
 
 class Effect {
@@ -71,32 +74,28 @@ public:
     void doAfterEffect_impl(SPLPEItem const *lpeitem, SPCurve *curve);
     void doOnApply_impl(SPLPEItem const* lpeitem);
     void doBeforeEffect_impl(SPLPEItem const* lpeitem);
+    void doOnOpen_impl();
+    void doOnRemove_impl(SPLPEItem const* lpeitem);
+    void transform_multiply_impl(Geom::Affine const &postmul, SPLPEItem *);
+    void doOnBeforeCommit();
+    void read_from_SVG();
     void setCurrentZoom(double cZ);
     void setSelectedNodePoints(std::vector<Geom::Point> sNP);
     bool isNodePointSelected(Geom::Point const &nodePoint) const;
     bool isOnClipboard();
-    virtual void doOnApply (SPLPEItem const* lpeitem);
-    virtual void doBeforeEffect (SPLPEItem const* lpeitem);
     std::vector<SPLPEItem *> getCurrrentLPEItems() const;
-
-private:
-    virtual void transform_multiply(Geom::Affine const &postmul, bool set);
-
-public:
-    void transform_multiply(Geom::Affine const &postmul, SPLPEItem *);
-    virtual void doAfterEffect (SPLPEItem const* lpeitem, SPCurve *curve);
+    void update_satellites();
     virtual void doOnException(SPLPEItem const *lpeitem);
-    virtual void doOnRemove (SPLPEItem const* lpeitem);
     virtual void doOnVisibilityToggled(SPLPEItem const* lpeitem);
     void writeParamsToSVG();
-
+    std::vector<SPObject *> effect_get_satellites(bool force = true);
     virtual void acceptParamPath (SPPath const* param_path);
     static int acceptsNumClicks(EffectType type);
     int acceptsNumClicks() const { return acceptsNumClicks(effectType()); }
     SPShape * getCurrentShape() const { return current_shape; };
     void setCurrentShape(SPShape * shape) { current_shape = shape; }
-    void processObjects(LPEAction lpe_action);
-
+    virtual void processObjects(LPEAction lpe_action);
+    void makeUndoDone(Glib::ustring message);
     /*
      * isReady() indicates whether all preparations which are necessary to apply the LPE are done,
      * e.g., waiting for a parameter path either before the effect is created or when it needs a
@@ -108,7 +107,6 @@ public:
     virtual void doEffect (SPCurve * curve);
 
     virtual Gtk::Widget * newWidget();
-    virtual Gtk::Widget * defaultParamSet();
     /**
      * Sets all parameters to their default values and writes them to SVG.
      */
@@ -146,18 +144,30 @@ public:
     bool apply_to_clippath_and_mask;
     bool keep_paths; // set this to false allow retain extra generated objects, see measure line LPE
     bool is_load;
+    bool is_applied;
     bool on_remove_all;
     bool refresh_widgets;
+    bool finishiddle = false;
+    bool satellitestoclipboard = false;
+    bool helperLineSatellites = false;
+    gint spinbutton_width_chars = 7;
+    void setLPEAction(LPEAction lpe_action) { _lpe_action = lpe_action; }
     BoolParam is_visible;
     HiddenParam lpeversion;
     Geom::PathVector pathvector_before_effect;
     Geom::PathVector pathvector_after_effect;
-    SPLPEItem *sp_lpe_item; // these get stored in doBeforeEffect_impl, and derived classes may do as they please with
+    SPLPEItem *sp_lpe_item = nullptr; // these get stored in doBeforeEffect_impl, and derived classes may do as they please with
                             // them.
     SPShape *current_shape; // these get stored in performPathEffects.
-  protected:
+    std::vector<Parameter *> param_vector;
+    void setDefaultParameters();
+    void resetDefaultParameters();
+    bool hasDefaultParameters();
+    virtual bool getHolderRemove() { return false; }
+protected:
     Effect(LivePathEffectObject *lpeobject);
-
+    friend class SatelliteArrayParam;
+    friend class LPEMeasureSegments;
     // provide a set of doEffect functions so the developer has a choice
     // of what kind of input/output parameters he desires.
     // the order in which they appear is the order in which they are
@@ -175,33 +185,31 @@ public:
 
     virtual void addCanvasIndicators(SPLPEItem const* lpeitem, std::vector<Geom::PathVector> &hp_vec);
 
-    std::vector<Parameter *> param_vector;
     bool _provides_knotholder_entities;
-
+    LPEAction _lpe_action = LPE_NONE;
     int oncanvasedit_it;
-    bool is_applied;
     bool show_orig_path; // set this to true in derived effects to automatically have the original
                          // path displayed as helperpath
-
-    Inkscape::UI::Widget::Registry wr;
-
-    LivePathEffectObject *lpeobj;
-
     // this boolean defaults to false, it concatenates the input path to one pwd2,
     // instead of normally 'splitting' the path into continuous pwd2 paths and calling doEffect_pwd2 for each.
     bool concatenate_before_pwd2;
-    std::vector<Glib::ustring> items;
     double current_zoom;
     std::vector<Geom::Point> selectedNodesPoints;
-
+    Inkscape::UI::Widget::Registry wr;
 private:
-    void onDefaultsExpanderChanged(Gtk::Expander * expander);
-    void setDefaultParam(Glib::ustring pref_path, Glib::ustring tooltip, Parameter *param, Gtk::Image *info,
-                         Gtk::Button *set, Gtk::Button *unset);
-    void unsetDefaultParam(Glib::ustring pref_path, Glib::ustring tooltip, Parameter *param, Gtk::Image *info,
-                           Gtk::Button *set, Gtk::Button *unset);
+    LivePathEffectObject *lpeobj;
+    virtual void transform_multiply(Geom::Affine const &postmul, bool set);
+    virtual bool doOnOpen(SPLPEItem const *lpeitem);
+    virtual void doAfterEffect (SPLPEItem const* lpeitem, SPCurve *curve);
+    // we want to call always to overrided methods not effect ones
+    virtual void doOnRemove(SPLPEItem const* /*lpeitem*/);
+    virtual void doOnApply (SPLPEItem const* lpeitem);
+    virtual void doBeforeEffect (SPLPEItem const* lpeitem);
+    
+    void setDefaultParam(Glib::ustring pref_path, Parameter *param);
+    void unsetDefaultParam(Glib::ustring pref_path, Parameter *param);
     bool provides_own_flash_paths; // if true, the standard flash path is suppressed
-
+    sigc::connection _before_commit_connection;
     bool is_ready;
     bool defaultsopen;
 };

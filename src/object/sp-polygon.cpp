@@ -80,27 +80,112 @@ Inkscape::XML::Node* SPPolygon::write(Inkscape::XML::Document *xml_doc, Inkscape
     return repr;
 }
 
-
-static gboolean polygon_get_value(gchar const **p, gdouble *v)
+/**
+ * @brief Parse a double from the string passed by pointer and advance the string start.
+ *
+ * @param[in,out] p A pointer to a string (representing a piece of the `points` attribute).
+ * @param[out] v The parsed value.
+ * @return Parse status.
+ */
+SPPolyParseError sp_poly_get_value(char const **p, double *v)
 {
     while (**p != '\0' && (**p == ',' || **p == '\x20' || **p == '\x9' || **p == '\xD' || **p == '\xA')) {
         (*p)++;
     }
 
     if (**p == '\0') {
-        return false;
+        return POLY_END_OF_STRING;
     }
 
     gchar *e = nullptr;
-    *v = g_ascii_strtod(*p, &e);
-
+    double value = g_ascii_strtod(*p, &e);
     if (e == *p) {
-        return false;
+        return POLY_INVALID_NUMBER;
+    }
+    if (std::isnan(value)) {
+        return POLY_NOT_A_NUMBER;
+    }
+    if (std::isinf(value)) {
+        return POLY_INFINITE_VALUE;
     }
 
     *p = e;
+    *v = value;
+    return POLY_OK;
+}
 
-    return true;
+/**
+ * @brief Print a warning message related to the parsing of a 'points' attribute.
+ */
+static void sp_poly_print_warning(char const *points, char const *error_location, SPPolyParseError error)
+{
+    switch (error) {
+        case POLY_END_OF_STRING: // Unexpected end of string!
+            {
+                size_t constexpr MAX_DISPLAY_SIZE = 64;
+                Glib::ustring s{points};
+                if (s.size() > MAX_DISPLAY_SIZE) {
+                    s = "... " + s.substr(s.size() - MAX_DISPLAY_SIZE);
+                }
+                g_warning("Error parsing a 'points' attribute: string ended unexpectedly!\n\t\"%s\"", s.c_str());
+                break;
+            }
+        case POLY_INVALID_NUMBER:
+            g_warning("Invalid number in the 'points' attribute:\n\t\"(...) %s\"", error_location);
+            break;
+
+        case POLY_INFINITE_VALUE:
+            g_warning("Infinity is not allowed in the 'points' attribute:\n\t\"(...) %s\"", error_location);
+            break;
+
+        case POLY_NOT_A_NUMBER:
+            g_warning("NaN-value is not allowed in the 'points' attribute:\n\t\"(...) %s\"", error_location);
+            break;
+
+        case POLY_OK:
+        default:
+            break;
+    }
+}
+
+/**
+ * @brief Parse a 'points' attribute, printing a warning when an error occurs.
+ *
+ * @param points The points attribute.
+ * @return The corresponding polyline curve (open).
+ */
+SPCurve sp_poly_parse_curve(char const *points)
+{
+    SPCurve result;
+    char const *cptr = points;
+    bool has_pt = false;
+
+    while (true) {
+        double x, y;
+
+        if (auto error = sp_poly_get_value(&cptr, &x)) {
+            // If the error is something other than end of input, we must report it.
+            // End of input is allowed when scanning for the next x coordinate: it
+            // simply means that we have reached the end of the coordinate list.
+            if (error != POLY_END_OF_STRING) {
+                sp_poly_print_warning(points, cptr, error);
+            }
+            break;
+        }
+        if (auto error = sp_poly_get_value(&cptr, &y)) {
+            // End of input is not allowed when scanning for y.
+            sp_poly_print_warning(points, cptr, error);
+            break;
+        }
+
+        if (has_pt) {
+            result.lineto(x, y);
+        } else {
+            result.moveto(x, y);
+            has_pt = true;
+        }
+    }
+    return result;
 }
 
 void SPPolygon::set(SPAttr key, const gchar* value) {
@@ -112,51 +197,8 @@ void SPPolygon::set(SPAttr key, const gchar* value) {
                 break;
             }
 
-            auto curve = std::make_unique<SPCurve>();
-            gboolean hascpt = FALSE;
-
-            gchar const *cptr = value;
-            bool has_error = false;
-
-            while (TRUE) {
-                gdouble x;
-
-                if (!polygon_get_value(&cptr, &x)) {
-                    break;
-                }
-
-                gdouble y;
-
-                if (!polygon_get_value(&cptr, &y)) {
-                    /* fixme: It is an error for an odd number of points to be specified.  We
-                     * should display the points up to now (as we currently do, though perhaps
-                     * without the closepath: the spec isn't quite clear on whether to do a
-                     * closepath or not, though I'd guess it's best not to do a closepath), but
-                     * then flag the document as in error, as per
-                     * http://www.w3.org/TR/SVG11/implnote.html#ErrorProcessing.
-                     *
-                     * (Ref: http://www.w3.org/TR/SVG11/shapes.html#PolygonElement.) */
-                    has_error = true;
-                    break;
-                }
-
-                if (hascpt) {
-                    curve->lineto(x, y);
-                } else {
-                    curve->moveto(x, y);
-                    hascpt = TRUE;
-                }
-            }
-
-            if (has_error || *cptr != '\0') {
-                /* TODO: Flag the document as in error, as per
-                 * http://www.w3.org/TR/SVG11/implnote.html#ErrorProcessing. */
-            } else if (hascpt) {
-                /* We might have done a moveto but no lineto.  I'm not sure how we're supposed to represent
-                 * a single-point polygon in SPCurve. TODO: add a testcase with only one coordinate pair */
-                curve->closepath();
-            }
-
+            auto curve = sp_poly_parse_curve(value);
+            curve.closepath();
             setCurve(std::move(curve));
             break;
         }

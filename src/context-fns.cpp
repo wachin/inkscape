@@ -12,6 +12,7 @@
 #include "context-fns.h"
 
 #include "desktop.h"
+#include "layer-manager.h"
 #include "message-context.h"
 #include "message-stack.h"
 #include "snap.h"
@@ -19,6 +20,7 @@
 #include "display/control/snap-indicator.h"
 
 #include "object/sp-namedview.h"
+#include "object/sp-item-group.h"
 
 #include "ui/modifiers.h"
 #include "ui/tools/tool-base.h"
@@ -39,7 +41,7 @@ static const double midpt_goldenratio_2 = (goldenratio + 2) / 2;
 
 bool Inkscape::have_viable_layer(SPDesktop *desktop, MessageContext *message)
 {
-    SPItem const *layer = SP_ITEM(desktop->currentLayer());
+    auto layer = desktop->layerManager().currentLayer();
 
     if ( !layer || desktop->itemIsHidden(layer) ) {
             message->flash(Inkscape::ERROR_MESSAGE,
@@ -68,7 +70,7 @@ bool Inkscape::have_viable_layer(SPDesktop *desktop, MessageContext *message)
 
 bool Inkscape::have_viable_layer(SPDesktop *desktop, MessageStack *message)
 {
-    SPItem const *layer = SP_ITEM(desktop->currentLayer());
+    auto layer = desktop->layerManager().currentLayer();
 
     if ( !layer || desktop->itemIsHidden(layer) ) {
             message->flash(Inkscape::WARNING_MESSAGE,
@@ -222,18 +224,6 @@ Geom::Rect Inkscape::snap_rectangular_box(SPDesktop const *desktop, SPItem *item
                     Geom::Point(MAX(p[0][Geom::X], p[1][Geom::X]), MAX(p[0][Geom::Y], p[1][Geom::Y])));
 }
 
-
-
-Geom::Point Inkscape::setup_for_drag_start(SPDesktop *desktop, Inkscape::UI::Tools::ToolBase* ec, GdkEvent *ev)
-{
-    ec->xp = static_cast<gint>(ev->button.x);
-    ec->yp = static_cast<gint>(ev->button.y);
-    ec->within_tolerance = true;
-
-    Geom::Point const p(ev->button.x, ev->button.y);
-    ec->item_to_select = Inkscape::UI::Tools::sp_event_context_find_item(desktop, p, ev->button.state & GDK_MOD1_MASK, TRUE);
-    return ec->getDesktop()->w2d(p);
-}
 
 
 /*

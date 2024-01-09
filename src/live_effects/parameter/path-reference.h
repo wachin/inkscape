@@ -21,27 +21,25 @@ namespace LivePathEffect {
 /**
  * The reference corresponding to href of LPE PathParam.
  */
-class PathReference : public Inkscape::URIReference {
+class PathReference
+    : public Inkscape::URIReference
+{
 public:
-    PathReference(SPObject *owner) : URIReference(owner) {}
+    PathReference(SPObject *owner)
+        : URIReference(owner) {}
 
-    SPItem *getObject() const {
-        return (SPItem *)URIReference::getObject();
-    }
+    SPItem *getObject() const;
 
 protected:
-    bool _acceptObject(SPObject * const obj) const override;
+    bool _acceptObject(SPObject *obj) const override;
 
 private:
-    PathReference(const PathReference&) = delete;
-    PathReference& operator=(const PathReference&) = delete;
+    PathReference(PathReference const &) = delete;
+    PathReference &operator=(PathReference const &) = delete;
 };
 
 } // namespace LivePathEffect
-
 } // namespace Inkscape
-
-
 
 #endif /* !SEEN_LPE_PATH_REFERENCE_H */
 

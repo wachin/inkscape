@@ -119,6 +119,45 @@ TEST(SvgLengthTest, testReadAbsolute)
     }
 }
 
+TEST(SvgLengthTest, testToFromString)
+{
+    SVGLength len;
+    ASSERT_TRUE(len.fromString("10", "mm", 3.7795277));
+    ASSERT_EQ(len.unit, SVGLength::NONE);
+    ASSERT_EQ(len.write(), "10");
+    ASSERT_EQ(len.toString("mm", 3.7795277), "10mm");
+    ASSERT_EQ(len.toString("in", 3.7795277), "0.3937008in");
+    ASSERT_EQ(len.toString("", 3.7795277), "37.795277");
+}
+
+struct eq_test_t
+{
+    char const *a;
+    char const *b;
+    bool equal;
+};
+eq_test_t eq_tests[4] = {
+    {"", "", true},
+    {"1", "1", true},
+    {"10mm", "10mm", true},
+    {"20mm", "10mm", false},
+};
+
+TEST(SvgLengthTest, testEquality)
+{
+    for (size_t i = 0; i < G_N_ELEMENTS(eq_tests); i++) {
+        SVGLength len_a;
+        SVGLength len_b;
+        len_a.read(eq_tests[i].a);
+        len_b.read(eq_tests[i].b);
+        if (eq_tests[i].equal) {
+            ASSERT_TRUE(len_a == len_b) << eq_tests[i].a << " == " << eq_tests[i].b;
+        } else {
+            ASSERT_TRUE(len_a != len_b) << eq_tests[i].a << " != " << eq_tests[i].b;
+        }
+    }
+}
+
 TEST(SvgLengthTest, testEnumMappedToString)
 {
     for (int i = (static_cast<int>(SVGLength::NONE) + 1); i <= static_cast<int>(SVGLength::LAST_UNIT); i++) {
@@ -174,13 +213,11 @@ TEST(SvgLengthTest, testPlaces)
     };
 
     for (size_t i = 0; i < G_N_ELEMENTS(precTests); i++) {
-        char buf[256] = {0};
-        memset(buf, 0xCC, sizeof(buf)); // Make it easy to detect an overrun.
-        unsigned int retval =
-            sp_svg_number_write_de(buf, sizeof(buf), precTests[i].val, precTests[i].prec, precTests[i].minexp);
+        std::string buf;
+        buf.append(sp_svg_number_write_de(precTests[i].val, precTests[i].prec, precTests[i].minexp));
+        unsigned int retval = buf.length();
         ASSERT_EQ( retval, strlen(precTests[i].str)) << "Number of chars written";
         ASSERT_EQ( std::string(buf), std::string(precTests[i].str)) << "Numeric string written";
-        ASSERT_EQ( '\xCC', buf[retval + 1]) << std::string("Buffer overrun ") + precTests[i].str;
     }
 }
 

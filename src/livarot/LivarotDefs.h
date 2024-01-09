@@ -31,13 +31,19 @@ enum
 };
 
 // return codes for the find function in the AVL tree (private)
+
+/**
+ * The SweepTree::Find function and its variant for a single point figure out where a point or an edge
+ * should be inserted in a linked list of edges. Once calculated, they return one of these values to indicate
+ * how that place looks like.
+ */
 enum
 {
-  not_found = 0,
-  found_exact = 1,
-  found_on_left = 2,
-  found_on_right = 3,
-  found_between = 4
+  not_found = 0,      /*!< Didn't find a place. */
+  found_exact = 1,    /*!< Found such an edge where edge to insert lies directly on top of another edge */
+  found_on_left = 2,  /*!< Point/edge should go to the left of some edge. (There is nothing on the left of that edge) */
+  found_on_right = 3, /*!< Point/edge should go to the right of some edge. (There is nothing on the right of that edge) */
+  found_between = 4   /*!< Point/edge should go in between two particular edges. */
 };
 
 // types of cap for stroking polylines

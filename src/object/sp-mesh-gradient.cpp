@@ -11,6 +11,7 @@
 
 #include "attributes.h"
 #include "display/cairo-utils.h"
+#include "display/drawing-paintserver.h"
 
 #include "sp-mesh-gradient.h"
 
@@ -153,118 +154,78 @@ Inkscape::XML::Node* SPMeshGradient::write(Inkscape::XML::Document *xml_doc, Ink
     return repr;
 }
 
-cairo_pattern_t* SPMeshGradient::pattern_new(cairo_t * /*ct*/,
-  Geom::OptRect const &bbox,
-	double opacity)
+std::unique_ptr<Inkscape::DrawingPaintServer> SPMeshGradient::create_drawing_paintserver()
 {
-  using Geom::X;
-  using Geom::Y;
+    ensureArray();
 
-#ifdef MESH_DEBUG
-  std::cout << "sp_meshgradient_create_pattern: " << (*bbox) << " " << opacity << std::endl;
-#endif
+    SPMeshNodeArray* my_array = &array;
 
-  this->ensureArray();
-
-  cairo_pattern_t *cp = nullptr;
-
-  SPMeshNodeArray* my_array = &array;
-
-  if( type_set ) {
-    switch (type) {
-    case SP_MESH_TYPE_COONS:
-      // std::cout << "SPMeshGradient::pattern_new: Coons" << std::endl;
-      break;
-    case SP_MESH_TYPE_BICUBIC:
-      array.bicubic( &array_smoothed, type );
-      my_array = &array_smoothed;
-      break;
+    if (type_set) {
+        switch (type) {
+        case SP_MESH_TYPE_COONS:
+            // std::cout << "SPMeshGradient::pattern_new: Coons" << std::endl;
+            break;
+        case SP_MESH_TYPE_BICUBIC:
+            array.bicubic(&array_smoothed, type);
+            my_array = &array_smoothed;
+            break;
+        }
     }
-  }
 
-  cp = cairo_pattern_create_mesh();
+    int rows = my_array->patch_rows();
+    int cols = my_array->patch_columns();
 
-  for( unsigned int i = 0; i < my_array->patch_rows(); ++i ) {
-    for( unsigned int j = 0; j < my_array->patch_columns(); ++j ) {
-
-      SPMeshPatchI patch( &(my_array->nodes), i, j );
-
-      cairo_mesh_pattern_begin_patch( cp );
-      cairo_mesh_pattern_move_to( cp, patch.getPoint( 0, 0 )[X], patch.getPoint( 0, 0 )[Y] );
-
-      for( unsigned int k = 0; k < 4; ++k ) {
-#ifdef DEBUG_MESH
-	std::cout << i << " " << j << " "
-		  << patch.getPathType( k ) << "  (";
-	for( int p = 0; p < 4; ++p ) {
-	  std::cout << patch.getPoint( k, p );
-	}
-	std::cout << ") "
-		  << patch.getColor( k ).toString() << std::endl;
-#endif
-
-	switch ( patch.getPathType( k ) ) {
-	case 'l':
-	case 'L':
-	case 'z':
-	case 'Z':
-	  cairo_mesh_pattern_line_to( cp,
-				      patch.getPoint( k, 3 )[X],
-				      patch.getPoint( k, 3 )[Y] );
-	  break;
-	case 'c':
-	case 'C':
-	  {
-	    std::vector< Geom::Point > pts = patch.getPointsForSide( k );
-	    cairo_mesh_pattern_curve_to( cp,
-					 pts[1][X], pts[1][Y],
-					 pts[2][X], pts[2][Y],
-					 pts[3][X], pts[3][Y] );
-	    break;
-	  }
-	default:
-	  // Shouldn't happen
-	  std::cout << "sp_mesh_create_pattern: path error" << std::endl;
-	}
-
-	if( patch.tensorIsSet(k) ) {
-	  // Tensor point defined relative to corner.
-	  Geom::Point t = patch.getTensorPoint(k);
-	  cairo_mesh_pattern_set_control_point( cp, k, t[X], t[Y] );
-	  //std::cout << "  sp_mesh_create_pattern: tensor " << k
-	  //          << " set to " << t << "." << std::endl;
-	} else {
-	  // Geom::Point t = patch.coonsTensorPoint(k);
-	  //std::cout << "  sp_mesh_create_pattern: tensor " << k
-	  //          << " calculated as " << t << "." <<std::endl;
-	}
-
-	cairo_mesh_pattern_set_corner_color_rgba(
-						 cp, k,
-						 patch.getColor( k ).v.c[0],
-						 patch.getColor( k ).v.c[1],
-						 patch.getColor( k ).v.c[2],
-						 patch.getOpacity( k ) * opacity );
-      }
-
-      cairo_mesh_pattern_end_patch( cp );
+    std::vector<std::vector<Inkscape::DrawingMeshGradient::PatchData>> patchdata;
+    patchdata.resize(rows);
+    for (auto &row : patchdata) {
+        row.resize(cols);
     }
-  }
 
-  // set pattern matrix
-  Geom::Affine gs2user = this->gradientTransform;
-  if (this->getUnits() == SP_GRADIENT_UNITS_OBJECTBOUNDINGBOX) {
-    Geom::Affine bbox2user(bbox->width(), 0, 0, bbox->height(), bbox->left(), bbox->top());
-    gs2user *= bbox2user;
-  }
-  ink_cairo_pattern_set_matrix(cp, gs2user.inverse());
+    for (int i = 0; i < rows; i++) {
+        for (int j = 0; j < cols; j++) {
+            auto patch = SPMeshPatchI(&my_array->nodes, i, j);
+            auto &data = patchdata[i][j];
 
-  /*
-    cairo_pattern_t *cp = cairo_pattern_create_radial(
-    rg->fx.computed, rg->fy.computed, 0,
-    rg->cx.computed, rg->cy.computed, rg->r.computed);
-    sp_gradient_pattern_common_setup(cp, gr, bbox, opacity);
-  */
+            for (int x = 0; x < 4; x++) {
+                for (int y = 0; y < 4; y++) {
+                    data.points[x][y] = patch.getPoint(x, y);
+                }
+            }
 
-  return cp;
+            for (int k = 0; k < 4; k++) {
+                #ifdef DEBUG_MESH
+                    std::cout << i << " " << j << " " << patch.getPathType(k) << "  (";
+                    for (int p = 0; p < 4; p++) {
+                        std::cout << patch.getPoint(k, p);
+                    }
+                    std::cout << ") " << patch.getColor(k).toString() << std::endl;
+                #endif
+
+                data.pathtype[k] = patch.getPathType(k);
+
+                if (patch.tensorIsSet(k)) {
+                    data.tensorIsSet[k] = true;
+                    data.tensorpoints[k] = patch.getTensorPoint(k);
+                    //auto t = patch.getTensorPoint(k);
+                    //std::cout << "  sp_mesh_create_pattern: tensor " << k
+                    //          << " set to " << t << "." << std::endl;
+                } else {
+                    data.tensorIsSet[k] = false;
+                    //auto t = patch.coonsTensorPoint(k);
+                    //std::cout << "  sp_mesh_create_pattern: tensor " << k
+                    //          << " calculated as " << t << "." << std::endl;
+                }
+
+                auto color = patch.getColor(k);
+                for (int r = 0; r < 3; r++) {
+                    data.color[k][r] = color.v.c[r];
+                }
+
+                data.opacity[k] = patch.getOpacity(k);
+            }
+        }
+    }
+
+    return std::make_unique<Inkscape::DrawingMeshGradient>(getSpread(), getUnits(), gradientTransform,
+                                                           rows, cols, std::move(patchdata));
 }

@@ -27,7 +27,7 @@ macro(pod2man PODFILE_FULL RELEASE SECTION CENTER)
     endif()
 
     if(NOT EXISTS ${PODFILE_FULL})
-        message(FATAL ERROR "Could not find pod file ${PODFILE_FULL} to generate man page")
+        message(FATAL_ERROR "Could not find pod file ${PODFILE_FULL} to generate man page")
     endif(NOT EXISTS ${PODFILE_FULL})
 
     if(POD2MAN)
@@ -36,13 +36,13 @@ macro(pod2man PODFILE_FULL RELEASE SECTION CENTER)
             set(MANFILE_TEMP "${CMAKE_CURRENT_BINARY_DIR}/${NAME}.${LANG}.tmp")
             set(MANFILE_FULL "${CMAKE_CURRENT_BINARY_DIR}/${NAME}.${LANG}.${SECTION}")
             set(MANFILE_FULL_GZ "${CMAKE_CURRENT_BINARY_DIR}/${NAME}.${LANG}.${SECTION}.gz")
-            set(MANFILE_DEST "${CMAKE_INSTALL_FULL_MANDIR}/${LANG}/man${SECTION}")
+            set(MANFILE_DEST "${CMAKE_INSTALL_MANDIR}/${LANG}/man${SECTION}")
         else()
             set(MANPAGE_TARGET "man-${NAME}")
             set(MANFILE_TEMP "${CMAKE_CURRENT_BINARY_DIR}/${NAME}.tmp")
             set(MANFILE_FULL "${CMAKE_CURRENT_BINARY_DIR}/${NAME}.${SECTION}")
             set(MANFILE_FULL_GZ "${CMAKE_CURRENT_BINARY_DIR}/${NAME}.${SECTION}.gz")
-            set(MANFILE_DEST "${CMAKE_INSTALL_FULL_MANDIR}/man${SECTION}")
+            set(MANFILE_DEST "${CMAKE_INSTALL_MANDIR}/man${SECTION}")
         endif()
         add_custom_command(
             OUTPUT ${MANFILE_TEMP}
@@ -58,8 +58,8 @@ macro(pod2man PODFILE_FULL RELEASE SECTION CENTER)
         if(GZIP AND WITH_MANPAGE_COMPRESSION)
             add_custom_command(
                 OUTPUT ${MANFILE_FULL_GZ}
-	        COMMAND ${GZIP} -f -k --best -n "${MANFILE_FULL}"
-	        DEPENDS ${MANFILE_FULL}
+                COMMAND ${GZIP} -f -k --best -n "${MANFILE_FULL}"
+                DEPENDS ${MANFILE_FULL}
             )
             add_custom_target(${MANPAGE_TARGET} ALL
                 DEPENDS ${MANFILE_FULL_GZ}

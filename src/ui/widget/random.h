@@ -92,7 +92,7 @@ public:
      */
     void setStartSeed(long newseed);
 
-    sigc::signal <void> signal_reseeded;
+    sigc::signal<void ()> signal_reseeded;
 
 protected:
     long startseed;

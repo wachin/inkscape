@@ -10,6 +10,7 @@
 #ifndef SEEN_EXTRACT_URI_H
 #define SEEN_EXTRACT_URI_H
 
+#include <optional>
 #include <string>
 
 /**
@@ -36,6 +37,21 @@
  */
 std::string extract_uri(char const *s, char const **endptr = nullptr);
 
+/**
+ * @brief Try extracting URI from "url(xyz)" string using extract_uri
+ * 
+ * @param url string input that may or may not be a link
+ * @return Extracted non-empty link or no value if provided input is not an URI
+ */
+std::optional<std::string> try_extract_uri(const char* url);
+
+/**
+ * @brief Try extracting the object id from "url(#obj_id)" string using extract_uri
+ * 
+ * @param url string input that may or may not be a link
+ * @return Extracted non-empty objectid or no value if provided input is not an URI or not an id
+ */
+std::optional<std::string> try_extract_uri_id(const char* url);
 
 #endif /* !SEEN_EXTRACT_URI_H */
 

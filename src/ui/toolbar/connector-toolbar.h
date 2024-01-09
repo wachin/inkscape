@@ -28,9 +28,11 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
+#include <gtkmm/adjustment.h>
+
 #include "toolbar.h"
 
-#include <gtkmm/adjustment.h>
+#include "xml/node-observer.h"
 
 class SPDesktop;
 
@@ -47,7 +49,10 @@ class Node;
 
 namespace UI {
 namespace Toolbar {
-class ConnectorToolbar : public Toolbar {
+class ConnectorToolbar
+	: public Toolbar
+	, private XML::NodeObserver
+{
 private:
     Gtk::ToggleToolButton *_orthogonal;
     Gtk::ToggleToolButton *_directed_item;
@@ -57,9 +62,9 @@ private:
     Glib::RefPtr<Gtk::Adjustment> _spacing_adj;
     Glib::RefPtr<Gtk::Adjustment> _length_adj;
 
-    bool _freeze;
+    bool _freeze{false};
 
-    Inkscape::XML::Node *_repr;
+    Inkscape::XML::Node *_repr{nullptr};
 
     void path_set_avoid();
     void path_set_ignore();
@@ -71,6 +76,10 @@ private:
     void spacing_changed();
     void length_changed();
     void selection_changed(Inkscape::Selection *selection);
+
+	void notifyAttributeChanged(Inkscape::XML::Node &node, GQuark name,
+								Inkscape::Util::ptr_shared old_value,
+								Inkscape::Util::ptr_shared new_value) final;
 
 protected:
     ConnectorToolbar(SPDesktop *desktop);

@@ -47,7 +47,7 @@ private:
                right here. */
     Gtk::Dialog * _visibleDialog;
     /** \brief Signal that the run is complete. */
-    sigc::signal<void> _runComplete;
+    sigc::signal<void ()> _runComplete;
     /** \brief  In some cases we need a mainLoop, when we do, this is
                 a pointer to it. */
     Glib::RefPtr<Glib::MainLoop> _mainloop;

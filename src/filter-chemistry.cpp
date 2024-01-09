@@ -82,11 +82,10 @@ SPFilter *new_filter(SPDocument *document)
     Inkscape::GC::release(repr);
 
     // get corresponding object
-    SPFilter *f = SP_FILTER( document->getObjectByRepr(repr) );
+    auto f = cast<SPFilter>( document->getObjectByRepr(repr) );
     
     
     g_assert(f != nullptr);
-    g_assert(SP_IS_FILTER(f));
 
     return f;
 }
@@ -129,6 +128,7 @@ filter_add_primitive(SPFilter *filter, const Inkscape::Filters::FilterPrimitiveT
         case Inkscape::Filters::NR_FILTER_MERGE:
             break;
         case Inkscape::Filters::NR_FILTER_MORPHOLOGY:
+            repr->setAttribute("radius", "1");
             break;
         case Inkscape::Filters::NR_FILTER_OFFSET:
             repr->setAttribute("dx", "0");
@@ -150,10 +150,9 @@ filter_add_primitive(SPFilter *filter, const Inkscape::Filters::FilterPrimitiveT
     Inkscape::GC::release(repr);
     
     // get corresponding object
-    SPFilterPrimitive *prim = SP_FILTER_PRIMITIVE( filter->document->getObjectByRepr(repr) );
+    auto prim = cast<SPFilterPrimitive>( filter->document->getObjectByRepr(repr) );
  
     g_assert(prim != nullptr);
-    g_assert(SP_IS_FILTER_PRIMITIVE(prim));
 
     return prim;
 }
@@ -206,13 +205,11 @@ new_filter_gaussian_blur (SPDocument *document, gdouble radius, double expansion
     Inkscape::GC::release(repr);
 
     // get corresponding object
-    SPFilter *f = SP_FILTER( document->getObjectByRepr(repr) );
-    SPGaussianBlur *b = SP_GAUSSIANBLUR( document->getObjectByRepr(b_repr) );
+    auto f = cast<SPFilter>( document->getObjectByRepr(repr) );
+    auto b = cast<SPGaussianBlur>( document->getObjectByRepr(b_repr) );
     
     g_assert(f != nullptr);
-    g_assert(SP_IS_FILTER(f));
     g_assert(b != nullptr);
-    g_assert(SP_IS_GAUSSIANBLUR(b));
 
     return f;
 }
@@ -250,7 +247,7 @@ new_filter_blend_gaussian_blur (SPDocument *document, const char *blendmode, gdo
     Inkscape::GC::release(repr);
  
     // get corresponding object
-    SPFilter *f = SP_FILTER( document->getObjectByRepr(repr) );
+    auto f = cast<SPFilter>( document->getObjectByRepr(repr) );
     // Gaussian blur primitive
     if(radius != 0) {
         //create feGaussianBlur node
@@ -269,9 +266,8 @@ new_filter_blend_gaussian_blur (SPDocument *document, const char *blendmode, gdo
         repr->appendChild(b_repr);
         Inkscape::GC::release(b_repr);
 
-        SPGaussianBlur *b = SP_GAUSSIANBLUR( document->getObjectByRepr(b_repr) );
+        auto b = cast<SPGaussianBlur>( document->getObjectByRepr(b_repr) );
         g_assert(b != nullptr);
-        g_assert(SP_IS_GAUSSIANBLUR(b));
     }
     // Blend primitive
     if(strcmp(blendmode, "normal")) {
@@ -291,13 +287,11 @@ new_filter_blend_gaussian_blur (SPDocument *document, const char *blendmode, gdo
             root->setAttribute("enable-background", "new");
         }
 
-        SPFeBlend *b = SP_FEBLEND(document->getObjectByRepr(b_repr));
+        auto b = cast<SPFeBlend>(document->getObjectByRepr(b_repr));
         g_assert(b != nullptr);
-        g_assert(SP_IS_FEBLEND(b));
     }
     
     g_assert(f != nullptr);
-    g_assert(SP_IS_FILTER(f));
  
     return f;
 }
@@ -342,7 +336,7 @@ SPFilter *modify_filter_gaussian_blur_from_item(SPDocument *document, SPItem *it
         SPDefs *defs = document->getDefs();
         defs->appendChild(repr);
 
-        filter = SP_FILTER( document->getObjectByRepr(repr) );
+        filter = cast<SPFilter>( document->getObjectByRepr(repr) );
         Inkscape::GC::release(repr);
     }
 
@@ -352,9 +346,6 @@ SPFilter *modify_filter_gaussian_blur_from_item(SPDocument *document, SPItem *it
     double stdDeviation = radius;
     if (expansion != 0)
         stdDeviation /= expansion;
-
-    // Get the object size
-    Geom::OptRect const r = item->desktopGeometricBounds();
 
     // Set the filter effects area
     SPFilter *f = item->style->getFilter();
@@ -400,7 +391,6 @@ void remove_filter (SPObject *item, bool recursive)
     sp_repr_css_attr_unref(css);
 }
 
-// 1.1 COPYPASTECLONESTAMPLPEBUG
 void remove_hidder_filter (SPObject *item)
 {
     SPFilter *filt = item->style->getFilter();
@@ -411,7 +401,18 @@ void remove_hidder_filter (SPObject *item)
         }
     }
 }
-// END COPYPASTECLONESTAMPLPEBUG
+
+bool has_hidder_filter(SPObject *item)
+{
+    SPFilter *filt = item->style->getFilter();
+    if (filt && filt->getId()) {
+        Glib::ustring filter = filt->getId();
+        if (!filter.rfind("selectable_hidder_filter", 0)) {
+            return true;
+        }
+    }
+    return false;
+}
 
 /**
  * Removes the first feGaussianBlur from the filter attached to given item.
@@ -462,14 +463,13 @@ void remove_filter_legacy_blend(SPObject *item)
         // determine whether filter is simple (blend and/or blur) or complex
         SPFeBlend *blend = nullptr;
         for (auto &primitive_obj:item->style->getFilter()->children) {
-            SPFilterPrimitive *primitive = dynamic_cast<SPFilterPrimitive *>(&primitive_obj);
+            auto primitive = cast<SPFilterPrimitive>(&primitive_obj);
             if (primitive) {
-                if (dynamic_cast<SPFeBlend *>(primitive)) {
-                    blend = dynamic_cast<SPFeBlend *>(primitive);
+                if (is<SPFeBlend>(primitive)) {
+                    blend = cast<SPFeBlend>(primitive);
                     ++blendcount;
                 }
-                SPGaussianBlur *spgausian = dynamic_cast<SPGaussianBlur *>(primitive);
-                if (spgausian) {
+                if (is<SPGaussianBlur>(primitive)) {
                     ++blurcount;
                 }
                 ++total;
@@ -500,15 +500,14 @@ SPBlendMode filter_get_legacy_blend(SPObject *item)
         size_t total = 0;
         // determine whether filter is simple (blend and/or blur) or complex
         for (auto &primitive_obj:item->style->getFilter()->children) {
-            SPFilterPrimitive *primitive = dynamic_cast<SPFilterPrimitive *>(&primitive_obj);
+            auto primitive = cast<SPFilterPrimitive>(&primitive_obj);
             if (primitive) {
-                SPFeBlend *spblend = dynamic_cast<SPFeBlend *>(primitive);
+                auto spblend = cast<SPFeBlend>(primitive);
                 if (spblend) {
                     ++blendcount;
-                    blend = spblend->blend_mode;
+                    blend = spblend->get_blend_mode();
                 }
-                SPGaussianBlur *spgausian = dynamic_cast<SPGaussianBlur *>(primitive);
-                if (spgausian) {
+                if (is<SPGaussianBlur>(primitive)) {
                     ++blurcount;
                 }
                 ++total;
@@ -524,17 +523,17 @@ SPBlendMode filter_get_legacy_blend(SPObject *item)
 bool filter_is_single_gaussian_blur(SPFilter *filter)
 {
     return (filter->children.size() == 1 &&
-            SP_IS_GAUSSIANBLUR(&filter->children.front()));
+            is<SPGaussianBlur>(&filter->children.front()));
 }
 
 double get_single_gaussian_blur_radius(SPFilter *filter)
 {
     if (filter->children.size() == 1 &&
-        SP_IS_GAUSSIANBLUR(&filter->children.front())) {
+        is<SPGaussianBlur>(&filter->children.front())) {
 
-        SPGaussianBlur *gb = SP_GAUSSIANBLUR(filter->firstChild());
-        double x = gb->stdDeviation.getNumber();
-        double y = gb->stdDeviation.getOptNumber();
+        auto gb = cast<SPGaussianBlur>(filter->firstChild());
+        double x = gb->get_std_deviation().getNumber();
+        double y = gb->get_std_deviation().getOptNumber();
         if (x > 0 && y > 0) {
             return MAX(x, y);
         }
@@ -543,6 +542,29 @@ double get_single_gaussian_blur_radius(SPFilter *filter)
     return 0.0;
 }
 
+bool set_blend_mode(SPItem* item, SPBlendMode blend_mode) {
+    if (!item || !item->style) {
+        return false;
+    }
+
+    bool change_blend = (item->style->mix_blend_mode.set ? item->style->mix_blend_mode.value : SP_CSS_BLEND_NORMAL) != blend_mode;
+    // < 1.0 filter based blend removal
+    if (!item->style->mix_blend_mode.set && item->style->filter.set && item->style->getFilter()) {
+        remove_filter_legacy_blend(item);
+    }
+    item->style->mix_blend_mode.set = TRUE;
+    if (item->style->isolation.value == SP_CSS_ISOLATION_ISOLATE) {
+        item->style->mix_blend_mode.value = SP_CSS_BLEND_NORMAL;
+    } else { 
+        item->style->mix_blend_mode.value = blend_mode;
+    }
+
+    if (change_blend) { // we do blend so we need to update display style
+        item->updateRepr(SP_OBJECT_WRITE_NO_CHILDREN | SP_OBJECT_WRITE_EXT);
+    }
+
+    return change_blend;
+}
 
 
 /*

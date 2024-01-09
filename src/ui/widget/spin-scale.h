@@ -2,10 +2,14 @@
 /*
  * Author:
  *
- * Copyright (C) 2012 Author
+ * Copyright (C) 2007 Nicholas Bishop <nicholasbishop@gmail.com>
  *               2017 Tavmjong Bah
  *
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
+ */
+
+/*
+ * Derived from and replaces SpinSlider
  */
 
 #ifndef INKSCAPE_UI_WIDGET_SPIN_SCALE_H
@@ -75,7 +79,7 @@ public:
     Glib::ustring get_as_attribute() const override;
     void set_from_attribute(SPObject*) override;
 
-    sigc::signal<void>& signal_value_changed();
+    sigc::signal<void ()>& signal_value_changed();
 
     const SpinScale& get_SpinScale1() const;
     SpinScale& get_SpinScale1();
@@ -87,9 +91,11 @@ public:
 private:
     void link_toggled();
     void update_linked();
-    sigc::signal<void> _signal_value_changed;
+    void set_link_active(bool link);
+    sigc::signal<void ()> _signal_value_changed;
     SpinScale _s1, _s2;
-    Gtk::ToggleButton _link;
+    bool _linked = true;
+    Gtk::Button _link;
 };
 
 } // namespace Widget

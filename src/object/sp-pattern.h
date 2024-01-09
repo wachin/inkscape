@@ -14,7 +14,8 @@
 #ifndef SEEN_SP_PATTERN_H
 #define SEEN_SP_PATTERN_H
 
-#include <list>
+#include <memory>
+#include <vector>
 #include <cstddef>
 #include <glibmm/ustring.h>
 #include <sigc++/connection.h>
@@ -23,81 +24,105 @@
 #include "sp-paint-server.h"
 #include "uri-references.h"
 #include "viewbox.h"
+#include "display/drawing-item-ptr.h"
 
-class SPPatternReference;
+class SPPattern;
 class SPItem;
 
 namespace Inkscape {
 namespace XML {
-
 class Node;
-}
-}
+} // namespace XML
+} // namespace Inkscape
 
-#define SP_PATTERN(obj) (dynamic_cast<SPPattern *>((SPObject *)obj))
-#define SP_IS_PATTERN(obj) (dynamic_cast<const SPPattern *>((SPObject *)obj) != NULL)
-
-class SPPattern : public SPPaintServer, public SPViewBox {
+class SPPatternReference
+    : public Inkscape::URIReference
+{
 public:
-    enum PatternUnits { UNITS_USERSPACEONUSE, UNITS_OBJECTBOUNDINGBOX };
+    SPPatternReference(SPPattern *owner);
+    SPPattern *getObject() const;
+
+protected:
+    bool _acceptObject(SPObject *obj) const override;
+};
+
+class SPPattern final
+    : public SPPaintServer
+    , public SPViewBox
+{
+public:
+    enum PatternUnits
+    {
+        UNITS_USERSPACEONUSE,
+        UNITS_OBJECTBOUNDINGBOX
+    };
 
     SPPattern();
     ~SPPattern() override;
+    int tag() const override { return tag_of<decltype(*this)>; }
 
-    /* Reference (href) */
+    // Reference (href)
     Glib::ustring href;
-    SPPatternReference *ref;
+    SPPatternReference ref;
 
-    gdouble x() const;
-    gdouble y() const;
-    gdouble width() const;
-    gdouble height() const;
+    double x() const;
+    double y() const;
+    double width() const;
+    double height() const;
     Geom::OptRect viewbox() const;
     SPPattern::PatternUnits patternUnits() const;
     SPPattern::PatternUnits patternContentUnits() const;
     Geom::Affine const &getTransform() const;
-    SPPattern *rootPattern(); // TODO: const
+    SPPattern const *rootPattern() const;
+    SPPattern *rootPattern();
+    const Geom::Affine& get_this_transform() const;
 
-    SPPattern *clone_if_necessary(SPItem *item, const gchar *property);
+    SPPattern *clone_if_necessary(SPItem *item, char const *property);
     void transform_multiply(Geom::Affine postmul, bool set);
 
     /**
      * @brief create a new pattern in XML tree
      * @return created pattern id
      */
-    static const gchar *produce(const std::vector<Inkscape::XML::Node *> &reprs, Geom::Rect bounds,
-                                SPDocument *document, Geom::Affine transform, Geom::Affine move);
+    static char const *produce(std::vector<Inkscape::XML::Node*> const &reprs, Geom::Rect const &bounds,
+                               SPDocument *document, Geom::Affine const &transform, Geom::Affine const &move);
 
     bool isValid() const override;
-
-    cairo_pattern_t *pattern_new(cairo_t *ct, Geom::OptRect const &bbox, double opacity) override;
 
 protected:
     void build(SPDocument *doc, Inkscape::XML::Node *repr) override;
     void release() override;
-    void set(SPAttr key, const gchar *value) override;
-    void update(SPCtx *ctx, unsigned int flags) override;
-    void modified(unsigned int flags) override;
+    void set(SPAttr key, char const *value) override;
+    void update(SPCtx *ctx, unsigned flags) override;
+    void modified(unsigned flags) override;
+
+    void child_added(Inkscape::XML::Node* child, Inkscape::XML::Node* ref) override;
+    void remove_child(Inkscape::XML::Node* child) override;
+    void order_changed(Inkscape::XML::Node *child, Inkscape::XML::Node *old_ref, Inkscape::XML::Node *new_ref) override;
+
+    Inkscape::DrawingPattern *show(Inkscape::Drawing &drawing, unsigned key, Geom::OptRect const &bbox) override;
+    void hide(unsigned key) override;
+    void setBBox(unsigned key, Geom::OptRect const &bbox) override;
 
 private:
     bool _hasItemChildren() const;
-    void _getChildren(std::list<SPObject *> &l);
+
     SPPattern *_chain() const;
 
     /**
-    Count how many times pattern is used by the styles of o and its descendants
-    */
-    guint _countHrefs(SPObject *o) const;
+     * Count how many times pattern is used by the styles of o and its descendants
+     */
+    unsigned _countHrefs(SPObject *o) const;
 
     /**
-    Gets called when the pattern is reattached to another <pattern>
-    */
+     * Gets called when the pattern is reattached to another <pattern>
+     */
     void _onRefChanged(SPObject *old_ref, SPObject *ref);
 
     /**
-    Gets called when the referenced <pattern> is changed
-    */
-    void _onRefModified(SPObject *ref, guint flags);
+     * Gets called when the referenced <pattern> is changed
+     */
+    void _onRefModified(SPObject *ref, unsigned flags);
 
     /* patternUnits and patternContentUnits attribute */
     PatternUnits _pattern_units : 1;
@@ -114,25 +139,39 @@ private:
     SVGLength _height;
 
     sigc::connection _modified_connection;
-};
 
+    /**
+     * The pattern at the end of the href chain, currently tasked with keeping our DrawingPattern
+     * up to date. When 'shown' is deleted, our DrawingPattern will be unattached from it and 'shown'
+     * will be nulled. Later (asynchronously), 'shown' will be re-resolved to another Pattern and our
+     * DrawingPattern will be re-attached to that.
+     */
+    SPPattern *shown;
+    sigc::connection shown_released_connection;
+    void set_shown(SPPattern *new_shown);
 
-class SPPatternReference : public Inkscape::URIReference {
-public:
-    SPPatternReference(SPObject *obj)
-        : URIReference(obj)
+    /**
+     * Drawing items belonging to other patterns with this pattern at the end of their href chain.
+     * They will be updated in sync with this pattern's children.
+     */
+    struct AttachedView
     {
-    }
+        Inkscape::DrawingPattern *drawingitem;
+        unsigned key;
+    };
+    std::vector<AttachedView> attached_views;
+    void attach_view(Inkscape::DrawingPattern *di, unsigned key);
+    void unattach_view(Inkscape::DrawingPattern *di);
 
-    SPPattern *getObject() const
+    struct View
     {
-        return reinterpret_cast<SPPattern *>(URIReference::getObject());
-    }
-
-protected:
-    bool _acceptObject(SPObject *obj) const override {
-        return SP_IS_PATTERN (obj)&& URIReference::_acceptObject(obj);
-    }
+        DrawingItemPtr<Inkscape::DrawingPattern> drawingitem;
+        Geom::OptRect bbox;
+        unsigned key;
+        View(DrawingItemPtr<Inkscape::DrawingPattern> drawingitem, Geom::OptRect const &bbox, unsigned key);
+    };
+    std::vector<View> views;
+    void update_view(View &v);
 };
 
 #endif // SEEN_SP_PATTERN_H

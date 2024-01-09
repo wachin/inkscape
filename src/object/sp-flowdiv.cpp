@@ -42,8 +42,8 @@ void SPFlowdiv::update(SPCtx *ctx, unsigned int flags) {
 
     for(auto child:l) {
         if (childflags || (child->uflags & (SP_OBJECT_MODIFIED_FLAG | SP_OBJECT_CHILD_MODIFIED_FLAG))) {
-            if (SP_IS_ITEM(child)) {
-                SPItem const &chi = *SP_ITEM(child);
+            if (is<SPItem>(child)) {
+                SPItem const &chi = *cast<SPItem>(child);
                 cctx.i2doc = chi.transform * ictx->i2doc;
                 cctx.i2vp = chi.transform * ictx->i2vp;
                 child->updateDisplay((SPCtx *)&cctx, childflags);
@@ -104,12 +104,12 @@ Inkscape::XML::Node* SPFlowdiv::write(Inkscape::XML::Document *xml_doc, Inkscape
         for (auto& child: children) {
             Inkscape::XML::Node* c_repr = nullptr;
 
-            if ( SP_IS_FLOWTSPAN (&child) ) {
+            if ( is<SPFlowtspan>(&child) ) {
                 c_repr = child.updateRepr(xml_doc, nullptr, flags);
-            } else if ( SP_IS_FLOWPARA(&child) ) {
+            } else if ( is<SPFlowpara>(&child) ) {
                 c_repr = child.updateRepr(xml_doc, nullptr, flags);
-            } else if ( SP_IS_STRING(&child) ) {
-                c_repr = xml_doc->createTextNode(SP_STRING(&child)->string.c_str());
+            } else if ( is<SPString>(&child) ) {
+                c_repr = xml_doc->createTextNode(cast<SPString>(&child)->string.c_str());
             }
 
             if ( c_repr ) {
@@ -122,12 +122,12 @@ Inkscape::XML::Node* SPFlowdiv::write(Inkscape::XML::Document *xml_doc, Inkscape
         }
     } else {
         for (auto& child: children) {
-            if ( SP_IS_FLOWTSPAN (&child) ) {
+            if ( is<SPFlowtspan>(&child) ) {
                 child.updateRepr(flags);
-            } else if ( SP_IS_FLOWPARA(&child) ) {
+            } else if ( is<SPFlowpara>(&child) ) {
                 child.updateRepr(flags);
-            } else if ( SP_IS_STRING(&child) ) {
-                child.getRepr()->setContent(SP_STRING(&child)->string.c_str());
+            } else if ( is<SPString>(&child) ) {
+                child.getRepr()->setContent(cast<SPString>(&child)->string.c_str());
             }
         }
     }
@@ -168,8 +168,8 @@ void SPFlowtspan::update(SPCtx *ctx, unsigned int flags) {
 
     for(auto child:l) {
         if (childflags || (child->uflags & (SP_OBJECT_MODIFIED_FLAG | SP_OBJECT_CHILD_MODIFIED_FLAG))) {
-            if (SP_IS_ITEM(child)) {
-                SPItem const &chi = *SP_ITEM(child);
+            if (is<SPItem>(child)) {
+                SPItem const &chi = *cast<SPItem>(child);
                 cctx.i2doc = chi.transform * ictx->i2doc;
                 cctx.i2vp = chi.transform * ictx->i2vp;
                 child->updateDisplay((SPCtx *)&cctx, childflags);
@@ -226,12 +226,12 @@ Inkscape::XML::Node *SPFlowtspan::write(Inkscape::XML::Document *xml_doc, Inksca
         for (auto& child: children) {
             Inkscape::XML::Node* c_repr = nullptr;
 
-            if ( SP_IS_FLOWTSPAN(&child) ) {
+            if ( is<SPFlowtspan>(&child) ) {
                 c_repr = child.updateRepr(xml_doc, nullptr, flags);
-            } else if ( SP_IS_FLOWPARA(&child) ) {
+            } else if ( is<SPFlowpara>(&child) ) {
                 c_repr = child.updateRepr(xml_doc, nullptr, flags);
-            } else if ( SP_IS_STRING(&child) ) {
-                c_repr = xml_doc->createTextNode(SP_STRING(&child)->string.c_str());
+            } else if ( is<SPString>(&child) ) {
+                c_repr = xml_doc->createTextNode(cast<SPString>(&child)->string.c_str());
             }
 
             if ( c_repr ) {
@@ -244,12 +244,12 @@ Inkscape::XML::Node *SPFlowtspan::write(Inkscape::XML::Document *xml_doc, Inksca
         }
     } else {
         for (auto& child: children) {
-            if ( SP_IS_FLOWTSPAN(&child) ) {
+            if ( is<SPFlowtspan>(&child) ) {
                 child.updateRepr(flags);
-            } else if ( SP_IS_FLOWPARA(&child) ) {
+            } else if ( is<SPFlowpara>(&child) ) {
                 child.updateRepr(flags);
-            } else if ( SP_IS_STRING(&child) ) {
-                child.getRepr()->setContent(SP_STRING(&child)->string.c_str());
+            } else if ( is<SPString>(&child) ) {
+                child.getRepr()->setContent(cast<SPString>(&child)->string.c_str());
             }
         }
     }
@@ -292,8 +292,8 @@ void SPFlowpara::update(SPCtx *ctx, unsigned int flags) {
 
     for(auto child:l) {
         if (flags || (child->uflags & (SP_OBJECT_MODIFIED_FLAG | SP_OBJECT_CHILD_MODIFIED_FLAG))) {
-            if (SP_IS_ITEM(child)) {
-                SPItem const &chi = *SP_ITEM(child);
+            if (is<SPItem>(child)) {
+                SPItem const &chi = *cast<SPItem>(child);
                 cctx.i2doc = chi.transform * ictx->i2doc;
                 cctx.i2vp = chi.transform * ictx->i2vp;
                 child->updateDisplay((SPCtx *)&cctx, flags);
@@ -348,12 +348,12 @@ Inkscape::XML::Node *SPFlowpara::write(Inkscape::XML::Document *xml_doc, Inkscap
         for (auto& child: children) {
             Inkscape::XML::Node* c_repr = nullptr;
 
-            if ( SP_IS_FLOWTSPAN(&child) ) {
+            if ( is<SPFlowtspan>(&child) ) {
                 c_repr = child.updateRepr(xml_doc, nullptr, flags);
-            } else if ( SP_IS_FLOWPARA(&child) ) {
+            } else if ( is<SPFlowpara>(&child) ) {
                 c_repr = child.updateRepr(xml_doc, nullptr, flags);
-            } else if ( SP_IS_STRING(&child) ) {
-                c_repr = xml_doc->createTextNode(SP_STRING(&child)->string.c_str());
+            } else if ( is<SPString>(&child) ) {
+                c_repr = xml_doc->createTextNode(cast<SPString>(&child)->string.c_str());
             }
 
             if ( c_repr ) {
@@ -367,12 +367,12 @@ Inkscape::XML::Node *SPFlowpara::write(Inkscape::XML::Document *xml_doc, Inkscap
         }
     } else {
         for (auto& child: children) {
-            if ( SP_IS_FLOWTSPAN(&child) ) {
+            if ( is<SPFlowtspan>(&child) ) {
                 child.updateRepr(flags);
-            } else if ( SP_IS_FLOWPARA(&child) ) {
+            } else if ( is<SPFlowpara>(&child) ) {
                 child.updateRepr(flags);
-            } else if ( SP_IS_STRING(&child) ) {
-                child.getRepr()->setContent(SP_STRING(&child)->string.c_str());
+            } else if ( is<SPString>(&child) ) {
+                child.getRepr()->setContent(cast<SPString>(&child)->string.c_str());
             }
         }
     }

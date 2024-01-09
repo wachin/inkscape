@@ -13,6 +13,7 @@
  */
 
 #include "attributes.h"
+#include "sp-polygon.h"
 #include "sp-polyline.h"
 #include "display/curve.h"
 #include <glibmm/i18n.h>
@@ -32,68 +33,12 @@ void SPPolyLine::build(SPDocument * document, Inkscape::XML::Node * repr) {
 
 void SPPolyLine::set(SPAttr key, const gchar* value) {
     switch (key) {
-	case SPAttr::POINTS: {
-            const gchar * cptr;
-            char * eptr;
-            gboolean hascpt;
-
-            if (!value) {
-            	break;
+        case SPAttr::POINTS:
+            if (value) {
+                setCurve(sp_poly_parse_curve(value));
             }
-
-            auto curve = std::make_unique<SPCurve>();
-            hascpt = FALSE;
-
-            cptr = value;
-            eptr = nullptr;
-
-            while (TRUE) {
-                gdouble x, y;
-
-                while (*cptr != '\0' && (*cptr == ',' || *cptr == '\x20' || *cptr == '\x9' || *cptr == '\xD' || *cptr == '\xA')) {
-                    cptr++;
-                }
-
-                if (!*cptr) {
-                	break;
-                }
-
-                x = g_ascii_strtod (cptr, &eptr);
-
-                if (eptr == cptr) {
-                	break;
-                }
-
-                cptr = eptr;
-
-                while (*cptr != '\0' && (*cptr == ',' || *cptr == '\x20' || *cptr == '\x9' || *cptr == '\xD' || *cptr == '\xA')) {
-                    cptr++;
-                }
-
-                if (!*cptr) {
-                	break;
-                }
-
-                y = g_ascii_strtod (cptr, &eptr);
-
-                if (eptr == cptr) {
-                	break;
-                }
-
-                cptr = eptr;
-
-                if (hascpt) {
-                    curve->lineto(x, y);
-                } else {
-                    curve->moveto(x, y);
-                    hascpt = TRUE;
-                }
-            }
-		
-            setCurve(std::move(curve));
             break;
-	}
-	default:
+        default:
             SPShape::set(key, value);
             break;
     }

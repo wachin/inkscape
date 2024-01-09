@@ -13,53 +13,52 @@
 #ifndef SP_FEDIFFUSELIGHTING_H_SEEN
 #define SP_FEDIFFUSELIGHTING_H_SEEN
 
+#include <optional>
+#include <cstdint>
 #include "sp-filter-primitive.h"
+#include "svg/svg-icc-color.h"
 #include "number-opt-number.h"
-
-#define SP_FEDIFFUSELIGHTING(obj) (dynamic_cast<SPFeDiffuseLighting*>((SPObject*)obj))
-#define SP_IS_FEDIFFUSELIGHTING(obj) (dynamic_cast<const SPFeDiffuseLighting*>((SPObject*)obj) != NULL)
 
 struct SVGICCColor;
 
 namespace Inkscape {
 namespace Filters {
 class FilterDiffuseLighting;
-} }
+} // namespace Filters
+} // namespace Inkscape
 
-class SPFeDiffuseLighting : public SPFilterPrimitive {
+class SPFeDiffuseLighting final
+    : public SPFilterPrimitive
+{
 public:
-	SPFeDiffuseLighting();
-	~SPFeDiffuseLighting() override;
+    int tag() const override { return tag_of<decltype(*this)>; }
 
-    gfloat surfaceScale;
-    guint surfaceScale_set : 1;
-    gfloat diffuseConstant;
-    guint diffuseConstant_set : 1;
-    NumberOptNumber kernelUnitLength;
-    guint32 lighting_color;
-    guint lighting_color_set : 1;
-    Inkscape::Filters::FilterDiffuseLighting *renderer;
-    SVGICCColor *icc;
+private:
+    float surfaceScale = 1.0f;
+    float diffuseConstant = 1.0f;
+    uint32_t lighting_color = 0xffffffff;
+
+    bool surfaceScale_set = false;
+    bool diffuseConstant_set = false;
+    bool lighting_color_set = false;
+
+    NumberOptNumber kernelUnitLength; // TODO
+    std::optional<SVGICCColor> icc;
 
 protected:
-	void build(SPDocument* doc, Inkscape::XML::Node* repr) override;
-	void release() override;
+    void build(SPDocument *doc, Inkscape::XML::Node *repr) override;
+    void set(SPAttr key, char const *value) override;
+    void modified(unsigned flags) override;
+    Inkscape::XML::Node *write(Inkscape::XML::Document *doc, Inkscape::XML::Node *repr, unsigned flags) override;
 
-	void child_added(Inkscape::XML::Node* child, Inkscape::XML::Node* ref) override;
-	void remove_child(Inkscape::XML::Node* child) override;
+    void child_added(Inkscape::XML::Node *child, Inkscape::XML::Node *ref) override;
+    void remove_child(Inkscape::XML::Node *child) override;
+    void order_changed(Inkscape::XML::Node *child, Inkscape::XML::Node *old_repr, Inkscape::XML::Node *new_repr) override;
 
-	void order_changed(Inkscape::XML::Node* child, Inkscape::XML::Node* old_repr, Inkscape::XML::Node* new_repr) override;
-
-	void set(SPAttr key, const gchar* value) override;
-
-	void update(SPCtx* ctx, unsigned int flags) override;
-
-	Inkscape::XML::Node* write(Inkscape::XML::Document* doc, Inkscape::XML::Node* repr, guint flags) override;
-
-	void build_renderer(Inkscape::Filters::Filter* filter) override;
+    std::unique_ptr<Inkscape::Filters::FilterPrimitive> build_renderer(Inkscape::DrawingItem *item) const override;
 };
 
-#endif /* !SP_FEDIFFUSELIGHTING_H_SEEN */
+#endif // SP_FEDIFFUSELIGHTING_H_SEEN
 
 /*
   Local Variables:

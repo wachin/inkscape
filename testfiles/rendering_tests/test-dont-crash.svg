@@ -18,5 +18,34 @@
        x="-100"
        height="50"
        width="50" />
+
+    <!-- missing points attribute -->
+    <polygon />
+    <polyline />
+
+    <!-- empty points attribute -->
+    <polygon points="" />
+    <polyline points="" />
+
+    <!-- odd number of coordinates with 0 valid points -->
+    <polygon points="0" />
+    <polyline points="0" />
+
+    <!-- odd number of coordinates with trailing comma -->
+    <polygon points="0," />
+    <polyline points="0," />
+
+    <!-- only one point -->
+    <polygon points="0,0" />
+    <polyline points="0,0" />
+
+    <!-- odd number of coordinates with 1 valid point -->
+    <polygon points="0 0 100" />
+    <polyline points="0 0 100" />
+
+    <!-- nan (https://gitlab.com/inkscape/inkscape/-/issues/4021) -->
+    <polygon points="0,0 nan,nan" />
+    <polyline points="0,0 nan,nan" />
+
   </g>
 </svg>

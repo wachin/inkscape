@@ -115,8 +115,8 @@ void SelectedColor::setColorAlpha(SPColor const &color, gfloat alpha, bool emit_
 }
 
 void SelectedColor::colorAlpha(SPColor &color, gfloat &alpha) const {
-	color = _color;
-	alpha = _alpha;
+    color = _color;
+    alpha = _alpha;
 }
 
 void SelectedColor::setHeld(bool held) {
@@ -138,10 +138,6 @@ void SelectedColor::setHeld(bool held) {
         // signal_changed.emit();  // TODO: signal_changed isn't emitted after dragging!
     }
     _updating = false;
-}
-
-void SelectedColor::preserveICC() {
-    _color.icc = _color.icc ? new SVGICCColor(*_color.icc) : nullptr;
 }
 
 }

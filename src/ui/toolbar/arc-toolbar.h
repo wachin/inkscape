@@ -28,9 +28,11 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
+#include <gtkmm/adjustment.h>
+
 #include "toolbar.h"
 
-#include <gtkmm/adjustment.h>
+#include "xml/node-observer.h"
 
 class SPDesktop;
 class SPItem;
@@ -59,7 +61,10 @@ class UnitTracker;
 }
 
 namespace Toolbar {
-class ArcToolbar : public Toolbar {
+class ArcToolbar
+	: public Toolbar
+	, private XML::NodeObserver
+{
 private:
     UI::Widget::UnitTracker *_tracker;
 
@@ -76,10 +81,10 @@ private:
     Glib::RefPtr<Gtk::Adjustment> _start_adj;
     Glib::RefPtr<Gtk::Adjustment> _end_adj;
 
-    bool _freeze;
+    bool _freeze{false};
     bool _single;
 
-    XML::Node *_repr;
+    XML::Node *_repr{nullptr};
     SPItem *_item;
 
     void value_changed(Glib::RefPtr<Gtk::Adjustment>&  adj,
@@ -95,18 +100,17 @@ private:
 
     sigc::connection _changed;
 
+	void notifyAttributeChanged(Inkscape::XML::Node &node, GQuark name,
+								Inkscape::Util::ptr_shared old_value,
+								Inkscape::Util::ptr_shared new_value) final;
+
+
 protected:
     ArcToolbar(SPDesktop *desktop);
     ~ArcToolbar() override;
 
 public:
     static GtkWidget * create(SPDesktop *desktop);
-    static void event_attr_changed(Inkscape::XML::Node *repr,
-                                   gchar const         *name,
-                                   gchar const         *old_value,
-                                   gchar const         *new_value,
-                                   bool                 is_interactive,
-                                   gpointer             data);
 };
 
 }

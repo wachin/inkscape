@@ -28,6 +28,8 @@ public:
 
     void doEffect (SPCurve * curve) override;
     void resetDefaults(SPItem const * item) override;
+    void doBeforeEffect (SPLPEItem const* lpeitem) override;
+    bool doOnOpen(SPLPEItem const *lpeitem) override;
 
 private:
     LPEAttachPath(const LPEAttachPath&) = delete;

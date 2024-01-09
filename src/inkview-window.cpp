@@ -278,7 +278,7 @@ InkviewWindow::show_control()
         }
         catch (const Glib::Error& err)
         {
-            std::cerr << "InkviewWindow::show_control: builder failed: " << err.what() << std::endl;
+            std::cerr << "InkviewWindow::show_control: builder failed: " << err.what().raw() << std::endl;
             return;
         }
 

@@ -381,6 +381,16 @@ Inkscape::XML::Node const *sp_repr_lookup_name( Inkscape::XML::Node const *repr,
     return found;
 }
 
+Glib::ustring sp_repr_lookup_content(Inkscape::XML::Node const *repr, gchar const *name, Glib::ustring otherwise)
+{
+    if (auto node = sp_repr_lookup_name(repr, name, 1)) {
+        if (auto ret = node->firstChild()->content()) {
+            return ret;
+        }
+    }
+    return otherwise;
+}
+
 Inkscape::XML::Node *sp_repr_lookup_name( Inkscape::XML::Node *repr, gchar const *name, gint maxdepth )
 {
     Inkscape::XML::Node const *found = sp_repr_lookup_name( const_cast<Inkscape::XML::Node const *>(repr), name, maxdepth );

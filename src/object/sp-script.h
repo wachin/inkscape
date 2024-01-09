@@ -18,10 +18,11 @@
 #include "document.h"
 
 /* SPScript */
-class SPScript : public SPObject {
+class SPScript final : public SPObject {
 public:
 	SPScript();
 	~SPScript() override;
+    int tag() const override { return tag_of<decltype(*this)>; }
 
 	char *xlinkhref;
 

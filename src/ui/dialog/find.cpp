@@ -16,15 +16,18 @@
 #include <gtkmm/entry.h>
 #include <glibmm/i18n.h>
 #include <glibmm/regex.h>
+#include <gtkmm/enums.h>
+#include <gtkmm/label.h>
+#include <gtkmm/sizegroup.h>
 
 #include "desktop.h"
 #include "document-undo.h"
 #include "document.h"
 #include "inkscape.h"
+#include "layer-manager.h"
 #include "message-stack.h"
 #include "selection-chemistry.h"
 #include "text-editing.h"
-#include "verbs.h"
 
 #include "object/sp-defs.h"
 #include "object/sp-ellipse.h"
@@ -44,6 +47,7 @@
 #include "object/sp-tspan.h"
 #include "object/sp-use.h"
 
+#include "ui/icon-names.h"
 #include "ui/dialog-events.h"
 
 #include "xml/attribute-record.h"
@@ -125,6 +129,20 @@ Find::Find()
       hboxbutton_row(Gtk::ORIENTATION_HORIZONTAL)
 
 {
+    label_group = Gtk::SizeGroup::create(Gtk::SIZE_GROUP_HORIZONTAL);
+    auto label1 = const_cast<Gtk::Label*>(entry_find.getLabel());
+    label_group->add_widget(*label1);
+    label1->set_xalign(0);
+    auto label2 = const_cast<Gtk::Label*>(entry_replace.getLabel());
+    label_group->add_widget(*label2);
+    label2->set_xalign(0);
+    const int MARGIN = 4;
+    set_margin_start(MARGIN);
+    set_margin_end(MARGIN);
+    entry_find.set_margin_top(MARGIN);
+    entry_replace.set_margin_top(MARGIN);
+    frame_searchin.set_margin_top(MARGIN);
+    frame_scope.set_margin_top(MARGIN);
     button_find.set_use_underline();
     button_find.set_tooltip_text(_("Select all objects matching the selection criteria"));
     button_replace.set_use_underline();
@@ -387,6 +405,7 @@ Glib::ustring Find::find_replace(const gchar *str, const gchar *find, const gcha
 {
     Glib::ustring ustr = str;
     Glib::ustring ufind = find;
+    gsize replace_length = Glib::ustring(replace).length();
     if (!casematch) {
         ufind = ufind.lowercase();
     }
@@ -397,7 +416,7 @@ Glib::ustring Find::find_replace(const gchar *str, const gchar *find, const gcha
             return ustr;
         }
         // Start the next search after the last replace character to avoid infinite loops (replace "a" with "aaa" etc)
-        n = find_strcmp_pos(ustr.c_str(), ufind.c_str(), exact, casematch, n + strlen(replace) + 1);
+        n = find_strcmp_pos(ustr.c_str(), ufind.c_str(), exact, casematch, n + replace_length);
     }
     return ustr;
 }
@@ -476,19 +495,17 @@ bool Find::item_text_match (SPItem *item, const gchar *find, bool exact, bool ca
                 return found;
             }
 
-            gchar* replace_text  = g_strdup(entry_replace.getEntry()->get_text().c_str());
+            Glib::ustring replace = entry_replace.getEntry()->get_text();
             gsize n = find_strcmp_pos(item_text.c_str(), ufind.c_str(), exact, casematch);
             static Inkscape::Text::Layout::iterator _begin_w;
             static Inkscape::Text::Layout::iterator _end_w;
             while (n != std::string::npos) {
                 _begin_w = layout->charIndexToIterator(n);
-                _end_w = layout->charIndexToIterator(n + strlen(find));
-                sp_te_replace(item, _begin_w, _end_w, replace_text);
+                _end_w = layout->charIndexToIterator(n + ufind.length());
+                sp_te_replace(item, _begin_w, _end_w, replace.c_str());
                 item_text = sp_te_get_string_multiline (item);
-                n = find_strcmp_pos(item_text.c_str(), ufind.c_str(), exact, casematch, n + strlen(replace_text) + 1);
+                n = find_strcmp_pos(item_text.c_str(), ufind.c_str(), exact, casematch, n + replace.length());
             }
-
-            g_free(replace_text);
         }
 
         return found;
@@ -499,16 +516,12 @@ bool Find::item_text_match (SPItem *item, const gchar *find, bool exact, bool ca
 
 bool Find::item_id_match (SPItem *item, const gchar *id, bool exact, bool casematch, bool replace/*=false*/)
 {
-    if (item->getRepr() == nullptr) {
-        return false;
-    }
-
-    if (dynamic_cast<SPString *>(item)) { // SPStrings have "on demand" ids which are useless for searching
+    if (!item->getRepr()) {
         return false;
     }
 
     const gchar *item_id = item->getRepr()->attribute("id");
-    if (item_id == nullptr) {
+    if (!item_id) {
         return false;
     }
 
@@ -676,7 +689,7 @@ std::vector<SPItem*> Find::filter_fields (std::vector<SPItem*> &l, bool exact, b
     if (check_searchin_text.get_active()) {
         for (std::vector<SPItem*>::const_reverse_iterator i=in.rbegin(); in.rend() != i; ++i) {
             SPObject *obj = *i;
-            SPItem *item = dynamic_cast<SPItem *>(obj);
+            auto item = cast<SPItem>(obj);
             g_assert(item != nullptr);
             if (item_text_match(item, text, exact, casematch)) {
                 if (out.end()==find(out.begin(),out.end(), *i)) {
@@ -701,7 +714,7 @@ std::vector<SPItem*> Find::filter_fields (std::vector<SPItem*> &l, bool exact, b
         if (ids) {
             for (std::vector<SPItem*>::const_reverse_iterator i=in.rbegin(); in.rend() != i; ++i) {
                 SPObject *obj = *i;
-                SPItem *item = dynamic_cast<SPItem *>(obj);
+                auto item = cast<SPItem>(obj);
                 if (item_id_match(item, text, exact, casematch)) {
                     if (out.end()==find(out.begin(),out.end(), *i)) {
                         out.push_back(*i);
@@ -717,7 +730,7 @@ std::vector<SPItem*> Find::filter_fields (std::vector<SPItem*> &l, bool exact, b
         if (style) {
             for (std::vector<SPItem*>::const_reverse_iterator i=in.rbegin(); in.rend() != i; ++i) {
                 SPObject *obj = *i;
-                SPItem *item = dynamic_cast<SPItem *>(obj);
+                auto item = cast<SPItem>(obj);
                 g_assert(item != nullptr);
                 if (item_style_match(item, text, exact, casematch)) {
                     if (out.end()==find(out.begin(),out.end(), *i)){
@@ -734,7 +747,7 @@ std::vector<SPItem*> Find::filter_fields (std::vector<SPItem*> &l, bool exact, b
         if (attrname) {
             for (std::vector<SPItem*>::const_reverse_iterator i=in.rbegin(); in.rend() != i; ++i) {
                 SPObject *obj = *i;
-                SPItem *item = dynamic_cast<SPItem *>(obj);
+                auto item = cast<SPItem>(obj);
                 g_assert(item != nullptr);
                 if (item_attr_match(item, text, exact, casematch)) {
                     if (out.end()==find(out.begin(),out.end(), *i)) {
@@ -751,7 +764,7 @@ std::vector<SPItem*> Find::filter_fields (std::vector<SPItem*> &l, bool exact, b
         if (attrvalue) {
             for (std::vector<SPItem*>::const_reverse_iterator i=in.rbegin(); in.rend() != i; ++i) {
                 SPObject *obj = *i;
-                SPItem *item = dynamic_cast<SPItem *>(obj);
+                auto item = cast<SPItem>(obj);
                 g_assert(item != nullptr);
                 if (item_attrvalue_match(item, text, exact, casematch)) {
                     if (out.end()==find(out.begin(),out.end(), *i)) {
@@ -768,7 +781,7 @@ std::vector<SPItem*> Find::filter_fields (std::vector<SPItem*> &l, bool exact, b
         if (font) {
             for (std::vector<SPItem*>::const_reverse_iterator i=in.rbegin(); in.rend() != i; ++i) {
                 SPObject *obj = *i;
-                SPItem *item = dynamic_cast<SPItem *>(obj);
+                auto item = cast<SPItem>(obj);
                 g_assert(item != nullptr);
                 if (item_font_match(item, text, exact, casematch)) {
                     if (out.end()==find(out.begin(),out.end(),*i)) {
@@ -783,7 +796,7 @@ std::vector<SPItem*> Find::filter_fields (std::vector<SPItem*> &l, bool exact, b
         if (desc) {
             for (std::vector<SPItem*>::const_reverse_iterator i=in.rbegin(); in.rend() != i; ++i) {
                 SPObject *obj = *i;
-                SPItem *item = dynamic_cast<SPItem *>(obj);
+                auto item = cast<SPItem>(obj);
                 g_assert(item != nullptr);
                 if (item_desc_match(item, text, exact, casematch)) {
                     if (out.end()==find(out.begin(),out.end(),*i)) {
@@ -798,7 +811,7 @@ std::vector<SPItem*> Find::filter_fields (std::vector<SPItem*> &l, bool exact, b
         if (title) {
             for (std::vector<SPItem*>::const_reverse_iterator i=in.rbegin(); in.rend() != i; ++i) {
                 SPObject *obj = *i;
-                SPItem *item = dynamic_cast<SPItem *>(obj);
+                auto item = cast<SPItem>(obj);
                 g_assert(item != nullptr);
                 if (item_title_match(item, text, exact, casematch)) {
                     if (out.end()==find(out.begin(),out.end(),*i)) {
@@ -823,38 +836,38 @@ bool Find::item_type_match (SPItem *item)
 {
     bool all  =check_alltypes.get_active();
 
-    if ( dynamic_cast<SPRect *>(item)) {
+    if (is<SPRect>(item)) {
         return ( all ||check_rects.get_active());
 
-    } else if (dynamic_cast<SPGenericEllipse *>(item)) {
+    } else if (is<SPGenericEllipse>(item)) {
         return ( all ||  check_ellipses.get_active());
 
-    } else if (dynamic_cast<SPStar *>(item) || dynamic_cast<SPPolygon *>(item)) {
+    } else if (is<SPStar>(item) || is<SPPolygon>(item)) {
         return ( all || check_stars.get_active());
 
-    } else if (dynamic_cast<SPSpiral *>(item)) {
+    } else if (is<SPSpiral>(item)) {
         return ( all || check_spirals.get_active());
 
-    } else if (dynamic_cast<SPPath *>(item) || dynamic_cast<SPLine *>(item) || dynamic_cast<SPPolyLine *>(item)) {
+    } else if (is<SPPath>(item) || is<SPLine>(item) || is<SPPolyLine>(item)) {
         return (all || check_paths.get_active());
 
-    } else if (dynamic_cast<SPText *>(item) || dynamic_cast<SPTSpan *>(item) ||
-	           dynamic_cast<SPTRef *>(item) || dynamic_cast<SPString *>(item) ||
-			   dynamic_cast<SPFlowtext *>(item) || dynamic_cast<SPFlowdiv *>(item) ||
-			   dynamic_cast<SPFlowtspan *>(item) || dynamic_cast<SPFlowpara *>(item)) {
+    } else if (is<SPText>(item) || is<SPTSpan>(item) ||
+               is<SPTRef>(item) ||
+               is<SPFlowtext>(item) || is<SPFlowdiv>(item) ||
+               is<SPFlowtspan>(item) || is<SPFlowpara>(item)) {
         return (all || check_texts.get_active());
 
-    } else if (dynamic_cast<SPGroup *>(item) &&
-               !getDesktop()->isLayer(item)) { // never select layers!
+    } else if (is<SPGroup>(item) &&
+               !getDesktop()->layerManager().isLayer(item)) { // never select layers!
         return (all || check_groups.get_active());
 
-    } else if (dynamic_cast<SPUse *>(item)) {
+    } else if (is<SPUse>(item)) {
         return (all || check_clones.get_active());
 
-    } else if (dynamic_cast<SPImage *>(item)) {
+    } else if (is<SPImage>(item)) {
         return (all || check_images.get_active());
 
-    } else if (dynamic_cast<SPOffset *>(item)) {
+    } else if (is<SPOffset>(item)) {
         return (all || check_offsets.get_active());
     }
 
@@ -866,7 +879,7 @@ std::vector<SPItem*> Find::filter_types (std::vector<SPItem*> &l)
     std::vector<SPItem*> n;
     for (std::vector<SPItem*>::const_reverse_iterator i=l.rbegin(); l.rend() != i; ++i) {
         SPObject *obj = *i;
-        SPItem *item = dynamic_cast<SPItem *>(obj);
+        auto item = cast<SPItem>(obj);
         g_assert(item != nullptr);
         if (item_type_match(item)) {
         	n.push_back(*i);
@@ -885,7 +898,7 @@ std::vector<SPItem*> &Find::filter_list (std::vector<SPItem*> &l, bool exact, bo
 
 std::vector<SPItem*> &Find::all_items (SPObject *r, std::vector<SPItem*> &l, bool hidden, bool locked)
 {
-    if (dynamic_cast<SPDefs *>(r)) {
+    if (is<SPDefs>(r)) {
         return l; // we're not interested in items in defs
     }
 
@@ -895,8 +908,8 @@ std::vector<SPItem*> &Find::all_items (SPObject *r, std::vector<SPItem*> &l, boo
 
     auto desktop = getDesktop();
     for (auto& child: r->children) {
-        SPItem *item = dynamic_cast<SPItem *>(&child);
-        if (item && !child.cloned && !desktop->isLayer(item)) {
+        auto item = cast<SPItem>(&child);
+        if (item && !child.cloned && !desktop->layerManager().isLayer(item)) {
             if ((hidden || !desktop->itemIsHidden(item)) && (locked || !item->isLocked())) {
                 l.insert(l.begin(),(SPItem*)&child);
             }
@@ -912,9 +925,9 @@ std::vector<SPItem*> &Find::all_selection_items (Inkscape::Selection *s, std::ve
     auto itemlist = s->items();
     for (auto i=boost::rbegin(itemlist); boost::rend(itemlist) != i; ++i) {
         SPObject *obj = *i;
-        SPItem *item = dynamic_cast<SPItem *>(obj);
+        auto item = cast<SPItem>(obj);
         g_assert(item != nullptr);
-        if (item && !item->cloned && !desktop->isLayer(item)) {
+        if (item && !item->cloned && !desktop->layerManager().isLayer(item)) {
             if (!ancestor || ancestor->isAncestorOf(item)) {
                 if ((hidden || !desktop->itemIsHidden(item)) && (locked || !item->isLocked())) {
                     l.push_back(*i);
@@ -968,13 +981,13 @@ void Find::onAction()
     std::vector<SPItem*> l;
     if (check_scope_selection.get_active()) {
         if (check_scope_layer.get_active()) {
-            l = all_selection_items (desktop->selection, l, desktop->currentLayer(), hidden, locked);
+            l = all_selection_items (desktop->getSelection(), l, desktop->layerManager().currentLayer(), hidden, locked);
         } else {
-            l = all_selection_items (desktop->selection, l, nullptr, hidden, locked);
+            l = all_selection_items (desktop->getSelection(), l, nullptr, hidden, locked);
         }
     } else {
         if (check_scope_layer.get_active()) {
-            l = all_items (desktop->currentLayer(), l, hidden, locked);
+            l = all_items (desktop->layerManager().currentLayer(), l, hidden, locked);
         } else {
             l = all_items(desktop->getDocument()->getRoot(), l, hidden, locked);
         }
@@ -1006,12 +1019,12 @@ void Find::onAction()
         selection->clear();
         selection->setList(n);
         SPObject *obj = n[0];
-        SPItem *item = dynamic_cast<SPItem *>(obj);
+        auto item = cast<SPItem>(obj);
         g_assert(item != nullptr);
         scroll_to_show_item(desktop, item);
 
         if (_action_replace) {
-            DocumentUndo::done(desktop->getDocument(), SP_VERB_CONTEXT_TEXT, _("Replace text or property"));
+            DocumentUndo::done(desktop->getDocument(), _("Replace text or property"), INKSCAPE_ICON("draw-text"));
         }
 
     } else {

@@ -13,38 +13,38 @@
 #include "display/nr-style.h"
 #include "style.h"
 
+#include "display/cairo-utils.h"
 #include "display/drawing-context.h"
 #include "display/drawing-pattern.h"
+#include "display/drawing-surface.h"
 
 #include "object/sp-paint-server.h"
 
-void NRStyle::Paint::clear()
+namespace Inkscape {
+
+void NRStyleData::Paint::clear()
 {
-    if (server) {
-        sp_object_unref(server, nullptr);
-        server = nullptr;
-    }
-    type = PAINT_NONE;
+    server.reset();
+    type = PaintType::NONE;
 }
 
-void NRStyle::Paint::set(SPColor const &c)
+void NRStyleData::Paint::set(SPColor const &c)
 {
     clear();
-    type = PAINT_COLOR;
+    type = PaintType::COLOR;
     color = c;
 }
 
-void NRStyle::Paint::set(SPPaintServer *ps)
+void NRStyleData::Paint::set(SPPaintServer *ps)
 {
     clear();
     if (ps) {
-        type = PAINT_SERVER;
-        server = ps;
-        sp_object_ref(server, nullptr);
+        type = PaintType::SERVER;
+        server = ps->create_drawing_paintserver();
     }
 }
 
-void NRStyle::Paint::set(const SPIPaint* paint)
+void NRStyleData::Paint::set(SPIPaint const *paint)
 {
     if (paint->isPaintserver()) {
         SPPaintServer* server = paint->value.href->getObject();
@@ -62,29 +62,23 @@ void NRStyle::Paint::set(const SPIPaint* paint)
     } else if (paint->paintOrigin == SP_CSS_PAINT_ORIGIN_CONTEXT_FILL ||
                paint->paintOrigin == SP_CSS_PAINT_ORIGIN_CONTEXT_STROKE) {
         // A marker in the defs section will result in ending up here.
-        // std::cerr << "NRStyle::Paint::set: Double" << std::endl;
+        // std::cerr << "NRStyleData::Paint::set: Double" << std::endl;
     } else {
         g_assert_not_reached();
     }
 }
 
-
-NRStyle::NRStyle()
+NRStyleData::NRStyleData()
     : fill()
     , stroke()
     , stroke_width(0.0)
     , hairline(false)
     , miter_limit(0.0)
     , n_dash(0)
-    , dash(nullptr)
     , dash_offset(0.0)
     , fill_rule(CAIRO_FILL_RULE_EVEN_ODD)
     , line_cap(CAIRO_LINE_CAP_BUTT)
     , line_join(CAIRO_LINE_JOIN_MITER)
-    , fill_pattern(nullptr)
-    , stroke_pattern(nullptr)
-    , text_decoration_fill_pattern(nullptr)
-    , text_decoration_stroke_pattern(nullptr)
     , text_decoration_line(TEXT_DECORATION_LINE_CLEAR)
     , text_decoration_style(TEXT_DECORATION_STYLE_CLEAR)
     , text_decoration_fill()
@@ -105,37 +99,27 @@ NRStyle::NRStyle()
     paint_order_layer[0] = PAINT_ORDER_NORMAL;
 }
 
-NRStyle::~NRStyle()
+bool NRStyleData::Paint::ditherable() const
 {
-    if (fill_pattern) cairo_pattern_destroy(fill_pattern);
-    if (stroke_pattern) cairo_pattern_destroy(stroke_pattern);
-    if (text_decoration_fill_pattern) cairo_pattern_destroy(text_decoration_fill_pattern);
-    if (text_decoration_stroke_pattern) cairo_pattern_destroy(text_decoration_stroke_pattern);
-    if (dash){
-        delete [] dash;
-    }
-    fill.clear();
-    stroke.clear();
-    text_decoration_fill.clear();
-    text_decoration_stroke.clear();
+    return type == PaintType::SERVER && server && server->ditherable();
 }
 
-void NRStyle::set(SPStyle *style, SPStyle *context_style)
+NRStyleData::NRStyleData(SPStyle const *style, SPStyle const *context_style)
 {
     // Handle 'context-fill' and 'context-stroke': Work in progress
-    const SPIPaint *style_fill = &(style->fill);
-    if( style_fill->paintOrigin == SP_CSS_PAINT_ORIGIN_CONTEXT_FILL ) {
-        if( context_style != nullptr ) {
-            style_fill = &(context_style->fill);
+    const SPIPaint *style_fill = &style->fill;
+    if (style_fill->paintOrigin == SP_CSS_PAINT_ORIGIN_CONTEXT_FILL) {
+        if (context_style) {
+            style_fill = &context_style->fill;
         } else {
             // A marker in the defs section will result in ending up here.
-            //std::cerr << "NRStyle::set: 'context-fill': 'context_style' is NULL" << std::endl;
+            //std::cerr << "NRStyleData::set: 'context-fill': 'context_style' is NULL" << std::endl;
         }
-    } else if ( style_fill->paintOrigin == SP_CSS_PAINT_ORIGIN_CONTEXT_STROKE ) {
-        if( context_style != nullptr ) {
-            style_fill = &(context_style->stroke);
+    } else if (style_fill->paintOrigin == SP_CSS_PAINT_ORIGIN_CONTEXT_STROKE) {
+        if (context_style) {
+            style_fill = &context_style->stroke;
         } else {
-            //std::cerr << "NRStyle::set: 'context-stroke': 'context_style' is NULL" << std::endl;
+            //std::cerr << "NRStyleData::set: 'context-stroke': 'context_style' is NULL" << std::endl;
         }
     }
     
@@ -153,18 +137,18 @@ void NRStyle::set(SPStyle *style, SPStyle *context_style)
             g_assert_not_reached();
     }
 
-    const SPIPaint *style_stroke = &(style->stroke);
-    if( style_stroke->paintOrigin == SP_CSS_PAINT_ORIGIN_CONTEXT_FILL ) {
-        if( context_style != nullptr ) {
-            style_stroke = &(context_style->fill);
+    const SPIPaint *style_stroke = &style->stroke;
+    if (style_stroke->paintOrigin == SP_CSS_PAINT_ORIGIN_CONTEXT_FILL) {
+        if (context_style) {
+            style_stroke = &context_style->fill;
         } else {
-            //std::cerr << "NRStyle::set: 'context-fill': 'context_style' is NULL" << std::endl;
+            //std::cerr << "NRStyleData::set: 'context-fill': 'context_style' is NULL" << std::endl;
         }
-    } else if ( style_stroke->paintOrigin == SP_CSS_PAINT_ORIGIN_CONTEXT_STROKE ) {
-        if( context_style != nullptr ) {
-            style_stroke = &(context_style->stroke);
+    } else if (style_stroke->paintOrigin == SP_CSS_PAINT_ORIGIN_CONTEXT_STROKE) {
+        if (context_style) {
+            style_stroke = &context_style->stroke;
         } else {
-            //std::cerr << "NRStyle::set: 'context-stroke': 'context_style' is NULL" << std::endl;
+            //std::cerr << "NRStyleData::set: 'context-stroke': 'context_style' is NULL" << std::endl;
         }
     }
 
@@ -200,24 +184,19 @@ void NRStyle::set(SPStyle *style, SPStyle *context_style)
     }
     miter_limit = style->stroke_miterlimit.value;
 
-    if (dash){
-        delete [] dash;
-    }
-
     n_dash = style->stroke_dasharray.values.size();
-    if (n_dash != 0) {
+    if (n_dash > 0 && style->stroke_dasharray.is_valid()) {
         dash_offset = style->stroke_dashoffset.computed;
-        dash = new double[n_dash];
-        for (unsigned int i = 0; i < n_dash; ++i) {
+        dash.resize(n_dash);
+        for (int i = 0; i < n_dash; ++i) {
             dash[i] = style->stroke_dasharray.values[i].computed;
         }
     } else {
         dash_offset = 0.0;
-        dash = nullptr;
+        dash.clear();
     }
 
-
-    for( unsigned i = 0; i < PAINT_ORDER_LAYERS; ++i) {
+    for (int i = 0; i < PAINT_ORDER_LAYERS; ++i) {
         switch (style->paint_order.layer[i]) {
             case SP_CSS_PAINT_ORDER_NORMAL:
                 paint_order_layer[i]=PAINT_ORDER_NORMAL;
@@ -235,19 +214,19 @@ void NRStyle::set(SPStyle *style, SPStyle *context_style)
     }
 
     text_decoration_line = TEXT_DECORATION_LINE_CLEAR;
-    if(style->text_decoration_line.inherit     ){ text_decoration_line |= TEXT_DECORATION_LINE_INHERIT;                                }
-    if(style->text_decoration_line.underline   ){ text_decoration_line |= TEXT_DECORATION_LINE_UNDERLINE   + TEXT_DECORATION_LINE_SET; }
-    if(style->text_decoration_line.overline    ){ text_decoration_line |= TEXT_DECORATION_LINE_OVERLINE    + TEXT_DECORATION_LINE_SET; }
-    if(style->text_decoration_line.line_through){ text_decoration_line |= TEXT_DECORATION_LINE_LINETHROUGH + TEXT_DECORATION_LINE_SET; }
-    if(style->text_decoration_line.blink       ){ text_decoration_line |= TEXT_DECORATION_LINE_BLINK       + TEXT_DECORATION_LINE_SET; }
+    if (style->text_decoration_line.inherit     ) { text_decoration_line |= TEXT_DECORATION_LINE_INHERIT;                                }
+    if (style->text_decoration_line.underline   ) { text_decoration_line |= TEXT_DECORATION_LINE_UNDERLINE   + TEXT_DECORATION_LINE_SET; }
+    if (style->text_decoration_line.overline    ) { text_decoration_line |= TEXT_DECORATION_LINE_OVERLINE    + TEXT_DECORATION_LINE_SET; }
+    if (style->text_decoration_line.line_through) { text_decoration_line |= TEXT_DECORATION_LINE_LINETHROUGH + TEXT_DECORATION_LINE_SET; }
+    if (style->text_decoration_line.blink       ) { text_decoration_line |= TEXT_DECORATION_LINE_BLINK       + TEXT_DECORATION_LINE_SET; }
 
     text_decoration_style = TEXT_DECORATION_STYLE_CLEAR;
-    if(style->text_decoration_style.inherit      ){ text_decoration_style |= TEXT_DECORATION_STYLE_INHERIT;                              }
-    if(style->text_decoration_style.solid        ){ text_decoration_style |= TEXT_DECORATION_STYLE_SOLID    + TEXT_DECORATION_STYLE_SET; }
-    if(style->text_decoration_style.isdouble     ){ text_decoration_style |= TEXT_DECORATION_STYLE_ISDOUBLE + TEXT_DECORATION_STYLE_SET; }
-    if(style->text_decoration_style.dotted       ){ text_decoration_style |= TEXT_DECORATION_STYLE_DOTTED   + TEXT_DECORATION_STYLE_SET; }
-    if(style->text_decoration_style.dashed       ){ text_decoration_style |= TEXT_DECORATION_STYLE_DASHED   + TEXT_DECORATION_STYLE_SET; }
-    if(style->text_decoration_style.wavy         ){ text_decoration_style |= TEXT_DECORATION_STYLE_WAVY     + TEXT_DECORATION_STYLE_SET; }
+    if (style->text_decoration_style.inherit ) { text_decoration_style |= TEXT_DECORATION_STYLE_INHERIT;                              }
+    if (style->text_decoration_style.solid   ) { text_decoration_style |= TEXT_DECORATION_STYLE_SOLID    + TEXT_DECORATION_STYLE_SET; }
+    if (style->text_decoration_style.isdouble) { text_decoration_style |= TEXT_DECORATION_STYLE_ISDOUBLE + TEXT_DECORATION_STYLE_SET; }
+    if (style->text_decoration_style.dotted  ) { text_decoration_style |= TEXT_DECORATION_STYLE_DOTTED   + TEXT_DECORATION_STYLE_SET; }
+    if (style->text_decoration_style.dashed  ) { text_decoration_style |= TEXT_DECORATION_STYLE_DASHED   + TEXT_DECORATION_STYLE_SET; }
+    if (style->text_decoration_style.wavy    ) { text_decoration_style |= TEXT_DECORATION_STYLE_WAVY     + TEXT_DECORATION_STYLE_SET; }
  
     /* FIXME
        The meaning of text-decoration-color in CSS3 for SVG is ambiguous (2014-05-06).  Set
@@ -266,8 +245,8 @@ void NRStyle::set(SPStyle *style, SPStyle *context_style)
     // closest ancestor where 'text-decoration' was set. That is, setting
     // 'text-decoration' on an ancestor fixes the fill and stroke of the
     // decoration to the fill and stroke values of that ancestor.
-    SPStyle* style_td = style;
-    if ( style->text_decoration.style_td ) style_td = style->text_decoration.style_td;
+    auto style_td = style;
+    if (style->text_decoration.style_td) style_td = style->text_decoration.style_td;
     text_decoration_stroke.opacity = SP_SCALE24_TO_FLOAT(style_td->stroke_opacity.value);
     text_decoration_stroke_width = style_td->stroke_width.computed;
 
@@ -287,11 +266,11 @@ void NRStyle::set(SPStyle *style, SPStyle *context_style)
         }
     } else {
         // Pick color/pattern from text
-        text_decoration_fill.set(&(style_td->fill));
+        text_decoration_fill.set(&style_td->fill);
     }
 
     if (style_td->text_decoration_stroke.set) {
-        text_decoration_stroke.set(&(style_td->text_decoration_stroke));
+        text_decoration_stroke.set(&style_td->text_decoration_stroke);
     } else if (style_td->text_decoration_color.set) {
         if(style->stroke.isPaintserver() || style->stroke.isColor()) {
             // SVG sets color specifically
@@ -302,7 +281,7 @@ void NRStyle::set(SPStyle *style, SPStyle *context_style)
         }
     } else {
         // Pick color/pattern from text
-        text_decoration_stroke.set(&(style_td->stroke));
+        text_decoration_stroke.set(&style_td->stroke);
     }
 
     if (text_decoration_line != TEXT_DECORATION_LINE_CLEAR) {
@@ -320,115 +299,119 @@ void NRStyle::set(SPStyle *style, SPStyle *context_style)
     }
 
     text_direction = style->direction.computed;
-
-    update();
 }
 
-cairo_pattern_t* NRStyle::preparePaint(Inkscape::DrawingContext &dc, Geom::OptRect const &paintbox, Inkscape::DrawingPattern *pattern, Paint& paint)
+auto NRStyle::preparePaint(Inkscape::DrawingContext &dc, Inkscape::RenderContext &rc, Geom::IntRect const &area, Geom::OptRect const &paintbox, Inkscape::DrawingPattern const *pattern, NRStyleData::Paint const &paint, CachedPattern const &cp) const -> CairoPatternUniqPtr
 {
-    cairo_pattern_t* cpattern = nullptr;
-
-    switch (paint.type) {
-        case PAINT_SERVER:
-            if (pattern) {
-                cpattern = pattern->renderPattern(paint.opacity);
-            } else {
-                cpattern = paint.server->pattern_new(dc.raw(), paintbox, paint.opacity);
-            }
-            break;
-        case PAINT_COLOR: {
-            SPColor const &c = paint.color;
-            cpattern = cairo_pattern_create_rgba(
-                c.v.c[0], c.v.c[1], c.v.c[2], paint.opacity);
-            double red = 0;
-            double green = 0;
-            double blue = 0;
-            double alpha = 0;
-            cairo_pattern_get_rgba(cpattern, &red, &green, &blue, &alpha);
-        }
-            break;
-        default:
-            break;
+    if (paint.type == NRStyleData::PaintType::SERVER && pattern) {
+        // If a DrawingPattern, then always regenerate the pattern, because it may depend on 'area'.
+        // Even if not, regenerating the pattern is a no-op because DrawingPattern has a cache.
+        return CairoPatternUniqPtr(pattern->renderPattern(rc, area, paint.opacity, dc.surface()->device_scale()));
     }
-    return cpattern;
+
+    // Otherwise, init or re-use cached pattern.
+    cp.inited.init([&, this] {
+        // Handle remaining non-DrawingPattern cases.
+        switch (paint.type) {
+            case NRStyleData::PaintType::SERVER:
+                if (paint.server) {
+                    cp.pattern = CairoPatternUniqPtr(paint.server->create_pattern(dc.raw(), paintbox, paint.opacity));
+                    ink_cairo_pattern_set_dither(cp.pattern.get(), rc.dithering && paint.server->ditherable());
+                } else {
+                    std::cerr << "Null pattern detected" << std::endl;
+                    cp.pattern = CairoPatternUniqPtr(cairo_pattern_create_rgba(0, 0, 0, 0));
+                }
+                break;
+            case NRStyleData::PaintType::COLOR: {
+                auto const &c = paint.color.v.c;
+                cp.pattern = CairoPatternUniqPtr(cairo_pattern_create_rgba(c[0], c[1], c[2], paint.opacity));
+                break;
+            }
+            default:
+                cp.pattern.reset();
+                break;
+        }
+    });
+
+    return copy(cp.pattern);
 }
 
-bool NRStyle::prepareFill(Inkscape::DrawingContext &dc, Geom::OptRect const &paintbox, Inkscape::DrawingPattern *pattern)
+void NRStyle::set(NRStyleData &&data_)
 {
-    if (!fill_pattern) fill_pattern = preparePaint(dc, paintbox, pattern, fill);
-    return fill_pattern != nullptr;
+    data = std::move(data_);
+    invalidate();
 }
 
-bool NRStyle::prepareStroke(Inkscape::DrawingContext &dc, Geom::OptRect const &paintbox, Inkscape::DrawingPattern *pattern)
+auto NRStyle::prepareFill(Inkscape::DrawingContext &dc, Inkscape::RenderContext &rc, Geom::IntRect const &area, Geom::OptRect const &paintbox, Inkscape::DrawingPattern const *pattern) const -> CairoPatternUniqPtr
 {
-    if (!stroke_pattern) stroke_pattern = preparePaint(dc, paintbox, pattern, stroke);
-    return stroke_pattern != nullptr;
+    return preparePaint(dc, rc, area, paintbox, pattern, data.fill, fill_pattern);
 }
 
-bool NRStyle::prepareTextDecorationFill(Inkscape::DrawingContext &dc, Geom::OptRect const &paintbox, Inkscape::DrawingPattern *pattern)
+auto NRStyle::prepareStroke(Inkscape::DrawingContext &dc, Inkscape::RenderContext &rc, Geom::IntRect const &area, Geom::OptRect const &paintbox, Inkscape::DrawingPattern const *pattern) const -> CairoPatternUniqPtr
 {
-    if (!text_decoration_fill_pattern) text_decoration_fill_pattern = preparePaint(dc, paintbox, pattern, text_decoration_fill);
-    return text_decoration_fill_pattern != nullptr;
+    return preparePaint(dc, rc, area, paintbox, pattern, data.stroke, stroke_pattern);
 }
 
-bool NRStyle::prepareTextDecorationStroke(Inkscape::DrawingContext &dc, Geom::OptRect const &paintbox, Inkscape::DrawingPattern *pattern)
+auto NRStyle::prepareTextDecorationFill(Inkscape::DrawingContext &dc, Inkscape::RenderContext &rc, Geom::IntRect const &area, Geom::OptRect const &paintbox, Inkscape::DrawingPattern const *pattern) const -> CairoPatternUniqPtr
 {
-    if (!text_decoration_stroke_pattern) text_decoration_stroke_pattern = preparePaint(dc, paintbox, pattern, text_decoration_stroke);
-    return text_decoration_stroke_pattern != nullptr;
+    return preparePaint(dc, rc, area, paintbox, pattern, data.text_decoration_fill, text_decoration_fill_pattern);
 }
 
-void NRStyle::applyFill(Inkscape::DrawingContext &dc)
+auto NRStyle::prepareTextDecorationStroke(Inkscape::DrawingContext &dc, Inkscape::RenderContext &rc, Geom::IntRect const &area, Geom::OptRect const &paintbox, Inkscape::DrawingPattern const *pattern) const -> CairoPatternUniqPtr
 {
-    dc.setSource(fill_pattern);
-    dc.setFillRule(fill_rule);
+    return preparePaint(dc, rc, area, paintbox, pattern, data.text_decoration_stroke, text_decoration_stroke_pattern);
 }
 
-void NRStyle::applyTextDecorationFill(Inkscape::DrawingContext &dc)
+void NRStyle::applyFill(Inkscape::DrawingContext &dc, CairoPatternUniqPtr const &cp) const
 {
-    dc.setSource(text_decoration_fill_pattern);
+    dc.setSource(cp.get());
+    dc.setFillRule(data.fill_rule);
+}
+
+void NRStyle::applyTextDecorationFill(Inkscape::DrawingContext &dc, CairoPatternUniqPtr const &cp) const
+{
+    dc.setSource(cp.get());
     // Fill rule does not matter, no intersections.
 }
 
-void NRStyle::applyStroke(Inkscape::DrawingContext &dc)
+void NRStyle::applyStroke(Inkscape::DrawingContext &dc, CairoPatternUniqPtr const &cp) const
 {
-    dc.setSource(stroke_pattern);
-    if (hairline) {
+    dc.setSource(cp.get());
+    if (data.hairline) {
         dc.setHairline();
     } else {
-        dc.setLineWidth(stroke_width);
+        dc.setLineWidth(data.stroke_width);
     }
-    dc.setLineCap(line_cap);
-    dc.setLineJoin(line_join);
-    dc.setMiterLimit(miter_limit);
-    cairo_set_dash(dc.raw(), dash, n_dash, dash_offset); // fixme
+    dc.setLineCap(data.line_cap);
+    dc.setLineJoin(data.line_join);
+    dc.setMiterLimit(data.miter_limit);
+    cairo_set_dash(dc.raw(), data.dash.empty() ? nullptr : data.dash.data(), data.dash.empty() ? 0 : data.n_dash, data.dash_offset); // fixme
 }
 
-void NRStyle::applyTextDecorationStroke(Inkscape::DrawingContext &dc)
+void NRStyle::applyTextDecorationStroke(Inkscape::DrawingContext &dc, CairoPatternUniqPtr const &cp) const
 {
-    dc.setSource(text_decoration_stroke_pattern);
-    if (hairline) {
+    dc.setSource(cp.get());
+    if (data.hairline) {
         dc.setHairline();
     } else {
-        dc.setLineWidth(text_decoration_stroke_width);
+        dc.setLineWidth(data.text_decoration_stroke_width);
     }
     dc.setLineCap(CAIRO_LINE_CAP_BUTT);
     dc.setLineJoin(CAIRO_LINE_JOIN_MITER);
-    dc.setMiterLimit(miter_limit);
+    dc.setMiterLimit(data.miter_limit);
     cairo_set_dash(dc.raw(), nullptr, 0, 0.0); // fixme (no dash)
 }
 
-void NRStyle::update()
+void NRStyle::invalidate()
 {
     // force pattern update
-    if (fill_pattern) cairo_pattern_destroy(fill_pattern);
-    if (stroke_pattern) cairo_pattern_destroy(stroke_pattern);
-    if (text_decoration_fill_pattern) cairo_pattern_destroy(text_decoration_fill_pattern);
-    if (text_decoration_stroke_pattern) cairo_pattern_destroy(text_decoration_stroke_pattern);
-    fill_pattern = nullptr;
-    stroke_pattern = nullptr;
-    text_decoration_fill_pattern = nullptr;
-    text_decoration_stroke_pattern = nullptr;
+    fill_pattern.reset();
+    stroke_pattern.reset();
+    text_decoration_fill_pattern.reset();
+    text_decoration_stroke_pattern.reset();
 }
+
+} // namespace Inkscape
 
 /*
   Local Variables:

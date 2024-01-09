@@ -13,17 +13,36 @@
 namespace Inkscape {
 namespace Filters {
 
-enum LightType{
+enum LightType
+{
     NO_LIGHT = 0,
     DISTANT_LIGHT,
     POINT_LIGHT,
     SPOT_LIGHT
 };
 
-} /* namespace Filters */
-} /* namespace Inkscape */
+struct DistantLightData
+{
+    double azimuth, elevation;
+};
 
-#endif // __NR_LIGHT_TYPES_H__
+struct PointLightData
+{
+    double x, y, z;
+};
+
+struct SpotLightData
+{
+    double x, y, z;
+    double pointsAtX, pointsAtY, pointsAtZ;
+    double limitingConeAngle;
+    double specularExponent;
+};
+
+} // namespace Filters
+} // namespace Inkscape
+
+#endif // SEEN_NR_LIGHT_TYPES_H
 /*
   Local Variables:
   mode:c++

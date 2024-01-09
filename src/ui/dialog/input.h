@@ -12,8 +12,8 @@
 #ifndef INKSCAPE_UI_DIALOG_INPUT_H
 #define INKSCAPE_UI_DIALOG_INPUT_H
 
+#include <memory>
 #include "ui/dialog/dialog-base.h"
-#include "verbs.h"
 
 namespace Inkscape {
 namespace UI {
@@ -22,10 +22,10 @@ namespace Dialog {
 class InputDialog : public DialogBase
 {
 public:
-    static InputDialog &getInstance();
+    static std::unique_ptr<InputDialog> create();
 
+protected:
     InputDialog() : DialogBase("/dialogs/inputdevices", "Input") {}
-    ~InputDialog() override = default;
 };
 
 } // namespace Dialog

@@ -27,10 +27,11 @@
 class Persp3D;
 class Persp3DReference;
 
-class SPBox3D : public SPGroup {
+class SPBox3D final : public SPGroup {
 public:
 	SPBox3D();
 	~SPBox3D() override;
+    int tag() const override { return tag_of<decltype(*this)>; }
 
     int z_orders[6]; // z_orders[i] holds the ID of the face at position #i in the group (from top to bottom)
 
@@ -88,7 +89,6 @@ public:
 
     SPGroup *convert_to_group();
 };
-
 
 #endif // SEEN_SP_BOX3D_H
 

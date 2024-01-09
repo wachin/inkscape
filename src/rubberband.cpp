@@ -15,11 +15,13 @@
 
 #include "rubberband.h"
 
+#include "2geom/path.h"
+
 #include "display/curve.h"
 #include "display/control/canvas-item-bpath.h"
 #include "display/control/canvas-item-rect.h"
 
-#include "ui/widget/canvas.h" // Forced redraws
+#include "ui/widget/canvas.h" // autoscroll
 
 Inkscape::Rubberband *Inkscape::Rubberband::_instance = nullptr;
 
@@ -31,48 +33,55 @@ Inkscape::Rubberband::Rubberband(SPDesktop *dt)
 
 void Inkscape::Rubberband::delete_canvas_items()
 {
-    if (_rect) {
-        delete _rect;
-        _rect = nullptr;
-    }
-
-    if (_touchpath) {
-        delete _touchpath;
-        _touchpath = nullptr;
-    }
+    _rect.reset();
+    _touchpath.reset();
 }
 
+Geom::Path Inkscape::Rubberband::getPath() const
+{
+    g_assert(_started);
+    if (_mode == RUBBERBAND_MODE_TOUCHPATH) {
+        return _path * _desktop->w2d();
+    }
+    return Geom::Path(*getRectangle());
+}
 
-void Inkscape::Rubberband::start(SPDesktop *d, Geom::Point const &p)
+std::vector<Geom::Point> Inkscape::Rubberband::getPoints() const
+{
+    return _path.nodes();
+}
+
+void Inkscape::Rubberband::start(SPDesktop *d, Geom::Point const &p, bool tolerance)
 {
     _desktop = d;
 
     _start = p;
     _started = true;
+    _moved = false;
+
+    auto prefs = Inkscape::Preferences::get();
+    _tolerance = tolerance ? prefs->getIntLimited("/options/dragtolerance/value", 0, 0, 100) : 0.0;
 
     _touchpath_curve->reset();
     _touchpath_curve->moveto(p);
 
-    _points.clear();
-    _points.push_back(_desktop->d2w(p));
+    _path = Geom::Path(_desktop->d2w(p));
 
     delete_canvas_items();
-    _desktop->getCanvas()->forced_redraws_start(5);
 }
 
 void Inkscape::Rubberband::stop()
 {
     _started = false;
+    _moved = false;
     defaultMode(); // restore the default
 
-    _points.clear();
     _touchpath_curve->reset();
+    _path.clear();
 
     delete_canvas_items();
 
-    if (_desktop && _desktop->getCanvas()) {
-        _desktop->getCanvas()->forced_redraws_stop();
-    }
+    resetColor();
 }
 
 void Inkscape::Rubberband::move(Geom::Point const &p)
@@ -80,22 +89,28 @@ void Inkscape::Rubberband::move(Geom::Point const &p)
     if (!_started) 
         return;
 
+    if (!_moved) {
+        if (Geom::are_near(_start, p, _tolerance/_desktop->current_zoom()))
+            return;
+    }
+
     _end = p;
-    _desktop->scroll_to_point(p);
+    _moved = true;
+    _desktop->getCanvas()->enable_autoscroll();
     _touchpath_curve->lineto(p);
 
     Geom::Point next = _desktop->d2w(p);
     // we want the points to be at most 0.5 screen pixels apart,
     // so that we don't lose anything small;
     // if they are farther apart, we interpolate more points
-    if (!_points.empty() && Geom::L2(next-_points.back()) > 0.5) {
-        Geom::Point prev = _points.back();
+    auto prev = _path.finalPoint();
+    if (Geom::L2(next-prev) > 0.5) {
         int subdiv = 2 * (int) round(Geom::L2(next-prev) + 0.5);
         for (int i = 1; i <= subdiv; i ++) {
-            _points.push_back(prev + ((double)i/subdiv) * (next - prev));
+            _path.appendNew<Geom::LineSegment>(prev + ((double)i/subdiv) * (next - prev));
         }
     } else {
-        _points.push_back(next);
+        _path.appendNew<Geom::LineSegment>(next);
     }
 
     if (_touchpath) _touchpath->hide();
@@ -103,9 +118,9 @@ void Inkscape::Rubberband::move(Geom::Point const &p)
 
     switch (_mode) {
         case RUBBERBAND_MODE_RECT:
-            if (_rect == nullptr) {
-                _rect = new Inkscape::CanvasItemRect(_desktop->getCanvasControls());
-                _rect->set_stroke(0x808080ff);
+            if (!_rect) {
+                _rect = make_canvasitem<CanvasItemRect>(_desktop->getCanvasControls());
+                _rect->set_stroke(_color.value_or(0x808080ff));
                 _rect->set_shadow(0xffffffff, 0); // Not a shadow
                 _rect->set_dashed(false);
                 _rect->set_inverted(true);
@@ -114,9 +129,9 @@ void Inkscape::Rubberband::move(Geom::Point const &p)
             _rect->show();
             break;
         case RUBBERBAND_MODE_TOUCHRECT:
-            if (_rect == nullptr) {
-                _rect = new Inkscape::CanvasItemRect(_desktop->getCanvasControls());
-                _rect->set_stroke(0xff0000ff);
+            if (!_rect) {
+                _rect = make_canvasitem<CanvasItemRect>(_desktop->getCanvasControls());
+                _rect->set_stroke(_color.value_or(0xff0000ff));
                 _rect->set_shadow(0xffffffff, 0); // Not a shadow
                 _rect->set_dashed(false);
                 _rect->set_inverted(false);
@@ -125,9 +140,9 @@ void Inkscape::Rubberband::move(Geom::Point const &p)
             _rect->show();
             break;
         case RUBBERBAND_MODE_TOUCHPATH:
-            if (_touchpath == nullptr) {
-                _touchpath = new Inkscape::CanvasItemBpath(_desktop->getCanvasControls()); // Should be sketch?
-                _touchpath->set_stroke(0xff0000ff);
+            if (!_touchpath) {
+                _touchpath = make_canvasitem<CanvasItemBpath>(_desktop->getCanvasControls()); // Should be sketch?
+                _touchpath->set_stroke(_color.value_or(0xff0000ff));
                 _touchpath->set_fill(0x0, SP_WIND_RULE_NONZERO);
             }
             _touchpath->set_bpath(_touchpath_curve);
@@ -138,10 +153,26 @@ void Inkscape::Rubberband::move(Geom::Point const &p)
     }
 }
 
+void Inkscape::Rubberband::setColor(uint32_t color)
+{
+    _color = color;
+
+    if (_mode == RUBBERBAND_MODE_TOUCHPATH) {
+        if (_touchpath) {
+            _touchpath->set_stroke(color);
+        }
+    } else {
+        if (_rect) {
+            _rect->set_stroke(color);
+        }
+    }
+}
+
 void Inkscape::Rubberband::setMode(int mode) 
 {
     _mode = mode;
 }
+
 /**
  * Set the default mode (usually rect or touchrect)
  */
@@ -169,16 +200,11 @@ Geom::OptRect Inkscape::Rubberband::getRectangle() const
 
 Inkscape::Rubberband *Inkscape::Rubberband::get(SPDesktop *desktop)
 {
-    if (_instance == nullptr) {
+    if (!_instance) {
         _instance = new Inkscape::Rubberband(desktop);
     }
 
     return _instance;
-}
-
-bool Inkscape::Rubberband::is_started()
-{
-    return _started;
 }
 
 /*

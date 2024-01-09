@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-#ifndef SEEN_CANVAS_ITEM_ENUMS_H
-#define SEEN_CANVAS_ITEM_ENUMS_H
-
 /**
- * Enums for CanvasControlItem's.
+ * @file
+ * Enums for CanvasItems.
  */
-
 /*
  * Author:
  *   Tavmjong Bah
  *
  * Copyright (C) 2020 Tavmjong Bah
  */
+
+#ifndef SEEN_CANVAS_ITEM_ENUMS_H
+#define SEEN_CANVAS_ITEM_ENUMS_H
 
 namespace Inkscape {
 
@@ -37,7 +37,8 @@ enum CanvasItemCtrlShape {
     CANVAS_ITEM_CTRL_SHAPE_MALIGN, // Center (middle) alignment.
     CANVAS_ITEM_CTRL_SHAPE_BITMAP,
     CANVAS_ITEM_CTRL_SHAPE_IMAGE,
-    CANVAS_ITEM_CTRL_SHAPE_LINE
+    CANVAS_ITEM_CTRL_SHAPE_LINE,
+    CANVAS_ITEM_CTRL_SHAPE_TRIANGLE_ANGLED,
 };
 
 // Applies to control points.
@@ -53,6 +54,7 @@ enum CanvasItemCtrlType {
     CANVAS_ITEM_CTRL_TYPE_ANCHOR,
     CANVAS_ITEM_CTRL_TYPE_POINT,
     CANVAS_ITEM_CTRL_TYPE_ROTATE,
+    CANVAS_ITEM_CTRL_TYPE_MARGIN,
     CANVAS_ITEM_CTRL_TYPE_CENTER,
     CANVAS_ITEM_CTRL_TYPE_SIZER,
     CANVAS_ITEM_CTRL_TYPE_SHAPER,
@@ -66,17 +68,9 @@ enum CanvasItemCtrlType {
 
 enum CanvasItemCtrlMode {
     CANVAS_ITEM_CTRL_MODE_COLOR,
-    CANVAS_ITEM_CTRL_MODE_XOR
-};
-
-enum CanvasItemTextAnchor {
-    CANVAS_ITEM_TEXT_ANCHOR_CENTER,
-    CANVAS_ITEM_TEXT_ANCHOR_TOP,
-    CANVAS_ITEM_TEXT_ANCHOR_BOTTOM,
-    CANVAS_ITEM_TEXT_ANCHOR_LEFT,
-    CANVAS_ITEM_TEXT_ANCHOR_RIGHT,
-    CANVAS_ITEM_TEXT_ANCHOR_ZERO,
-    CANVAS_ITEM_TEXT_ANCHOR_MANUAL
+    CANVAS_ITEM_CTRL_MODE_XOR,
+    CANVAS_ITEM_CTRL_MODE_DESATURATED_XOR,
+    CANVAS_ITEM_CTRL_MODE_GRAYSCALED_XOR
 };
 
 } // namespace Inkscape

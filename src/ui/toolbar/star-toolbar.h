@@ -28,9 +28,11 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
+#include <gtkmm/adjustment.h>
+
 #include "toolbar.h"
 
-#include <gtkmm/adjustment.h>
+#include "xml/node-observer.h"
 
 class SPDesktop;
 
@@ -57,7 +59,10 @@ class SpinButtonToolItem;
 }
 
 namespace Toolbar {
-class StarToolbar : public Toolbar {
+class StarToolbar
+	: public Toolbar
+	, private XML::NodeObserver
+{
 private:
     UI::Widget::LabelToolItem *_mode_item;
     std::vector<Gtk::RadioToolButton *> _flat_item_buttons;
@@ -67,14 +72,14 @@ private:
     UI::Widget::SpinButtonToolItem *_randomization_item;
     Gtk::ToolButton *_reset_item;
 
-    XML::Node *_repr;
+    XML::Node *_repr{nullptr};
 
     Glib::RefPtr<Gtk::Adjustment> _magnitude_adj;
     Glib::RefPtr<Gtk::Adjustment> _spoke_adj;
     Glib::RefPtr<Gtk::Adjustment> _roundedness_adj;
     Glib::RefPtr<Gtk::Adjustment> _randomization_adj;
 
-    bool _freeze;
+    bool _freeze{false};
     sigc::connection _changed;
     
     void side_mode_changed(int mode);
@@ -86,19 +91,17 @@ private:
     void watch_ec(SPDesktop* desktop, Inkscape::UI::Tools::ToolBase* ec);
     void selection_changed(Inkscape::Selection *selection);
 
+	void notifyAttributeChanged(Inkscape::XML::Node &node, GQuark name,
+								Inkscape::Util::ptr_shared old_value,
+								Inkscape::Util::ptr_shared new_value) final;
+
+
 protected:
     StarToolbar(SPDesktop *desktop);
     ~StarToolbar() override;
 
 public:
     static GtkWidget * create(SPDesktop *desktop);
-
-    static void event_attr_changed(Inkscape::XML::Node *repr,
-                                   gchar const         *name,
-                                   gchar const         *old_value,
-                                   gchar const         *new_value,
-                                   bool                 is_interactive,
-                                   gpointer             dataPointer);
 };
 
 }

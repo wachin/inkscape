@@ -22,12 +22,14 @@
 
 #ifndef DOXYGEN_SHOULD_SKIP_THIS
 
-#define DEFAULT_UNIT_NAME "mm";
+#define DEFAULT_UNIT_NAME "mm"
 
 namespace std {
 template <>
-struct hash<Glib::ustring> : public std::unary_function<Glib::ustring, std::size_t> {
-    std::size_t operator()(Glib::ustring const &s) const {
+struct hash<Glib::ustring>
+{
+    std::size_t operator()(Glib::ustring const &s) const
+    {
         return hash<std::string>()(s.raw());
     }
 };
@@ -178,7 +180,7 @@ public:
     /** Returns true if the given string 'name' is a valid unit in the table */
     bool    hasUnit(Glib::ustring const &name) const;
 
-    /** Provides an iteratable list of items in the given unit table */
+    /** Provides an iterable list of items in the given unit table */
     UnitMap units(UnitType type) const;
 
     /** Returns the default unit abbr for the given type */

@@ -15,6 +15,7 @@
 #include <glibmm/i18n.h>
 #include <string>
 #include <iomanip>
+#include <unordered_map>
 
 #include "snap-indicator.h"
 
@@ -32,10 +33,12 @@
 
 #include "ui/tools/measure-tool.h"
 
+#define DISTANCE_BG_RADIUS 0.3
+
 namespace Inkscape {
 namespace Display {
 
-std::unordered_map<SnapSourceType, Glib::ustring> SnapIndicator::source2string = {
+static std::map<SnapSourceType, Glib::ustring> source2string = {
     {SNAPSOURCE_UNDEFINED, _("UNDEFINED")},
     {SNAPSOURCE_BBOX_CORNER, _("Bounding box corner")},
     {SNAPSOURCE_BBOX_MIDPOINT, _("Bounding box midpoint")},
@@ -56,9 +59,11 @@ std::unordered_map<SnapSourceType, Glib::ustring> SnapIndicator::source2string =
     {SNAPSOURCE_TEXT_ANCHOR, _("Text anchor")},
     {SNAPSOURCE_OTHER_HANDLE, _("Handle")},
     {SNAPSOURCE_GRID_PITCH, _("Multiple of grid spacing")},
+    {SNAPSOURCE_PAGE_CORNER, _("Page corner")},
+    {SNAPSOURCE_PAGE_CENTER, _("Page center")},
 };
 
-std::unordered_map<SnapTargetType, Glib::ustring> SnapIndicator::target2string = {
+static std::map<SnapTargetType, Glib::ustring> target2string = {
     {SNAPTARGET_UNDEFINED, _("UNDEFINED")},
     {SNAPTARGET_BBOX_CORNER, _("bounding box corner")},
     {SNAPTARGET_BBOX_EDGE, _("bounding box side")},
@@ -76,7 +81,7 @@ std::unordered_map<SnapTargetType, Glib::ustring> SnapIndicator::target2string =
     {SNAPTARGET_PATH_MASK, _("mask-path")},
     {SNAPTARGET_ELLIPSE_QUADRANT_POINT, _("quadrant point")},
     {SNAPTARGET_RECT_CORNER, _("corner")},
-    {SNAPTARGET_GRID, _("grid line")},
+    {SNAPTARGET_GRID_LINE, _("grid line")},
     {SNAPTARGET_GRID_INTERSECTION, _("grid intersection")},
     {SNAPTARGET_GRID_PERPENDICULAR, _("grid line (perpendicular)")},
     {SNAPTARGET_GUIDE, _("guide")},
@@ -84,8 +89,14 @@ std::unordered_map<SnapTargetType, Glib::ustring> SnapIndicator::target2string =
     {SNAPTARGET_GUIDE_ORIGIN, _("guide origin")},
     {SNAPTARGET_GUIDE_PERPENDICULAR, _("guide (perpendicular)")},
     {SNAPTARGET_GRID_GUIDE_INTERSECTION, _("grid-guide intersection")},
-    {SNAPTARGET_PAGE_BORDER, _("page border")},
-    {SNAPTARGET_PAGE_CORNER, _("page corner")},
+    {SNAPTARGET_PAGE_EDGE_BORDER, _("page border")},
+    {SNAPTARGET_PAGE_EDGE_CORNER, _("page corner")},
+    {SNAPTARGET_PAGE_EDGE_CENTER, _("page center")},
+    {SNAPTARGET_PAGE_MARGIN_BORDER, _("page margin border")},
+    {SNAPTARGET_PAGE_MARGIN_CORNER, _("page margin corner")},
+    {SNAPTARGET_PAGE_MARGIN_CENTER, _("page margin center")},
+    {SNAPTARGET_PAGE_BLEED_BORDER, _("page bleed border")},
+    {SNAPTARGET_PAGE_BLEED_CORNER, _("page bleed corner")},
     {SNAPTARGET_OBJECT_MIDPOINT, _("object midpoint")},
     {SNAPTARGET_IMG_CORNER, _("corner")},
     {SNAPTARGET_ROTATION_CENTER, _("object rotation center")},
@@ -150,8 +161,8 @@ SnapIndicator::set_new_snaptarget(Inkscape::SnappedPoint const &p, bool pre_snap
             if (source2string.find(p.getSource()) == source2string.end())
                 g_warning("Source type %i not present in target2string", p.getSource());
 
-            target_name = target2string[p.getTarget()];
-            source_name = source2string[p.getSource()];
+            target_name = _(target2string[p.getTarget()].c_str());
+            source_name = _(source2string[p.getSource()].c_str());
         }
         //std::cout << "Snapped " << source_name << " to " << target_name << std::endl;
 
@@ -238,7 +249,7 @@ SnapIndicator::set_new_snaptarget(Inkscape::SnappedPoint const &p, bool pre_snap
                 box->set_stroke(pre_snap ? 0x7f7f7fff : 0xff0000ff);
                 box->set_dashed(true);
                 box->set_pickable(false); // Is false by default.
-                box->set_z_position(0);
+                box->lower_to_bottom();
                 _snaptarget_bbox = _desktop->add_temporary_canvasitem(box, timeout_val*1000.0);
             }
         }
@@ -334,8 +345,11 @@ guint32 SnapIndicator::get_guide_color(SnapTargetType t)
         case SNAPTARGET_ALIGNMENT_BBOX_MIDPOINT:
         case SNAPTARGET_ALIGNMENT_BBOX_EDGE_MIDPOINT:
             return 0xff0000ff;
-        case SNAPTARGET_ALIGNMENT_PAGE_CENTER:
-        case SNAPTARGET_ALIGNMENT_PAGE_CORNER:
+        case SNAPTARGET_ALIGNMENT_PAGE_EDGE_CENTER:
+        case SNAPTARGET_ALIGNMENT_PAGE_EDGE_CORNER:
+        case SNAPTARGET_ALIGNMENT_PAGE_MARGIN_CENTER:
+        case SNAPTARGET_ALIGNMENT_PAGE_MARGIN_CORNER:
+        case SNAPTARGET_ALIGNMENT_PAGE_BLEED_CORNER:
             return 0x00ff00ff;
         case SNAPTARGET_ALIGNMENT_HANDLE:
             return 0x0000ffff;
@@ -411,9 +425,9 @@ void SnapIndicator::make_alignment_indicator(Geom::Point const &p1, Geom::Point 
     ctrl->set_pickable(false);
     _alignment_snap_indicators.push_back(_desktop->add_temporary_canvasitem(ctrl, 0));
 
-    if (show_distance) {
-        auto dist = Geom::L2(p2 - p1);
-        double offset = (fontsize + 5)/_desktop->current_zoom();
+    auto dist = Geom::L2(p2 - p1);
+    double offset = (fontsize + 5) / _desktop->current_zoom();
+    if (show_distance && dist > 2 * offset) {
         auto direction = Geom::unit_vector(p1 - p2);
         auto text_pos = (p1 + p2)/2;
 
@@ -430,7 +444,8 @@ void SnapIndicator::make_alignment_indicator(Geom::Point const &p1, Geom::Point 
         text->set_fontsize(fontsize);
         text->set_fill(color);
         text->set_background(0xffffffc8);
-        text->set_bg_radius(2);
+        text->set_bg_radius(DISTANCE_BG_RADIUS);
+        text->set_anchor({0.5, 0.5});
         _alignment_snap_indicators.push_back(_desktop->add_temporary_canvasitem(text, 0));
 
         auto temp_point = text_pos + offset*direction;
@@ -542,7 +557,8 @@ void SnapIndicator::make_distribution_indicators(SnappedPoint const &p,
                     text->set_fontsize(fontsize);
                     text->set_fill(text_fill);
                     text->set_background(text_bg);
-                    text->set_bg_radius(2);
+                    text->set_bg_radius(DISTANCE_BG_RADIUS);
+                    text->set_anchor({0.5, 0.5});
                     _distribution_snap_indicators.push_back(_desktop->add_temporary_canvasitem(text, 0));
                 }
             }
@@ -577,7 +593,8 @@ void SnapIndicator::make_distribution_indicators(SnappedPoint const &p,
                     text->set_fontsize(fontsize);
                     text->set_fill(text_fill);
                     text->set_background(text_bg);
-                    text->set_bg_radius(2);
+                    text->set_bg_radius(DISTANCE_BG_RADIUS);
+                    text->set_anchor({0.5, 0.5});
                     _distribution_snap_indicators.push_back(_desktop->add_temporary_canvasitem(text, 0));
                 }
             }
@@ -604,7 +621,8 @@ void SnapIndicator::make_distribution_indicators(SnappedPoint const &p,
                     text->set_fontsize(fontsize);
                     text->set_fill(text_fill);
                     text->set_background(text_bg);
-                    text->set_bg_radius(2);
+                    text->set_bg_radius(DISTANCE_BG_RADIUS);
+                    text->set_anchor({0.5, 0.5});
                     _distribution_snap_indicators.push_back(_desktop->add_temporary_canvasitem(text, 0));
                 }
             }

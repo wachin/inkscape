@@ -20,27 +20,28 @@ namespace Filters {
 
 class FilterSlot;
 
-enum FilterMorphologyOperator {
+enum FilterMorphologyOperator
+{
     MORPHOLOGY_OPERATOR_ERODE,
     MORPHOLOGY_OPERATOR_DILATE,
     MORPHOLOGY_OPERATOR_END
 };
 
-class FilterMorphology : public FilterPrimitive {
+class FilterMorphology : public FilterPrimitive
+{
 public:
     FilterMorphology();
-    static FilterPrimitive *create();
     ~FilterMorphology() override;
 
-    void render_cairo(FilterSlot &slot) override;
-    void area_enlarge(Geom::IntRect &area, Geom::Affine const &trans) override;
-    double complexity(Geom::Affine const &ctm) override;
+    void render_cairo(FilterSlot &slot) const override;
+    void area_enlarge(Geom::IntRect &area, Geom::Affine const &trans) const override;
+    double complexity(Geom::Affine const &ctm) const override;
 
-    void set_operator(FilterMorphologyOperator &o);
+    void set_operator(FilterMorphologyOperator o);
     void set_xradius(double x);
     void set_yradius(double y);
 
-    Glib::ustring name() override { return Glib::ustring("Morphology"); }
+    Glib::ustring name() const override { return Glib::ustring("Morphology"); }
 
 private:
     FilterMorphologyOperator Operator;
@@ -48,10 +49,10 @@ private:
     double yradius;
 };
 
-} /* namespace Filters */
-} /* namespace Inkscape */
+} // namespace Filters
+} // namespace Inkscape
 
-#endif /* __NR_FILTER_MORPHOLOGY_H__ */
+#endif // SEEN_NR_FILTER_MORPHOLOGY_H
 /*
   Local Variables:
   mode:c++

@@ -11,120 +11,44 @@
 
 #include "display/cairo-utils.h"
 
-#include <stdexcept>
-
-#include <glib/gstdio.h>
-#include <glibmm/fileutils.h>
-#include <gdk-pixbuf/gdk-pixbuf.h>
-
-#include <2geom/pathvector.h>
-#include <2geom/curves.h>
 #include <2geom/affine.h>
-#include <2geom/point.h>
+#include <2geom/curves.h>
+#include <2geom/path-sink.h>
 #include <2geom/path.h>
-#include <2geom/transforms.h>
+#include <2geom/pathvector.h>
+#include <2geom/point.h>
 #include <2geom/sbasis-to-bezier.h>
-
+#include <2geom/transforms.h>
+#include <atomic>
 #include <boost/algorithm/string.hpp>
 #include <boost/operators.hpp>
 #include <boost/optional/optional.hpp>
+#include <gdk-pixbuf/gdk-pixbuf.h>
+#include <glib/gstdio.h>
+#include <glibmm/fileutils.h>
+#include <stdexcept>
 
-#include "color.h"
 #include "cairo-templates.h"
+#include "color.h"
 #include "document.h"
-#include "preferences.h"
-#include "util/units.h"
 #include "helper/pixbuf-ops.h"
+#include "preferences.h"
+#include "ui/util.h"
+#include "util/scope_exit.h"
+#include "util/units.h"
 
+#if CAIRO_VERSION >= CAIRO_VERSION_ENCODE(1, 17, 6)
+#define CAIRO_HAS_HAIRLINE
+#endif
 
 /**
  * Key for cairo_surface_t to keep track of current color interpolation value
  * Only the address of the structure is used, it is never initialized. See:
  * http://www.cairographics.org/manual/cairo-Types.html#cairo-user-data-key-t
  */
-cairo_user_data_key_t ink_color_interpolation_key;
-cairo_user_data_key_t ink_pixbuf_key;
+static cairo_user_data_key_t ink_color_interpolation_key;
 
 namespace Inkscape {
-
-CairoGroup::CairoGroup(cairo_t *_ct) : ct(_ct), pushed(false) {}
-CairoGroup::~CairoGroup() {
-    if (pushed) {
-        cairo_pattern_t *p = cairo_pop_group(ct);
-        cairo_pattern_destroy(p);
-    }
-}
-void CairoGroup::push() {
-    cairo_push_group(ct);
-    pushed = true;
-}
-void CairoGroup::push_with_content(cairo_content_t content) {
-    cairo_push_group_with_content(ct, content);
-    pushed = true;
-}
-cairo_pattern_t *CairoGroup::pop() {
-    if (pushed) {
-        cairo_pattern_t *ret = cairo_pop_group(ct);
-        pushed = false;
-        return ret;
-    } else {
-        throw std::logic_error("Cairo group popped without pushing it first");
-    }
-}
-Cairo::RefPtr<Cairo::Pattern> CairoGroup::popmm() {
-    if (pushed) {
-        cairo_pattern_t *ret = cairo_pop_group(ct);
-        Cairo::RefPtr<Cairo::Pattern> retmm(new Cairo::Pattern(ret, true));
-        pushed = false;
-        return retmm;
-    } else {
-        throw std::logic_error("Cairo group popped without pushing it first");
-    }
-}
-void CairoGroup::pop_to_source() {
-    if (pushed) {
-        cairo_pop_group_to_source(ct);
-        pushed = false;
-    }
-}
-
-CairoContext::CairoContext(cairo_t *obj, bool ref)
-    : Cairo::Context(obj, ref)
-{}
-
-void CairoContext::transform(Geom::Affine const &m)
-{
-    cairo_matrix_t cm;
-    cm.xx = m[0];
-    cm.xy = m[2];
-    cm.x0 = m[4];
-    cm.yx = m[1];
-    cm.yy = m[3];
-    cm.y0 = m[5];
-    cairo_transform(cobj(), &cm);
-}
-
-void CairoContext::set_source_rgba32(guint32 color)
-{
-    double red = SP_RGBA32_R_F(color);
-    double gre = SP_RGBA32_G_F(color);
-    double blu = SP_RGBA32_B_F(color);
-    double alp = SP_RGBA32_A_F(color);
-    cairo_set_source_rgba(cobj(), red, gre, blu, alp);
-}
-
-void CairoContext::append_path(Geom::PathVector const &pv)
-{
-    feed_pathvector_to_cairo(cobj(), pv);
-}
-
-Cairo::RefPtr<CairoContext> CairoContext::create(Cairo::RefPtr<Cairo::Surface> const &target)
-{
-    cairo_t *ct = cairo_create(target->cobj());
-    Cairo::RefPtr<CairoContext> ret(new CairoContext(ct, true));
-    return ret;
-}
-
 
 /* The class below implement the following hack:
  * 
@@ -196,12 +120,10 @@ Pixbuf::Pixbuf(Inkscape::Pixbuf const &other)
 
 Pixbuf::~Pixbuf()
 {
-    if (_cairo_store) {
-        g_object_unref(_pixbuf);
-    } else {
+    if (!_cairo_store) {
         cairo_surface_destroy(_surface);
-        g_object_unref(_pixbuf);
     }
+    g_object_unref(_pixbuf);
 }
 
 #if !GDK_PIXBUF_CHECK_VERSION(2, 41, 0)
@@ -227,6 +149,28 @@ static bool _workaround_issue_70__gdk_pixbuf_loader_write( //
 }
 #define gdk_pixbuf_loader_write _workaround_issue_70__gdk_pixbuf_loader_write
 #endif
+
+/**
+ * Create a new Pixbuf with the image cropped to the given area.
+ */
+Pixbuf *Pixbuf::cropTo(const Geom::IntRect &area) const
+{
+    GdkPixbuf *copy = nullptr;
+    auto source = _pixbuf;
+    if (_pixel_format == PF_CAIRO) {
+        // This copies twice, but can be run on const, which is useful.
+        copy = gdk_pixbuf_copy(_pixbuf);
+        ensure_pixbuf(copy);
+        source = copy;
+    }
+    auto cropped = gdk_pixbuf_new_subpixbuf(source,
+        area.left(), area.top(), area.width(), area.height());
+    if (copy) {
+        // Clean up our pixbuf copy
+        g_object_unref(copy);
+    }
+    return new Pixbuf(cropped);
+}
 
 Pixbuf *Pixbuf::create_from_data_uri(gchar const *uri_data, double svgdpi)
 {
@@ -302,12 +246,20 @@ Pixbuf *Pixbuf::create_from_data_uri(gchar const *uri_data, double svgdpi)
             GdkPixbuf *buf = gdk_pixbuf_loader_get_pixbuf(loader);
             if (buf) {
                 g_object_ref(buf);
+                bool has_ori = Pixbuf::get_embedded_orientation(buf) != Geom::identity();
+                buf = Pixbuf::apply_embedded_orientation(buf);
                 pixbuf = new Pixbuf(buf);
 
-                GdkPixbufFormat *fmt = gdk_pixbuf_loader_get_format(loader);
-                gchar *fmt_name = gdk_pixbuf_format_get_name(fmt);
-                pixbuf->_setMimeData(decoded, decoded_len, fmt_name);
-                g_free(fmt_name);
+                if (!has_ori) {
+                    // We DO NOT want to store the original data if it contains orientation
+                    // data since many exports that will use the surface do not handle it.
+                    // TODO: Preserve the original meta data from the file by stripping out
+                    // orientation but keeping all other aspects of the raster.
+                    GdkPixbufFormat *fmt = gdk_pixbuf_loader_get_format(loader);
+                    gchar *fmt_name = gdk_pixbuf_format_get_name(fmt);
+                    pixbuf->_setMimeData(decoded, decoded_len, fmt_name);
+                    g_free(fmt_name);
+                }
             } else {
                 g_free(decoded);
             }
@@ -323,11 +275,7 @@ Pixbuf *Pixbuf::create_from_data_uri(gchar const *uri_data, double svgdpi)
         std::unique_ptr<SPDocument> svgDoc(
             SPDocument::createNewDocFromMem(reinterpret_cast<gchar const *>(decoded), decoded_len, false));
         // Check the document loaded properly
-        if (svgDoc == nullptr) {
-            return nullptr;
-        }
-        if (svgDoc->getRoot() == nullptr)
-        {
+        if (!svgDoc || !svgDoc->getRoot()) {
             return nullptr;
         }
         Inkscape::Preferences *prefs = Inkscape::Preferences::get();
@@ -405,14 +353,57 @@ Pixbuf *Pixbuf::create_from_file(std::string const &fn, double svgdpi)
     return pb;
 }
 
+GdkPixbuf *Pixbuf::apply_embedded_orientation(GdkPixbuf *buf)
+{
+    GdkPixbuf *old = buf;
+    buf = gdk_pixbuf_apply_embedded_orientation(buf);
+    g_object_unref(old);
+    return buf;
+}
+
+/**
+ * Gets any available orientation data and returns it as an affine.
+ */
+Geom::Affine Pixbuf::get_embedded_orientation(GdkPixbuf *buf)
+{
+    // See gdk_pixbuf_apply_embedded_orientation in gdk-pixbuf
+    if (auto opt_str = gdk_pixbuf_get_option(buf, "orientation")) {
+        switch ((int)g_ascii_strtoll(opt_str, NULL, 10)) {
+            case 2: // Flip Horz
+                return Geom::Scale(-1, 1);
+            case 3: // +180 Rotate
+                return Geom::Scale(-1, -1);
+            case 4: // Flip Vert
+                return Geom::Scale(1, -1);
+            case 5: // +90 Rotate & Flip Horz
+                return Geom::Rotate(90) * Geom::Scale(-1, 1);
+            case 6: // +90 Rotate
+                return Geom::Rotate(90);
+            case 7: // +90 Rotate * Flip Vert
+                return Geom::Rotate(90) * Geom::Scale(1, -1);
+            case 8: // -90 Rotate
+                return Geom::Rotate(-90);
+            default:
+                break;
+
+        }
+    }
+    return Geom::identity();
+}
+
 Pixbuf *Pixbuf::create_from_buffer(std::string const &buffer, double svgdpi, std::string const &fn)
 {
+#if GLIB_CHECK_VERSION(2,67,3)
+    auto datacopy = (gchar *)g_memdup2(buffer.data(), buffer.size());
+#else
     auto datacopy = (gchar *)g_memdup(buffer.data(), buffer.size());
+#endif
     return Pixbuf::create_from_buffer(std::move(datacopy), buffer.size(), svgdpi, fn);
 }
 
 Pixbuf *Pixbuf::create_from_buffer(gchar *&&data, gsize len, double svgdpi, std::string const &fn)
 {
+    bool has_ori = false;
     Pixbuf *pb = nullptr;
     GError *error = nullptr;
     {
@@ -424,15 +415,10 @@ Pixbuf *Pixbuf::create_from_buffer(gchar *&&data, gsize len, double svgdpi, std:
         if(idx != std::string::npos)
         {
             if (boost::iequals(fn.substr(idx+1).c_str(), "svg")) {
-
-                std::unique_ptr<SPDocument> svgDoc(SPDocument::createNewDocFromMem(data, len, true));
+                std::unique_ptr<SPDocument> svgDoc(SPDocument::createNewDocFromMem(data, len, true, fn.c_str()));
 
                 // Check the document loaded properly
-                if (svgDoc == nullptr) {
-                    return nullptr;
-                }
-                if (svgDoc->getRoot() == nullptr)
-                {
+                if (!svgDoc || !svgDoc->getRoot()) {
                     return nullptr;
                 }
 
@@ -445,8 +431,9 @@ Pixbuf *Pixbuf::create_from_buffer(gchar *&&data, gsize len, double svgdpi, std:
                 // Get the size of the document
                 Inkscape::Util::Quantity svgWidth = svgDoc->getWidth();
                 Inkscape::Util::Quantity svgHeight = svgDoc->getHeight();
-                const double svgWidth_px = svgWidth.value("px");
-                const double svgHeight_px = svgHeight.value("px");
+                // Limit the size of the document to 100 inches square
+                const double svgWidth_px = std::min(svgWidth.value("px"), dpi * 100);
+                const double svgHeight_px = std::min(svgHeight.value("px"), dpi * 100);
                 if (svgWidth_px < 0 || svgHeight_px < 0) {
                     g_warning("create_from_buffer: malformed document: svgWidth_px=%f, svgHeight_px=%f", svgWidth_px,
                               svgHeight_px);
@@ -455,6 +442,9 @@ Pixbuf *Pixbuf::create_from_buffer(gchar *&&data, gsize len, double svgdpi, std:
 
                 Geom::Rect area(0, 0, svgWidth_px, svgHeight_px);
                 pb = sp_generate_internal_bitmap(svgDoc.get(), area, dpi);
+                if (!pb)
+                    return nullptr;
+
                 buf = pb->getPixbufRaw();
 
                 // Tidy up
@@ -462,6 +452,7 @@ Pixbuf *Pixbuf::create_from_buffer(gchar *&&data, gsize len, double svgdpi, std:
                     delete pb;
                     return nullptr;
                 }
+                buf = Pixbuf::apply_embedded_orientation(buf);
                 is_svg = true;
             }
         }
@@ -489,20 +480,24 @@ Pixbuf *Pixbuf::create_from_buffer(gchar *&&data, gsize len, double svgdpi, std:
             if (buf) {
                 // gdk_pixbuf_loader_get_pixbuf returns a borrowed reference
                 g_object_ref(buf);
+                has_ori = Pixbuf::get_embedded_orientation(buf) != Geom::identity();
+                buf = Pixbuf::apply_embedded_orientation(buf);
                 pb = new Pixbuf(buf);
             }
         }
 
         if (pb) {
             pb->_path = fn;
-            if (!is_svg) {
+            if (is_svg) {
+                pb->_setMimeData((guchar *) data, len, "svg");
+            } else if(!has_ori) {
+                // We DO NOT want to store the original data if it contains orientation
+                // data since many exports that will use the surface do not handle it.
                 GdkPixbufFormat *fmt = gdk_pixbuf_loader_get_format(loader);
                 gchar *fmt_name = gdk_pixbuf_format_get_name(fmt);
                 pb->_setMimeData((guchar *) data, len, fmt_name);
                 g_free(fmt_name);
                 g_object_unref(loader);
-            } else {
-                pb->_setMimeData((guchar *) data, len, "svg");
             }
         } else {
             std::cerr << "Pixbuf::create_from_file: failed to load contents: " << fn << std::endl;
@@ -528,6 +523,12 @@ GdkPixbuf *Pixbuf::getPixbufRaw(bool convert_format)
     return _pixbuf;
 }
 
+GdkPixbuf *Pixbuf::getPixbufRaw() const
+{
+    assert(_pixel_format == PF_GDK);
+    return _pixbuf;
+}
+
 /**
  * Converts the pixbuf to Cairo pixel format and returns an image surface
  * which can be used as a source.
@@ -536,11 +537,15 @@ GdkPixbuf *Pixbuf::getPixbufRaw(bool convert_format)
  * Calling this function causes the pixbuf to be unsuitable for use
  * with GTK drawing functions until ensurePixelFormat(Pixbuf::PIXEL_FORMAT_PIXBUF) is called.
  */
-cairo_surface_t *Pixbuf::getSurfaceRaw(bool convert_format)
+cairo_surface_t *Pixbuf::getSurfaceRaw()
 {
-    if (convert_format) {
-        ensurePixelFormat(PF_CAIRO);
-    }
+    ensurePixelFormat(PF_CAIRO);
+    return _surface;
+}
+
+cairo_surface_t *Pixbuf::getSurfaceRaw() const
+{
+    assert(_pixel_format == PF_CAIRO);
     return _surface;
 }
 
@@ -562,10 +567,9 @@ Glib::RefPtr<Gdk::Pixbuf> Pixbuf::getPixbuf(bool convert_format = true)
 }
 */
 
-Cairo::RefPtr<Cairo::Surface> Pixbuf::getSurface(bool convert_format)
+Cairo::RefPtr<Cairo::Surface> Pixbuf::getSurface()
 {
-    Cairo::RefPtr<Cairo::Surface> p(new Cairo::Surface(getSurfaceRaw(convert_format), false));
-    return p;
+    return Cairo::RefPtr<Cairo::Surface>(new Cairo::Surface(getSurfaceRaw(), false));
 }
 
 /** Retrieves the original compressed data for the surface, if any.
@@ -640,39 +644,48 @@ void Pixbuf::_setMimeData(guchar *data, gsize len, Glib::ustring const &format)
     }
 }
 
+/**
+ * Convert the internal pixel format between CAIRO and GDK formats.
+ */
 void Pixbuf::ensurePixelFormat(PixelFormat fmt)
 {
-    if (_pixel_format == PF_GDK) {
-        if (fmt == PF_GDK) {
-            return;
-        }
-        if (fmt == PF_CAIRO) {
-            convert_pixels_pixbuf_to_argb32(
-                gdk_pixbuf_get_pixels(_pixbuf),
-                gdk_pixbuf_get_width(_pixbuf),
-                gdk_pixbuf_get_height(_pixbuf),
-                gdk_pixbuf_get_rowstride(_pixbuf));
-            _pixel_format = fmt;
-            return;
-        }
+    if (fmt == PF_CAIRO && _pixel_format == PF_GDK) {
+        ensure_argb32(_pixbuf);
+        _pixel_format = fmt;
+    } else if (fmt == PF_GDK && _pixel_format == PF_CAIRO) {
+        ensure_pixbuf(_pixbuf);
+        _pixel_format = fmt;
+    } else if (fmt != _pixel_format) {
         g_assert_not_reached();
     }
-    if (_pixel_format == PF_CAIRO) {
-        if (fmt == PF_GDK) {
-            convert_pixels_argb32_to_pixbuf(
-                gdk_pixbuf_get_pixels(_pixbuf),
-                gdk_pixbuf_get_width(_pixbuf),
-                gdk_pixbuf_get_height(_pixbuf),
-                gdk_pixbuf_get_rowstride(_pixbuf));
-            _pixel_format = fmt;
-            return;
-        }
-        if (fmt == PF_CAIRO) {
-            return;
-        }
-        g_assert_not_reached();
-    }
-    g_assert_not_reached();
+}
+
+/**
+ * Converts GdkPixbuf's data to premultiplied ARGB.
+ * This function will convert a GdkPixbuf in place into Cairo's native pixel format.
+ * Note that this is a hack intended to save memory. When the pixbuf is in Cairo's format,
+ * using it with GTK will result in corrupted drawings.
+ */
+void Pixbuf::ensure_argb32(GdkPixbuf *pb)
+{
+    convert_pixels_pixbuf_to_argb32(
+        gdk_pixbuf_get_pixels(pb),
+        gdk_pixbuf_get_width(pb),
+        gdk_pixbuf_get_height(pb),
+        gdk_pixbuf_get_rowstride(pb));
+}
+
+/**
+ * Converts GdkPixbuf's data back to its native format.
+ * Once this is done, the pixbuf can be used with GTK again.
+ */
+void Pixbuf::ensure_pixbuf(GdkPixbuf *pb)
+{
+    convert_pixels_argb32_to_pixbuf(
+        gdk_pixbuf_get_pixels(pb),
+        gdk_pixbuf_get_width(pb),
+        gdk_pixbuf_get_height(pb),
+        gdk_pixbuf_get_rowstride(pb));
 }
 
 } // namespace Inkscape
@@ -682,13 +695,13 @@ void Pixbuf::ensurePixelFormat(PixelFormat fmt)
  * If optimize_stroke == false, the view Rect is not used.
  */
 static void
-feed_curve_to_cairo(cairo_t *cr, Geom::Curve const &c, Geom::Affine const & trans, Geom::Rect view, bool optimize_stroke)
+feed_curve_to_cairo(cairo_t *cr, Geom::Curve const &c, Geom::Affine const &trans, Geom::Rect const &view, bool optimize_stroke)
 {
     using Geom::X;
     using Geom::Y;
 
     unsigned order = 0;
-    if (Geom::BezierCurve const* b = dynamic_cast<Geom::BezierCurve const*>(&c)) {
+    if (auto b = dynamic_cast<Geom::BezierCurve const*>(&c)) {
         order = b->order();
     }
 
@@ -711,11 +724,11 @@ feed_curve_to_cairo(cairo_t *cr, Geom::Curve const &c, Geom::Affine const & tran
     break;
     case 2:
     {
-        Geom::QuadraticBezier const *quadratic_bezier = static_cast<Geom::QuadraticBezier const*>(&c);
-        std::vector<Geom::Point> points = quadratic_bezier->controlPoints();
-        points[0] *= trans;
-        points[1] *= trans;
-        points[2] *= trans;
+        auto quadratic_bezier = static_cast<Geom::QuadraticBezier const*>(&c);
+        std::array<Geom::Point, 3> points;
+        for (int i = 0; i < 3; i++) {
+            points[i] = quadratic_bezier->controlPoint(i) * trans;
+        }
         // degree-elevate to cubic Bezier, since Cairo doesn't do quadratic Beziers
         Geom::Point b1 = points[0] + (2./3) * (points[1] - points[0]);
         Geom::Point b2 = b1 + (1./3) * (points[2] - points[0]);
@@ -734,8 +747,11 @@ feed_curve_to_cairo(cairo_t *cr, Geom::Curve const &c, Geom::Affine const & tran
     break;
     case 3:
     {
-        Geom::CubicBezier const *cubic_bezier = static_cast<Geom::CubicBezier const*>(&c);
-        std::vector<Geom::Point> points = cubic_bezier->controlPoints();
+        auto cubic_bezier = static_cast<Geom::CubicBezier const*>(&c);
+        std::array<Geom::Point, 4> points;
+        for (int i = 0; i < 4; i++) {
+            points[i] = cubic_bezier->controlPoint(i);
+        }
         //points[0] *= trans; // don't do this one here for fun: it is only needed for optimized strokes
         points[1] *= trans;
         points[2] *= trans;
@@ -770,13 +786,7 @@ feed_curve_to_cairo(cairo_t *cr, Geom::Curve const &c, Geom::Affine const & tran
                 }
 
                 // Apply the transformation to the current context
-                cairo_matrix_t cm;
-                cm.xx = xform[0];
-                cm.xy = xform[2];
-                cm.x0 = xform[4];
-                cm.yx = xform[1];
-                cm.yy = xform[3];
-                cm.y0 = xform[5];
+                auto cm = geom_to_cairo(xform);
 
                 cairo_save(cr);
                 cairo_transform(cr, &cm);
@@ -899,6 +909,71 @@ feed_pathvector_to_cairo (cairo_t *ct, Geom::PathVector const &pathv)
     }
 }
 
+/*
+ * Pulls out the last cairo path context and reconstitutes it
+ * into a local geom path vector for inkscape use.
+ *
+ * @param ct - The cairo context
+ *
+ * @returns an optioal Geom::PathVector object
+ */
+std::optional<Geom::PathVector> extract_pathvector_from_cairo(cairo_t *ct)
+{
+    cairo_path_t *path = cairo_copy_path(ct);
+    if (!path)
+        return std::nullopt;
+
+    auto path_freer = scope_exit([&] { cairo_path_destroy(path); });
+
+    Geom::PathBuilder res;
+    auto end = &path->data[path->num_data];
+    for (auto p = &path->data[0]; p < end; p += p->header.length) {
+        switch (p->header.type) {
+            case CAIRO_PATH_MOVE_TO:
+                if (p->header.length != 2)
+                    return std::nullopt;
+                res.moveTo(Geom::Point(p[1].point.x, p[1].point.y));
+                break;
+
+            case CAIRO_PATH_LINE_TO:
+                if (p->header.length != 2)
+                    return std::nullopt;
+                res.lineTo(Geom::Point(p[1].point.x, p[1].point.y));
+                break;
+
+            case CAIRO_PATH_CURVE_TO:
+                if (p->header.length != 4)
+                    return std::nullopt;
+                res.curveTo(Geom::Point(p[1].point.x, p[1].point.y), Geom::Point(p[2].point.x, p[2].point.y),
+                            Geom::Point(p[3].point.x, p[3].point.y));
+                break;
+
+            case CAIRO_PATH_CLOSE_PATH:
+                if (p->header.length != 1)
+                    return std::nullopt;
+                res.closePath();
+                break;
+            default:
+                return std::nullopt;
+        }
+    }
+
+    res.flush();
+    return res.peek();
+}
+
+static std::atomic<int> num_filter_threads = 4;
+
+int get_num_filter_threads()
+{
+    return num_filter_threads.load(std::memory_order_relaxed);
+}
+
+void set_num_filter_threads(int n)
+{
+    num_filter_threads.store(n, std::memory_order_relaxed);
+}
+
 SPColorInterpolation
 get_cairo_surface_ci(cairo_surface_t *surface) {
     void* data = cairo_surface_get_user_data( surface, &ink_color_interpolation_key );
@@ -988,12 +1063,19 @@ void
 ink_cairo_set_hairline(cairo_t *ct)
 {
 #ifdef CAIRO_HAS_HAIRLINE
-    cairo_set_hairline(ct);
+    cairo_set_hairline(ct, true);
 #else
     // As a backup, use a device unit of 1
-    double x = 1, y = 1;
+    double x = 1.0, y = 0.0;
     cairo_device_to_user_distance(ct, &x, &y);
-    cairo_set_line_width(ct, std::min(x, y));
+    cairo_set_line_width(ct, std::hypot(x, y));
+#endif
+}
+
+void ink_cairo_pattern_set_dither(cairo_pattern_t *pattern, bool enabled)
+{
+#if CAIRO_VERSION >= CAIRO_VERSION_ENCODE(1, 18, 0)
+    cairo_pattern_set_dither(pattern, enabled ? CAIRO_DITHER_BEST : CAIRO_DITHER_NONE);
 #endif
 }
 
@@ -1284,123 +1366,83 @@ static guint32 linear_to_srgb( const guint32 c, const guint32 a ) {
     return premul_alpha( c2, a );
 }
 
-struct SurfaceSrgbToLinear {
-
-    guint32 operator()(guint32 in) {
-        EXTRACT_ARGB32(in, a,r,g,b)    ; // Unneeded semi-colon for indenting
-        if( a != 0 ) {
-            r = srgb_to_linear( r, a );
-            g = srgb_to_linear( g, a );
-            b = srgb_to_linear( b, a );
-        }
-        ASSEMBLE_ARGB32(out, a,r,g,b);
-        return out;
+static uint32_t srgb_to_linear_argb32(uint32_t in)
+{
+    EXTRACT_ARGB32(in, a, r, g, b);
+    if (a != 0) {
+        r = srgb_to_linear(r, a);
+        g = srgb_to_linear(g, a);
+        b = srgb_to_linear(b, a);
     }
-private:
-    /* None */
-};
+    ASSEMBLE_ARGB32(out, a, r, g, b);
+    return out;
+}
 
 int ink_cairo_surface_srgb_to_linear(cairo_surface_t *surface)
 {
     cairo_surface_flush(surface);
     int width = cairo_image_surface_get_width(surface);
     int height = cairo_image_surface_get_height(surface);
-    // int stride = cairo_image_surface_get_stride(surface);
-    // unsigned char *data = cairo_image_surface_get_data(surface);
 
-    ink_cairo_surface_filter( surface, surface, SurfaceSrgbToLinear() );
+    ink_cairo_surface_filter(surface, surface, srgb_to_linear_argb32);
 
-    /* TODO convert this to OpenMP somehow */
-    // for (int y = 0; y < height; ++y, data += stride) {
-    //     for (int x = 0; x < width; ++x) {
-    //         guint32 px = *reinterpret_cast<guint32*>(data + 4*x);
-    //         EXTRACT_ARGB32(px, a,r,g,b)    ; // Unneeded semi-colon for indenting
-    //         if( a != 0 ) {
-    //             r = srgb_to_linear( r, a );
-    //             g = srgb_to_linear( g, a );
-    //             b = srgb_to_linear( b, a );
-    //         }
-    //         ASSEMBLE_ARGB32(px2, a,r,g,b);
-    //         *reinterpret_cast<guint32*>(data + 4*x) = px2;
-    //     }
-    // }
     return width * height;
 }
 
-struct SurfaceLinearToSrgb {
-
-    guint32 operator()(guint32 in) {
-        EXTRACT_ARGB32(in, a,r,g,b)    ; // Unneeded semi-colon for indenting
-        if( a != 0 ) {
-            r = linear_to_srgb( r, a );
-            g = linear_to_srgb( g, a );
-            b = linear_to_srgb( b, a );
-        }
-        ASSEMBLE_ARGB32(out, a,r,g,b);
-        return out;
+static uint32_t linear_to_srgb_argb32(uint32_t in)
+{
+    EXTRACT_ARGB32(in, a, r, g, b);
+    if (a != 0) {
+        r = linear_to_srgb(r, a);
+        g = linear_to_srgb(g, a);
+        b = linear_to_srgb(b, a);
     }
-private:
-    /* None */
-};
+    ASSEMBLE_ARGB32(out, a, r, g, b);
+    return out;
+}
 
 SPBlendMode ink_cairo_operator_to_css_blend(cairo_operator_t cairo_operator)
 {
     // All of the blend modes are implemented in Cairo as of 1.10.
     // For a detailed description, see:
     // http://cairographics.org/operators/
-    auto res = SP_CSS_BLEND_NORMAL;
+
     switch (cairo_operator) {
         case CAIRO_OPERATOR_MULTIPLY:
-            res = SP_CSS_BLEND_MULTIPLY;
-            break;
+            return SP_CSS_BLEND_MULTIPLY;
         case CAIRO_OPERATOR_SCREEN:
-            res = SP_CSS_BLEND_SCREEN;
-            break;
+            return SP_CSS_BLEND_SCREEN;
         case CAIRO_OPERATOR_DARKEN:
-            res = SP_CSS_BLEND_DARKEN;
-            break;
+            return SP_CSS_BLEND_DARKEN;
         case CAIRO_OPERATOR_LIGHTEN:
-            res = SP_CSS_BLEND_LIGHTEN;
-            break;
+            return SP_CSS_BLEND_LIGHTEN;
         case CAIRO_OPERATOR_OVERLAY:
-            res = SP_CSS_BLEND_OVERLAY;
-            break;
+            return SP_CSS_BLEND_OVERLAY;
         case CAIRO_OPERATOR_COLOR_DODGE:
-            res = SP_CSS_BLEND_COLORDODGE;
-            break;
+            return SP_CSS_BLEND_COLORDODGE;
         case CAIRO_OPERATOR_COLOR_BURN:
-            res = SP_CSS_BLEND_COLORBURN;
-            break;
+            return SP_CSS_BLEND_COLORBURN;
         case CAIRO_OPERATOR_HARD_LIGHT:
-            res = SP_CSS_BLEND_HARDLIGHT;
-            break;
+            return SP_CSS_BLEND_HARDLIGHT;
         case CAIRO_OPERATOR_SOFT_LIGHT:
-            res = SP_CSS_BLEND_SOFTLIGHT;
-            break;
+            return SP_CSS_BLEND_SOFTLIGHT;
         case CAIRO_OPERATOR_DIFFERENCE:
-            res = SP_CSS_BLEND_DIFFERENCE;
-            break;
+            return SP_CSS_BLEND_DIFFERENCE;
         case CAIRO_OPERATOR_EXCLUSION:
-            res = SP_CSS_BLEND_EXCLUSION;
-            break;
+            return SP_CSS_BLEND_EXCLUSION;
         case CAIRO_OPERATOR_HSL_HUE:
-            res = SP_CSS_BLEND_HUE;
-            break;
+            return SP_CSS_BLEND_HUE;
         case CAIRO_OPERATOR_HSL_SATURATION:
-            res = SP_CSS_BLEND_SATURATION;
-            break;
+            return SP_CSS_BLEND_SATURATION;
         case CAIRO_OPERATOR_HSL_COLOR:
-            res = SP_CSS_BLEND_COLOR;
-            break;
+            return SP_CSS_BLEND_COLOR;
         case CAIRO_OPERATOR_HSL_LUMINOSITY:
-            res = SP_CSS_BLEND_LUMINOSITY;
-            break;
+            return SP_CSS_BLEND_LUMINOSITY;
         case CAIRO_OPERATOR_OVER:
+            return SP_CSS_BLEND_NORMAL;
         default:
-            res = SP_CSS_BLEND_NORMAL;
-            break;
+            return SP_CSS_BLEND_NORMAL;
     }
-    return res;
 }
 
 cairo_operator_t ink_css_blend_to_cairo_operator(SPBlendMode css_blend)
@@ -1409,93 +1451,58 @@ cairo_operator_t ink_css_blend_to_cairo_operator(SPBlendMode css_blend)
     // For a detailed description, see:
     // http://cairographics.org/operators/
 
-    cairo_operator_t res = CAIRO_OPERATOR_OVER;
     switch (css_blend) {
         case SP_CSS_BLEND_MULTIPLY:
-            res = CAIRO_OPERATOR_MULTIPLY;
-            break;
+            return CAIRO_OPERATOR_MULTIPLY;
         case SP_CSS_BLEND_SCREEN:
-            res = CAIRO_OPERATOR_SCREEN;
-            break;
+            return CAIRO_OPERATOR_SCREEN;
         case SP_CSS_BLEND_DARKEN:
-            res = CAIRO_OPERATOR_DARKEN;
-            break;
+            return CAIRO_OPERATOR_DARKEN;
         case SP_CSS_BLEND_LIGHTEN:
-            res = CAIRO_OPERATOR_LIGHTEN;
-            break;
+            return CAIRO_OPERATOR_LIGHTEN;
         case SP_CSS_BLEND_OVERLAY:
-            res = CAIRO_OPERATOR_OVERLAY;
-            break;
+            return CAIRO_OPERATOR_OVERLAY;
         case SP_CSS_BLEND_COLORDODGE:
-            res = CAIRO_OPERATOR_COLOR_DODGE;
-            break;
+            return CAIRO_OPERATOR_COLOR_DODGE;
         case SP_CSS_BLEND_COLORBURN:
-            res = CAIRO_OPERATOR_COLOR_BURN;
-            break;
+            return CAIRO_OPERATOR_COLOR_BURN;
         case SP_CSS_BLEND_HARDLIGHT:
-            res = CAIRO_OPERATOR_HARD_LIGHT;
-            break;
+            return CAIRO_OPERATOR_HARD_LIGHT;
         case SP_CSS_BLEND_SOFTLIGHT:
-            res = CAIRO_OPERATOR_SOFT_LIGHT;
-            break;
+            return CAIRO_OPERATOR_SOFT_LIGHT;
         case SP_CSS_BLEND_DIFFERENCE:
-            res = CAIRO_OPERATOR_DIFFERENCE;
-            break;
+            return CAIRO_OPERATOR_DIFFERENCE;
         case SP_CSS_BLEND_EXCLUSION:
-            res = CAIRO_OPERATOR_EXCLUSION;
-            break;
+            return CAIRO_OPERATOR_EXCLUSION;
         case SP_CSS_BLEND_HUE:
-            res = CAIRO_OPERATOR_HSL_HUE;
-            break;
+            return CAIRO_OPERATOR_HSL_HUE;
         case SP_CSS_BLEND_SATURATION:
-            res = CAIRO_OPERATOR_HSL_SATURATION;
-            break;
+            return CAIRO_OPERATOR_HSL_SATURATION;
         case SP_CSS_BLEND_COLOR:
-            res = CAIRO_OPERATOR_HSL_COLOR;
-            break;
+            return CAIRO_OPERATOR_HSL_COLOR;
         case SP_CSS_BLEND_LUMINOSITY:
-            res = CAIRO_OPERATOR_HSL_LUMINOSITY;
-            break;
+            return CAIRO_OPERATOR_HSL_LUMINOSITY;
         case SP_CSS_BLEND_NORMAL:
-            res = CAIRO_OPERATOR_OVER;
-            break;
+            return CAIRO_OPERATOR_OVER;
         default:
             g_error("Invalid SPBlendMode %d", css_blend);
+            return CAIRO_OPERATOR_OVER;
     }
-    return res;
 }
-
-
 
 int ink_cairo_surface_linear_to_srgb(cairo_surface_t *surface)
 {
     cairo_surface_flush(surface);
     int width = cairo_image_surface_get_width(surface);
     int height = cairo_image_surface_get_height(surface);
-    // int stride = cairo_image_surface_get_stride(surface);
-    // unsigned char *data = cairo_image_surface_get_data(surface);
 
-    ink_cairo_surface_filter( surface, surface, SurfaceLinearToSrgb() );
+    ink_cairo_surface_filter(surface, surface, linear_to_srgb_argb32);
 
-    // /* TODO convert this to OpenMP somehow */
-    // for (int y = 0; y < height; ++y, data += stride) {
-    //     for (int x = 0; x < width; ++x) {
-    //         guint32 px = *reinterpret_cast<guint32*>(data + 4*x);
-    //         EXTRACT_ARGB32(px, a,r,g,b)    ; // Unneeded semi-colon for indenting
-    //         if( a != 0 ) {
-    //             r = linear_to_srgb( r, a );
-    //             g = linear_to_srgb( g, a );
-    //             b = linear_to_srgb( b, a );
-    //         }
-    //         ASSEMBLE_ARGB32(px2, a,r,g,b);
-    //         *reinterpret_cast<guint32*>(data + 4*x) = px2;
-    //     }
-    // }
     return width * height;
 }
 
 cairo_pattern_t *
-ink_cairo_pattern_create_checkerboard(guint32 rgba)
+ink_cairo_pattern_create_checkerboard(guint32 rgba, bool use_alpha)
 {
     int const w = 6;
     int const h = 6;
@@ -1521,6 +1528,16 @@ ink_cairo_pattern_create_checkerboard(guint32 rgba)
     cairo_rectangle(ct, 0, 0, w, h);
     cairo_rectangle(ct, w, h, w, h);
     cairo_fill(ct);
+    if (use_alpha) {
+        // use alpha to show opacity cover checkerboard
+        double a = SP_RGBA32_A_F(rgba);
+        if (a > 0.0) {
+            cairo_set_operator(ct, CAIRO_OPERATOR_OVER);
+            cairo_rectangle(ct, 0, 0, 2 * w, 2 * h);
+            cairo_set_source_rgba(ct, r, g, b, a);
+            cairo_fill(ct);
+        }
+    }
     cairo_destroy(ct);
 
     cairo_pattern_t *p = cairo_pattern_create_for_surface(s);
@@ -1529,6 +1546,93 @@ ink_cairo_pattern_create_checkerboard(guint32 rgba)
 
     cairo_surface_destroy(s);
     return p;
+}
+
+
+/** 
+ * Draw drop shadow around the 'rect' with given 'size' and 'color'; shadow extends to the right and bottom of rect.
+ */
+void ink_cairo_draw_drop_shadow(const Cairo::RefPtr<Cairo::Context> &ctx, const Geom::Rect& rect, double size, guint32 color, double color_alpha) {
+    // draw fake drop shadow built from gradients
+    const auto r = SP_RGBA32_R_F(color);
+    const auto g = SP_RGBA32_G_F(color);
+    const auto b = SP_RGBA32_B_F(color);
+    const auto a = color_alpha;
+    const Geom::Point corners[] = { rect.corner(0), rect.corner(1), rect.corner(2), rect.corner(3) };
+    // space for gradient shadow
+    double sw = size;
+    double half = sw / 2;
+    using Geom::X;
+    using Geom::Y;
+    // 8 gradients total: 4 sides + 4 corners
+    auto grad_top    = Cairo::LinearGradient::create(0, corners[0][Y] + half, 0, corners[0][Y] - half);
+    auto grad_right  = Cairo::LinearGradient::create(corners[1][X], 0, corners[1][X] + sw, 0);
+    auto grad_bottom = Cairo::LinearGradient::create(0, corners[2][Y], 0, corners[2][Y] + sw);
+    auto grad_left   = Cairo::LinearGradient::create(corners[0][X] + half, 0, corners[0][X] - half, 0);
+    auto grad_btm_right = Cairo::RadialGradient::create(corners[2][X], corners[2][Y], 0, corners[2][X], corners[2][Y], sw);
+    auto grad_top_right = Cairo::RadialGradient::create(corners[1][X], corners[1][Y] + half, 0, corners[1][X], corners[1][Y] + half, sw);
+    auto grad_btm_left  = Cairo::RadialGradient::create(corners[3][X] + half, corners[3][Y], 0, corners[3][X] + half, corners[3][Y], sw);
+    auto grad_top_left  = Cairo::RadialGradient::create(corners[0][X], corners[0][Y], 0, corners[0][X], corners[0][Y], half);
+    const int N = 15; // number of gradient stops; stops used to make it non-linear
+    // using easing function here: (exp(a*(1-t)) - 1) / (exp(a) - 1);
+    // it has a nice property of growing from 0 to 1 for t in [0..1]
+    const auto A = 4.0; // this coefficient changes how steep the curve is and controls shadow drop-off
+    const auto denominator = exp(A) - 1;
+    for (int i = 0; i <= N; ++i) {
+        auto pos = static_cast<double>(i) / N;
+        // exponential decay for drop shadow - long tail, with values from 100% down to 0% opacity
+        auto t = 1 - pos; // reverse 't' so alpha drops from 1 to 0
+        auto alpha = (exp(A * t) - 1) / denominator;
+        grad_top->add_color_stop_rgba(pos, r, g, b, alpha * a);
+        grad_bottom->add_color_stop_rgba(pos, r, g, b, alpha * a);
+        grad_right->add_color_stop_rgba(pos, r, g, b, alpha * a);
+        grad_left->add_color_stop_rgba(pos, r, g, b, alpha * a);
+        grad_btm_right->add_color_stop_rgba(pos, r, g, b, alpha * a);
+        grad_top_right->add_color_stop_rgba(pos, r, g, b, alpha * a);
+        grad_btm_left->add_color_stop_rgba(pos, r, g, b, alpha * a);
+        // this left/top corner is just a silver of the shadow: half of it is "hidden" beneath the page
+        if (pos >= 0.5) {
+            grad_top_left->add_color_stop_rgba(2 * (pos - 0.5), r, g, b, alpha * a);
+        }
+    }
+
+    // shadow at the top (faint)
+    ctx->rectangle(corners[0][X], corners[0][Y] - half, std::max(corners[1][X] - corners[0][X], 0.0), half);
+    ctx->set_source(grad_top);
+    ctx->fill();
+
+    // right side
+    ctx->rectangle(corners[1][X], corners[1][Y] + half, sw, std::max(corners[2][Y] - corners[1][Y] - half, 0.0));
+    ctx->set_source(grad_right);
+    ctx->fill();
+
+    // bottom side
+    ctx->rectangle(corners[0][X] + half, corners[2][Y], std::max(corners[1][X] - corners[0][X] - half, 0.0), sw);
+    ctx->set_source(grad_bottom);
+    ctx->fill();
+
+    // left side (faint)
+    ctx->rectangle(corners[0][X] - half, corners[0][Y], half, std::max(corners[2][Y] - corners[1][Y], 0.0));
+    ctx->set_source(grad_left);
+    ctx->fill();
+
+    // bottom corners
+    ctx->rectangle(corners[2][X], corners[2][Y], sw, sw);
+    ctx->set_source(grad_btm_right);
+    ctx->fill();
+
+    ctx->rectangle(corners[3][X] - half, corners[3][Y], std::min(sw, rect.width() + half), sw);
+    ctx->set_source(grad_btm_left);
+    ctx->fill();
+
+    // top corners
+    ctx->rectangle(corners[1][X], corners[1][Y] - half, sw, std::min(sw, rect.height() + half));
+    ctx->set_source(grad_top_right);
+    ctx->fill();
+
+    ctx->rectangle(corners[0][X] - half, corners[0][Y] - half, half, half);
+    ctx->set_source(grad_top_left);
+    ctx->fill();
 }
 
 /**
@@ -1575,54 +1679,69 @@ void ink_cairo_pixbuf_cleanup(guchar * /*pixels*/, void *data)
 
 guint32 argb32_from_pixbuf(guint32 c)
 {
-    guint32 o = 0;
-#if G_BYTE_ORDER == G_LITTLE_ENDIAN
-    guint32 a = (c & 0xff000000) >> 24;
-#else
-    guint32 a = (c & 0x000000ff);
-#endif
-    if (a != 0) {
-        // extract color components
-#if G_BYTE_ORDER == G_LITTLE_ENDIAN
-        guint32 r = (c & 0x000000ff);
-        guint32 g = (c & 0x0000ff00) >> 8;
-        guint32 b = (c & 0x00ff0000) >> 16;
-#else
-        guint32 r = (c & 0xff000000) >> 24;
-        guint32 g = (c & 0x00ff0000) >> 16;
-        guint32 b = (c & 0x0000ff00) >> 8;
-#endif
-        // premultiply
-        r = premul_alpha(r, a);
-        b = premul_alpha(b, a);
-        g = premul_alpha(g, a);
-        // combine into output
-        o = (a << 24) | (r << 16) | (g << 8) | (b);
+    uint32_t a;
+    if constexpr (G_BYTE_ORDER == G_LITTLE_ENDIAN) {
+        a = (c & 0xff000000) >> 24;
+    } else {
+        a = (c & 0x000000ff);
     }
-    return o;
+
+    if (a == 0) {
+        return 0;
+    }
+
+    // extract color components
+    uint32_t r, g, b;
+    if constexpr (G_BYTE_ORDER == G_LITTLE_ENDIAN) {
+        r = (c & 0x000000ff);
+        g = (c & 0x0000ff00) >> 8;
+        b = (c & 0x00ff0000) >> 16;
+    } else {
+        r = (c & 0xff000000) >> 24;
+        g = (c & 0x00ff0000) >> 16;
+        b = (c & 0x0000ff00) >> 8;
+    }
+
+    // premultiply
+    r = premul_alpha(r, a);
+    b = premul_alpha(b, a);
+    g = premul_alpha(g, a);
+
+    // combine into output
+    return (a << 24) | (r << 16) | (g << 8) | b;
 }
 
-guint32 pixbuf_from_argb32(guint32 c)
+/**
+ * Convert one pixel from ARGB to GdkPixbuf format.
+ *
+ * @param c ARGB color
+ * @param bgcolor Color to use if c.alpha is zero (bgcolor.alpha is ignored)
+ */
+guint32 pixbuf_from_argb32(guint32 c, guint32 bgcolor)
 {
     guint32 a = (c & 0xff000000) >> 24;
-    if (a == 0) return 0;
+    if (a == 0) {
+        assert(c == 0);
+        c = bgcolor;
+    }
 
     // extract color components
     guint32 r = (c & 0x00ff0000) >> 16;
     guint32 g = (c & 0x0000ff00) >> 8;
     guint32 b = (c & 0x000000ff);
-    // unpremultiply; adding a/2 gives correct rounding
-    // (taken from Cairo sources)
-    r = (r * 255 + a/2) / a;
-    b = (b * 255 + a/2) / a;
-    g = (g * 255 + a/2) / a;
+
+    if (a != 0) {
+        r = unpremul_alpha(r, a);
+        g = unpremul_alpha(g, a);
+        b = unpremul_alpha(b, a);
+    }
+
     // combine into output
-#if G_BYTE_ORDER == G_LITTLE_ENDIAN
-    guint32 o = (r) | (g << 8) | (b << 16) | (a << 24);
-#else
-    guint32 o = (r << 24) | (g << 16) | (b << 8) | (a);
-#endif
-    return o;
+    if constexpr (G_BYTE_ORDER == G_LITTLE_ENDIAN) {
+        return r | (g << 8) | (b << 16) | (a << 24);
+    } else {
+        return (r << 24) | (g << 16) | (b << 8) | a;
+    }
 }
 
 /**
@@ -1654,7 +1773,7 @@ convert_pixels_pixbuf_to_argb32(guchar *data, int w, int h, int stride)
  * This involves premultiplying alpha and shuffling around the channels.
  */
 void
-convert_pixels_argb32_to_pixbuf(guchar *data, int w, int h, int stride)
+convert_pixels_argb32_to_pixbuf(guchar *data, int w, int h, int stride, guint32 bgcolor)
 {
     if (!data || w < 1 || h < 1 || stride < 1) {
         return;
@@ -1662,54 +1781,10 @@ convert_pixels_argb32_to_pixbuf(guchar *data, int w, int h, int stride)
     for (size_t i = 0; i < h; ++i) {
         guint32 *px = reinterpret_cast<guint32*>(data + i*stride);
         for (size_t j = 0; j < w; ++j) {
-            *px = pixbuf_from_argb32(*px);
+            *px = pixbuf_from_argb32(*px, bgcolor);
             ++px;
         }
     }
-}
-
-/**
- * Converts GdkPixbuf's data to premultiplied ARGB.
- * This function will convert a GdkPixbuf in place into Cairo's native pixel format.
- * Note that this is a hack intended to save memory. When the pixbuf is in Cairo's format,
- * using it with GTK will result in corrupted drawings.
- */
-void
-ink_pixbuf_ensure_argb32(GdkPixbuf *pb)
-{
-    gchar *pixel_format = reinterpret_cast<gchar*>(g_object_get_data(G_OBJECT(pb), "pixel_format"));
-    if (pixel_format != nullptr && strcmp(pixel_format, "argb32") == 0) {
-        // nothing to do
-        return;
-    }
-
-    convert_pixels_pixbuf_to_argb32(
-        gdk_pixbuf_get_pixels(pb),
-        gdk_pixbuf_get_width(pb),
-        gdk_pixbuf_get_height(pb),
-        gdk_pixbuf_get_rowstride(pb));
-    g_object_set_data_full(G_OBJECT(pb), "pixel_format", g_strdup("argb32"), g_free);
-}
-
-/**
- * Converts GdkPixbuf's data back to its native format.
- * Once this is done, the pixbuf can be used with GTK again.
- */
-void
-ink_pixbuf_ensure_normal(GdkPixbuf *pb)
-{
-    gchar *pixel_format = reinterpret_cast<gchar*>(g_object_get_data(G_OBJECT(pb), "pixel_format"));
-    if (pixel_format == nullptr || strcmp(pixel_format, "pixbuf") == 0) {
-        // nothing to do
-        return;
-    }
-
-    convert_pixels_argb32_to_pixbuf(
-        gdk_pixbuf_get_pixels(pb),
-        gdk_pixbuf_get_width(pb),
-        gdk_pixbuf_get_height(pb),
-        gdk_pixbuf_get_rowstride(pb));
-    g_object_set_data_full(G_OBJECT(pb), "pixel_format", g_strdup("pixbuf"), g_free);
 }
 
 guint32 argb32_from_rgba(guint32 in)
@@ -1725,6 +1800,30 @@ guint32 argb32_from_rgba(guint32 in)
 
 
 /**
+ * Convert one pixel from ARGB to GdkPixbuf format.
+ *
+ * @param c RGBA color
+ */
+guint32 rgba_from_argb32(guint32 c)
+{
+    guint32 a = (c & 0xff000000) >> 24;
+    guint32 r = (c & 0x00ff0000) >> 16;
+    guint32 g = (c & 0x0000ff00) >> 8;
+    guint32 b = (c & 0x000000ff);
+
+    if (a != 0) {
+        r = unpremul_alpha(r, a);
+        g = unpremul_alpha(g, a);
+        b = unpremul_alpha(b, a);
+    }
+
+    // combine into output
+    guint32 o = (r << 24) | (g << 16) | (b << 8) | (a);
+
+    return o;
+}
+
+/**
  * Converts a pixbuf to a PNG data structure.
  * For 8-but RGBA png, this is like copying.
  *
@@ -1732,82 +1831,100 @@ guint32 argb32_from_rgba(guint32 in)
 const guchar* pixbuf_to_png(guchar const**rows, guchar* px, int num_rows, int num_cols, int stride, int color_type, int bit_depth)
 {
     int n_fields = 1 + (color_type&2) + (color_type&4)/4;
-    const guchar* new_data = (const guchar*)malloc((n_fields * bit_depth * num_rows * num_cols)/8 + 64);
+    const guchar* new_data = (const guchar*)malloc(((n_fields * bit_depth * num_cols + 7)/8) * num_rows);
     char* ptr = (char*) new_data;
-    int pad=0; //used when we write image data smaller than one byte (for instance in black and white images where 1px = 1bit)
-    for(int row = 0; row < num_rows; ++row){
+    // Used when we write image data smaller than one byte (for instance in
+    // black and white images where 1px = 1bit). Only possible with greyscale.
+    int pad = 0;
+    for (int row = 0; row < num_rows; ++row) {
         rows[row] = (const guchar*)ptr;
-        for(int col = 0; col < num_cols; ++col){
+        for (int col = 0; col < num_cols; ++col) {
             guint32 *pixel = reinterpret_cast<guint32*>(px + row*stride)+col;
-#if G_BYTE_ORDER == G_LITTLE_ENDIAN
-            //this part should probably be rewritten as (a tested, working) big endian, using htons() and ntohs()
-            guint64 a = (*pixel & 0xff000000) >> 24;
-            guint64 b = (*pixel & 0x00ff0000) >> 16;
-            guint64 g = (*pixel & 0x0000ff00) >> 8;
-            guint64 r = (*pixel & 0x000000ff);
 
-            //one of possible rgb to greyscale formulas. This one is called "luminance, "luminosity" or "luma" 
+            guint64 pix3 = (*pixel & 0xff000000) >> 24;
+            guint64 pix2 = (*pixel & 0x00ff0000) >> 16;
+            guint64 pix1 = (*pixel & 0x0000ff00) >> 8;
+            guint64 pix0 = (*pixel & 0x000000ff);
+
+            uint64_t a, r, g, b;
+            if constexpr (G_BYTE_ORDER == G_LITTLE_ENDIAN) {
+                a = pix3;
+                b = pix2;
+                g = pix1;
+                r = pix0;
+            } else {
+                r = pix3;
+                g = pix2;
+                b = pix1;
+                a = pix0;
+            }
+
+            // One of possible rgb to greyscale formulas. This one is called "luminance", "luminosity" or "luma" 
             guint16 gray = (guint16)((guint32)((0.2126*(r<<24) + 0.7152*(g<<24) + 0.0722*(b<<24)))>>16); 
             
-            if (!pad) *((guint64*)ptr)=0;
-            if (color_type & 2) { //RGB
+            if (color_type & 2) { // RGB or RGBA
                 // for 8bit->16bit transition, I take the FF -> FFFF convention (multiplication by 0x101). 
-                // If you prefer FF -> FF00 (multiplication by 0x100), remove the <<8, <<24, <<40  and <<56
-                if (color_type & 4) { //RGBA
-                    if (bit_depth==8)
+                // If you prefer FF -> FF00 (multiplication by 0x100), remove the <<8, <<24, <<40 and <<56
+                // for little-endian, and remove the <<0, <<16, <<32 and <<48 for big-endian.
+                if (color_type & 4) { // RGBA
+                    if (bit_depth == 8)
                         *((guint32*)ptr) = *pixel; 
                     else 
-                        *((guint64*)ptr) = (guint64)((a<<56)+(a<<48)+(b<<40)+(b<<32)+(g<<24)+(g<<16)+(r<<8)+(r));
+                        // This uses the samples in the order they appear in pixel rather than
+                        // normalised to abgr or rgba in order to make it endian agnostic,
+                        // exploiting the symmetry of the expression (0x101 is the same in both
+                        // endiannesses and each sample is multiplied by that).
+                        *((guint64*)ptr) = (guint64)((pix3<<56)+(pix3<<48)+(pix2<<40)+(pix2<<32)+(pix1<<24)+(pix1<<16)+(pix0<<8)+(pix0));
+                } else { // RGB
+                    if (bit_depth == 8) {
+                        *ptr = r;
+                        *(ptr+1) = g;
+                        *(ptr+2) = b;
+                    } else {
+                        *((guint16*)ptr) = (r<<8)+r;
+                        *((guint16*)(ptr+2)) = (g<<8)+g;
+                        *((guint16*)(ptr+4)) = (b<<8)+b;
+                    }
                 }
-                else{ //no alpha
-                    if(bit_depth==8) 
-                        *((guint32*)ptr) = ((*pixel)<<8)>>8; 
-                    else 
-                        *((guint64*)ptr) = (guint64)((b<<40)+(b<<32)+(g<<24)+(g<<16)+(r<<8)+r);
-                }
-            } else { //Grayscale
-		int realpad = 8 - bit_depth - pad; // in PNG numbers are stored left to right, but in most significant bits first, so the first one processed is the ``big'' mask, etc.
-                if(bit_depth==16) 
-                    *(guint16*)ptr= ((gray & 0xff00)>>8) + ((gray &0x00ff)<<8);
-                else *((guint16*)ptr) += guint16(((gray >> (16-bit_depth))<<realpad) ); //note the "+="
-                
-                if(color_type & 4) { //Alpha channel
-                    if (bit_depth == 16)
-                        *((guint32*)(ptr+2)) = a + (a<<8);
-                    else
-                        *((guint32*)(ptr)) += guint32((a << 8) >> (16 - bit_depth))<<(bit_depth + realpad);
+            } else { // Grayscale
+                if (bit_depth == 16) {
+                    if constexpr (G_BYTE_ORDER == G_LITTLE_ENDIAN) {
+                        *(guint16*)ptr = ((gray & 0xff00)>>8) + ((gray & 0x00ff)<<8);
+                    } else {
+                        *(guint16*)ptr = gray;
+                    }
+                    // For 8bit->16bit this mirrors RGB(A), multiplying by
+                    // 0x101; if you prefer multiplying by 0x100, remove the
+                    // <<8 for little-endian, and remove the unshifted value
+                    // for big-endian.
+                    if (color_type & 4) // Alpha channel
+                        *((guint16*)(ptr+2)) = a + (a<<8);
+                } else if (bit_depth == 8) {
+                    *ptr = guint8(gray >> 8);
+                    if (color_type & 4) // Alpha channel
+                        *((guint8*)(ptr+1)) = a;
+                } else {
+                    if (!pad) *ptr=0;
+                    // In PNG numbers are stored left to right, but in most significant bits first, so the first one processed is the ``big'' mask, etc.
+                    int realpad = 8 - bit_depth - pad;
+                    *ptr += guint8((gray >> (16-bit_depth))<<realpad); // Note the "+="
+                    if (color_type & 4) // Alpha channel
+                        *(ptr+1) += guint8((a >> (8-bit_depth))<<(bit_depth + realpad));
                 }
             }
 
-#else       
-            // I don't have any access to a big-endian machine to test this. It should still work with default export settings.
-            guint64 r = (*pixel & 0xff000000) >> 24;
-            guint64 g = (*pixel & 0x00ff0000) >> 16;
-            guint64 b = (*pixel & 0x0000ff00) >> 8;
-            guint64 a = (*pixel & 0x000000ff);
-            guint32 gray = (guint32)(0.2126*(r<<24) + 0.7152*(g<<24) + 0.0722*(b<<24));
-            if(color_type & 2){
-                if(bit_depth==8)*ptr = *pixel; else *ptr = (guint64)((r<<56)+(g<<40)+(b<<24)+(a<<8));
-            } else {
-                *((guint32*)ptr) += guint32(gray>>pad);
-                if(color_type & 4) *((guint32*)ptr) += guint32((a>>pad)>> bit_depth);
-            }
-#endif
-            pad+=bit_depth*n_fields;
-            ptr+=(pad/8);
-            pad%=8;
+            pad += bit_depth*n_fields;
+            ptr += pad/8;
+            pad %= 8;
         }
-        if(pad){pad=0;ptr++;}//align bytes on rows
+        // Align bytes on rows
+        if (pad) {
+            pad = 0;
+            ptr++;
+        }
     }
     return new_data; 
 }
-
-
-
-
-
-
-
 
 /*
   Local Variables:

@@ -30,16 +30,14 @@
 #include "document.h"
 #include "message-context.h"
 #include "selection.h"
-#include "verbs.h"
 
 #include "include/macros.h"
 
 #include "object/sp-namedview.h"
 #include "object/sp-spiral.h"
 
+#include "ui/icon-names.h"
 #include "ui/shape-editor.h"
-
-#include "xml/node-event-vector.h"
 
 using Inkscape::DocumentUndo;
 
@@ -47,34 +45,47 @@ namespace Inkscape {
 namespace UI {
 namespace Tools {
 
-const std::string& SpiralTool::getPrefsPath() {
-	return SpiralTool::prefsPath;
-}
-
-const std::string SpiralTool::prefsPath = "/tools/shapes/spiral";
-
-SpiralTool::SpiralTool()
-    : ToolBase("spiral.svg")
+SpiralTool::SpiralTool(SPDesktop *desktop)
+    : ToolBase(desktop, "/tools/shapes/spiral", "spiral.svg")
     , spiral(nullptr)
     , revo(3)
     , exp(1)
     , t0(0)
 {
+    sp_event_context_read(this, "expansion");
+    sp_event_context_read(this, "revolution");
+    sp_event_context_read(this, "t0");
+
+    this->shape_editor = new ShapeEditor(desktop);
+
+    SPItem *item = desktop->getSelection()->singleItem();
+    if (item) {
+        this->shape_editor->set_item(item);
+    }
+
+    Inkscape::Selection *selection = desktop->getSelection();
+    this->sel_changed_connection.disconnect();
+
+    this->sel_changed_connection = selection->connectChanged(sigc::mem_fun(*this, &SpiralTool::selection_changed));
+
+    Inkscape::Preferences *prefs = Inkscape::Preferences::get();
+
+    if (prefs->getBool("/tools/shapes/selcue")) {
+        this->enableSelectionCue();
+    }
+
+    if (prefs->getBool("/tools/shapes/gradientdrag")) {
+        this->enableGrDrag();
+    }
 }
 
-void SpiralTool::finish() {
+SpiralTool::~SpiralTool() {
     ungrabCanvasEvents();
 
     this->finishItem();
     this->sel_changed_connection.disconnect();
 
-    ToolBase::finish();
-}
-
-SpiralTool::~SpiralTool() {
     this->enableGrDrag(false);
-
-    this->sel_changed_connection.disconnect();
 
     delete this->shape_editor;
     this->shape_editor = nullptr;
@@ -94,35 +105,6 @@ void SpiralTool::selection_changed(Inkscape::Selection *selection) {
     this->shape_editor->set_item(selection->singleItem());
 }
 
-void SpiralTool::setup() {
-    ToolBase::setup();
-
-    sp_event_context_read(this, "expansion");
-    sp_event_context_read(this, "revolution");
-    sp_event_context_read(this, "t0");
-
-    this->shape_editor = new ShapeEditor(this->desktop);
-
-    SPItem *item = this->desktop->getSelection()->singleItem();
-    if (item) {
-        this->shape_editor->set_item(item);
-    }
-
-    Inkscape::Selection *selection = this->desktop->getSelection();
-    this->sel_changed_connection.disconnect();
-
-    this->sel_changed_connection = selection->connectChanged(sigc::mem_fun(this, &SpiralTool::selection_changed));
-
-    Inkscape::Preferences *prefs = Inkscape::Preferences::get();
-
-    if (prefs->getBool("/tools/shapes/selcue")) {
-        this->enableSelectionCue();
-    }
-
-    if (prefs->getBool("/tools/shapes/gradientdrag")) {
-        this->enableGrDrag();
-    }
-}
 
 void SpiralTool::set(const Inkscape::Preferences::Entry& val) {
     Glib::ustring name = val.getEntryName();
@@ -139,8 +121,7 @@ void SpiralTool::set(const Inkscape::Preferences::Entry& val) {
 bool SpiralTool::root_handler(GdkEvent* event) {
     static gboolean dragging;
 
-    SPDesktop *desktop = this->desktop;
-    Inkscape::Selection *selection = desktop->getSelection();
+    Inkscape::Selection *selection = _desktop->getSelection();
 
     Inkscape::Preferences *prefs = Inkscape::Preferences::get();
     this->tolerance = prefs->getIntLimited("/options/dragtolerance/value", 0, 0, 100);
@@ -152,10 +133,10 @@ bool SpiralTool::root_handler(GdkEvent* event) {
             if (event->button.button == 1) {
                 dragging = TRUE;
 
-                this->center = Inkscape::setup_for_drag_start(desktop, this, event);
+                this->center = this->setup_for_drag_start(event);
 
-                SnapManager &m = desktop->namedview->snap_manager;
-                m.setup(desktop);
+                SnapManager &m = _desktop->namedview->snap_manager;
+                m.setup(_desktop);
                 m.freeSnapReturnByRef(this->center, Inkscape::SNAPSOURCE_NODE_HANDLE);
                 m.unSetup();
 
@@ -177,10 +158,10 @@ bool SpiralTool::root_handler(GdkEvent* event) {
                 this->within_tolerance = false;
 
                 Geom::Point const motion_w(event->motion.x, event->motion.y);
-                Geom::Point motion_dt(this->desktop->w2d(motion_w));
+                Geom::Point motion_dt(_desktop->w2d(motion_w));
 
-                SnapManager &m = desktop->namedview->snap_manager;
-                m.setup(desktop, true, this->spiral);
+                SnapManager &m = _desktop->namedview->snap_manager;
+                m.setup(_desktop, true, this->spiral);
                 m.freeSnapReturnByRef(motion_dt, Inkscape::SNAPSOURCE_NODE_HANDLE);
                 m.unSetup();
 
@@ -190,10 +171,10 @@ bool SpiralTool::root_handler(GdkEvent* event) {
 
                 ret = TRUE;
             } else if (!this->sp_event_context_knot_mouseover()) {
-                SnapManager &m = desktop->namedview->snap_manager;
-                m.setup(desktop);
+                SnapManager &m = _desktop->namedview->snap_manager;
+                m.setup(_desktop);
                 Geom::Point const motion_w(event->motion.x, event->motion.y);
-                Geom::Point motion_dt(desktop->w2d(motion_w));
+                Geom::Point motion_dt(_desktop->w2d(motion_w));
                 m.preSnap(Inkscape::SnapCandidatePoint(motion_dt, Inkscape::SNAPSOURCE_NODE_HANDLE));
                 m.unSetup();
             }
@@ -201,11 +182,11 @@ bool SpiralTool::root_handler(GdkEvent* event) {
 
         case GDK_BUTTON_RELEASE:
             this->xp = this->yp = 0;
-            if (event->button.button == 1) {
+            if (dragging && event->button.button == 1) {
                 dragging = FALSE;
-                sp_event_context_discard_delayed_snap_event(this);
+                this->discard_delayed_snap_event();
 
-                if (!this->within_tolerance) {
+                if (spiral) {
                     // we've been dragging, finish the spiral
                     this->finishItem();
                 } else if (this->item_to_select) {
@@ -244,7 +225,7 @@ bool SpiralTool::root_handler(GdkEvent* event) {
                 case GDK_KEY_x:
                 case GDK_KEY_X:
                     if (MOD__ALT_ONLY(event)) {
-                        desktop->setToolboxFocusTo ("spiral-revolutions");
+                        _desktop->setToolboxFocusTo("spiral-revolutions");
                         ret = TRUE;
                     }
                     break;
@@ -252,7 +233,7 @@ bool SpiralTool::root_handler(GdkEvent* event) {
                 case GDK_KEY_Escape:
                 	if (dragging) {
                 		dragging = false;
-                		sp_event_context_discard_delayed_snap_event(this);
+                		this->discard_delayed_snap_event();
                 		// if drawing, cancel, otherwise pass it up for deselecting
                 		this->cancel();
                 		ret = TRUE;
@@ -263,11 +244,11 @@ bool SpiralTool::root_handler(GdkEvent* event) {
                     if (dragging) {
                         ungrabCanvasEvents();
                         dragging = false;
-                        sp_event_context_discard_delayed_snap_event(this);
+                        this->discard_delayed_snap_event();
 
                         if (!this->within_tolerance) {
                             // we've been dragging, finish the spiral
-                            this->finish();
+                            finishItem();
                         }
                         // do not return true, so that space would work switching to selector
                     }
@@ -319,33 +300,31 @@ void SpiralTool::drag(Geom::Point const &p, guint state) {
     int const snaps = prefs->getInt("/options/rotationsnapsperpi/value", 12);
 
     if (!this->spiral) {
-        if (Inkscape::have_viable_layer(desktop, defaultMessageContext()) == false) {
+        if (Inkscape::have_viable_layer(_desktop, defaultMessageContext()) == false) {
             return;
         }
 
         // Create object
-        Inkscape::XML::Document *xml_doc = this->desktop->doc()->getReprDoc();
+        Inkscape::XML::Document *xml_doc = _desktop->doc()->getReprDoc();
         Inkscape::XML::Node *repr = xml_doc->createElement("svg:path");
         repr->setAttribute("sodipodi:type", "spiral");
 
         // Set style
-        sp_desktop_apply_style_tool(desktop, repr, "/tools/shapes/spiral", false);
+        sp_desktop_apply_style_tool(_desktop, repr, "/tools/shapes/spiral", false);
 
-        this->spiral = SP_SPIRAL(desktop->currentLayer()->appendChildRepr(repr));
+        this->spiral = cast<SPSpiral>(currentLayer()->appendChildRepr(repr));
         Inkscape::GC::release(repr);
-        this->spiral->transform = SP_ITEM(desktop->currentLayer())->i2doc_affine().inverse();
+        this->spiral->transform = currentLayer()->i2doc_affine().inverse();
         this->spiral->updateRepr();
-
-        forced_redraws_start(5);
     }
 
-    SnapManager &m = desktop->namedview->snap_manager;
-    m.setup(desktop, true, this->spiral);
+    SnapManager &m = _desktop->namedview->snap_manager;
+    m.setup(_desktop, true, this->spiral);
     Geom::Point pt2g = p;
     m.freeSnapReturnByRef(pt2g, Inkscape::SNAPSOURCE_NODE_HANDLE);
     m.unSetup();
-    Geom::Point const p0 = desktop->dt2doc(this->center);
-    Geom::Point const p1 = desktop->dt2doc(pt2g);
+    Geom::Point const p0 = _desktop->dt2doc(this->center);
+    Geom::Point const p1 = _desktop->dt2doc(pt2g);
 
     Geom::Point const delta = p1 - p0;
     gdouble const rad = Geom::L2(delta);
@@ -368,7 +347,7 @@ void SpiralTool::drag(Geom::Point const &p, guint state) {
 
     /* status text */
     Inkscape::Util::Quantity q = Inkscape::Util::Quantity(rad, "px");
-    Glib::ustring rads = q.string(desktop->namedview->display_units);
+    Glib::ustring rads = q.string(_desktop->namedview->display_units);
     this->message_context->setF(Inkscape::IMMEDIATE_MESSAGE,
                                _("<b>Spiral</b>: radius %s, angle %.2f&#176;; with <b>Ctrl</b> to snap angle"),
                                 rads.c_str(), arg * 180/M_PI + 360*spiral->revo);
@@ -385,20 +364,22 @@ void SpiralTool::finishItem() {
 
         spiral->set_shape();
         spiral->updateRepr(SP_OBJECT_WRITE_EXT);
+        // compensate stroke scaling couldn't be done in doWriteTransform
+        double const expansion = spiral->transform.descrim();
         spiral->doWriteTransform(spiral->transform, nullptr, true);
+        spiral->adjust_stroke_width_recursive(expansion);
 
-        forced_redraws_stop();
-
-        this->desktop->getSelection()->set(this->spiral);
-        
-        DocumentUndo::done(this->desktop->getDocument(), SP_VERB_CONTEXT_SPIRAL, _("Create spiral"));
+        // update while creating inside a LPE group
+        sp_lpe_item_update_patheffect(this->spiral, true, true);
+        _desktop->getSelection()->set(this->spiral);
+        DocumentUndo::done(_desktop->getDocument(), _("Create spiral"), INKSCAPE_ICON("draw-spiral"));
 
         this->spiral = nullptr;
     }
 }
 
 void SpiralTool::cancel() {
-    this->desktop->getSelection()->clear();
+    _desktop->getSelection()->clear();
     ungrabCanvasEvents();
 
     if (this->spiral != nullptr) {
@@ -411,9 +392,7 @@ void SpiralTool::cancel() {
     this->yp = 0;
     this->item_to_select = nullptr;
 
-    forced_redraws_stop();
-
-    DocumentUndo::cancel(this->desktop->getDocument());
+    DocumentUndo::cancel(_desktop->getDocument());
 }
 
 }

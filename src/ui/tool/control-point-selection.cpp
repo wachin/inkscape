@@ -19,6 +19,7 @@
 #include "ui/tool/transform-handle-set.h"
 #include "ui/tool/node.h"
 #include "display/control/snap-indicator.h"
+#include "ui/widget/canvas.h"
 
 
 
@@ -162,11 +163,11 @@ void ControlPointSelection::selectAll()
     }
 }
 /** Select all points inside the given rectangle (in desktop coordinates). */
-void ControlPointSelection::selectArea(Geom::Rect const &r, bool invert)
+void ControlPointSelection::selectArea(Geom::Path const &path, bool invert)
 {
     std::vector<SelectableControlPoint *> out;
     for (auto _all_point : _all_points) {
-        if (r.contains(*_all_point)) {
+        if (path.winding(*_all_point) % 2 != 0) {
             if (invert) {
                 erase(_all_point);
             } else {
@@ -237,6 +238,10 @@ void ControlPointSelection::transform(Geom::Affine const &m)
     for (auto cur : _points) {
         cur->transform(m);
     }
+    for (auto cur : _points) {
+        cur->fixNeighbors();
+    }
+
     _updateBounds();
     // TODO preserving the rotation radius needs some rethinking...
     if (_rot_radius) (*_rot_radius) *= m.descrim();
@@ -245,13 +250,10 @@ void ControlPointSelection::transform(Geom::Affine const &m)
 }
 
 /** Align control points on the specified axis. */
-void ControlPointSelection::align(Geom::Dim2 axis)
+void ControlPointSelection::align(Geom::Dim2 axis, AlignTargetNode target)
 {
-    enum AlignTargetNode { LAST_NODE=0, FIRST_NODE, MID_NODE, MIN_NODE, MAX_NODE };
     if (empty()) return;
     Geom::Dim2 d = static_cast<Geom::Dim2>((axis + 1) % 2);
-    Inkscape::Preferences *prefs = Inkscape::Preferences::get();
-
 
     Geom::OptInterval bound;
     for (auto _point : _points) {
@@ -261,20 +263,20 @@ void ControlPointSelection::align(Geom::Dim2 axis)
     if (!bound) { return; }
 
     double new_coord;
-    switch (AlignTargetNode(prefs->getInt("/dialogs/align/align-nodes-to", 2))){
-        case FIRST_NODE:
+    switch (target) {
+        case AlignTargetNode::FIRST_NODE:
             new_coord=(_points_list.front())->position()[d];
             break;
-        case LAST_NODE:
+        case AlignTargetNode::LAST_NODE:
             new_coord=(_points_list.back())->position()[d];
             break;
-        case MID_NODE:
+        case AlignTargetNode::MID_NODE:
             new_coord=bound->middle();
             break;
-        case MIN_NODE:
+        case AlignTargetNode::MIN_NODE:
             new_coord=bound->min();
             break;
-        case MAX_NODE:
+        case AlignTargetNode::MAX_NODE:
             new_coord=bound->max();
             break;
         default:
@@ -438,6 +440,9 @@ void ControlPointSelection::_pointDragged(Geom::Point &new_pos, GdkEventMotion *
         }
         _handles->rotationCenter().move(_handles->rotationCenter().position() + delta);
     }
+    for (auto cur : _points) {
+        cur->fixNeighbors();
+    }
     signal_update.emit();
 }
 
@@ -515,7 +520,7 @@ void ControlPointSelection::_updateTransformHandles(bool preserve_center)
 bool ControlPointSelection::_keyboardMove(GdkEventKey const &event, Geom::Point const &dir)
 {
     if (held_control(event)) return false;
-    unsigned num = 1 + combine_key_events(shortcut_key(event), 0);
+    unsigned num = 1 + Tools::gobble_key_events(shortcut_key(event), 0);
 
     Geom::Point delta = dir * num; 
     if (held_shift(event)) delta *= 10;

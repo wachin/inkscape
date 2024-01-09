@@ -18,7 +18,8 @@
 #include <2geom/forward.h>
 #include "display/nr-filter-primitive.h"
 
-enum {
+enum
+{
     BLUR_QUALITY_BEST = 2,
     BLUR_QUALITY_BETTER = 1,
     BLUR_QUALITY_NORMAL = 0,
@@ -29,16 +30,16 @@ enum {
 namespace Inkscape {
 namespace Filters {
 
-class FilterGaussian : public FilterPrimitive {
+class FilterGaussian : public FilterPrimitive
+{
 public:
     FilterGaussian();
-    static FilterPrimitive *create();
     ~FilterGaussian() override;
 
-    void render_cairo(FilterSlot &slot) override;
-    void area_enlarge(Geom::IntRect &area, Geom::Affine const &m) override;
-    bool can_handle_affine(Geom::Affine const &m) override;
-    double complexity(Geom::Affine const &ctm) override;
+    void render_cairo(FilterSlot &slot) const override;
+    void area_enlarge(Geom::IntRect &area, Geom::Affine const &m) const override;
+    bool can_handle_affine(Geom::Affine const &m) const override;
+    double complexity(Geom::Affine const &ctm) const override;
 
     /**
      * Set the standard deviation value for gaussian blur. Deviation along
@@ -48,6 +49,7 @@ public:
      * is used, which means the filter results in transparent black image.
      */
     void set_deviation(double deviation);
+
     /**
      * Set the standard deviation value for gaussian blur. First parameter
      * sets the deviation alogn x-axis, second along y-axis.
@@ -57,21 +59,17 @@ public:
      */
     void set_deviation(double x, double y);
 
-    Glib::ustring name() override { return Glib::ustring("Gaussian Blur"); }
+    Glib::ustring name() const override { return Glib::ustring("Gaussian Blur"); }
 
 private:
     double _deviation_x;
     double _deviation_y;
 };
 
+} // namespace Filters
+} // namespace Inkscape
 
-} /* namespace Filters */
-} /* namespace Inkscape */
-
-
-
-
-#endif /* __NR_FILTER_GAUSSIAN_H__ */
+#endif // SEEN_NR_FILTER_GAUSSIAN_H
 /*
   Local Variables:
   mode:c++

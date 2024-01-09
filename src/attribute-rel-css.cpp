@@ -21,37 +21,36 @@
  * mapping indirectly(only reading).
  */
 
-#include <fstream>
-#include <sstream>
-#include <iostream>
-
 #include "attribute-rel-css.h"
+
+#include <fstream>
+#include <iostream>
+#include <sstream>
 
 #include "io/resource.h"
 #include "path-prefix.h"
 #include "preferences.h"
 
-SPAttributeRelCSS * SPAttributeRelCSS::instance = nullptr;
 bool SPAttributeRelCSS::foundFileProp = false;
 bool SPAttributeRelCSS::foundFileDefault = false;
 
 /*
- * This function checks whether an element -> CSS property pair 
+ * This function checks whether an element -> CSS property pair
  * is allowed or not
  */
-bool SPAttributeRelCSS::findIfValid(Glib::ustring property, Glib::ustring element)
+bool SPAttributeRelCSS::findIfValid(Glib::ustring const &property, Glib::ustring const &element)
 {
-    if (SPAttributeRelCSS::instance == nullptr) {
-        SPAttributeRelCSS::instance = new SPAttributeRelCSS();
-    }
-    
+    auto &instance = SPAttributeRelCSS::getInstance();
+
     // Always valid if data file not found!
-    if( !foundFileProp ) return true;
+    if (!foundFileProp) {
+        return true;
+    }
 
     // Strip of "svg:" from the element's name
     Glib::ustring temp = element;
-    if ( temp.find("svg:") != std::string::npos ) {
-        temp.erase( temp.find("svg:"), 4 );
+    if (temp.find("svg:") != std::string::npos) {
+        temp.erase(temp.find("svg:"), 4);
     }
 
     // Don't check for properties with -, role, aria etc. to allow for more accessibility
@@ -66,30 +65,30 @@ bool SPAttributeRelCSS::findIfValid(Glib::ustring property, Glib::ustring elemen
         || property.substr(0,4) == "rdf:"
         || property.substr(0,3) == "cc:"
         || property.substr(0,4) == "ns1:"  // JessyInk
-        || (SPAttributeRelCSS::instance->propertiesOfElements[temp].find(property)
-            != SPAttributeRelCSS::instance->propertiesOfElements[temp].end()) ) {
+        || (instance.propertiesOfElements[temp].find(property)
+            != instance.propertiesOfElements[temp].end()) ) {
     // clang-format on
         return true;
     } else {
-        //g_warning( "Invalid attribute: %s used on <%s>", property.c_str(), element.c_str() );
+        // g_warning( "Invalid attribute: %s used on <%s>", property.c_str(), element.c_str() );
         return false;
     }
 }
 
 /*
- * This function checks whether an CSS property -> default value 
+ * This function checks whether an CSS property -> default value
  * pair is allowed or not
  */
-bool SPAttributeRelCSS::findIfDefault(Glib::ustring property, Glib::ustring value)
+bool SPAttributeRelCSS::findIfDefault(Glib::ustring const &property, Glib::ustring const &value)
 {
-    if (SPAttributeRelCSS::instance == nullptr) {
-        SPAttributeRelCSS::instance = new SPAttributeRelCSS();
-    }
+    auto &instance = SPAttributeRelCSS::getInstance();
 
     // Always false if data file not found!
-    if( !foundFileDefault ) return false;
+    if (!foundFileDefault) {
+        return false;
+    }
 
-    if( instance->defaultValuesOfProps[property] == value) {
+    if (instance.defaultValuesOfProps[property] == value) {
         return true;
     } else {
         return false;
@@ -99,32 +98,32 @@ bool SPAttributeRelCSS::findIfDefault(Glib::ustring property, Glib::ustring valu
 /*
  * Check if property can be inherited.
  */
-bool SPAttributeRelCSS::findIfInherit(Glib::ustring property)
+bool SPAttributeRelCSS::findIfInherit(Glib::ustring const &property)
 {
-    if (SPAttributeRelCSS::instance == nullptr) {
-        SPAttributeRelCSS::instance = new SPAttributeRelCSS();
-    }
+    auto &instance = SPAttributeRelCSS::getInstance();
 
     // Always false if data file not found!
-    if( !foundFileDefault ) return false;
+    if (!foundFileDefault) {
+        return false;
+    }
 
-    return instance->inheritProps[property];
+    return instance.inheritProps[property];
 }
 
 /*
  * Check if attribute is a property.
  */
-bool SPAttributeRelCSS::findIfProperty(Glib::ustring property)
+bool SPAttributeRelCSS::findIfProperty(Glib::ustring const &property)
 {
-    if (SPAttributeRelCSS::instance == nullptr) {
-        SPAttributeRelCSS::instance = new SPAttributeRelCSS();
-    }
+    auto &instance = SPAttributeRelCSS::getInstance();
 
     // Always true if data file not found!
-    if( !foundFileProp ) return true;
+    if (!foundFileProp) {
+        return true;
+    }
 
-    return ( instance->defaultValuesOfProps.find( property )
-             != instance->defaultValuesOfProps.end() );
+    return (instance.defaultValuesOfProps.find(property)
+            != instance.defaultValuesOfProps.end());
 }
 
 SPAttributeRelCSS::SPAttributeRelCSS()
@@ -138,22 +137,27 @@ SPAttributeRelCSS::SPAttributeRelCSS()
     if (readDataFromFileIn(filepath, SPAttributeRelCSS::prop_element_pair)) {
         foundFileProp = true;
     }
-    
+
     // Read data from standard path
     filepath = get_path_string(SYSTEM, ATTRIBUTES, "css_defaults");
-    
+
     // Try and load data from filepath
     if (readDataFromFileIn(filepath, SPAttributeRelCSS::prop_defValue_pair)) {
         foundFileDefault = true;
     }
-
 }
 
-bool SPAttributeRelCSS::readDataFromFileIn(Glib::ustring fileName, storageType type)
+SPAttributeRelCSS &SPAttributeRelCSS::getInstance()
+{
+    static SPAttributeRelCSS theInstance;
+    return theInstance;
+}
+
+bool SPAttributeRelCSS::readDataFromFileIn(Glib::ustring const &fileName, storageType type)
 {
     std::fstream file;
     file.open(fileName.c_str(), std::ios::in);
-    
+
     if (!file.is_open()) {
         // Display warning for file not open
         g_warning("Could not open the data file for CSS attribute-element map construction: %s", fileName.c_str());
@@ -165,39 +169,39 @@ bool SPAttributeRelCSS::readDataFromFileIn(Glib::ustring fileName, storageType t
         std::stringstream ss;
         std::string s;
 
-        std::getline(file,s,'"');
-        std::getline(file,s,'"');
+        std::getline(file, s, '"');
+        std::getline(file, s, '"');
         if (s.size() > 0 && s[0] != '\n') {
             std::string prop = s;
-            getline(file,s);
+            getline(file, s);
             ss << s;
-            
+
             // Load data to structure that holds element -> set of CSS props
             if (type == SPAttributeRelCSS::prop_element_pair) {
-                while (std::getline(ss,s,'"')) {
+                while (std::getline(ss, s, '"')) {
                     std::string element;
-                    std::getline(ss,s,'"');
-                    element = s;                               
+                    std::getline(ss, s, '"');
+                    element = s;
                     propertiesOfElements[element].insert(prop);
                 }
-            // Load data to structure that holds CSS prop -> default value    
+                // Load data to structure that holds CSS prop -> default value
             } else if (type == SPAttributeRelCSS::prop_defValue_pair) {
                 std::string value;
-                std::getline(ss,s,'"');
-                std::getline(ss,s,'"');
+                std::getline(ss, s, '"');
+                std::getline(ss, s, '"');
                 value = s;
                 defaultValuesOfProps[prop] = value;
-                std::getline(ss,s,'"');
-                std::getline(ss,s,'"');
+                std::getline(ss, s, '"');
+                std::getline(ss, s, '"');
                 gboolean inherit = false;
-                if ( s.find( "yes" ) != std::string::npos ) {
+                if (s.find("yes") != std::string::npos) {
                     inherit = true;
                 }
                 inheritProps[prop] = inherit;
             }
         }
     }
-    
+
     file.close();
     return true;
 }

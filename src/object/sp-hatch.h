@@ -16,7 +16,7 @@
 #ifndef SEEN_SP_HATCH_H
 #define SEEN_SP_HATCH_H
 
-#include <list>
+#include <vector>
 #include <cstddef>
 #include <glibmm/ustring.h>
 #include <sigc++/connection.h>
@@ -25,49 +25,41 @@
 #include "svg/svg-angle.h"
 #include "sp-paint-server.h"
 #include "uri-references.h"
+#include "display/drawing-item-ptr.h"
 
 class SPHatchReference;
 class SPHatchPath;
 class SPItem;
 
 namespace Inkscape {
-
 class Drawing;
 class DrawingPattern;
+namespace XML { class Node; }
+} // namespace Inkscape
 
-namespace XML {
-
-class Node;
-
-}
-}
-
-#define SP_HATCH(obj) (dynamic_cast<SPHatch *>((SPObject *)obj))
-#define SP_IS_HATCH(obj) (dynamic_cast<const SPHatch *>((SPObject *)obj) != NULL)
-
-class SPHatch : public SPPaintServer {
+class SPHatch final : public SPPaintServer
+{
 public:
-    enum HatchUnits {
+    enum HatchUnits
+    {
         UNITS_USERSPACEONUSE,
         UNITS_OBJECTBOUNDINGBOX
     };
 
-    class RenderInfo {
-    public:
-        RenderInfo();
-        ~RenderInfo();
-
+    struct RenderInfo
+    {
         Geom::Affine child_transform;
         Geom::Affine pattern_to_user_transform;
         Geom::Rect tile_rect;
 
-        int overflow_steps;
+        int overflow_steps = 0;
         Geom::Affine overflow_step_transform;
         Geom::Affine overflow_initial_transform;
     };
 
     SPHatch();
     ~SPHatch() override;
+    int tag() const override { return tag_of<decltype(*this)>; }
 
     // Reference (href)
     Glib::ustring href;
@@ -90,9 +82,8 @@ public:
 
     bool isValid() const override;
 
-    Inkscape::DrawingPattern *show(Inkscape::Drawing &drawing, unsigned int key, Geom::OptRect bbox) override;
-    void hide(unsigned int key) override;
-    cairo_pattern_t* pattern_new(cairo_t *ct, Geom::OptRect const &bbox, double opacity) override;
+    Inkscape::DrawingPattern *show(Inkscape::Drawing &drawing, unsigned key, Geom::OptRect const &bbox) override;
+    void hide(unsigned key) override;
 
     RenderInfo calculateRenderInfo(unsigned key) const;
     Geom::Interval bounds() const;
@@ -107,31 +98,23 @@ protected:
     void modified(unsigned int flags) override;
 
 private:
-    class View {
-    public:
-        View(Inkscape::DrawingPattern *arenaitem, int key);
-        //Do not delete arenaitem in destructor.
-
-        ~View();
-
-        Inkscape::DrawingPattern *arenaitem;
+    struct View
+    {
+        DrawingItemPtr<Inkscape::DrawingPattern> drawingitem;
         Geom::OptRect bbox;
-        unsigned int key;
+        unsigned key;
+        View(DrawingItemPtr<Inkscape::DrawingPattern> drawingitem, Geom::OptRect const &bbox, unsigned key);
     };
+    std::vector<View> views;
 
-    typedef std::vector<SPHatchPath *>::iterator ChildIterator;
-    typedef std::vector<SPHatchPath const *>::const_iterator ConstChildIterator;
-    typedef std::list<View>::iterator ViewIterator;
-    typedef std::list<View>::const_iterator ConstViewIterator;
-
-    static bool _hasHatchPatchChildren(SPHatch const* hatch);
+    static bool _hasHatchPatchChildren(SPHatch const *hatch);
 
     void _updateView(View &view);
     RenderInfo _calculateRenderInfo(View const &view) const;
     Geom::OptInterval _calculateStripExtents(Geom::OptRect const &bbox) const;
 
     /**
-    Count how many times hatch is used by the styles of o and its descendants
+     * Count how many times hatch is used by the styles of o and its descendants
     */
     guint _countHrefs(SPObject *o) const;
 
@@ -162,24 +145,24 @@ private:
     SVGAngle _rotate;
 
     sigc::connection _modified_connection;
-
-    std::list<View> _display;
 };
 
-
-class SPHatchReference : public Inkscape::URIReference {
+class SPHatchReference : public Inkscape::URIReference
+{
 public:
-    SPHatchReference (SPObject *obj)
+    SPHatchReference(SPHatch *obj)
         : URIReference(obj)
     {}
 
-    SPHatch *getObject() const {
-        return reinterpret_cast<SPHatch *>(URIReference::getObject());
+    SPHatch *getObject() const
+    {
+        return static_cast<SPHatch*>(URIReference::getObject());
     }
 
 protected:
-    bool _acceptObject(SPObject *obj) const override {
-        return dynamic_cast<SPHatch *>(obj) != nullptr && URIReference::_acceptObject(obj);
+    bool _acceptObject(SPObject *obj) const override
+    {
+        return is<SPHatch>(obj) && URIReference::_acceptObject(obj);
     }
 };
 

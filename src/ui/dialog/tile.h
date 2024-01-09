@@ -40,16 +40,6 @@ class PolarArrangeTab;
 
 class ArrangeDialog : public DialogBase
 {
-private:
-	Gtk::Box        *_arrangeBox;
-	Gtk::Notebook   *_notebook;
-    AlignAndDistribute* _align_tab;
-	GridArrangeTab  *_gridArrangeTab;
-	PolarArrangeTab *_polarArrangeTab;
-    Gtk::Button     *_arrangeButton;
-
-    void selectionChanged(Inkscape::Selection*) override;
-
 public:
     ArrangeDialog();
     ~ArrangeDialog() override;
@@ -63,7 +53,13 @@ public:
      */
     void _apply();
 
-    static ArrangeDialog& getInstance() { return *new ArrangeDialog(); }
+private:
+    Gtk::Box        *_arrangeBox;
+    Gtk::Notebook   *_notebook;
+    AlignAndDistribute* _align_tab;
+    GridArrangeTab  *_gridArrangeTab;
+    PolarArrangeTab *_polarArrangeTab;
+    Gtk::Button     *_arrangeButton;
 };
 
 } //namespace Dialog

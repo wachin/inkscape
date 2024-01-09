@@ -24,9 +24,11 @@
 #include "extension/internal/cairo-render-context.h"
 #include "extension/internal/cairo-renderer.h"
 #include "document.h"
+#include "object/sp-page.h"
 
 #include "util/units.h"
 #include "helper/png-write.h"
+#include "page-manager.h"
 #include "svg/svg-color.h"
 
 #include <glibmm/i18n.h>
@@ -35,6 +37,12 @@
 namespace Inkscape {
 namespace UI {
 namespace Dialog {
+
+Glib::RefPtr<Gtk::PrintSettings> &get_printer_settings()
+{
+    static Glib::RefPtr<Gtk::PrintSettings> printer_settings;
+    return printer_settings;
+}
 
 Print::Print(SPDocument *doc, SPItem *base) :
     _doc (doc),
@@ -56,44 +64,19 @@ Print::Print(SPDocument *doc, SPItem *base) :
     Glib::RefPtr<Gtk::PageSetup> page_setup = Gtk::PageSetup::create();
 
     // Default to a custom paper size, in case we can't find a more specific size
-    gdouble doc_width = _doc->getWidth().value("pt");
-    gdouble doc_height = _doc->getHeight().value("pt");
-    page_setup->set_paper_size(
-            Gtk::PaperSize("custom", "custom", doc_width, doc_height, Gtk::UNIT_POINTS));
-
-    // Some print drivers, like the EPSON's ESC/P-R CUPS driver, don't accept custom
-    // page sizes, so we'll try to find a known page size.
-    // GTK+'s known paper sizes always have a longer height than width, so we'll rotate
-    // the page and set its orientation to landscape as necessary in order to match a paper size.
-    // Unfortunately, some printers, like Epilog laser cutters, don't understand landscape
-    // mode.
-    // As a compromise, we'll only rotate the page if we actually find a matching paper size,
-    // since laser cutter beds tend to be custom sizes.
-    Gtk::PageOrientation orientation = Gtk::PAGE_ORIENTATION_PORTRAIT;
-    if (_doc->getWidth().value("pt") > _doc->getHeight().value("pt")) {
-        orientation = Gtk::PAGE_ORIENTATION_REVERSE_LANDSCAPE;
-        std::swap(doc_width, doc_height);
-    }
-
-    // attempt to match document size against known paper sizes
-    std::vector<Gtk::PaperSize> known_sizes = Gtk::PaperSize::get_paper_sizes(false);
-    for (auto& size : known_sizes) {
-        if (fabs(size.get_width(Gtk::UNIT_POINTS) - doc_width) >= 1.0) {
-            // width (short edge) doesn't match
-            continue;
-        }
-        if (fabs(size.get_height(Gtk::UNIT_POINTS) - doc_height) >= 1.0) {
-            // height (short edge) doesn't match
-            continue;
-        }
-        // size matches
-        page_setup->set_paper_size(size);
-        page_setup->set_orientation(orientation);
-        break;
-    }
-
+    set_paper_size(page_setup, _doc->getWidth().value("pt"), _doc->getHeight().value("pt"));
     _printop->set_default_page_setup(page_setup);
     _printop->set_use_full_page(true);
+    _printop->set_n_pages(1);
+
+    // Now process actual multi-page setup.
+    auto &pm = _doc->getPageManager();
+    if (pm.hasPages()) {
+        // This appears to be limiting which pages get rendered
+        _printop->set_n_pages(pm.getPageCount());
+        _printop->set_current_page(pm.getSelectedPageIndex());
+        _printop->signal_request_page_setup().connect(sigc::mem_fun(*this, &Print::setup_page));
+    }
 
     // set up signals
     _workaround._doc = _doc;
@@ -107,7 +90,63 @@ Print::Print(SPDocument *doc, SPItem *base) :
     _printop->set_custom_tab_label(_("Rendering"));
 }
 
-void Print::draw_page(const Glib::RefPtr<Gtk::PrintContext>& context, int /*page_nr*/)
+/**
+ * Return the required page setup, only connected for multi-page documents
+ * and only required where there are pages of different sizes.
+ */
+void Print::setup_page(const Glib::RefPtr<Gtk::PrintContext>& context, int page_nr,
+                       const Glib::RefPtr<Gtk::PageSetup> &setup)
+{
+    auto &pm = _workaround._doc->getPageManager();
+    if (auto page = pm.getPage(page_nr)) {
+        auto rect = page->getDesktopRect();
+        auto width = Inkscape::Util::Quantity::convert(rect.width(), "px", "pt");
+        auto height = Inkscape::Util::Quantity::convert(rect.height(), "px", "pt");
+        set_paper_size(setup, width, height);
+    }
+}
+
+/**
+ * Set the paper size with correct orientation.
+ */
+void Print::set_paper_size(const Glib::RefPtr<Gtk::PageSetup> &page_setup, double page_width, double page_height)
+{
+    auto p_size = Gtk::PaperSize("custom", "custom", page_width, page_height, Gtk::UNIT_POINTS);
+
+    // Some print drivers, like the EPSON's ESC/P-R CUPS driver, don't accept custom
+    // page sizes, so we'll try to find a known page size.
+    // GTK+'s known paper sizes always have a longer height than width, so we'll rotate
+    // the page and set its orientation to landscape as necessary in order to match a paper size.
+    // Unfortunately, some printers, like Epilog laser cutters, don't understand landscape
+    // mode.
+    // As a compromise, we'll only rotate the page if we actually find a matching paper size,
+    // since laser cutter beds tend to be custom sizes.
+    Gtk::PageOrientation orientation = Gtk::PAGE_ORIENTATION_PORTRAIT;
+    if (page_width > page_height) {
+        orientation = Gtk::PAGE_ORIENTATION_REVERSE_LANDSCAPE;
+        std::swap(page_width, page_height);
+    }
+
+    // attempt to match document size against known paper sizes
+    std::vector<Gtk::PaperSize> known_sizes = Gtk::PaperSize::get_paper_sizes(false);
+    for (auto& size : known_sizes) {
+        if (fabs(size.get_width(Gtk::UNIT_POINTS) - page_width) >= 1.0) {
+            // width (short edge) doesn't match
+            continue;
+        }
+        if (fabs(size.get_height(Gtk::UNIT_POINTS) - page_height) >= 1.0) {
+            // height (short edge) doesn't match
+            continue;
+        }
+        // size matches
+        p_size = size;
+        break;
+    }
+    page_setup->set_paper_size(p_size);
+    page_setup->set_orientation(orientation);
+}
+
+void Print::draw_page(const Glib::RefPtr<Gtk::PrintContext>& context, int page_nr)
 {
     // TODO: If the user prints multiple copies we render the whole page for each copy
     //       It would be more efficient to render the page once (e.g. in "begin_print")
@@ -116,14 +155,20 @@ void Print::draw_page(const Glib::RefPtr<Gtk::PrintContext>& context, int /*page
     Inkscape::Preferences *prefs = Inkscape::Preferences::get();
     //printf("%s %d\n",__FUNCTION__, page_nr);
 
+    auto &pm = _workaround._doc->getPageManager();
+    auto page = pm.getPage(page_nr); // nullptr when no pages.
+
     if (_workaround._tab->as_bitmap()) {
         // Render as exported PNG
         prefs->setBool("/dialogs/printing/asbitmap", true);
-        gdouble width = (_workaround._doc)->getWidth().value("px");
-        gdouble height = (_workaround._doc)->getHeight().value("px");
         gdouble dpi = _workaround._tab->bitmap_dpi();
         prefs->setDouble("/dialogs/printing/dpi", dpi);
         
+        auto rect = *(_workaround._doc->preferredBounds());
+        if (page) {
+            rect = page->getDesktopRect();
+        }
+
         std::string tmp_png;
         std::string tmp_base = "inkscape-print-png-XXXXXX";
 
@@ -141,10 +186,9 @@ void Print::draw_page(const Glib::RefPtr<Gtk::PrintContext>& context, int /*page
                 bgcolor |= SP_COLOR_F_TO_U(opacity);
             }
 
-            sp_export_png_file(_workaround._doc, tmp_png.c_str(), 0.0, 0.0,
-                width, height,
-                (unsigned long)(Inkscape::Util::Quantity::convert(width, "px", "in") * dpi),
-                (unsigned long)(Inkscape::Util::Quantity::convert(height, "px", "in") * dpi),
+            sp_export_png_file(_workaround._doc, tmp_png.c_str(), rect,
+                (unsigned long)(Inkscape::Util::Quantity::convert(rect.width(), "px", "in") * dpi),
+                (unsigned long)(Inkscape::Util::Quantity::convert(rect.height(), "px", "in") * dpi),
                 dpi, dpi, bgcolor, nullptr, nullptr, true, std::vector<SPItem*>());
 
             // This doesn't seem to work:
@@ -193,9 +237,13 @@ void Print::draw_page(const Glib::RefPtr<Gtk::PrintContext>& context, int /*page
 
         bool ret = ctx->setSurfaceTarget(surface->cobj(), true, &ctm);
         if (ret) {
-            ret = renderer.setupDocument (ctx, _workaround._doc, TRUE, 0., nullptr);
+            ret = renderer.setupDocument (ctx, _workaround._doc);
             if (ret) {
-                renderer.renderItem(ctx, _workaround._base);
+                if (auto page = pm.getPage(page_nr)) {
+                    renderer.renderPage(ctx, _workaround._doc, page, false);
+                } else {
+                    renderer.renderItem(ctx, _workaround._base);
+                }
                 ctx->finish(false);  // do not finish the cairo_surface_t - it's owned by our GtkPrintContext!
             }
             else {
@@ -214,27 +262,25 @@ void Print::draw_page(const Glib::RefPtr<Gtk::PrintContext>& context, int /*page
 
 Gtk::Widget *Print::create_custom_widget()
 {
-    //printf("%s\n",__FUNCTION__);
     return &_tab;
 }
 
 void Print::begin_print(const Glib::RefPtr<Gtk::PrintContext>&)
 {
-    //printf("%s\n",__FUNCTION__);
-    _printop->set_n_pages(1);
+    // Could change which pages get printed here, but nothing to do.
 }
 
 Gtk::PrintOperationResult Print::run(Gtk::PrintOperationAction, Gtk::Window &parent_window)
 {
     // Remember to restore the previous print settings
-    _printop->set_print_settings(SP_ACTIVE_DESKTOP->printer_settings._gtk_print_settings);
+    _printop->set_print_settings(get_printer_settings());
 
     try {
         Gtk::PrintOperationResult res = _printop->run(Gtk::PRINT_OPERATION_ACTION_PRINT_DIALOG, parent_window);
 
         // Save printer settings (but only on success)
         if (res == Gtk::PRINT_OPERATION_RESULT_APPLY) {
-            SP_ACTIVE_DESKTOP->printer_settings._gtk_print_settings = _printop->get_print_settings();
+            get_printer_settings() = _printop->get_print_settings();
         }
 
         return res;

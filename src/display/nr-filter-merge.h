@@ -19,30 +19,29 @@
 namespace Inkscape {
 namespace Filters {
 
-class FilterMerge : public FilterPrimitive {
+class FilterMerge : public FilterPrimitive
+{
 public:
     FilterMerge();
-    static FilterPrimitive *create();
-    ~FilterMerge() override;
 
-    void render_cairo(FilterSlot &) override;
-    bool can_handle_affine(Geom::Affine const &) override;
-    double complexity(Geom::Affine const &ctm) override;
-    bool uses_background() override;
+    void render_cairo(FilterSlot &) const override;
+    bool can_handle_affine(Geom::Affine const &) const override;
+    double complexity(Geom::Affine const &ctm) const override;
+    bool uses_background() const override;
 
     void set_input(int input) override;
     void set_input(int input, int slot) override;
 
-    Glib::ustring name() override { return Glib::ustring("Merge"); }
+    Glib::ustring name() const override { return Glib::ustring("Merge"); }
 
 private:
     std::vector<int> _input_image;
 };
 
-} /* namespace Filters */
-} /* namespace Inkscape */
+} // namespace Filters
+} // namespace Inkscape
 
-#endif /* __NR_FILTER_MERGE_H__ */
+#endif // SEEN_NR_FILTER_MERGE_H
 /*
   Local Variables:
   mode:c++

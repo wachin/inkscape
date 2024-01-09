@@ -30,7 +30,6 @@
 #include "gradient-chemistry.h"
 #include "gradient-drag.h"
 #include "inkscape.h"
-#include "verbs.h"
 
 #include "object/sp-defs.h"
 #include "object/sp-mesh-gradient.h"
@@ -73,7 +72,7 @@ std::vector<SPMeshGradient *>  ms_get_dt_selected_gradients(Inkscape::Selection 
             
             if (edit_fill   && style->fill.isPaintserver()) {
                 SPPaintServer *server = item->style->getFillPaintServer();
-                SPMeshGradient *mesh = dynamic_cast<SPMeshGradient *>(server);
+                auto mesh = cast<SPMeshGradient>(server);
                 if (mesh) {
                     ms_selected.push_back(mesh);
                 }
@@ -81,7 +80,7 @@ std::vector<SPMeshGradient *>  ms_get_dt_selected_gradients(Inkscape::Selection 
 
             if (edit_stroke && style->stroke.isPaintserver()) {
                 SPPaintServer *server = item->style->getStrokePaintServer();
-                SPMeshGradient *mesh = dynamic_cast<SPMeshGradient *>(server);
+                auto mesh = cast<SPMeshGradient>(server);
                 if (mesh) {
                     ms_selected.push_back(mesh);
                 }
@@ -416,7 +415,7 @@ MeshToolbar::toggle_fill_stroke()
 
     MeshTool *mt = get_mesh_tool();
     if (mt) {
-        GrDrag *drag = mt->_grdrag;
+        GrDrag *drag = mt->get_drag();
         drag->updateDraggers();
         drag->updateLines();
         drag->updateLevels();
@@ -429,7 +428,7 @@ MeshToolbar::toggle_handles()
 {
     MeshTool *mt = get_mesh_tool();
     if (mt) {
-        GrDrag *drag = mt->_grdrag;
+        GrDrag *drag = mt->get_drag();
         drag->refreshDraggers();
     }
 }
@@ -561,43 +560,39 @@ MeshToolbar::type_changed(int mode)
         meshe->updateRepr();
     }
     if (!meshes.empty() ) {
-        DocumentUndo::done(_desktop->getDocument(), SP_VERB_CONTEXT_MESH,_("Set mesh type"));
+        DocumentUndo::done(_desktop->getDocument(), _("Set mesh type"), INKSCAPE_ICON("mesh-gradient"));
     }
 }
 
 void
 MeshToolbar::toggle_sides()
 {
-    MeshTool *mt = get_mesh_tool();
-    if (mt) {
-        sp_mesh_context_corner_operation( mt, MG_CORNER_SIDE_TOGGLE );
+    if (MeshTool *mt = get_mesh_tool()) {
+        mt->corner_operation(MG_CORNER_SIDE_TOGGLE);
     }
 }
 
 void
 MeshToolbar::make_elliptical()
 {
-    MeshTool *mt = get_mesh_tool();
-    if (mt) {
-        sp_mesh_context_corner_operation( mt, MG_CORNER_SIDE_ARC );
+    if (MeshTool *mt = get_mesh_tool()) {
+        mt->corner_operation(MG_CORNER_SIDE_ARC);
     }
 }
 
 void
 MeshToolbar::pick_colors()
 {
-    MeshTool *mt = get_mesh_tool();
-    if (mt) {
-        sp_mesh_context_corner_operation( mt, MG_CORNER_COLOR_PICK );
+    if (MeshTool *mt = get_mesh_tool()) {
+        mt->corner_operation(MG_CORNER_COLOR_PICK);
     }
 }
 
 void
 MeshToolbar::fit_mesh()
 {
-    MeshTool *mt = get_mesh_tool();
-    if (mt) {
-        sp_mesh_context_fit_mesh_in_bbox( mt );
+    if (MeshTool *mt = get_mesh_tool()) {
+        mt->fit_mesh_in_bbox();
     }
 }
 

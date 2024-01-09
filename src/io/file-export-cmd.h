@@ -14,13 +14,23 @@
 
 #include <iostream>
 #include <glibmm.h>
+#include "2geom/rect.h"
 
 class SPDocument;
+class SPItem;
 namespace Inkscape {
 namespace Extension {
 class Output;
 }
 } // namespace Inkscape
+
+enum class ExportAreaType
+{
+    Unset,
+    Drawing,
+    Page,
+    Area,
+};
 
 class InkFileExportCmd {
 
@@ -30,10 +40,12 @@ public:
     void do_export(SPDocument* doc, std::string filename_in="");
 
 private:
+    ExportAreaType export_area_type{ExportAreaType::Unset};
+    Glib::ustring export_area{};
     guint32 get_bgcolor(SPDocument *doc);
     std::string get_filename_out(std::string filename_in = "", std::string object_id = "");
     int do_export_svg(SPDocument *doc, std::string const &filename_in);
-    int do_export_svg(SPDocument *doc, std::string const &filename_in, Inkscape::Extension::Output &extension);
+    int do_export_vector(SPDocument *doc, std::string const &filename_in, Inkscape::Extension::Output &extension);
     int do_export_png(SPDocument *doc, std::string const &filename_in);
     int do_export_ps_pdf(SPDocument *doc, std::string const &filename_in, std::string const &mime_type);
     int do_export_ps_pdf(SPDocument *doc, std::string const &filename_in, std::string const &mime_type,
@@ -41,6 +53,7 @@ private:
     int do_export_extension(SPDocument *doc, std::string const &filename_in, Inkscape::Extension::Output *extension);
     Glib::ustring export_type_current;
 
+    void do_export_png_now(SPDocument *doc, std::string const &filename_out, Geom::Rect area, double dpi_in, const std::vector<SPItem *> &items);
 public:
     // Should be private, but this is just temporary code (I hope!).
 
@@ -51,13 +64,12 @@ public:
     Glib::ustring export_extension;
     bool          export_overwrite;
 
-    Glib::ustring export_area;
-    bool          export_area_drawing;
-    bool          export_area_page;
     int           export_margin;
     bool          export_area_snap;
     int           export_width;
     int           export_height;
+
+    Glib::ustring export_page;
 
     double        export_dpi;
     bool          export_ignore_filters;
@@ -72,6 +84,9 @@ public:
     double        export_background_opacity;
     Glib::ustring export_png_color_mode;
     bool          export_plain_svg;
+    bool          export_png_use_dithering;
+    void set_export_area(const Glib::ustring &area);
+    void set_export_area_type(ExportAreaType type);
 };
 
 #endif // INK_FILE_EXPORT_CMD_H

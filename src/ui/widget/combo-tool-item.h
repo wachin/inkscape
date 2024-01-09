@@ -75,16 +75,16 @@ public:
 
     Glib::RefPtr<Gtk::ListStore> get_store() { return _store; }
 
-    sigc::signal<void, int> signal_changed() { return _changed; }
-    sigc::signal<void, int> signal_changed_after() { return _changed_after; }
+    sigc::signal<void (int)> signal_changed() { return _changed; }
+    sigc::signal<void (int)> signal_changed_after() { return _changed_after; }
 
 protected:
     bool on_create_menu_proxy() override;
     void populate_combobox();
 
     /* Signals */
-    sigc::signal<void, int> _changed;
-    sigc::signal<void, int> _changed_after;  // Needed for unit tracker which eats _changed.
+    sigc::signal<void (int)> _changed;
+    sigc::signal<void (int)> _changed_after;  // Needed for unit tracker which eats _changed.
 
 private:
 

@@ -129,14 +129,14 @@ ExecutionEnv::createWorkingDialog () {
         return;
     }
 
-    gchar * dlgmessage = g_strdup_printf(_("'%s' working, please wait..."), _effect->get_name());
+    gchar * dlgmessage = g_strdup_printf(_("'%s' complete, loading result..."), _effect->get_name());
     _visibleDialog = new Gtk::MessageDialog(*window,
                                dlgmessage,
                                false, // use markup
                                Gtk::MESSAGE_INFO,
                                Gtk::BUTTONS_CANCEL,
                                true); // modal
-    _visibleDialog->signal_response().connect(sigc::mem_fun(this, &ExecutionEnv::workingCanceled));
+    _visibleDialog->signal_response().connect(sigc::mem_fun(*this, &ExecutionEnv::workingCanceled));
     g_free(dlgmessage);
 
     Gtk::Dialog *dlg = _effect->get_pref_dialog();
@@ -175,7 +175,7 @@ ExecutionEnv::undo () {
 
 void
 ExecutionEnv::commit () {
-    DocumentUndo::done(_doc->doc(), SP_VERB_NONE, _effect->get_name());
+    DocumentUndo::done(_doc->doc(), _effect->get_name(), "");
     Effect::set_last_effect(_effect);
     _effect->get_imp()->commitDocument();
     killDocCache();
@@ -224,7 +224,7 @@ ExecutionEnv::wait () {
             _mainloop = Glib::MainLoop::create(false);
         }
 
-        sigc::connection conn = _runComplete.connect(sigc::mem_fun(this, &ExecutionEnv::runComplete));
+        sigc::connection conn = _runComplete.connect(sigc::mem_fun(*this, &ExecutionEnv::runComplete));
         _mainloop->run();
 
         conn.disconnect();

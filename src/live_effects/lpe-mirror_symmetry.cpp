@@ -16,25 +16,24 @@
  */
 
 #include "live_effects/lpe-mirror_symmetry.h"
+
+#include <gtkmm.h>
+
 #include "2geom/affine.h"
 #include "2geom/path-intersection.h"
 #include "display/curve.h"
 #include "helper/geom.h"
-#include "path-chemistry.h"
-#include "style.h"
-#include "svg/path-string.h"
-#include "svg/svg.h"
-#include <gtkmm.h>
-
+#include "live_effects/parameter/satellite-reference.h"
 #include "object/sp-defs.h"
 #include "object/sp-lpe-item.h"
 #include "object/sp-path.h"
 #include "object/sp-text.h"
-
+#include "path-chemistry.h"
+#include "style.h"
+#include "svg/path-string.h"
+#include "svg/svg.h"
 #include "xml/sp-css-attr.h"
-// this is only to flatten nonzero fillrule
-#include "livarot/Path.h"
-#include "livarot/Shape.h"
+#include "path/path-boolop.h"
 
 // TODO due to internal breakage in glibmm headers, this must be last:
 #include <glibmm/i18n.h>
@@ -57,6 +56,8 @@ MTConverter(ModeTypeData, MT_END);
 
 LPEMirrorSymmetry::LPEMirrorSymmetry(LivePathEffectObject *lpeobject) :
     Effect(lpeobject),
+    // do not change name of this parameter us used in oncommit
+    lpesatellites(_("lpesatellites"), _("Items satellites"), "lpesatellites", &wr, this, false),
     mode(_("Mode"), _("Set mode of transformation. Either freely defined by mirror line or constrained to certain symmetry points."), "mode", MTConverter, &wr, this, MT_FREE),
     discard_orig_path(_("Discard original path"), _("Only keep mirrored part of the path, remove the original."), "discard_orig_path", &wr, this, false),
     fuse_paths(_("Fuse paths"), _("Fuse original path and mirror image into a single path"), "fuse_paths", &wr, this, false),
@@ -65,28 +66,57 @@ LPEMirrorSymmetry::LPEMirrorSymmetry(LivePathEffectObject *lpeobject) :
     split_open(_("Keep open paths on split"), _("Do not automatically close paths along the split line."), "split_open", &wr, this, false),
     start_point(_("Mirror line start"), _("Start point of mirror line"), "start_point", &wr, this, _("Adjust start point of mirror line")),
     end_point(_("Mirror line end"), _("End point of mirror line"), "end_point", &wr, this, _("Adjust end point of mirror line")),
-    center_point(_("Mirror line mid"), _("Center point of mirror line"), "center_point", &wr, this, _("Adjust center point of mirror line"))
+    center_point(_("Mirror line mid"), _("Center point of mirror line"), "center_point", &wr, this, _("Adjust center point of mirror line")),
+    link_styles(_("Link styles"), _("Link styles on split mode"), "link_styles", &wr, this, false)
 {
-    show_orig_path = true;
+    registerParameter(&lpesatellites);
     registerParameter(&mode);
     registerParameter(&discard_orig_path);
     registerParameter(&fuse_paths);
     registerParameter(&oposite_fuse);
     registerParameter(&split_items);
     registerParameter(&split_open);
+    registerParameter(&link_styles);
     registerParameter(&start_point);
     registerParameter(&end_point);
     registerParameter(&center_point);
+    show_orig_path = true;
     apply_to_clippath_and_mask = true;
     previous_center = Geom::Point(0,0);
     center_point.param_widget_is_visible(false);
-    reset = false;
+    reset = link_styles;
     center_horiz = false;
     center_vert = false;
+    satellitestoclipboard = true;
 }
 
-LPEMirrorSymmetry::~LPEMirrorSymmetry()
-= default;
+LPEMirrorSymmetry::~LPEMirrorSymmetry() = default;
+
+bool LPEMirrorSymmetry::doOnOpen(SPLPEItem const *lpeitem)
+{
+    bool fixed = false;
+    if (!is_load || is_applied || !split_items) {
+        return fixed;
+    }
+
+    Glib::ustring version = lpeversion.param_getSVGValue();
+    if (version < "1.2") {
+        lpesatellites.clear();
+        Glib::ustring id = Glib::ustring("mirror-");
+        id += getLPEObj()->getId();
+        SPObject *elemref = getSPDoc()->getObjectById(id.c_str());
+        if (elemref) {
+            lpesatellites.link(elemref, 0);
+        }
+        lpeversion.param_setValue("1.2", true);
+        fixed = true;
+        lpesatellites.write_to_SVG();
+    }
+    lpesatellites.start_listening();
+    lpesatellites.connect_selection_changed();
+    container = lpeitem->parent;
+    return fixed;
+}
 
 void
 LPEMirrorSymmetry::doAfterEffect (SPLPEItem const* lpeitem, SPCurve *curve)
@@ -95,17 +125,28 @@ LPEMirrorSymmetry::doAfterEffect (SPLPEItem const* lpeitem, SPCurve *curve)
     if (!document) {
         return;
     }
-    container = dynamic_cast<SPObject *>(sp_lpe_item->parent);
-
+    container = sp_lpe_item->parent;
+    
     if (split_items && !discard_orig_path) {
+        bool active = !lpesatellites.data().size() || is_load;
+        for (auto lpereference : lpesatellites.data()) {
+            if (lpereference && lpereference->isAttached() && lpereference.get()->getObject() != nullptr) {
+                active = true;
+            }
+        }
+        // we need to call this when the LPE is "mirrored 1 or + times in split mode"
+        // to prevent satellite hidden as in prev status
+        if (!active && !is_load && prev_split && !prev_discard_orig_path) {
+            lpesatellites.clear();
+            return;
+        }
         Geom::Line ls((Geom::Point)start_point, (Geom::Point)end_point);
         Geom::Affine m = Geom::reflection (ls.vector(), (Geom::Point)start_point);
         m *= sp_lpe_item->transform;
         toMirror(m);
-    } else {
-        processObjects(LPE_ERASE);
-        items.clear();
     }
+    prev_split = split_items;
+    prev_discard_orig_path = discard_orig_path;
 }
 
 Gtk::Widget *
@@ -127,7 +168,7 @@ LPEMirrorSymmetry::newWidget()
             if (widg && param->param_key != "split_open") {
                 vbox->pack_start(*widg, true, true, 2);
                 if (tip) {
-                    widg->set_tooltip_text(*tip);
+                    widg->set_tooltip_markup(*tip);
                 } else {
                     widg->set_tooltip_text("");
                     widg->set_has_tooltip(false);
@@ -138,58 +179,59 @@ LPEMirrorSymmetry::newWidget()
         ++it;
     }
     Gtk::Box * hbox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL,0));
-    Gtk::Box * hbox2 = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL,0));
     Gtk::Button * center_vert_button = Gtk::manage(new Gtk::Button(Glib::ustring(_("Vertical center"))));
     center_vert_button->signal_clicked().connect(sigc::mem_fun (*this,&LPEMirrorSymmetry::centerVert));
     center_vert_button->set_size_request(110,20);
     Gtk::Button * center_horiz_button = Gtk::manage(new Gtk::Button(Glib::ustring(_("Horizontal center"))));
     center_horiz_button->signal_clicked().connect(sigc::mem_fun (*this,&LPEMirrorSymmetry::centerHoriz));
     center_horiz_button->set_size_request(110,20);
-    Gtk::Button * reset_button = Gtk::manage(new Gtk::Button(Glib::ustring(_("Reset styles"))));
-    reset_button->signal_clicked().connect(sigc::mem_fun (*this,&LPEMirrorSymmetry::resetStyles));
-    reset_button->set_size_request(110,20);
     vbox->pack_start(*hbox, true,true,2);
-    vbox->pack_start(*hbox2, true,true,2);
-    hbox->pack_start(*reset_button, false, false,2);
-    hbox2->pack_start(*center_vert_button, false, false,2);
-    hbox2->pack_start(*center_horiz_button, false, false,2);
-    if(Gtk::Widget* widg = defaultParamSet()) {
-        vbox->pack_start(*widg, true, true, 2);
-    }
+    hbox->pack_start(*center_vert_button, false, false,2);
+    hbox->pack_start(*center_horiz_button, false, false,2);
     return dynamic_cast<Gtk::Widget *>(vbox);
 }
 
 void
 LPEMirrorSymmetry::centerVert(){
     center_vert = true;
-    refresh_widgets = true;
-    writeParamsToSVG();
+    makeUndoDone(_("Center Vertical"));
 }
 
 void
 LPEMirrorSymmetry::centerHoriz(){
     center_horiz = true;
-    refresh_widgets = true;
-    writeParamsToSVG();
+    makeUndoDone(_("Center Horizontal"));
 }
 
 void
 LPEMirrorSymmetry::doBeforeEffect (SPLPEItem const* lpeitem)
 {
     using namespace Geom;
+    if ((!split_items || discard_orig_path) && lpesatellites.data().size()) {
+        processObjects(LPE_ERASE);
+    }
+    if (link_styles) {
+        reset = true;
+    }
+    if (!lpesatellites.data().size()) {
+        lpesatellites.read_from_SVG();
+        if (lpesatellites.data().size()) {
+            lpesatellites.update_satellites();
+        }
+    }
     original_bbox(lpeitem, false, true);
     Point point_a(boundingbox_X.max(), boundingbox_Y.min());
     Point point_b(boundingbox_X.max(), boundingbox_Y.max());
     Point point_c(boundingbox_X.middle(), boundingbox_Y.middle());
     if (center_vert) {
-        center_point.param_setValue(point_c);
-        end_point.param_setValue(Geom::Point(boundingbox_X.middle(), boundingbox_Y.min()));
+        center_point.param_setValue(point_c, true);
+        end_point.param_setValue(Geom::Point(boundingbox_X.middle(), boundingbox_Y.min()),true);
         //force update
         start_point.param_setValue(Geom::Point(boundingbox_X.middle(), boundingbox_Y.max()),true);
         center_vert = false;
     } else if (center_horiz) {
-        center_point.param_setValue(point_c);
-        end_point.param_setValue(Geom::Point(boundingbox_X.max(), boundingbox_Y.middle()));
+        center_point.param_setValue(point_c, true);
+        end_point.param_setValue(Geom::Point(boundingbox_X.max(), boundingbox_Y.middle()),true);
         start_point.param_setValue(Geom::Point(boundingbox_X.min(), boundingbox_Y.middle()),true);
         //force update
         center_horiz = false;
@@ -198,70 +240,76 @@ LPEMirrorSymmetry::doBeforeEffect (SPLPEItem const* lpeitem)
         if (mode == MT_Y) {
             point_a = Geom::Point(boundingbox_X.min(),center_point[Y]);
             point_b = Geom::Point(boundingbox_X.max(),center_point[Y]);
-            center_point.param_setValue(Geom::middle_point((Geom::Point)point_a, (Geom::Point)point_b));
+            center_point.param_setValue(Geom::middle_point((Geom::Point)point_a, (Geom::Point)point_b), true);
         }
         if (mode == MT_X) {
             point_a = Geom::Point(center_point[X],boundingbox_Y.min());
             point_b = Geom::Point(center_point[X],boundingbox_Y.max());
-            center_point.param_setValue(Geom::middle_point((Geom::Point)point_a, (Geom::Point)point_b));
+            center_point.param_setValue(Geom::middle_point((Geom::Point)point_a, (Geom::Point)point_b), true);
         }
         if ((Geom::Point)start_point == (Geom::Point)end_point) {
-            start_point.param_setValue(point_a);
-            end_point.param_setValue(point_b);
+            start_point.param_setValue(point_a, true);
+            end_point.param_setValue(point_b, true);
             previous_center = Geom::middle_point((Geom::Point)start_point, (Geom::Point)end_point);
-            center_point.param_setValue(previous_center);
+            center_point.param_setValue(previous_center, true);
             return;
         }
         if ( mode == MT_X || mode == MT_Y ) {
             if (!are_near(previous_center, (Geom::Point)center_point, 0.01)) {
-                center_point.param_setValue(Geom::middle_point(point_a, point_b));
-                end_point.param_setValue(point_b);
-                start_point.param_setValue(point_a);
+                center_point.param_setValue(Geom::middle_point(point_a, point_b), true);
+                end_point.param_setValue(point_b, true);
+                start_point.param_setValue(point_a, true);
             } else {
                 if ( mode == MT_X ) {
                     if (!are_near(start_point[X], point_a[X], 0.01)) {
-                        start_point.param_setValue(point_a);
+                        start_point.param_setValue(point_a, true);
                     }
                     if (!are_near(end_point[X], point_b[X], 0.01)) {
-                        end_point.param_setValue(point_b);
+                        end_point.param_setValue(point_b, true);
                     }
                 } else {  //MT_Y
                     if (!are_near(start_point[Y], point_a[Y], 0.01)) {
-                        start_point.param_setValue(point_a);
+                        start_point.param_setValue(point_a, true);
                     }
                     if (!are_near(end_point[Y], point_b[Y], 0.01)) {
-                        end_point.param_setValue(point_b);
+                        end_point.param_setValue(point_b, true);
                     }
                 }
             }
         } else if ( mode == MT_FREE) {
-            if (are_near(previous_center, (Geom::Point)center_point, 0.01)) {
-                center_point.param_setValue(Geom::middle_point((Geom::Point)start_point, (Geom::Point)end_point));
-
-            } else {
-                Geom::Point trans = center_point - Geom::middle_point((Geom::Point)start_point, (Geom::Point)end_point);
-                start_point.param_setValue(start_point * trans);
-                end_point.param_setValue(end_point * trans);
+            if ((Geom::Point)start_point == (Geom::Point)end_point) {
+                start_point.param_setValue(point_a, true);
+                end_point.param_setValue(point_b, true);
+                previous_center = Geom::middle_point((Geom::Point)start_point, (Geom::Point)end_point);
+                center_point.param_setValue(previous_center, true);
+                return;
             }
+            if (!are_near(previous_center, (Geom::Point)center_point, 0.001)) {
+                Geom::Point trans = center_point - Geom::middle_point((Geom::Point)start_point, (Geom::Point)end_point);
+                start_point.param_setValue(start_point + trans, true);
+                end_point.param_setValue(end_point + trans, true);
+            }
+            center_point.param_setValue(Geom::middle_point((Geom::Point)start_point, (Geom::Point)end_point), true);
+            previous_center = Geom::middle_point((Geom::Point)start_point, (Geom::Point)end_point);
         } else if ( mode == MT_V){
             SPDocument *document = getSPDoc();
             if (document) {
                 Geom::Affine transform = i2anc_affine(lpeitem, nullptr).inverse();
                 Geom::Point sp = Geom::Point(document->getWidth().value("px")/2.0, 0) * transform;
-                start_point.param_setValue(sp);
+                start_point.param_setValue(sp, true);
                 Geom::Point ep = Geom::Point(document->getWidth().value("px")/2.0, document->getHeight().value("px")) * transform;
-                end_point.param_setValue(ep);
-                center_point.param_setValue(Geom::middle_point((Geom::Point)start_point, (Geom::Point)end_point));
+                end_point.param_setValue(ep, true);
+                center_point.param_setValue(Geom::middle_point((Geom::Point)start_point, (Geom::Point)end_point), true);
             }
         } else { //horizontal page
             SPDocument *document = getSPDoc();
             if (document) {
                 Geom::Affine transform = i2anc_affine(lpeitem, nullptr).inverse();
                 Geom::Point sp = Geom::Point(0, document->getHeight().value("px")/2.0) * transform;
-                start_point.param_setValue(sp);
+                start_point.param_setValue(sp, true);
                 Geom::Point ep = Geom::Point(document->getWidth().value("px"), document->getHeight().value("px")/2.0) * transform;
-                end_point.param_setValue(ep);
-                center_point.param_setValue(Geom::middle_point((Geom::Point)start_point, (Geom::Point)end_point));
+                end_point.param_setValue(ep, true);
+                center_point.param_setValue(Geom::middle_point((Geom::Point)start_point, (Geom::Point)end_point), true);
             }
         }
     }
@@ -270,29 +318,31 @@ LPEMirrorSymmetry::doBeforeEffect (SPLPEItem const* lpeitem)
 
 void LPEMirrorSymmetry::cloneStyle(SPObject *orig, SPObject *dest)
 {
-    dest->getRepr()->setAttribute("style", orig->getRepr()->attribute("style"));
+    dest->setAttribute("transform", orig->getAttribute("transform"));
+    dest->setAttribute("mask", orig->getAttribute("mask"));
+    dest->setAttribute("clip-path", orig->getAttribute("clip-path"));
+    dest->setAttribute("class", orig->getAttribute("class"));
+    dest->setAttribute("style", orig->getAttribute("style"));
     for (auto iter : orig->style->properties()) {
         if (iter->style_src != SPStyleSrc::UNSET) {
             auto key = iter->id();
             if (key != SPAttr::FONT && key != SPAttr::D && key != SPAttr::MARKER) {
-                const gchar *attr = orig->getRepr()->attribute(iter->name().c_str());
+                const gchar *attr = orig->getAttribute(iter->name().c_str());
                 if (attr) {
-                    dest->getRepr()->setAttribute(iter->name(), attr);
+                    dest->setAttribute(iter->name(), attr);
                 }
             }
         }
     }
 }
 
-void
-LPEMirrorSymmetry::cloneD(SPObject *orig, SPObject *dest)
+void LPEMirrorSymmetry::cloneD(SPObject *orig, SPObject *dest)
 {
     SPDocument *document = getSPDoc();
     if (!document) {
         return;
     }
-
-    if ( SP_IS_GROUP(orig) && SP_IS_GROUP(dest) && SP_GROUP(orig)->getItemCount() == SP_GROUP(dest)->getItemCount() ) {
+    if ( is<SPGroup>(orig) && is<SPGroup>(dest) && cast<SPGroup>(orig)->getItemCount() == cast<SPGroup>(dest)->getItemCount() ) {
         if (reset) {
             cloneStyle(orig, dest);
         }
@@ -304,28 +354,42 @@ LPEMirrorSymmetry::cloneD(SPObject *orig, SPObject *dest)
             index++;
         }
         return;
+    } else if( is<SPGroup>(orig) && is<SPGroup>(dest) && cast<SPGroup>(orig)->getItemCount() != cast<SPGroup>(dest)->getItemCount()) {
+        split_items.param_setValue(false);
+        return;
     }
 
-    if (SP_IS_TEXT(orig) && SP_IS_TEXT(dest) && SP_TEXT(orig)->children.size() == SP_TEXT(dest)->children.size()) {
+    if (is<SPText>(orig) && is<SPText>(dest) && cast<SPText>(orig)->children.size() == cast<SPText>(dest)->children.size()) {
         if (reset) {
             cloneStyle(orig, dest);
         }
         size_t index = 0;
-        for (auto &child : SP_TEXT(orig)->children) {
+        for (auto &child : cast<SPText>(orig)->children) {
             SPObject *dest_child = dest->nthChild(index);
             cloneD(&child, dest_child);
             index++;
         }
     }
 
-    SPShape * shape =  SP_SHAPE(orig);
-    SPPath * path =  SP_PATH(dest);
-    if (path && shape) {
+    auto shape = cast<SPShape>(orig);
+    auto path = cast<SPPath>(dest);
+    if (shape) {
         SPCurve const *c = shape->curve();
         if (c) {
-            dest->getRepr()->setAttribute("d", sp_svg_write_path(c->get_pathvector()));
+            auto str = sp_svg_write_path(c->get_pathvector());
+            if (shape && !path) {
+                const char *id = dest->getAttribute("id");
+                const char *style = dest->getAttribute("style");
+                Inkscape::XML::Document *xml_doc = dest->document->getReprDoc();
+                Inkscape::XML::Node *dest_node = xml_doc->createElement("svg:path");
+                dest_node->setAttribute("id", id);
+                dest_node->setAttribute("style", style);
+                dest->updateRepr(xml_doc, dest_node, SP_OBJECT_WRITE_ALL);
+                path = cast<SPPath>(dest);
+            }
+            path->setAttribute("d", str);
         } else {
-            dest->getRepr()->removeAttribute("d");
+            path->removeAttribute("d");
         }
     }
     if (reset) {
@@ -341,11 +405,14 @@ LPEMirrorSymmetry::createPathBase(SPObject *elemref) {
     }
     Inkscape::XML::Document *xml_doc = document->getReprDoc();
     Inkscape::XML::Node *prev = elemref->getRepr();
-    SPGroup *group = dynamic_cast<SPGroup *>(elemref);
+    auto group = cast<SPGroup>(elemref);
     if (group) {
         Inkscape::XML::Node *container = xml_doc->createElement("svg:g");
         container->setAttribute("transform", prev->attribute("transform"));
-        std::vector<SPItem*> const item_list = sp_item_group_item_list(group);
+        container->setAttribute("mask", prev->attribute("mask"));
+        container->setAttribute("clip-path", prev->attribute("clip-path"));
+        container->setAttribute("class", prev->attribute("class"));
+        std::vector<SPItem*> const item_list = group->item_list();
         Inkscape::XML::Node *previous = nullptr;
         for (auto sub_item : item_list) {
             Inkscape::XML::Node *resultnode = createPathBase(sub_item);
@@ -356,6 +423,9 @@ LPEMirrorSymmetry::createPathBase(SPObject *elemref) {
     }
     Inkscape::XML::Node *resultnode = xml_doc->createElement("svg:path");
     resultnode->setAttribute("transform", prev->attribute("transform"));
+    resultnode->setAttribute("mask", prev->attribute("mask"));
+    resultnode->setAttribute("clip-path", prev->attribute("clip-path"));
+    resultnode->setAttribute("class", prev->attribute("class"));
     return resultnode;
 }
 
@@ -366,41 +436,57 @@ LPEMirrorSymmetry::toMirror(Geom::Affine transform)
     if (!document) {
         return;
     }
-    Inkscape::XML::Document *xml_doc = document->getReprDoc();
-    Glib::ustring elemref_id = Glib::ustring("mirror-");
-    elemref_id += this->lpeobj->getId();
-    items.clear();
-    items.push_back(elemref_id);
-    SPObject *elemref = document->getObjectById(elemref_id.c_str());
+    //Inkscape::XML::Document *xml_doc = document->getReprDoc();
+    SPObject *elemref = nullptr;
+    if (!is_load && container != sp_lpe_item->parent) {
+        lpesatellites.read_from_SVG();
+        return;
+    }
+    if (lpesatellites.data().size() && lpesatellites.data()[0]) {
+        elemref = lpesatellites.data()[0]->getObject();
+    }
     Inkscape::XML::Node *phantom = nullptr;
+    bool creation = false;
     if (elemref) {
         phantom = elemref->getRepr();
     } else {
+        creation = true;
         phantom = createPathBase(sp_lpe_item);
-        phantom->setAttribute("id", elemref_id);
         reset = true;
         elemref = container->appendChildRepr(phantom);
-        elemref->parent->reorder(elemref, sp_lpe_item);
         Inkscape::GC::release(phantom);
     }
     cloneD(sp_lpe_item, elemref);
-    reset = false;
+    reset = link_styles;
     elemref->getRepr()->setAttributeOrRemoveIfEmpty("transform", sp_svg_transform_write(transform));
-    if (elemref->parent != container) {
+    // Alow work in clones
+    /* if (elemref->parent != container) {
+        if (!creation) {
+            lpesatellites.unlink(elemref);
+        }
         Inkscape::XML::Node *copy = phantom->duplicate(xml_doc);
-        copy->setAttribute("id", elemref_id);
-        container->appendChildRepr(copy);
+        copy->setAttribute("id", elemref->getId());
+        lpesatellites.link(container->appendChildRepr(copy), 0);
         Inkscape::GC::release(copy);
         elemref->deleteObject();
+        lpesatellites.write_to_SVG();
+        lpesatellites.update_satellites();
+    } else  */
+    if (creation) {
+        lpesatellites.clear();
+        lpesatellites.link(elemref, 0);
+        lpesatellites.write_to_SVG();
+        if (lpesatellites.is_connected()) {
+            lpesatellites.update_satellites();
+        }
     }
-}
-
-
-void
-LPEMirrorSymmetry::resetStyles(){
-    reset = true;
-    sp_lpe_item_update_patheffect(sp_lpe_item, false, false);
-    reset = false;
+    if (!lpesatellites.is_connected()) {
+        if (!creation) {
+            lpesatellites.write_to_SVG();
+        }
+        lpesatellites.start_listening();
+        sp_lpe_item_update_patheffect(sp_lpe_item, false, false, true);
+    }
 }
 
 
@@ -414,20 +500,11 @@ LPEMirrorSymmetry::doOnVisibilityToggled(SPLPEItem const* /*lpeitem*/)
 void
 LPEMirrorSymmetry::doOnRemove (SPLPEItem const* /*lpeitem*/)
 {
-    std::vector<SPLPEItem *> lpeitems = getCurrrentLPEItems();
-    if (lpeitems.size() == 1) {
-        sp_lpe_item = lpeitems[0];
-        if (!sp_lpe_item->path_effects_enabled) {
-            return;
-        }
-        //set "keep paths" hook on sp-lpe-item.cpp
-        if (keep_paths) {
-            processObjects(LPE_TO_OBJECTS);
-            items.clear();
-            return;
-        }
-        processObjects(LPE_ERASE);
+    if (keep_paths) {
+        processObjects(LPE_TO_OBJECTS);
+        return;
     }
+    processObjects(LPE_ERASE);
 }
 
 void
@@ -447,30 +524,8 @@ LPEMirrorSymmetry::doOnApply (SPLPEItem const* lpeitem)
     center_point.param_setValue(point_c, true);
     previous_center = center_point;
     //we bump to 1.1 because previous 1.0.2 take no effect because a bug on 1.0.2
-    lpeversion.param_setValue("1.1", true);
-}
-
-static void
-sp_flatten(Geom::PathVector &pathvector, FillRuleFlatten fillkind)
-{
-    Path *orig = new Path;
-    orig->LoadPathVector(pathvector);
-    Shape *theShape = new Shape;
-    Shape *theRes = new Shape;
-    orig->ConvertWithBackData (1.0);
-    orig->Fill (theShape, 0);
-    theRes->ConvertToShape (theShape, FillRule(fillkind));
-    Path *originaux[1];
-    originaux[0] = orig;
-    Path *res = new Path;
-    theRes->ConvertToForme (res, 1, originaux, true);
-
-    delete theShape;
-    delete theRes;
-    char *res_d = res->svg_dump_path ();
-    delete res;
-    delete orig;
-    pathvector  = sp_svg_read_pathv(res_d);
+    lpeversion.param_setValue("1.2", true);
+    lpesatellites.update_satellites();
 }
 
 Geom::PathVector

@@ -17,7 +17,6 @@ enum SPGradientSpread {
     SP_GRADIENT_SPREAD_UNDEFINED = INT_MAX
 };
 
-
 #endif /* !SEEN_SP_GRADIENT_SPREAD_H */
 
 /*

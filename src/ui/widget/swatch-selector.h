@@ -26,25 +26,18 @@ class SwatchSelector : public Gtk::Box
 {
 public:
     SwatchSelector();
-    ~SwatchSelector() override;
-
-    void connectchangedHandler( GCallback handler, void *data );
 
     void setVector(SPDocument *doc, SPGradient *vector);
 
-    GradientSelector *getGradientSelector();
+    GradientSelector *getGradientSelector() { return _gsel; }
 
 private:
-    void _grabbedCb();
-    void _draggedCb();
-    void _releasedCb();
     void _changedCb();
 
-    GradientSelector *_gsel;
+    GradientSelector *_gsel = nullptr;
     Inkscape::UI::SelectedColor _selected_color;
-    bool _updating_color;
+    bool _updating_color = false;
 };
-
 
 } // namespace Widget
 } // namespace UI

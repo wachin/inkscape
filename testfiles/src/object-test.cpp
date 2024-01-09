@@ -86,7 +86,7 @@ TEST_F(ObjectTest, Clones) {
     ASSERT_TRUE(root->getRepr() != nullptr);
     ASSERT_TRUE(root->hasChildren());
 
-    SPPath *path = dynamic_cast<SPPath *>(doc->getObjectById("P"));
+    auto path = cast<SPPath>(doc->getObjectById("P"));
     ASSERT_TRUE(path != nullptr);
 
     Node *node = path->getRepr();
@@ -125,7 +125,7 @@ TEST_F(ObjectTest, Grouping) {
     ASSERT_TRUE(root->getRepr() != nullptr);
     ASSERT_TRUE(root->hasChildren());
 
-    SPGroup *group = dynamic_cast<SPGroup *>(doc->getObjectById("G"));
+    auto group = cast<SPGroup>(doc->getObjectById("G"));
 
     ASSERT_TRUE(group != nullptr);
 
@@ -153,11 +153,11 @@ TEST_F(ObjectTest, Grouping) {
         elements[i] = circle;
     }
 
-    SPGroup *n_group = dynamic_cast<SPGroup *>(group->get_child_by_repr(new_group));
+    auto n_group = cast<SPGroup>(group->get_child_by_repr(new_group));
     ASSERT_TRUE(n_group != nullptr);
 
     std::vector<SPItem*> ch;
-    sp_item_group_ungroup(n_group, ch, false);
+    sp_item_group_ungroup(n_group, ch);
 
     // Remove those elements
     for (size_t i = 0; i < num_elements; ++i) {
@@ -174,7 +174,7 @@ TEST_F(ObjectTest, Objects) {
     ASSERT_TRUE(root->getRepr() != nullptr);
     ASSERT_TRUE(root->hasChildren());
 
-    SPPath *path = dynamic_cast<SPPath *>(doc->getObjectById("P"));
+    auto path = cast<SPPath>(doc->getObjectById("P"));
     ASSERT_TRUE(path != nullptr);
 
     // Test parent behavior

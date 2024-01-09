@@ -5,14 +5,14 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
-#include "live_effects/parameter/point.h"
-#include "live_effects/effect.h"
+#include "point.h"
 
 #include "inkscape.h"
-#include "verbs.h"
 
+#include "live_effects/effect.h"
 #include "svg/stringstream.h"
 #include "svg/svg.h"
+#include "ui/icon-names.h"
 #include "ui/knot/knot-holder.h"
 #include "ui/knot/knot-holder-entity.h"
 #include "ui/widget/point.h"
@@ -34,10 +34,14 @@ PointParam::PointParam( const Glib::ustring& label, const Glib::ustring& tip,
     handle_tip = g_strdup(htip);
 }
 
-PointParam::~PointParam()
-{
-    if (handle_tip)
+PointParam::~PointParam() {
+    if (handle_tip) {
         g_free(handle_tip);
+    }
+    if (_knot_entity && _knot_entity->parent_holder) {
+        _knot_entity->parent_holder->remove(_knot_entity);
+        _knot_entity = nullptr;
+    }
 }
 
 void
@@ -91,6 +95,7 @@ PointParam::param_hide_knot(bool hide) {
             _knot_entity->update_knot();
         }
     }
+
 }
 
 void
@@ -100,9 +105,7 @@ PointParam::param_setValue(Geom::Point newpoint, bool write)
     if(write){
         Inkscape::SVGOStringStream os;
         os << newpoint;
-        gchar * str = g_strdup(os.str().c_str());
-        param_write_to_repr(str);
-        g_free(str);
+        param_write_to_repr(os.str().c_str());
     }
     if(_knot_entity && liveupdate){
         _knot_entity->update_knot();
@@ -160,7 +163,7 @@ PointParam::param_newWidget()
     pointwdg->setTransform(transf);
     pointwdg->setValue( *this );
     pointwdg->clearProgrammatically();
-    pointwdg->set_undo_parameters(SP_VERB_DIALOG_LIVE_PATH_EFFECT, _("Change point parameter"));
+    pointwdg->set_undo_parameters(_("Change point parameter"), INKSCAPE_ICON("dialog-path-effects"));
     pointwdg->signal_button_release_event().connect(sigc::mem_fun (*this, &PointParam::on_button_release));
 
     Gtk::Box * hbox = Gtk::manage( new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL) );
@@ -187,7 +190,9 @@ PointParam::set_oncanvas_looks(Inkscape::CanvasItemCtrlShape shape,
 class PointParamKnotHolderEntity : public KnotHolderEntity {
 public:
     PointParamKnotHolderEntity(PointParam *p) { this->pparam = p; }
-    ~PointParamKnotHolderEntity() override { this->pparam->_knot_entity = nullptr;}
+    ~PointParamKnotHolderEntity() override { 
+        this->pparam->_knot_entity = nullptr;
+    }
 
     void knot_set(Geom::Point const &p, Geom::Point const &origin, guint state) override;
     Geom::Point knot_get() const override;
@@ -223,8 +228,7 @@ PointParamKnotHolderEntity::knot_set(Geom::Point const &p, Geom::Point const &or
 void
 PointParamKnotHolderEntity::knot_ungrabbed(Geom::Point const &p, Geom::Point const &origin, guint state)
 {
-    pparam->param_effect->refresh_widgets = true;
-    pparam->write_to_SVG();
+    pparam->param_effect->makeUndoDone(_("Move handle"));
 }
 
 Geom::Point

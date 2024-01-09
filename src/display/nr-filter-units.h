@@ -148,13 +148,10 @@ private:
     Geom::Affine ctm;
     Geom::OptRect item_bbox;
     Geom::OptRect filter_area;
-
 };
 
-
-} /* namespace Filters */
-} /* namespace Inkscape */
-
+} // namespace Filters
+} // namespace Inkscape
 
 #endif /* __NR_FILTER_UNITS_H__ */
 /*

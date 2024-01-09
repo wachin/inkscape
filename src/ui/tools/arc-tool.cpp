@@ -28,20 +28,19 @@
 #include "preferences.h"
 #include "selection.h"
 #include "snap.h"
-#include "verbs.h"
 
 #include "include/macros.h"
 
 #include "object/sp-ellipse.h"
 #include "object/sp-namedview.h"
 
+#include "ui/icon-names.h"
 #include "ui/modifiers.h"
 #include "ui/tools/arc-tool.h"
 #include "ui/shape-editor.h"
 #include "ui/tools/tool-base.h"
 
 #include "xml/repr.h"
-#include "xml/node-event-vector.h"
 
 using Inkscape::DocumentUndo;
 
@@ -49,28 +48,40 @@ namespace Inkscape {
 namespace UI {
 namespace Tools {
 
-const std::string& ArcTool::getPrefsPath() {
-	return ArcTool::prefsPath;
-}
-
-const std::string ArcTool::prefsPath = "/tools/shapes/arc";
-
-
-ArcTool::ArcTool()
-    : ToolBase("arc.svg")
+ArcTool::ArcTool(SPDesktop *desktop)
+    : ToolBase(desktop, "/tools/shapes/arc", "arc.svg")
     , arc(nullptr)
 {
+    Inkscape::Selection *selection = desktop->getSelection();
+
+    this->shape_editor = new ShapeEditor(desktop);
+
+    SPItem *item = desktop->getSelection()->singleItem();
+    if (item) {
+        this->shape_editor->set_item(item);
+    }
+
+    this->sel_changed_connection.disconnect();
+    this->sel_changed_connection = selection->connectChanged(
+        sigc::mem_fun(*this, &ArcTool::selection_changed)
+    );
+
+    Inkscape::Preferences *prefs = Inkscape::Preferences::get();
+    if (prefs->getBool("/tools/shapes/selcue")) {
+        this->enableSelectionCue();
+    }
+
+    if (prefs->getBool("/tools/shapes/gradientdrag")) {
+        this->enableGrDrag();
+    }
 }
 
-void ArcTool::finish() {
+ArcTool::~ArcTool()
+{
     ungrabCanvasEvents();
     this->finishItem();
     this->sel_changed_connection.disconnect();
 
-    ToolBase::finish();
-}
-
-ArcTool::~ArcTool() {
     this->enableGrDrag(false);
 
     this->sel_changed_connection.disconnect();
@@ -93,38 +104,12 @@ void ArcTool::selection_changed(Inkscape::Selection* selection) {
     this->shape_editor->set_item(selection->singleItem());
 }
 
-void ArcTool::setup() {
-    ToolBase::setup();
-
-    Inkscape::Selection *selection = this->desktop->getSelection();
-
-    this->shape_editor = new ShapeEditor(this->desktop);
-
-    SPItem *item = this->desktop->getSelection()->singleItem();
-    if (item) {
-        this->shape_editor->set_item(item);
-    }
-
-    this->sel_changed_connection.disconnect();
-    this->sel_changed_connection = selection->connectChanged(
-        sigc::mem_fun(this, &ArcTool::selection_changed)
-    );
-
-    Inkscape::Preferences *prefs = Inkscape::Preferences::get();
-    if (prefs->getBool("/tools/shapes/selcue")) {
-        this->enableSelectionCue();
-    }
-
-    if (prefs->getBool("/tools/shapes/gradientdrag")) {
-        this->enableGrDrag();
-    }
-}
 
 bool ArcTool::item_handler(SPItem* item, GdkEvent* event) {
     switch (event->type) {
         case GDK_BUTTON_PRESS:
             if (event->button.button == 1) {
-                Inkscape::setup_for_drag_start(desktop, this, event);
+                this->setup_for_drag_start(event);
             }
             break;
             // motion and release are always on root (why?)
@@ -138,7 +123,7 @@ bool ArcTool::item_handler(SPItem* item, GdkEvent* event) {
 bool ArcTool::root_handler(GdkEvent* event) {
     static bool dragging;
 
-    Inkscape::Selection *selection = desktop->getSelection();
+    Inkscape::Selection *selection = _desktop->getSelection();
     Inkscape::Preferences *prefs = Inkscape::Preferences::get();
 
     this->tolerance = prefs->getIntLimited("/options/dragtolerance/value", 0, 0, 100);
@@ -150,11 +135,11 @@ bool ArcTool::root_handler(GdkEvent* event) {
             if (event->button.button == 1) {
                 dragging = true;
 
-                this->center = Inkscape::setup_for_drag_start(desktop, this, event);
+                this->center = this->setup_for_drag_start(event);
 
                 /* Snap center */
-                SnapManager &m = desktop->namedview->snap_manager;
-                m.setup(desktop);
+                SnapManager &m = _desktop->namedview->snap_manager;
+                m.setup(_desktop);
                 m.freeSnapReturnByRef(this->center, Inkscape::SNAPSOURCE_NODE_HANDLE);
 
                 grabCanvasEvents();
@@ -176,7 +161,7 @@ bool ArcTool::root_handler(GdkEvent* event) {
                 this->within_tolerance = false;
 
                 Geom::Point const motion_w(event->motion.x, event->motion.y);
-                Geom::Point motion_dt(desktop->w2d(motion_w));
+                Geom::Point motion_dt(_desktop->w2d(motion_w));
 
                 this->drag(motion_dt, event->motion.state);
 
@@ -184,29 +169,29 @@ bool ArcTool::root_handler(GdkEvent* event) {
 
                 handled = true;
             } else if (!this->sp_event_context_knot_mouseover()){
-                SnapManager &m = desktop->namedview->snap_manager;
-                m.setup(desktop);
+                SnapManager &m = _desktop->namedview->snap_manager;
+                m.setup(_desktop);
 
                 Geom::Point const motion_w(event->motion.x, event->motion.y);
-                Geom::Point motion_dt(desktop->w2d(motion_w));
+                Geom::Point motion_dt(_desktop->w2d(motion_w));
                 m.preSnap(Inkscape::SnapCandidatePoint(motion_dt, Inkscape::SNAPSOURCE_NODE_HANDLE));
                 m.unSetup();
             }
             break;
         case GDK_BUTTON_RELEASE:
             this->xp = this->yp = 0;
-            if (event->button.button == 1) {
+            if (dragging && event->button.button == 1) {
                 dragging = false;
-                sp_event_context_discard_delayed_snap_event(this);
+                this->discard_delayed_snap_event();
 
-                if (!this->within_tolerance) {
+                if (arc) {
                     // we've been dragging, finish the arc
                     this->finishItem();
                 } else if (this->item_to_select) {
                     // no dragging, select clicked item if any
                     if (event->button.state & GDK_SHIFT_MASK) {
                         selection->toggle(this->item_to_select);
-                    } else {
+                    } else if (!selection->includes(this->item_to_select)) {
                         selection->set(this->item_to_select);
                     }
                 } else {
@@ -243,7 +228,7 @@ bool ArcTool::root_handler(GdkEvent* event) {
                 case GDK_KEY_x:
                 case GDK_KEY_X:
                     if (MOD__ALT_ONLY(event)) {
-                        desktop->setToolboxFocusTo ("arc-rx");
+                        _desktop->setToolboxFocusTo("arc-rx");
                         handled = true;
                     }
                     break;
@@ -251,7 +236,7 @@ bool ArcTool::root_handler(GdkEvent* event) {
                 case GDK_KEY_Escape:
                     if (dragging) {
                         dragging = false;
-                        sp_event_context_discard_delayed_snap_event(this);
+                        this->discard_delayed_snap_event();
                         // if drawing, cancel, otherwise pass it up for deselecting
                         this->cancel();
                         handled = true;
@@ -262,7 +247,7 @@ bool ArcTool::root_handler(GdkEvent* event) {
                     if (dragging) {
                         ungrabCanvasEvents();
                         dragging = false;
-                        sp_event_context_discard_delayed_snap_event(this);
+                        this->discard_delayed_snap_event();
 
                         if (!this->within_tolerance) {
                             // we've been dragging, finish the arc
@@ -314,31 +299,30 @@ bool ArcTool::root_handler(GdkEvent* event) {
 
 void ArcTool::drag(Geom::Point pt, guint state) {
     if (!this->arc) {
-        if (Inkscape::have_viable_layer(desktop, defaultMessageContext()) == false) {
+        if (Inkscape::have_viable_layer(_desktop, defaultMessageContext()) == false) {
             return;
         }
 
         // Create object
-        Inkscape::XML::Document *xml_doc = desktop->doc()->getReprDoc();
+        Inkscape::XML::Document *xml_doc = _desktop->doc()->getReprDoc();
         Inkscape::XML::Node *repr = xml_doc->createElement("svg:path");
         repr->setAttribute("sodipodi:type", "arc");
 
         // Set style
-        sp_desktop_apply_style_tool(desktop, repr, "/tools/shapes/arc", false);
+        sp_desktop_apply_style_tool(_desktop, repr, "/tools/shapes/arc", false);
 
-        this->arc = SP_GENERICELLIPSE(desktop->currentLayer()->appendChildRepr(repr));
+        auto layer = currentLayer();
+        this->arc = cast<SPGenericEllipse>(layer->appendChildRepr(repr));
         Inkscape::GC::release(repr);
-        this->arc->transform = SP_ITEM(desktop->currentLayer())->i2doc_affine().inverse();
+        this->arc->transform = layer->i2doc_affine().inverse();
         this->arc->updateRepr();
-
-        forced_redraws_start(5);
     }
 
     auto confine = Modifiers::Modifier::get(Modifiers::Type::TRANS_CONFINE)->active(state);
     // Third is weirdly wrong, surely incrememnts should do something else.
     auto circle_edge = Modifiers::Modifier::get(Modifiers::Type::TRANS_INCREMENT)->active(state);
 
-    Geom::Rect r = Inkscape::snap_rectangular_box(desktop, this->arc, pt, this->center, state);
+    Geom::Rect r = Inkscape::snap_rectangular_box(_desktop, this->arc, pt, this->center, state);
 
     Geom::Point dir = r.dimensions() / 2;
 
@@ -373,8 +357,8 @@ void ArcTool::drag(Geom::Point pt, guint state) {
 
     Inkscape::Util::Quantity rdimx_q = Inkscape::Util::Quantity(rdimx, "px");
     Inkscape::Util::Quantity rdimy_q = Inkscape::Util::Quantity(rdimy, "px");
-    Glib::ustring xs = rdimx_q.string(desktop->namedview->display_units);
-    Glib::ustring ys = rdimy_q.string(desktop->namedview->display_units);
+    Glib::ustring xs = rdimx_q.string(_desktop->namedview->display_units);
+    Glib::ustring ys = rdimy_q.string(_desktop->namedview->display_units);
 
     if (state & GDK_CONTROL_MASK) {
         int ratio_x, ratio_y;
@@ -427,19 +411,19 @@ void ArcTool::finishItem() {
 
         this->arc->updateRepr();
         this->arc->doWriteTransform(this->arc->transform, nullptr, true);
+        // update while creating inside a LPE group
 
-        forced_redraws_stop();
+        sp_lpe_item_update_patheffect(this->arc, true, true);
+        _desktop->getSelection()->set(this->arc);
 
-        desktop->getSelection()->set(this->arc);
-
-        DocumentUndo::done(desktop->getDocument(), SP_VERB_CONTEXT_ARC, _("Create ellipse"));
+        DocumentUndo::done(_desktop->getDocument(), _("Create ellipse"), INKSCAPE_ICON("draw-ellipse"));
 
         this->arc = nullptr;
     }
 }
 
 void ArcTool::cancel() {
-    desktop->getSelection()->clear();
+    _desktop->getSelection()->clear();
     ungrabCanvasEvents();
 
     if (this->arc != nullptr) {
@@ -452,9 +436,7 @@ void ArcTool::cancel() {
     this->yp = 0;
     this->item_to_select = nullptr;
 
-    forced_redraws_stop();
-
-    DocumentUndo::cancel(desktop->getDocument());
+    DocumentUndo::cancel(_desktop->getDocument());
 }
 
 }

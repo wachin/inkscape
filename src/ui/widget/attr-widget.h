@@ -145,7 +145,7 @@ public:
         return _attr;
     }
 
-    sigc::signal<void>& signal_attr_changed()
+    sigc::signal<void ()>& signal_attr_changed()
     {
         return _signal;
     }
@@ -164,7 +164,7 @@ protected:
 private:
     const SPAttr _attr;
     DefaultValueHolder _default;
-    sigc::signal<void> _signal;
+    sigc::signal<void ()> _signal;
 };
 
 }

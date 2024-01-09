@@ -33,7 +33,7 @@ class WidgetSeparator : public InxWidget {
 public:
     WidgetSeparator(Inkscape::XML::Node *xml, Inkscape::Extension::Extension *ext);
 
-    Gtk::Widget *get_widget(sigc::signal<void> *changeSignal) override;
+    Gtk::Widget *get_widget(sigc::signal<void ()> *changeSignal) override;
 };
 
 }  /* namespace Extension */

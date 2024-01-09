@@ -15,7 +15,7 @@
 
 #include "attributes.h"
 #include "style.h"
-
+#include "display/drawing-paintserver.h"
 
 /*
  * Solid Color
@@ -61,18 +61,10 @@ Inkscape::XML::Node* SPSolidColor::write(Inkscape::XML::Document* xml_doc, Inksc
     return repr;
 }
 
-cairo_pattern_t* SPSolidColor::pattern_new(cairo_t * /*ct*/, Geom::OptRect const & /*bbox*/, double opacity) {
-
-    auto *c = &(this->style->solid_color);
-    cairo_pattern_t *cp = cairo_pattern_create_rgba ( c->value.color.v.c[0], c->value.color.v.c[1], c->value.color.v.c[2], SP_SCALE24_TO_FLOAT(this->style->solid_opacity.value) * opacity );
-
-    return cp;
+std::unique_ptr<Inkscape::DrawingPaintServer> SPSolidColor::create_drawing_paintserver()
+{
+    return std::make_unique<Inkscape::DrawingSolidColor>(style->solid_color.value.color.v.c, SP_SCALE24_TO_FLOAT(style->solid_opacity.value));
 }
-
-
-/**
- * Virtual write: write object attributes to repr.
- */
 
 /*
   Local Variables:

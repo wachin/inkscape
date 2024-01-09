@@ -12,14 +12,14 @@
  */
 
 #include "color-picker.h"
+
 #include "inkscape.h"
 #include "desktop.h"
 #include "document.h"
 #include "document-undo.h"
-#include "ui/dialog-events.h"
 
+#include "ui/dialog-events.h"
 #include "ui/widget/color-notebook.h"
-#include "verbs.h"
 
 
 static bool _in_use = false;
@@ -29,21 +29,29 @@ namespace UI {
 namespace Widget {
 
 ColorPicker::ColorPicker (const Glib::ustring& title, const Glib::ustring& tip,
-                          guint32 rgba, bool undo)
+                          guint32 rgba, bool undo, Gtk::Button* external_button)
     : _preview(new ColorPreview(rgba))
     , _title(title)
     , _rgba(rgba)
     , _undo(undo)
     , _colorSelectorDialog("dialogs.colorpickerwindow")
 {
+    Gtk::Button* button = external_button ? external_button : this;
     _color_selector = nullptr;
     setupDialog(title);
     _preview->show();
-    add(*Gtk::manage(_preview));
-    set_tooltip_text (tip);
-    _selected_color.signal_changed.connect(sigc::mem_fun(this, &ColorPicker::_onSelectedColorChanged));
-    _selected_color.signal_dragged.connect(sigc::mem_fun(this, &ColorPicker::_onSelectedColorChanged));
-    _selected_color.signal_released.connect(sigc::mem_fun(this, &ColorPicker::_onSelectedColorChanged));
+    button->add(*Gtk::manage(_preview));
+    // set tooltip if given, otherwise leave original tooltip in place (from external button)
+    if (!tip.empty()) {
+        button->set_tooltip_text(tip);
+    }
+    _selected_color.signal_changed.connect(sigc::mem_fun(*this, &ColorPicker::_onSelectedColorChanged));
+    _selected_color.signal_dragged.connect(sigc::mem_fun(*this, &ColorPicker::_onSelectedColorChanged));
+    _selected_color.signal_released.connect(sigc::mem_fun(*this, &ColorPicker::_onSelectedColorChanged));
+
+    if (external_button) {
+        external_button->signal_clicked().connect([=](){ on_clicked(); });
+    }
 }
 
 ColorPicker::~ColorPicker()
@@ -53,9 +61,6 @@ ColorPicker::~ColorPicker()
 
 void ColorPicker::setupDialog(const Glib::ustring &title)
 {
-    GtkWidget *dlg = GTK_WIDGET(_colorSelectorDialog.gobj());
-    sp_transientize(dlg);
-
     _colorSelectorDialog.hide();
     _colorSelectorDialog.set_title (title);
     _colorSelectorDialog.set_border_width (4);
@@ -67,7 +72,7 @@ void ColorPicker::setRgba32 (guint32 rgba)
 {
     if (_in_use) return;
 
-    _preview->setRgba32 (rgba);
+    set_preview(rgba);
     _rgba = rgba;
     if (_color_selector)
     {
@@ -82,10 +87,16 @@ void ColorPicker::closeWindow()
     _colorSelectorDialog.hide();
 }
 
+void ColorPicker::open() {
+    on_clicked();
+}
+
 void ColorPicker::on_clicked()
 {
     if (!_color_selector) {
-        _color_selector = Gtk::manage(new ColorNotebook(_selected_color));
+        auto selector = Gtk::manage(new ColorNotebook(_selected_color, _ignore_transparency));
+        selector->set_label(_title);
+        _color_selector = selector;
         _colorSelectorDialog.get_content_area()->pack_start(*_color_selector, true, true, 0);
         _color_selector->show();
     }
@@ -93,6 +104,9 @@ void ColorPicker::on_clicked()
     _updating = true;
     _selected_color.setValue(_rgba);
     _updating = false;
+
+    // This can cause the window to fire refresh events
+    sp_transientize(GTK_WIDGET(_colorSelectorDialog.gobj()));
 
     _colorSelectorDialog.show();
     Glib::RefPtr<Gdk::Window> window = _colorSelectorDialog.get_parent_window();
@@ -117,17 +131,29 @@ void ColorPicker::_onSelectedColorChanged() {
     }
 
     guint32 rgba = _selected_color.value();
-    _preview->setRgba32(rgba);
+    set_preview(rgba);
 
     if (_undo && SP_ACTIVE_DESKTOP) {
-        DocumentUndo::done(SP_ACTIVE_DESKTOP->getDocument(), SP_VERB_NONE,
-                           /* TODO: annotate */ "color-picker.cpp:130");
+        DocumentUndo::done(SP_ACTIVE_DESKTOP->getDocument(), /* TODO: annotate */ "color-picker.cpp:129", "");
     }
 
     on_changed(rgba);
     _in_use = false;
-    _changed_signal.emit(rgba);
     _rgba = rgba;
+    _changed_signal.emit(rgba);
+}
+
+void ColorPicker::set_preview(guint32 rgba) {
+    _preview->setRgba32(_ignore_transparency ? rgba | 0xff : rgba);
+}
+
+void ColorPicker::use_transparency(bool enable) {
+    _ignore_transparency = !enable;
+    set_preview(_rgba);
+}
+
+guint32 ColorPicker::get_current_color() const {
+    return _rgba;
 }
 
 }//namespace Widget

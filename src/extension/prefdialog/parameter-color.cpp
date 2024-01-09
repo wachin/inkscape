@@ -37,9 +37,9 @@ ParamColor::ParamColor(Inkscape::XML::Node *xml, Inkscape::Extension::Extension 
     unsigned int _value = 0x000000ff; // default to black
     if (xml->firstChild()) {
         const char *value = xml->firstChild()->content();
-        if (value) {
-            _value = strtoul(value, nullptr, 0);
-        }
+        if (value)
+            string_to_value(value);
+        _value = _color.value();
     }
 
     Inkscape::Preferences *prefs = Inkscape::Preferences::get();
@@ -47,9 +47,9 @@ ParamColor::ParamColor(Inkscape::XML::Node *xml, Inkscape::Extension::Extension 
 
     _color.setValue(_value);
 
-    _color_changed = _color.signal_changed.connect(sigc::mem_fun(this, &ParamColor::_onColorChanged));
+    _color_changed = _color.signal_changed.connect(sigc::mem_fun(*this, &ParamColor::_onColorChanged));
     // TODO: SelectedColor does not properly emit signal_changed after dragging, so we also need the following
-    _color_released = _color.signal_released.connect(sigc::mem_fun(this, &ParamColor::_onColorChanged));
+    _color_released = _color.signal_released.connect(sigc::mem_fun(*this, &ParamColor::_onColorChanged));
 
     // parse appearance
     if (_appearance) {
@@ -75,14 +75,14 @@ unsigned int ParamColor::set(unsigned int in)
     return in;
 }
 
-Gtk::Widget *ParamColor::get_widget(sigc::signal<void> *changeSignal)
+Gtk::Widget *ParamColor::get_widget(sigc::signal<void ()> *changeSignal)
 {
     if (_hidden) {
         return nullptr;
     }
 
     if (changeSignal) {
-        _changeSignal = new sigc::signal<void>(*changeSignal);
+        _changeSignal = new sigc::signal<void ()>(*changeSignal);
     }
 
     Gtk::Box *hbox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, GUI_PARAM_WIDGETS_SPACING));
@@ -105,7 +105,7 @@ Gtk::Widget *ParamColor::get_widget(sigc::signal<void> *changeSignal)
         _color_button->show();
         hbox->pack_end(*_color_button, false, false);
 
-        _color_button->signal_color_set().connect(sigc::mem_fun(this, &ParamColor::_onColorButtonChanged));
+        _color_button->signal_color_set().connect(sigc::mem_fun(*this, &ParamColor::_onColorButtonChanged));
     } else {
         Gtk::Widget *selector = Gtk::manage(new Inkscape::UI::Widget::ColorNotebook(_color));
         hbox->pack_start(*selector, true, true, 0);
@@ -140,6 +140,11 @@ std::string ParamColor::value_to_string() const
     char value_string[16];
     snprintf(value_string, 16, "%u", _color.value());
     return value_string;
+}
+
+void ParamColor::string_to_value(const std::string &in)
+{
+    _color.setValue(strtoul(in.c_str(), nullptr, 0));
 }
 
 };  /* namespace Extension */

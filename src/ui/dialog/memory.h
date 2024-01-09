@@ -12,6 +12,7 @@
 #ifndef SEEN_INKSCAPE_UI_DIALOG_MEMORY_H
 #define SEEN_INKSCAPE_UI_DIALOG_MEMORY_H
 
+#include <memory>
 #include "ui/dialog/dialog-base.h"
 
 namespace Inkscape {
@@ -24,17 +25,12 @@ public:
     Memory();
     ~Memory() override;
 
-    static Memory &getInstance() { return *new Memory(); }
-
 protected:
     bool _apply(GdkEventButton *);
 
 private:
-    Memory(Memory const &d) = delete; // no copy
-    void operator=(Memory const &d) = delete; // no assign
-
     struct Private;
-    Private &_private;
+    std::unique_ptr<Private> _private;
 };
 
 } // namespace Dialog

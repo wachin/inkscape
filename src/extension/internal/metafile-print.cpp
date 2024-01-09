@@ -40,7 +40,12 @@ PrintMetafile::~PrintMetafile()
     return;
 }
 
-static std::map<Glib::ustring, FontfixParams> _ppt_fixable_fonts = {
+static std::map<Glib::ustring, FontfixParams> const &get_ppt_fixable_fonts()
+{
+    static std::map<Glib::ustring, FontfixParams> _ppt_fixable_fonts;
+
+    if (_ppt_fixable_fonts.empty()) {
+        _ppt_fixable_fonts = {
     // clang-format off
     {{"Arial"},                    { 0.05,  -0.055, -0.065}},
     {{"Times New Roman"},          { 0.05,  -0.055, -0.065}},
@@ -62,7 +67,11 @@ static std::map<Glib::ustring, FontfixParams> _ppt_fixable_fonts = {
     {{"Palatino Linotype"},        { 0.175,  0.125,  0.125}},
     {{"Segoe UI"},                 { 0.1,    0.0,    0.0}},
     // clang-format on
-};
+        };
+    }
+    return _ppt_fixable_fonts;
+}
+
 
 bool PrintMetafile::textToPath(Inkscape::Extension::Print *ext)
 {
@@ -90,8 +99,9 @@ unsigned int PrintMetafile::release(Inkscape::Extension::Print * /*mod*/)
 // Finds font fix parameters for the given fontname.
 void PrintMetafile::_lookup_ppt_fontfix(Glib::ustring const &fontname, FontfixParams &params)
 {
-    auto it = _ppt_fixable_fonts.find(fontname);
-    if (it!=_ppt_fixable_fonts.end()) {
+    auto const &fixable_fonts = get_ppt_fixable_fonts();
+    auto it = fixable_fonts.find(fontname);
+    if (it != fixable_fonts.end()) {
         params = it->second;
     }
 }
@@ -240,7 +250,7 @@ void PrintMetafile::hatch_classify(char *name, int *hatchType, U_COLORREF *hatch
 //    otherwise hatchType is set to -1 and hatchColor is not defined.
 //
 
-void PrintMetafile::brush_classify(SPObject *parent, int depth, Inkscape::Pixbuf **epixbuf, int *hatchType, U_COLORREF *hatchColor, U_COLORREF *bkColor)
+void PrintMetafile::brush_classify(SPObject *parent, int depth, Inkscape::Pixbuf const **epixbuf, int *hatchType, U_COLORREF *hatchColor, U_COLORREF *bkColor)
 {
     if (depth == 0) {
         *epixbuf    = nullptr;
@@ -250,12 +260,8 @@ void PrintMetafile::brush_classify(SPObject *parent, int depth, Inkscape::Pixbuf
     }
     depth++;
     // first look along the pattern chain, if there is one
-    if (SP_IS_PATTERN(parent)) {
-        for (SPPattern *pat_i = SP_PATTERN(parent); pat_i != nullptr; pat_i = pat_i->ref ? pat_i->ref->getObject() : nullptr) {
-            if (SP_IS_IMAGE(pat_i)) {
-                *epixbuf = ((SPImage *)pat_i)->pixbuf;
-                return;
-            }
+    if (is<SPPattern>(parent)) {
+        for (auto pat_i = cast_unsafe<SPPattern>(parent); pat_i; pat_i = pat_i->ref.getObject()) {
             char temp[32];  // large enough
             strncpy(temp, pat_i->getAttribute("id"), sizeof(temp)-1); // Some names may be longer than [EW]MFhatch#_######
             temp[sizeof(temp)-1] = '\0';
@@ -272,8 +278,8 @@ void PrintMetafile::brush_classify(SPObject *parent, int depth, Inkscape::Pixbuf
                 brush_classify(&child, depth, epixbuf, hatchType, hatchColor, bkColor);
             }
         }
-    } else if (SP_IS_IMAGE(parent)) {
-        *epixbuf = ((SPImage *)parent)->pixbuf;
+    } else if (auto img = cast<SPImage>(parent)) {
+        *epixbuf = img->pixbuf.get();
         return;
     } else { // some inkscape rearrangements pass through nodes between pattern and image which are not classified as either.
         for (auto& child: parent->children) {

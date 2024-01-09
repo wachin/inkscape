@@ -21,7 +21,7 @@ namespace LivePathEffect {
 /**
  * Updates the \c boundingbox_X and \c boundingbox_Y values from the geometric bounding box of \c lpeitem.
  *
- * @pre   lpeitem must have an existing geometric boundingbox (usually this is guaranteed when: \code SP_SHAPE(lpeitem)->curve != NULL \endcode )
+ * @pre   lpeitem must have an existing geometric boundingbox (usually this is guaranteed when: \code cast<SPShape>(lpeitem)->curve != NULL \endcode )
  *        It's not possible to run LPEs on items without their original-d having a bbox.
  * @param lpeitem   This is not allowed to be NULL.
  * @param absolute  Determines whether the bbox should be calculated of the untransformed lpeitem (\c absolute = \c false)
@@ -42,11 +42,11 @@ GroupBBoxEffect::clip_mask_bbox(SPLPEItem *item, Geom::Affine transform)
     if(mask_path) {
         bbox.unionWith(mask_path->visualBounds(affine));
     }
-    SPGroup * group = dynamic_cast<SPGroup *>(item);
+    auto group = cast<SPGroup>(item);
     if (group) {
-        std::vector<SPItem*> item_list = sp_item_group_item_list(group);
+        std::vector<SPItem*> item_list = group->item_list();
         for (auto iter : item_list) {
-            SPLPEItem * subitem = dynamic_cast<SPLPEItem *>(iter);
+            auto subitem = cast<SPLPEItem>(iter);
             if (subitem) {
                 bbox.unionWith(clip_mask_bbox(subitem, affine));
             }
@@ -55,7 +55,7 @@ GroupBBoxEffect::clip_mask_bbox(SPLPEItem *item, Geom::Affine transform)
     return bbox;
 }
 
-void GroupBBoxEffect::original_bbox(SPLPEItem const* lpeitem, bool absolute, bool clip_mask)
+void GroupBBoxEffect::original_bbox(SPLPEItem const* lpeitem, bool absolute, bool clip_mask, Geom::Affine base_transform)
 {
     // Get item bounding box
     Geom::Affine transform;
@@ -63,7 +63,7 @@ void GroupBBoxEffect::original_bbox(SPLPEItem const* lpeitem, bool absolute, boo
         transform = lpeitem->i2doc_affine();
     }
     else {
-        transform = Geom::identity();
+        transform = base_transform;
     }
     
     Geom::OptRect bbox = lpeitem->geometricBounds(transform);

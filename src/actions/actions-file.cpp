@@ -18,7 +18,6 @@
 #include "inkscape-application.h"
 
 #include "inkscape.h"             // Inkscape::Application
-#include "helper/action-context.h"
 
 // Actions for file handling (should be integrated with file dialog).
 
@@ -29,20 +28,31 @@ file_open(const Glib::VariantBase& value, InkscapeApplication *app)
 
     Glib::RefPtr<Gio::File> file = Gio::File::create_for_path(s.get());
     if (!file->query_exists()) {
-        std::cerr << "file_open: file '" << s.get() << "' does not exist." << std::endl;
+        show_output(Glib::ustring("file_open: file '") + s.get().raw() + "' does not exist.");
         return;
     }
-
     SPDocument *document = app->document_open(file);
     INKSCAPE.add_document(document);
 
-    Inkscape::ActionContext context = INKSCAPE.action_context_for_document(document);
     app->set_active_document(document);
-    app->set_active_selection(context.getSelection());
-    app->set_active_view(context.getView());
+    app->set_active_selection(document->getSelection());
+    app->set_active_view(nullptr);
 
     document->ensureUpToDate();
 }
+
+void
+file_open_with_window(const Glib::VariantBase& value, InkscapeApplication *app)
+{
+    Glib::Variant<Glib::ustring> s = Glib::VariantBase::cast_dynamic<Glib::Variant<Glib::ustring> >(value);
+    Glib::RefPtr<Gio::File> file = Gio::File::create_for_path(s.get());
+    if (!file->query_exists()) {
+        show_output(Glib::ustring("file_open: file '") + s.get().raw() + "' does not exist.");
+        return;
+    }
+    app->create_window(file);
+}
+
 
 void
 file_new(const Glib::VariantBase& value, InkscapeApplication *app)
@@ -52,21 +62,32 @@ file_new(const Glib::VariantBase& value, InkscapeApplication *app)
     SPDocument *document = app->document_new(s.get());
     INKSCAPE.add_document(document);
 
-    Inkscape::ActionContext context = INKSCAPE.action_context_for_document(document);
     app->set_active_document(document);
-    app->set_active_selection(context.getSelection());
-    app->set_active_view(context.getView());
+    app->set_active_selection(document->getSelection());
+    app->set_active_view(nullptr); // No desktop (yet).
 
     document->ensureUpToDate();
 }
 
-// Need to redo document_revert so that it doesn't depend on windows.
+void
+file_rebase(const Glib::VariantBase& value, InkscapeApplication *app)
+{
+    Glib::Variant<bool> s = Glib::VariantBase::cast_dynamic<Glib::Variant<bool> >(value);
+    SPDocument *document = app->get_active_document();
+    document->rebase(s.get());
+
+    document->ensureUpToDate();
+    Inkscape::DocumentUndo::done(document, _("Replace file contents"), "");
+}
+
+// Need to create a document_revert that doesn't depend on windows.
 // void
 // file_revert(InkscapeApplication *app)
 // {
 //     app->document_revert(app->get_current_document());
 // }
 
+// No checks for dataloss are performed. Useful for scripts.
 void
 file_close(InkscapeApplication *app)
 {
@@ -78,28 +99,24 @@ file_close(InkscapeApplication *app)
     app->set_active_view(nullptr);
 }
 
-// TODO:
-// file_open
-// file_new
-
-// The following might be best tied to the file rather than app.
-// file_revert
-// file_save
-// file_saveas
-// file_saveacopy
-// file_print
-// file_vacuum
-// file_import
-// file_close
-// file_quit ... should just be quit
-// file_template
-
 std::vector<std::vector<Glib::ustring>> raw_data_file =
 {
     // clang-format off
     {"app.file-open",              N_("File Open"),                "File",       N_("Open file")                                         },
     {"app.file-new",               N_("File New"),                 "File",       N_("Open new document using template")                  },
-    {"app.file-close",             N_("File Close"),               "File",       N_("Close active document")                             }
+    {"app.file-close",             N_("File Close"),               "File",       N_("Close active document")                             },
+    {"app.file-open-window",       N_("File Open Window"),         "File",       N_("Open file window")                                  },
+    {"app.file-rebase",            N_("File Contents Replace"),              "File",       N_("Replace current document's contents by contents of another file")                 }
+    // clang-format on
+};
+
+std::vector<std::vector<Glib::ustring>> hint_data_file =
+{
+    // clang-format off
+    {"app.file-open",               N_("Enter file name")},
+    {"app.file-new",                N_("Enter file name")},
+    {"app.file-open-window",        N_("Enter file name")},
+    {"app.file-rebase-from-saved",  N_("Namedview; Update=1, Replace=0")}
     // clang-format on
 };
 
@@ -117,15 +134,18 @@ add_actions_file(InkscapeApplication* app)
     auto *gapp = app->gio_app();
 
     // clang-format off
-    gapp->add_action_with_parameter( "file-open",                 String, sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&file_open),           app));
-    gapp->add_action_with_parameter( "file-new",                  String, sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&file_new),            app));
-    gapp->add_action(                "file-close",                        sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&file_close),          app));
+    gapp->add_action_with_parameter( "file-open",                 String, sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&file_open),               app));
+    gapp->add_action_with_parameter( "file-new",                  String, sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&file_new),                app));
+    gapp->add_action_with_parameter( "file-open-window",          String, sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&file_open_with_window),   app));
+    gapp->add_action(                "file-close",                        sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&file_close),              app));
+    gapp->add_action_with_parameter( "file-rebase",               Bool,   sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&file_rebase),             app));
     // clang-format on
 #else
-    std::cerr << "add_actions: Some actions require Glibmm 2.52, compiled with: " << glib_major_version << "." << glib_minor_version << std::endl;
+            show_output("add_actions: Some actions require Glibmm 2.52, compiled with: " << glib_major_version << "." << glib_minor_version);
 #endif
 
     app->get_action_extra_data().add_data(raw_data_file);
+    app->get_action_hint_data().add_data(hint_data_file);
 }
 
 

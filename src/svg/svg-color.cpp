@@ -507,12 +507,11 @@ sp_svg_create_color_hash()
 }
 
 
-void icc_color_to_sRGB(SVGICCColor* icc, guchar* r, guchar* g, guchar* b)
+void icc_color_to_sRGB(SVGICCColor const* icc, guchar* r, guchar* g, guchar* b)
 {
     if (icc) {
         g_message("profile name: %s", icc->colorProfile.c_str());
-        Inkscape::ColorProfile* prof = SP_ACTIVE_DOCUMENT->getProfileManager()->find(icc->colorProfile.c_str());
-        if ( prof ) {
+        if (auto prof = SP_ACTIVE_DOCUMENT->getProfileManager().find(icc->colorProfile.c_str())) {
             guchar color_out[4] = {0,0,0,0};
             cmsHTRANSFORM trans = prof->getTransfToSRGB8();
             if ( trans ) {
@@ -642,6 +641,23 @@ bool sp_svg_read_icc_color( gchar const *str, SVGICCColor* dest )
     return sp_svg_read_icc_color(str, nullptr, dest);
 }
 
+/**
+ * Reading inkscape colors, for things like namedviews, guides, etc.
+ * Non-CSS / SVG specification formatted. Usually just a number.
+ */
+bool sp_ink_read_opacity(char const *str, guint32 *color, guint32 default_color)
+{
+    *color = (*color & 0xffffff00) | (default_color & 0xff);
+    if (!str) return false;
+
+    gchar *check;
+    gdouble value = g_ascii_strtod(str, &check);
+    if (!check) return false;
+
+    value = CLAMP(value, 0.0, 1.0);
+    *color = (*color & 0xffffff00) | (guint32) floor(value * 255.9999);
+    return true;
+}
 
 /*
   Local Variables:

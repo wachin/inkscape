@@ -35,6 +35,7 @@
 #include "style.h"
 #include <gtkmm/adjustment.h>
 #include <gtkmm/box.h>
+#include <gtkmm/listbox.h>
 #include <gtkmm/popover.h>
 #include <gtkmm/separatortoolitem.h>
 #include <sigc++/connection.h>
@@ -69,6 +70,7 @@ private:
     bool _text_style_from_prefs;
     UI::Widget::UnitTracker *_tracker;
     UI::Widget::UnitTracker *_tracker_fs;
+    Gtk::ListBox* font_collections_list;
 
     UI::Widget::ComboBoxEntryToolItem *_font_family_item;
     UI::Widget::ComboBoxEntryToolItem *_font_size_item;
@@ -105,6 +107,8 @@ private:
     int _cusor_numbers;
     SPStyle _query_cursor;
     double selection_fontsize;
+    auto_connection fc_changed_selection;
+    auto_connection fc_update;
     sigc::connection c_selection_changed;
     sigc::connection c_selection_modified;
     sigc::connection c_selection_modified_select_tool;
@@ -135,7 +139,11 @@ private:
     void subselection_changed(Inkscape::UI::Tools::TextTool* texttool);
     void watch_ec(SPDesktop* desktop, Inkscape::UI::Tools::ToolBase* ec);
     void set_sizes(int unit);
+    void display_font_collections();
+    void on_fcm_button_pressed();
+    void on_reset_button_pressed();
     Inkscape::XML::Node *unindent_node(Inkscape::XML::Node *repr, Inkscape::XML::Node *before);
+    bool mergeDefaultStyle(SPCSSAttr *css);
 
   protected:
     TextToolbar(SPDesktop *desktop);

@@ -42,8 +42,7 @@ LPEInterpolatePoints::LPEInterpolatePoints(LivePathEffectObject *lpeobject)
     registerParameter( &interpolator_type );
 }
 
-LPEInterpolatePoints::~LPEInterpolatePoints()
-= default;
+LPEInterpolatePoints::~LPEInterpolatePoints() = default;
 
 Geom::PathVector
 LPEInterpolatePoints::doEffect_path (Geom::PathVector const & path_in)

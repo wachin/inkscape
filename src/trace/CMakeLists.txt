@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 set(trace_SRC
+	cielab.cpp
 	filterset.cpp
 	imagemap.cpp
 	imagemap-gdk.cpp
@@ -13,6 +14,7 @@ set(trace_SRC
 
 	# -------
 	# Headers
+	cielab.h
 	filterset.h
 	imagemap-gdk.h
 	imagemap.h

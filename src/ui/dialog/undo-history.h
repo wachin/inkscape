@@ -63,7 +63,8 @@ private:
 class CellRendererInt : public Gtk::CellRendererText {
 public:
 
-    struct Filter : std::unary_function<int, bool> {
+    struct Filter
+    {
         virtual ~Filter() = default;
         virtual bool operator() (const int&) const =0;
     };
@@ -105,9 +106,9 @@ private:
 class UndoHistory : public DialogBase
 {
 public:
+    UndoHistory();
     ~UndoHistory() override;
 
-    static UndoHistory &getInstance();
     void documentReplaced() override;
 
 protected:
@@ -132,13 +133,8 @@ protected:
     void _onCollapseEvent(const Gtk::TreeModel::iterator &iter, const Gtk::TreeModel::Path &path);
 
 private:
-    UndoHistory();
-
-    // no default constructor, noncopyable, nonassignable
-    UndoHistory(UndoHistory const &d) = delete;
-    UndoHistory operator=(UndoHistory const &d) = delete;
-
-    struct GreaterThan : CellRendererInt::Filter {
+    struct GreaterThan : CellRendererInt::Filter
+    {
         GreaterThan(int _i) : i (_i) {}
         bool operator() (const int& x) const override { return x > i; }
         int i;

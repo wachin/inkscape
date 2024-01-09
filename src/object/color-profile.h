@@ -41,12 +41,16 @@ class ColorProfileImpl;
 /**
  * Color Profile.
  */
-class ColorProfile : public SPObject {
+class ColorProfile final : public SPObject {
 public:
     ColorProfile();
     ~ColorProfile() override;
+    int tag() const override { return tag_of<decltype(*this)>; }
 
     bool operator<(ColorProfile const &other) const;
+
+    static Glib::ustring getNameFromProfile(cmsHPROFILE profile);
+    static void sanitizeName(std::string &str);
 
     friend cmsHPROFILE colorprofile_get_handle( SPDocument*, unsigned int*, char const* );
     friend class CMSSystem;
@@ -77,6 +81,7 @@ public:
     cmsHTRANSFORM getTransfFromSRGB8();
     cmsHTRANSFORM getTransfGamutCheck();
     bool GamutCheck(SPColor color);
+    int getChannelCount() const;
 
     char* href;
     char* local;
@@ -96,8 +101,6 @@ protected:
 };
 
 } // namespace Inkscape
-
-MAKE_SP_OBJECT_TYPECHECK_FUNCTIONS(IS_COLORPROFILE, Inkscape::ColorProfile)
 
 #endif // !SEEN_COLOR_PROFILE_H
 

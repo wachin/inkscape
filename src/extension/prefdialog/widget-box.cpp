@@ -66,7 +66,7 @@ WidgetBox::WidgetBox(Inkscape::XML::Node *xml, Inkscape::Extension::Extension *e
     }
 }
 
-Gtk::Widget *WidgetBox::get_widget(sigc::signal<void> *changeSignal)
+Gtk::Widget *WidgetBox::get_widget(sigc::signal<void ()> *changeSignal)
 {
     if (_hidden) {
         return nullptr;

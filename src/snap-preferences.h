@@ -30,6 +30,8 @@ public:
     bool isTargetSnappable(Inkscape::SnapTargetType const target1, Inkscape::SnapTargetType const target2, Inkscape::SnapTargetType const target3, Inkscape::SnapTargetType const target4) const;
     bool isTargetSnappable(Inkscape::SnapTargetType const target1, Inkscape::SnapTargetType const target2, Inkscape::SnapTargetType const target3, Inkscape::SnapTargetType const target4, Inkscape::SnapTargetType const target5) const;
     bool isSnapButtonEnabled(Inkscape::SnapTargetType const target) const;
+    bool get_simple_snap(Inkscape::SimpleSnap option) const;
+    void set_simple_snap(Inkscape::SimpleSnap option, bool enable);
 
     SnapTargetType source2target(SnapSourceType source) const;
     bool isSourceSnappable(Inkscape::SnapSourceType const source) const;
@@ -45,11 +47,6 @@ public:
 
     bool getStrictSnapping() const {return _strict_snapping;}
 
-    bool getSnapPerp() const {return _snap_perp;}
-    bool getSnapTang() const {return _snap_tang;}
-    void setSnapPerp(bool enabled) {_snap_perp = enabled;}
-    void setSnapTang(bool enabled) {_snap_tang = enabled;}
-
     double getGridTolerance() const {return _grid_tolerance;}
     double getGuideTolerance() const {return _guide_tolerance;}
     double getObjectTolerance() const {return _object_tolerance;}
@@ -62,6 +59,8 @@ public:
     void setAlignementTolerance(double val) {_alignment_tolerance = val;}
     void setDistributionTolerance(double val) {_distribution_tolerance = val;}
 
+    void setTargetMask(Inkscape::SnapTargetType const target, int enabled = 1);
+    void clearTargetMask(int enabled = -1);
 private:
 
     /**
@@ -84,6 +83,10 @@ private:
 
     int _active_snap_targets[Inkscape::SNAPTARGET_MAX_ENUM_VALUE];
 
+    // Sometimes we want to mask the preferences for specific tools, this
+    // shadow preference allows the code to specify which targets should be used.
+    int _active_mask_targets[Inkscape::SNAPTARGET_MAX_ENUM_VALUE];
+
     bool _snap_enabled_globally; // Toggles ALL snapping
     bool _snap_postponed_globally; // Hold all snapping temporarily when the mouse is moving fast
 
@@ -93,8 +96,7 @@ private:
     //(snapping to grids and guides is not affected by this)
     bool _strict_snapping;
 
-    bool _snap_perp;
-    bool _snap_tang;
+    bool _simple_snapping[static_cast<int>(Inkscape::SimpleSnap::_MaxEnumValue)];
 
     double _grid_tolerance;
     double _guide_tolerance;

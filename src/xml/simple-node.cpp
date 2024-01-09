@@ -26,7 +26,6 @@
 
 #include "preferences.h"
 
-#include "xml/node-event-vector.h"
 #include "xml/node-fns.h"
 #include "debug/event-tracker.h"
 #include "debug/simple-event.h"
@@ -116,62 +115,63 @@ public:
     }
 };
 
-class DebugSetContent : public DebugXMLNode {
+class DebugSetContent : public DebugXMLNode
+{
 public:
-    DebugSetContent(Node const &node,
-                    Util::ptr_shared content)
-    : DebugXMLNode(node, "set-content")
+    DebugSetContent(Node const &node, Util::ptr_shared content)
+        : DebugXMLNode(node, "set-content")
     {
         _addProperty("content", content.pointer());
     }
 };
 
-class DebugClearContent : public DebugXMLNode {
+class DebugClearContent : public DebugXMLNode
+{
 public:
     DebugClearContent(Node const &node)
-    : DebugXMLNode(node, "clear-content")
+        : DebugXMLNode(node, "clear-content")
     {}
 };
 
-class DebugSetAttribute : public DebugXMLNode {
+class DebugSetAttribute : public DebugXMLNode
+{
 public:
-    DebugSetAttribute(Node const &node,
-                      GQuark name,
-                      Util::ptr_shared value)
-    : DebugXMLNode(node, "set-attribute")
+    DebugSetAttribute(Node const &node, GQuark name, Util::ptr_shared value)
+        : DebugXMLNode(node, "set-attribute")
     {
         _addProperty("name", g_quark_to_string(name));
         _addProperty("value", value.pointer());
     }
 };
 
-class DebugClearAttribute : public DebugXMLNode {
+class DebugClearAttribute : public DebugXMLNode
+{
 public:
     DebugClearAttribute(Node const &node, GQuark name)
-    : DebugXMLNode(node, "clear-attribute")
+        : DebugXMLNode(node, "clear-attribute")
     {
         _addProperty("name", g_quark_to_string(name));
     }
 };
 
-class DebugSetElementName : public DebugXMLNode {
+class DebugSetElementName : public DebugXMLNode
+{
 public:
-    DebugSetElementName(Node const& node, GQuark name)
-    : DebugXMLNode(node, "set-name")
+    DebugSetElementName(Node const &node, GQuark name)
+        : DebugXMLNode(node, "set-name")
     {
         _addProperty("name", g_quark_to_string(name));
     }
 };
 
-}
+} // namespace
 
 using Util::ptr_shared;
 using Util::share_string;
 using Util::share_unsafe;
 
 SimpleNode::SimpleNode(int code, Document *document)
-: Node(), _name(code), _attributes(), _child_count(0),
-  _cached_positions_valid(false)
+    : _name(code)
 {
     g_assert(document != nullptr);
 
@@ -183,11 +183,11 @@ SimpleNode::SimpleNode(int code, Document *document)
 }
 
 SimpleNode::SimpleNode(SimpleNode const &node, Document *document)
-: Node(),
-  _cached_position(node._cached_position),
-  _name(node._name), _attributes(), _content(node._content),
-  _child_count(node._child_count),
-  _cached_positions_valid(node._cached_positions_valid)
+    : _cached_position(node._cached_position)
+    , _name(node._name)
+    , _content(node._content)
+    , _child_count(node._child_count)
+    , _cached_positions_valid(node._cached_positions_valid)
 {
     g_assert(document != nullptr);
 
@@ -537,7 +537,7 @@ void SimpleNode::changeOrder(Node *generic_child, Node *generic_ref) {
 
     child->_prev = ref;
     child->_next = next;
-    
+
     if (next) {
         next->_prev = child;
     } else {
@@ -569,61 +569,19 @@ void SimpleNode::setPosition(int pos) {
     _parent->changeOrder(this, ref);
 }
 
-namespace {
-
-void child_added(Node *node, Node *child, Node *ref, void *data) {
-    reinterpret_cast<NodeObserver *>(data)->notifyChildAdded(*node, *child, ref);
-}
-
-void child_removed(Node *node, Node *child, Node *ref, void *data) {
-    reinterpret_cast<NodeObserver *>(data)->notifyChildRemoved(*node, *child, ref);
-}
-
-void content_changed(Node *node, gchar const *old_content, gchar const *new_content, void *data) {
-    reinterpret_cast<NodeObserver *>(data)->notifyContentChanged(*node, Util::share_unsafe((const char *)old_content), Util::share_unsafe((const char *)new_content));
-}
-
-void attr_changed(Node *node, gchar const *name, gchar const *old_value, gchar const *new_value, bool /*is_interactive*/, void *data) {
-    reinterpret_cast<NodeObserver *>(data)->notifyAttributeChanged(*node, g_quark_from_string(name), Util::share_unsafe((const char *)old_value), Util::share_unsafe((const char *)new_value));
-}
-
-void order_changed(Node *node, Node *child, Node *old_ref, Node *new_ref, void *data) {
-    reinterpret_cast<NodeObserver *>(data)->notifyChildOrderChanged(*node, *child, old_ref, new_ref);
-}
-
-const NodeEventVector OBSERVER_EVENT_VECTOR = {
-    &child_added,
-    &child_removed,
-    &attr_changed,
-    &content_changed,
-    &order_changed
-};
-
-};
-
-void SimpleNode::synthesizeEvents(NodeEventVector const *vector, void *data) {
-    if (vector->attr_changed) {
-        for ( const auto & iter : _attributes )
-        {
-            vector->attr_changed(this, g_quark_to_string(iter.key), nullptr, iter.value, false, data);
-        }
+void SimpleNode::synthesizeEvents(NodeObserver &observer)
+{
+    for (auto const &iter : _attributes) {
+        observer.notifyAttributeChanged(*this, iter.key, Util::ptr_shared(), iter.value);
     }
-    if (vector->child_added) {
-        SimpleNode *ref = nullptr;
-        for ( SimpleNode *child = this->_first_child ;
-              child ; child = child->_next )
-        {
-            vector->child_added(this, child, ref, data);
-            ref = child;
-        }
-    }
-    if (vector->content_changed) {
-        vector->content_changed(this, nullptr, this->_content, data);
-    }
-}
 
-void SimpleNode::synthesizeEvents(NodeObserver &observer) {
-    synthesizeEvents(&OBSERVER_EVENT_VECTOR, &observer);
+    SimpleNode *ref = nullptr;
+    for (auto child = this->_first_child; child; child = child->_next) {
+        observer.notifyChildAdded(*this, *child, ref);
+        ref = child;
+    }
+
+    observer.notifyContentChanged(*this, Util::ptr_shared(), this->_content);
 }
 
 void SimpleNode::recursivePrintTree(unsigned level) {
@@ -688,50 +646,49 @@ void SimpleNode::cleanOriginal(Node *src, gchar const *key){
         removeChild(i);
     }
 }
+bool string_equal(const gchar *a,const gchar *b) {
+    return g_strcmp0(a, b) == 0;
+}
 
-bool SimpleNode::equal(Node const *other, bool recursive) {
-    if(strcmp(name(),other->name())!= 0){
+bool SimpleNode::equal(Node const *other, bool recursive, bool skip_ids) {
+    if (!other || !string_equal(name(), other->name())) {
         return false;
     }
-    if (!(strcmp("sodipodi:namedview", name()))) {
-        return true;
-    }
-    guint orig_length = 0;
-    guint other_length = 0;
-
-    if(content() && other->content() && strcmp(content(), other->content()) != 0){
+    if (!string_equal(content(), other->content())) {
         return false;
     }
-    for (auto orig_attr : attributeList()) {
-        for (auto other_attr : other->attributeList()) {
-            const gchar * key_orig = g_quark_to_string(orig_attr.key);
-            const gchar * key_other = g_quark_to_string(other_attr.key);
-            if (!strcmp(key_orig, key_other) && 
-                !strcmp(orig_attr.value, other_attr.value)) 
-            {
-                other_length++;
-                break;
-            }
+    const AttributeVector & orig_attrs = attributeList();
+    const AttributeVector & other_attrs = other->attributeList();
+    size_t sizeorig = orig_attrs.size();
+    size_t sizeother = other_attrs.size();
+    if (sizeother != sizeorig) {
+        return false;
+    }
+    for (size_t i = 0; i < sizeorig; i++) {
+        const gchar * key_orig = g_quark_to_string(orig_attrs[i].key);
+        if (skip_ids && string_equal(key_orig, "id")) {
+            continue;
         }
-        orig_length++;
-    }
-    if (orig_length != other_length) {
-        return false;
+        const gchar * key_other = g_quark_to_string(other_attrs[i].key);
+        if (!string_equal(key_orig, key_other) || 
+            !string_equal(orig_attrs[i].value, other_attrs[i].value) != 0) 
+        {
+            return false;
+        }
     }
     if (recursive) {
         //NOTE: for faster the childs need to be in the same order
         Node const *other_child = other->firstChild();
-        for ( Node *child = firstChild();
-              child; 
-              child = child->next())
-        {
-            if (!child->equal(other_child, recursive)) {
+        Node *child = firstChild();
+        while (child && other_child) {
+            if (!child->equal(other_child, recursive, skip_ids)) {
                 return false;
             }
+            child = child->next();
             other_child = other_child->next();
-            if(!other_child) {
-                return false;
-            }
+        }
+        if ((!child && other_child) || (child && !other_child)) {
+            return false;
         }
     }
     return true;
@@ -741,14 +698,17 @@ void SimpleNode::mergeFrom(Node const *src, gchar const *key, bool extension, bo
     g_return_if_fail(src != nullptr);
     g_return_if_fail(key != nullptr);
     g_assert(src != this);
-
+    
+    Node * srcp = const_cast<Node *>(src);
+    if (srcp->equal(this, true)) {
+        return;
+    }
     setContent(src->content());
     if(_parent) {
         setPosition(src->position());
     }
 
     if (clean) {
-        Node * srcp = const_cast<Node *>(src);
         cleanOriginal(srcp, key);
     }
 

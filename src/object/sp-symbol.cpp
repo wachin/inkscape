@@ -15,15 +15,19 @@
 #include <string>
 #include <glibmm/i18n.h>
 #include <2geom/transforms.h>
+#include <2geom/pathvector.h>
 
 #include "display/drawing-group.h"
 #include "xml/repr.h"
 #include "attributes.h"
 #include "print.h"
 #include "sp-symbol.h"
+#include "sp-use.h"
+#include "svg/svg.h"
 #include "document.h"
 #include "inkscape.h"
 #include "desktop.h"
+#include "layer-manager.h"
 
 SPSymbol::SPSymbol() : SPGroup(), SPViewBox() {
 }
@@ -31,18 +35,62 @@ SPSymbol::SPSymbol() : SPGroup(), SPViewBox() {
 SPSymbol::~SPSymbol() = default;
 
 void SPSymbol::build(SPDocument *document, Inkscape::XML::Node *repr) {
+    this->readAttr(SPAttr::REFX);
+    this->readAttr(SPAttr::REFY);
+    this->readAttr(SPAttr::X);
+    this->readAttr(SPAttr::Y);
+    this->readAttr(SPAttr::WIDTH);
+    this->readAttr(SPAttr::HEIGHT);
     this->readAttr(SPAttr::VIEWBOX);
     this->readAttr(SPAttr::PRESERVEASPECTRATIO);
 
     SPGroup::build(document, repr);
+
+    document->addResource("symbol", this);
 }
 
 void SPSymbol::release() {
+    if (document) {
+        document->removeResource("symbol", this);
+    }
+
 	SPGroup::release();
 }
 
 void SPSymbol::set(SPAttr key, const gchar* value) {
     switch (key) {
+    case SPAttr::REFX:
+        value = Inkscape::refX_named_to_percent(value);
+        this->refX.readOrUnset(value);
+        this->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG);
+        break;
+
+    case SPAttr::REFY:
+        value = Inkscape::refY_named_to_percent(value);
+        this->refY.readOrUnset(value);
+        this->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG);
+        break;
+
+    case SPAttr::X:
+        this->x.readOrUnset(value);
+        this->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG);
+        break;
+
+    case SPAttr::Y:
+        this->y.readOrUnset(value);
+        this->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG);
+        break;
+
+    case SPAttr::WIDTH:
+        this->width.readOrUnset(value, SVGLength::PERCENT, 1.0, 1.0);
+        this->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG);
+        break;
+
+    case SPAttr::HEIGHT:
+        this->height.readOrUnset(value, SVGLength::PERCENT, 1.0, 1.0);
+        this->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG);
+        break;
+
     case SPAttr::VIEWBOX:
         set_viewBox( value );
         // std::cout << "Symbol: ViewBox: " << viewBox << std::endl;
@@ -78,7 +126,7 @@ void SPSymbol::unSymbol()
     //TODO: Better handle if no desktop, currently go to defs without it
     SPDesktop *desktop = SP_ACTIVE_DESKTOP;
     if(desktop && desktop->doc() == doc) {
-        desktop->currentLayer()->getRepr()->appendChild(group);
+        desktop->layerManager().currentLayer()->getRepr()->appendChild(group);
     } else {
         parent->getRepr()->appendChild(group);
     }
@@ -91,7 +139,7 @@ void SPSymbol::unSymbol()
     // group that only adds a transform to the symbol content).
     if( children.size() == 1 ) {
         SPObject *object = children[0];
-        if ( dynamic_cast<SPGroup *>( object ) ) {
+        if (is<SPGroup>( object ) ) {
             if( object->getAttribute("style") == nullptr ||
                 object->getAttribute("class") == nullptr ) {
 
@@ -127,19 +175,52 @@ void SPSymbol::unSymbol()
     Inkscape::GC::release(group);
 }
 
+std::optional<Geom::PathVector> SPSymbol::documentExactBounds() const
+{
+    Geom::PathVector shape;
+    bool is_empty = true;
+    for (auto &child : children) {
+        if (auto const item = cast<SPItem>(&child)) {
+            if (auto bounds = item->documentExactBounds()) {
+                shape.insert(shape.end(), bounds->begin(), bounds->end());
+                is_empty = false;
+            }
+        }
+    }
+    std::optional<Geom::PathVector> result;
+    if (!is_empty) {
+        result = shape * i2doc_affine();
+    }
+    return result;
+}
+
 void SPSymbol::update(SPCtx *ctx, guint flags) {
     if (this->cloned) {
 
         SPItemCtx *ictx = (SPItemCtx *) ctx;
-        SPItemCtx rctx = get_rctx( ictx );
+
+        // Calculate x, y, width, height from parent/initial viewport
+        this->calcDimsFromParentViewport(ictx, false, cast<SPUse>(parent));
+
+        SPItemCtx rctx = *ictx;
+        rctx.viewport = Geom::Rect::from_xywh(x.computed, y.computed, width.computed, height.computed);
+        rctx = get_rctx(&rctx);
+
+        // Shift according to refX, refY
+        if (refX._set && refY._set) {
+            refX.update(1, 1, viewBox.width());
+            refY.update(1, 1, viewBox.height());
+            auto ref = Geom::Point(refX.computed, refY.computed) * c2p;
+            c2p *= Geom::Translate(-ref);
+        }
 
         // And invoke parent method
         SPGroup::update((SPCtx *) &rctx, flags);
 
         // As last step set additional transform of drawing group
-        for (SPItemView *v = this->display; v != nullptr; v = v->next) {
-        	Inkscape::DrawingGroup *g = dynamic_cast<Inkscape::DrawingGroup *>(v->arenaitem);
-        	g->setChildTransform(this->c2p);
+        for (auto &v : views) {
+            auto g = cast<Inkscape::DrawingGroup>(v.drawingitem.get());
+            g->setChildTransform(this->c2p);
         }
     } else {
         // No-op
@@ -157,26 +238,31 @@ Inkscape::XML::Node* SPSymbol::write(Inkscape::XML::Document *xml_doc, Inkscape:
         repr = xml_doc->createElement("svg:symbol");
     }
 
-    //XML Tree being used directly here while it shouldn't be.
-    repr->setAttribute("viewBox", this->getRepr()->attribute("viewBox"));
-	
-    //XML Tree being used directly here while it shouldn't be.
-    repr->setAttribute("preserveAspectRatio", this->getRepr()->attribute("preserveAspectRatio"));
+    if (refX._set) {
+        repr->setAttribute("refX", sp_svg_length_write_with_units(refX));
+    }
+    if (refY._set) {
+        repr->setAttribute("refY", sp_svg_length_write_with_units(refY));
+    }
+
+    this->writeDimensions(repr);
+    this->write_viewBox(repr);
+    this->write_preserveAspectRatio(repr);
 
     SPGroup::write(xml_doc, repr, flags);
 
     return repr;
 }
 
-Inkscape::DrawingItem* SPSymbol::show(Inkscape::Drawing &drawing, unsigned int key, unsigned int flags) {
+Inkscape::DrawingItem* SPSymbol::show(Inkscape::Drawing &drawing, unsigned int key, unsigned int flags)
+{
     Inkscape::DrawingItem *ai = nullptr;
 
-    if (this->cloned) {
+    if (cloned) {
         // Cloned <symbol> is actually renderable
         ai = SPGroup::show(drawing, key, flags);
-        Inkscape::DrawingGroup *g = dynamic_cast<Inkscape::DrawingGroup *>(ai);
 
-		if (g) {
+        if (auto g = cast<Inkscape::DrawingGroup>(ai)) {
 			g->setChildTransform(this->c2p);
 		}
     }
@@ -192,17 +278,10 @@ void SPSymbol::hide(unsigned int key) {
 }
 
 
-Geom::OptRect SPSymbol::bbox(Geom::Affine const &transform, SPItem::BBoxType type) const {
-    Geom::OptRect bbox;
-
-    // We don't need a bounding box for Symbols dialog when selecting
-    // symbols. They have no canvas location. But cloned symbols are.
-    if (this->cloned) {
-    	Geom::Affine const a( this->c2p * transform );
-    	bbox = SPGroup::bbox(a, type);
-    }
-
-    return bbox;
+Geom::OptRect SPSymbol::bbox(Geom::Affine const &transform, SPItem::BBoxType type) const
+{
+    Geom::Affine const a = cloned ? c2p * transform : Geom::identity();
+    return SPGroup::bbox(a, type);
 }
 
 void SPSymbol::print(SPPrintContext* ctx) {

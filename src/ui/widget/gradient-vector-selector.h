@@ -46,7 +46,7 @@ class GradientVectorSelector : public Gtk::Box {
     sigc::connection _defs_modified_connection;
     sigc::connection _tree_select_connection;
 
-    sigc::signal<void, SPGradient *> _signal_vector_set;
+    sigc::signal<void (SPGradient *)> _signal_vector_set;
 
     void gradient_release(SPObject *obj);
     void defs_release(SPObject *defs);

@@ -10,21 +10,21 @@ set(ui_SRC
 	icon-loader.cpp
 	interface.cpp
 	monitor.cpp
-	previewholder.cpp
 	selected-color.cpp
 	shape-editor.cpp
 	shape-editor-knotholders.cpp
 	simple-pref-pusher.cpp
 	shortcuts.cpp
 	svg-renderer.cpp
+	syntax.cpp
 	themes.cpp
 	tool-factory.cpp
 	util.cpp
-	uxmanager.cpp
 	modifiers.cpp
 
 	cache/svg_preview_cache.cpp
 
+	desktop/document-check.cpp
 	desktop/menubar.cpp
 	desktop/menu-icon-shift.cpp
 
@@ -42,7 +42,6 @@ set(ui_SRC
 	tool/node.cpp
 	tool/path-manipulator.cpp
 	tool/selectable-control-point.cpp
-	tool/selector.cpp
 	tool/transform-handle-set.cpp
 
 	toolbar/arc-toolbar.cpp
@@ -50,16 +49,19 @@ set(ui_SRC
 	toolbar/calligraphy-toolbar.cpp
 	toolbar/connector-toolbar.cpp
 	toolbar/dropper-toolbar.cpp
+	toolbar/marker-toolbar.cpp
 	toolbar/eraser-toolbar.cpp
 	toolbar/gradient-toolbar.cpp
 	toolbar/lpe-toolbar.cpp
 	toolbar/measure-toolbar.cpp
 	toolbar/mesh-toolbar.cpp
 	toolbar/node-toolbar.cpp
+	toolbar/page-toolbar.cpp
 	toolbar/paintbucket-toolbar.cpp
 	toolbar/pencil-toolbar.cpp
 	toolbar/rect-toolbar.cpp
 	toolbar/select-toolbar.cpp
+	toolbar/booleans-toolbar.cpp
 	toolbar/spiral-toolbar.cpp
 	toolbar/spray-toolbar.cpp
 	toolbar/star-toolbar.cpp
@@ -82,10 +84,15 @@ set(ui_SRC
 	tools/measure-tool.cpp
 	tools/mesh-tool.cpp
 	tools/node-tool.cpp
+	tools/pages-tool.cpp
 	tools/pencil-tool.cpp
 	tools/pen-tool.cpp
 	tools/rect-tool.cpp
+	tools/marker-tool.cpp
 	tools/select-tool.cpp
+	tools/booleans-builder.cpp
+	tools/booleans-tool.cpp
+	tools/booleans-subitems.cpp
 	tools/spiral-tool.cpp
 	tools/spray-tool.cpp
 	tools/star-tool.cpp
@@ -104,18 +111,25 @@ set(ui_SRC
 	dialog/debug.cpp
 	dialog/dialog-base.cpp
 	dialog/dialog-container.cpp
+	dialog/dialog-data.cpp
 	dialog/dialog-manager.cpp
 	dialog/dialog-multipaned.cpp
 	dialog/dialog-notebook.cpp
 	dialog/dialog-window.cpp
 	dialog/document-properties.cpp
+	dialog/document-resources.cpp
 	dialog/export.cpp
+	dialog/export-batch.cpp
+	dialog/export-single.cpp
 	dialog/filedialog.cpp
 	dialog/filedialogimpl-gtkmm.cpp
 	dialog/fill-and-stroke.cpp
 	dialog/filter-effects-dialog.cpp
 	dialog/find.cpp
+	dialog/font-collections-manager.cpp
+	widget/font-collection-selector.cpp
 	dialog/font-substitution.cpp
+	dialog/global-palettes.cpp
 	dialog/glyphs.cpp
 	dialog/grid-arrange-tab.cpp
 	dialog/guides.cpp
@@ -124,7 +138,6 @@ set(ui_SRC
 	dialog/input.cpp
 	dialog/knot-properties.cpp
 	dialog/layer-properties.cpp
-	dialog/layers.cpp
 	dialog/livepatheffect-add.cpp
 	dialog/livepatheffect-editor.cpp
 	dialog/lpe-fillet-chamfer-properties.cpp
@@ -146,8 +159,6 @@ set(ui_SRC
 	dialog/swatches.cpp
 	dialog/symbols.cpp
 	dialog/paint-servers.cpp
-	dialog/template-load-tab.cpp
-	dialog/template-widget.cpp
 	dialog/text-edit.cpp
 	dialog/tile.cpp
 	dialog/tracedialog.cpp
@@ -159,23 +170,38 @@ set(ui_SRC
 	widget/iconrenderer.cpp
 	widget/alignment-selector.cpp
 	widget/anchor-selector.cpp
-	widget/button.cpp
+	widget/completion-popup.cpp
 	widget/canvas.cpp
+	widget/canvas/stores.cpp
+	widget/canvas/synchronizer.cpp
+	widget/canvas/util.cpp
+	widget/canvas/texture.cpp
+	widget/canvas/texturecache.cpp
+	widget/canvas/pixelstreamer.cpp
+	widget/canvas/updaters.cpp
+	widget/canvas/framecheck.cpp
+	widget/canvas/glgraphics.cpp
+	widget/canvas/cairographics.cpp
+	widget/canvas/graphics.cpp
 	widget/canvas-grid.cpp
+	widget/canvas-notice.cpp
 	widget/color-entry.cpp
 	widget/color-icc-selector.cpp
 	widget/color-notebook.cpp
 	widget/color-palette.cpp
 	widget/color-picker.cpp
-	widget/color-preview.cpp	icon-loader.cpp
+	widget/color-preview.cpp
+	icon-loader.cpp
 	widget/color-scales.cpp
 	widget/color-slider.cpp
-	widget/color-wheel-selector.cpp
 	widget/combo-box-entry-tool-item.cpp
 	widget/combo-tool-item.cpp
+	widget/custom-tooltip.cpp
 	widget/dash-selector.cpp
 	widget/entity-entry.cpp
 	widget/entry.cpp
+	widget/export-lists.cpp
+	widget/export-preview.cpp
 	widget/filter-effect-chooser.cpp
 	widget/fill-style.cpp
 	widget/font-button.cpp
@@ -189,9 +215,9 @@ set(ui_SRC
 	widget/gradient-selector.cpp
 	widget/gradient-vector-selector.cpp
 	widget/gradient-with-stops.cpp
+	widget/image-properties.cpp
 	widget/imagetoggler.cpp
 	widget/ink-color-wheel.cpp
-	widget/ink-flow-box.cpp
 	widget/ink-ruler.cpp
 	widget/ink-spinscale.cpp
 	widget/label-tool-item.cpp
@@ -201,11 +227,16 @@ set(ui_SRC
 	widget/marker-combo-box.cpp
 	widget/notebook-page.cpp
 	widget/object-composite-settings.cpp
-	widget/page-sizer.cpp
+	widget/objects-dialog-cells.cpp
+	widget/oklab-color-wheel.cpp
+	widget/optglarea.cpp
+	widget/page-properties.cpp
+	widget/page-size-preview.cpp
+	widget/page-selector.cpp
 	widget/paint-selector.cpp
+	widget/pattern-editor.cpp
 	widget/point.cpp
 	widget/preferences-widget.cpp
-	widget/preview.cpp
 	widget/random.cpp
 	widget/registered-widget.cpp
 	widget/registry.cpp
@@ -218,12 +249,12 @@ set(ui_SRC
 	widget/shapeicon.cpp
 	widget/spin-button-tool-item.cpp
 	widget/spin-scale.cpp
-	widget/spin-slider.cpp
 	widget/spinbutton.cpp
 	widget/stroke-style.cpp
 	widget/style-subject.cpp
 	widget/style-swatch.cpp
 	widget/swatch-selector.cpp
+	widget/template-list.cpp
 	widget/text.cpp
 	widget/tolerance-slider.cpp
 	widget/unit-menu.cpp
@@ -245,24 +276,24 @@ set(ui_SRC
 	drag-and-drop.h
 	draw-anchor.h
 	event-debug.h
+	filtered-store.h
 	icon-names.h
 	icon-loader.h
 	interface.h
 	monitor.h
-	previewable.h
-	previewholder.h
 	selected-color.h
 	shape-editor.h
 	simple-pref-pusher.h
 	shortcuts.h
+	syntax.h
 	themes.h
 	tool-factory.h
 	util.h
-	uxmanager.h
 	modifiers.h
 
 	cache/svg_preview_cache.h
 
+	desktop/document-check.h
 	desktop/menubar.h
 	desktop/menu-icon-shift.h
 
@@ -284,13 +315,17 @@ set(ui_SRC
 	dialog/dialog-window.h
 	dialog/document-properties.h
 	dialog/export.h
+	dialog/export-batch.h
+	dialog/export-single.h
 	dialog/filedialog.h
 	dialog/filedialogimpl-gtkmm.h
 	dialog/filedialogimpl-win32.h
 	dialog/fill-and-stroke.h
 	dialog/filter-effects-dialog.h
 	dialog/find.h
+	dialog/font-collections-manager.h
 	dialog/font-substitution.h
+	dialog/global-palettes.h
 	dialog/glyphs.h
 	dialog/grid-arrange-tab.h
 	dialog/guides.h
@@ -299,7 +334,6 @@ set(ui_SRC
 	dialog/input.h
 	dialog/knot-properties.h
 	dialog/layer-properties.h
-	dialog/layers.h
 	dialog/livepatheffect-add.h
 	dialog/livepatheffect-editor.h
 	dialog/lpe-fillet-chamfer-properties.h
@@ -321,8 +355,6 @@ set(ui_SRC
 	dialog/swatches.h
 	dialog/symbols.h
 	dialog/paint-servers.h
-	dialog/template-load-tab.h
-	dialog/template-widget.h
 	dialog/text-edit.h
 	dialog/tile.h
 	dialog/tracedialog.h
@@ -349,7 +381,6 @@ set(ui_SRC
 	tool/node.h
 	tool/path-manipulator.h
 	tool/selectable-control-point.h
-	tool/selector.h
 	tool/shape-record.h
 	tool/transform-handle-set.h
 
@@ -358,16 +389,19 @@ set(ui_SRC
 	toolbar/calligraphy-toolbar.h
 	toolbar/connector-toolbar.h
 	toolbar/dropper-toolbar.h
+	toolbar/marker-toolbar.h
 	toolbar/eraser-toolbar.h
 	toolbar/gradient-toolbar.h
 	toolbar/lpe-toolbar.h
 	toolbar/measure-toolbar.h
 	toolbar/mesh-toolbar.h
 	toolbar/node-toolbar.h
+	toolbar/page-toolbar.h
 	toolbar/paintbucket-toolbar.h
 	toolbar/pencil-toolbar.h
 	toolbar/rect-toolbar.h
 	toolbar/select-toolbar.h
+	toolbar/booleans-toolbar.h
 	toolbar/spiral-toolbar.h
 	toolbar/spray-toolbar.h
 	toolbar/star-toolbar.h
@@ -390,10 +424,15 @@ set(ui_SRC
 	tools/measure-tool.h
 	tools/mesh-tool.h
 	tools/node-tool.h
+	tools/pages-tool.h
 	tools/pen-tool.h
 	tools/pencil-tool.h
 	tools/rect-tool.h
+	tools/marker-tool.h
 	tools/select-tool.h
+	tools/booleans-builder.h
+	tools/booleans-tool.h
+	tools/booleans-subitems.h
 	tools/spiral-tool.h
 	tools/spray-tool.h
 	tools/star-tool.h
@@ -406,9 +445,23 @@ set(ui_SRC
 	widget/alignment-selector.h
 	widget/anchor-selector.h
 	widget/attr-widget.h
-	widget/button.h
 	widget/canvas.h
+	widget/canvas/fragment.h
+	widget/canvas/prefs.h
+	widget/canvas/stores.h
+	widget/canvas/synchronizer.h
+	widget/canvas/util.h
+	widget/canvas/texture.h
+	widget/canvas/texturecache.h
+	widget/canvas/graphics.h
+	widget/canvas/pixelstreamer.h
+	widget/canvas/updaters.h
+	widget/canvas/framecheck.h
+	widget/canvas/glgraphics.h
+	widget/canvas/cairographics.h
 	widget/canvas-grid.h
+        widget/canvas-notice.h
+	widget/completion-popup.h
 	widget/color-entry.h
 	widget/color-icc-selector.h
 	widget/color-notebook.h
@@ -417,16 +470,19 @@ set(ui_SRC
 	widget/color-preview.h
 	widget/color-scales.h
 	widget/color-slider.h
-	widget/color-wheel-selector.h
 	widget/combo-enums.h
 	widget/combo-box-entry-tool-item.h
 	widget/combo-tool-item.h
+	widget/custom-tooltip.h
 	widget/dash-selector.h
 	widget/entity-entry.h
 	widget/entry.h
+	widget/export-lists.h
+	widget/export-preview.h
 	widget/fill-style.h
 	widget/filter-effect-chooser.h
 	widget/font-button.h
+	widget/font-collection-selector.h
 	widget/font-selector.h
 	widget/font-selector-toolbar.h
 	widget/font-variants.h
@@ -437,9 +493,9 @@ set(ui_SRC
 	widget/gradient-selector.h
 	widget/gradient-vector-selector.h
 	widget/gradient-with-stops.h
+	widget/image-properties.h
 	widget/imagetoggler.h
 	widget/ink-color-wheel.h
-	widget/ink-flow-box.h
 	widget/ink-ruler.h
 	widget/ink-spinscale.h
 	widget/label-tool-item.h
@@ -449,12 +505,14 @@ set(ui_SRC
 	widget/marker-combo-box.h
 	widget/notebook-page.h
 	widget/object-composite-settings.h
-	widget/page-sizer.h
-	widget/pages-skeleton.h
+	widget/objects-dialog-cells.h
+	widget/oklab-color-wheel.h
+	widget/optglarea.h
+	widget/page-selector.h
 	widget/paint-selector.h
+	widget/pattern-editor.h
 	widget/point.h
 	widget/preferences-widget.h
-	widget/preview.h
 	widget/random.h
 	widget/registered-enums.h
 	widget/registered-widget.h
@@ -469,12 +527,12 @@ set(ui_SRC
 	widget/shapeicon.h
 	widget/spin-button-tool-item.h
 	widget/spin-scale.h
-	widget/spin-slider.h
 	widget/spinbutton.h
 	widget/stroke-style.h
 	widget/style-subject.h
 	widget/style-swatch.h
 	widget/swatch-selector.h
+	widget/template-list.h
 	widget/text.h
 	widget/tolerance-slider.h
 	widget/unit-menu.h

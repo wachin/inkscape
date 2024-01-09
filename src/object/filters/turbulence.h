@@ -18,39 +18,31 @@
 #include "number-opt-number.h"
 #include "display/nr-filter-turbulence.h"
 
-#define SP_FETURBULENCE(obj) (dynamic_cast<SPFeTurbulence*>((SPObject*)obj))
-#define SP_IS_FETURBULENCE(obj) (dynamic_cast<const SPFeTurbulence*>((SPObject*)obj) != NULL)
-
-/* FeTurbulence base class */
-
-class SPFeTurbulence : public SPFilterPrimitive {
+class SPFeTurbulence final
+    : public SPFilterPrimitive
+{
 public:
-	SPFeTurbulence();
-	~SPFeTurbulence() override;
+    int tag() const override { return tag_of<decltype(*this)>; }
 
-    /** TURBULENCE ATTRIBUTES HERE */
+private:
+    int numOctaves = 0;
+    double seed = 0.0f;
+    bool stitchTiles = false;
+    Inkscape::Filters::FilterTurbulenceType type = Inkscape::Filters::TURBULENCE_FRACTALNOISE;
+    bool updated = false;
+
     NumberOptNumber baseFrequency;
-    int numOctaves;
-    double seed;
-    bool stitchTiles;
-    Inkscape::Filters::FilterTurbulenceType type;
     SVGLength x, y, height, width;
-    bool updated;
 
 protected:
-	void build(SPDocument* doc, Inkscape::XML::Node* repr) override;
-	void release() override;
+    void build(SPDocument *doc, Inkscape::XML::Node *repr) override;
+    void set(SPAttr key, char const *value) override;
+    Inkscape::XML::Node *write(Inkscape::XML::Document *doc, Inkscape::XML::Node *repr, unsigned flags) override;
 
-	void set(SPAttr key, const gchar* value) override;
-
-	void update(SPCtx* ctx, unsigned int flags) override;
-
-	Inkscape::XML::Node* write(Inkscape::XML::Document* doc, Inkscape::XML::Node* repr, guint flags) override;
-
-	void build_renderer(Inkscape::Filters::Filter* filter) override;
+    std::unique_ptr<Inkscape::Filters::FilterPrimitive> build_renderer(Inkscape::DrawingItem *item) const override;
 };
 
-#endif /* !SP_FETURBULENCE_H_SEEN */
+#endif // SP_FETURBULENCE_H_SEEN
 
 /*
   Local Variables:

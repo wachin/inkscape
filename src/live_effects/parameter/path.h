@@ -33,10 +33,12 @@ public:
     ~PathParam() override;
 
     Geom::PathVector const & get_pathvector() const;
+    void reload();
+    Geom::Affine get_relative_affine();
     Geom::Piecewise<Geom::D2<Geom::SBasis> > const & get_pwd2();
 
     Gtk::Widget * param_newWidget() override;
-
+    std::vector<SPObject *> param_get_satellites() override;
     bool param_readSVGValue(const gchar * strvalue) override;
     Glib::ustring param_getSVGValue() const override;
     Glib::ustring param_getDefaultSVGValue() const override;
@@ -54,14 +56,15 @@ public:
     void param_transform_multiply(Geom::Affine const &postmul, bool set) override;
     void setFromOriginalD(bool from_original_d){ _from_original_d = from_original_d; };
 
-    sigc::signal <void> signal_path_pasted;
-    sigc::signal <void> signal_path_changed;
+    sigc::signal<void ()> signal_path_pasted;
+    sigc::signal<void ()> signal_path_changed;
     bool changed; /* this gets set whenever the path is changed (this is set to true, and then the signal_path_changed signal is emitted).
                    * the user must set it back to false if she wants to use it sensibly */
-
+    SPObject * getObject() const { if (ref.isAttached()) {return ref.getObject();} return nullptr;}
     void paste_param_path(const char *svgd);
     void on_paste_button_click();
     void linkitem(Glib::ustring pathid);
+    ParamType paramType() const override { return ParamType::PATH; };
 
 protected:
     Geom::PathVector _pathvector;   // this is primary data storage, since it is closest to SVG.
@@ -72,19 +75,27 @@ protected:
 
     gchar * href;     // contains link to other object, e.g. "#path2428", NULL if PathParam contains pathdata itself
     PathReference ref;
+    friend class LPEFillBetweenStrokes;
+    friend class LPEPatternAlongPath;
+    friend class LPEBendPath;
+    friend class LPECurveStitch;
+    friend class LPEAttachPath;
+    friend class LPEEnvelope;
+    friend class LPEBoundingBox;
+    friend class LPEInterpolate;
+    friend class LPEVonKoch;
     sigc::connection ref_changed_connection;
-    sigc::connection linked_delete_connection;
+    sigc::connection linked_deleted_connection;
     sigc::connection linked_modified_connection;
     sigc::connection linked_transformed_connection;
     void ref_changed(SPObject *old_ref, SPObject *new_ref);
-    void remove_link();
+    void unlink();
     void start_listening(SPObject * to);
     void quit_listening();
-    void linked_delete(SPObject *deleted);
+    void linked_deleted(SPObject *deleted);
     void linked_modified(SPObject *linked_obj, guint flags);
     void linked_transformed(Geom::Affine const *rel_transf, SPItem *moved_item);
     virtual void linked_modified_callback(SPObject *linked_obj, guint flags);
-    virtual void linked_transformed_callback(Geom::Affine const * /*rel_transf*/, SPItem * /*moved_item*/) {};
 
     void on_edit_button_click();
     void on_copy_button_click();
@@ -99,6 +110,7 @@ private:
     bool _copy_button;
     bool _paste_button;
     bool _link_button;
+    
     PathParam(const PathParam&) = delete;
     PathParam& operator=(const PathParam&) = delete;
 };

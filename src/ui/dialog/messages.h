@@ -38,8 +38,6 @@ public:
     Messages();
     ~Messages() override;
 
-    static Messages &getInstance() { return *new Messages(); }
-
     /**
      * Clear all information from the dialog
      */
@@ -78,10 +76,6 @@ protected:
     guint handlerPangomm;
     guint handlerGdkmm;
     guint handlerGtkmm;
-
-private:
-    Messages(Messages const &d) = delete;
-    Messages operator=(Messages const &d) = delete;
 };
 
 } //namespace Dialog

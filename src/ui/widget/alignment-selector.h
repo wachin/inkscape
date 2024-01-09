@@ -22,14 +22,14 @@ private:
     Gtk::Button _buttons[9];
     Gtk::Grid   _container;
 
-    sigc::signal<void, int> _alignmentClicked;
+    sigc::signal<void (int)> _alignmentClicked;
 
     void setupButton(const Glib::ustring &icon, Gtk::Button &button);
     void btn_activated(int index);
 
 public:
 
-    sigc::signal<void, int> &on_alignmentClicked() { return _alignmentClicked; }
+    sigc::signal<void (int)> &on_alignmentClicked() { return _alignmentClicked; }
 
     AlignmentSelector();
     ~AlignmentSelector() override;

@@ -32,6 +32,9 @@
 /* Define to 1 if you have the <ieeefp.h> header file. */
 #cmakedefine HAVE_IEEEFP_H 1
 
+/* Define to 1 if you have the `mallinfo2' function. */
+#cmakedefine HAVE_MALLINFO2 1
+
 /* Define to 1 if you have the `mallinfo' function. */
 #cmakedefine HAVE_MALLINFO 1
 
@@ -65,11 +68,11 @@
 /* Define to 1 if `usmblks' is member of `struct mallinfo'. */
 #cmakedefine HAVE_STRUCT_MALLINFO_USMBLKS 1
 
-/* Build in dbus */
-#cmakedefine WITH_DBUS 1
-
 /* enable gtk spelling widget and built-in spellchecker */
 #cmakedefine WITH_GSPELL 1
+
+/* enable gtk syntax coloring text view widget */
+#cmakedefine WITH_GSOURCEVIEW 1
 
 /* Image/Graphics Magick++ support for bitmap effects */
 #cmakedefine WITH_MAGICK 1

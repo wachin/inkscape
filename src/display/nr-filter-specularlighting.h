@@ -21,28 +21,28 @@ class SPFeDistantLight;
 class SPFePointLight;
 class SPFeSpotLight;
 struct SVGICCColor;
-typedef unsigned int guint32;
 
 namespace Inkscape {
 namespace Filters {
 
 class FilterSlot;
 
-class FilterSpecularLighting : public FilterPrimitive {
+class FilterSpecularLighting : public FilterPrimitive
+{
 public:
     FilterSpecularLighting();
-    static FilterPrimitive *create();
     ~FilterSpecularLighting() override;
 
-    void render_cairo(FilterSlot &slot) override;
-    virtual void set_icc(SVGICCColor *icc_color);
-    void area_enlarge(Geom::IntRect &area, Geom::Affine const &trans) override;
-    double complexity(Geom::Affine const &ctm) override;
+    void render_cairo(FilterSlot &slot) const override;
+    void set_icc(SVGICCColor const &icc_) { icc = icc_; }
+    void area_enlarge(Geom::IntRect &area, Geom::Affine const &trans) const override;
+    double complexity(Geom::Affine const &ctm) const override;
 
-    union {
-        SPFeDistantLight *distant;
-        SPFePointLight *point;
-        SPFeSpotLight *spot;
+    union
+    {
+        DistantLightData distant;
+        PointLightData point;
+        SpotLightData spot;
     } light;
     LightType light_type;
     double surfaceScale;
@@ -50,16 +50,16 @@ public:
     double specularExponent;
     guint32 lighting_color;
 
-    Glib::ustring name() override { return Glib::ustring("Specular Lighting"); }
+    Glib::ustring name() const override { return Glib::ustring("Specular Lighting"); }
 
 private:
-    SVGICCColor *icc;
+    std::optional<SVGICCColor> icc;
 };
 
-} /* namespace Filters */
-} /* namespace Inkscape */
+} // namespace Filters
+} // namespace Inkscape
 
-#endif /* __NR_FILTER_SPECULARLIGHTING_H__ */
+#endif // SEEN_NR_FILTER_SPECULARLIGHTING_H
 /*
   Local Variables:
   mode:c++

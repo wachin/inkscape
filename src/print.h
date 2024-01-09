@@ -27,6 +27,7 @@ class Window;
 }
 
 class SPDocument;
+class SPItem;
 class SPStyle;
 
 namespace Inkscape {
@@ -39,6 +40,7 @@ class Print;
 
 struct SPPrintContext {
     Inkscape::Extension::Print *module;
+    SPItem *context_item = nullptr;
 
     unsigned int bind(Geom::Affine const &transform, float opacity);
     unsigned int release();
@@ -54,6 +56,7 @@ struct SPPrintContext {
                                SPStyle const *style);
 
     void get_param(char *name, bool *value);
+
 };
 
 

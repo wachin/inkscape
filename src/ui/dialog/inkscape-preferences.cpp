@@ -14,9 +14,23 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
+#include <glibmm/ustring.h>
+#include <gtkmm/dialog.h>
+#include <gtkmm/entry.h>
+#include <gtkmm/fontbutton.h>
+#include <gtkmm/fontchooserdialog.h>
+#include <gtkmm/widget.h>
 #ifdef HAVE_CONFIG_H
 # include "config.h"  // only include where actually required!
 #endif
+
+#include <gtkmm/box.h>
+#include <gtkmm/enums.h>
+#include <gtkmm/image.h>
+#include <gtkmm/label.h>
+#include <gtkmm/object.h>
+#include <gtkmm/togglebutton.h>
+#include "ui/widget/color-scales.h"
 
 #include "inkscape-preferences.h"
 
@@ -44,9 +58,8 @@
 #include "selection-chemistry.h"
 #include "selection.h"
 #include "style.h"
-#include "verbs.h"
 
-#include "display/control/canvas-grid.h"
+#include "display/control/canvas-item-grid.h"
 #include "display/nr-filter-gaussian.h"
 
 #include "extension/internal/gdkpixbuf-input.h"
@@ -61,11 +74,18 @@
 #include "ui/interface.h"
 #include "ui/shortcuts.h"
 #include "ui/modifiers.h"
+#include "ui/util.h"
 #include "ui/widget/style-swatch.h"
 #include "ui/widget/canvas.h"
 #include "ui/themes.h"
+#include "ui/builder-utils.h"
+
+#include "util/trim.h"
+#include "util/recently-used-fonts.h"
 
 #include "widgets/desktop-widget.h"
+#include "widgets/toolbox.h"
+#include "widgets/spw-utilities.h"
 
 #include <gtkmm/accelgroup.h>
 
@@ -76,6 +96,10 @@
 # endif
 #endif
 
+#if WITH_GSOURCEVIEW
+#   include <gtksourceview/gtksource.h>
+#endif
+
 namespace Inkscape {
 namespace UI {
 namespace Dialog {
@@ -83,13 +107,21 @@ namespace Dialog {
 using Inkscape::UI::Widget::DialogPage;
 using Inkscape::UI::Widget::PrefCheckButton;
 using Inkscape::UI::Widget::PrefRadioButton;
+using Inkscape::UI::Widget::PrefItem;
+using Inkscape::UI::Widget::PrefRadioButtons;
 using Inkscape::UI::Widget::PrefSpinButton;
 using Inkscape::UI::Widget::StyleSwatch;
 using Inkscape::CMSSystem;
+using Inkscape::IO::Resource::get_filename;
+using Inkscape::IO::Resource::UIS;
 
-#define REMOVE_SPACES(x)                                                                                               \
-    x.erase(0, x.find_first_not_of(' '));                                                                              \
-    x.erase(x.find_last_not_of(' ') + 1);
+std::function<Gtk::Image*()> reset_icon = []() {
+    auto image = Gtk::make_managed<Gtk::Image>();
+    image->set_from_icon_name("reset", Gtk::ICON_SIZE_BUTTON);
+    image->set_opacity(0.6);
+    image->set_tooltip_text(_("Requires restart to take effect"));
+    return image;
+};
 
 /**
  * Case-insensitive and unicode normalized search of `pattern` in `string`.
@@ -149,6 +181,32 @@ static int get_num_matches(Glib::ustring const &key, Gtk::Widget *widget)
         }
     }
     return matches;
+}
+
+// Shortcuts model =============
+
+class ModelColumns: public Gtk::TreeModel::ColumnRecord {
+public:
+    ModelColumns() {
+        add(name);
+        add(id);
+        add(shortcut);
+        add(description);
+        add(shortcutkey);
+        add(user_set);
+    }
+    ~ModelColumns() override = default;
+
+    Gtk::TreeModelColumn<Glib::ustring> name;
+    Gtk::TreeModelColumn<Glib::ustring> id;
+    Gtk::TreeModelColumn<Glib::ustring> shortcut;
+    Gtk::TreeModelColumn<Glib::ustring> description;
+    Gtk::TreeModelColumn<Gtk::AccelKey> shortcutkey;
+    Gtk::TreeModelColumn<unsigned int> user_set;
+};
+ModelColumns _kb_columns;
+static ModelColumns& onKBGetCols() {
+    return _kb_columns;
 }
 
 /**
@@ -228,6 +286,7 @@ InkscapePreferences::InkscapePreferences()
     scrolled_window->add(_page_list);
     scrolled_window->set_vexpand_set(true);
     scrolled_window->set_vexpand(true);
+    scrolled_window->set_shadow_type(Gtk::SHADOW_IN);
     _page_list_model = Gtk::TreeStore::create(_page_list_columns);
     _page_list_model_filter = Gtk::TreeModelFilter::create(_page_list_model);
     _page_list_model_sort = Gtk::TreeModelSort::create(_page_list_model_filter);
@@ -318,8 +377,8 @@ InkscapePreferences::InkscapePreferences()
     title_frame->add(_page_title);
     vbox_page->pack_start(*title_frame, false, false, 0);
     vbox_page->pack_start(_page_frame, true, true, 0);
-    _page_frame.set_shadow_type(Gtk::SHADOW_IN);
-    title_frame->set_shadow_type(Gtk::SHADOW_IN);
+    _page_frame.set_shadow_type(Gtk::SHADOW_NONE);
+    title_frame->set_shadow_type(Gtk::SHADOW_NONE);
 
     initPageTools();
     initPageUI();
@@ -337,6 +396,12 @@ InkscapePreferences::InkscapePreferences()
     _page_list.expand_all();
     _page_list_model->foreach_iter(sigc::mem_fun(*this, &InkscapePreferences::GetSizeRequest));
     _page_list.collapse_all();
+
+    // Set Custom theme
+    Inkscape::Preferences *prefs = Inkscape::Preferences::get();
+    _theme_oberver = prefs->createObserver("/theme/", [=]() {
+        prefs->setString("/options/boot/theme", "custom");
+    });
 }
 
 InkscapePreferences::~InkscapePreferences()
@@ -397,16 +462,6 @@ int InkscapePreferences::num_widgets_in_grid(Glib::ustring const &key, Gtk::Widg
     return results;
 }
 
-
-bool InkscapePreferences::on_outline_overlay_changed(GdkEventFocus * /* focus_event */)
-{
-    if (auto *desktop = SP_ACTIVE_DESKTOP) {
-        desktop->getCanvas()->redraw_all();
-    }
-    return false;
-
-}
-
 /**
  * Implementation of the search functionality executes each time
  * search entry is changed
@@ -435,7 +490,9 @@ void InkscapePreferences::on_search_changed()
         _page_list.set_cursor(Gtk::TreePath(iter));
     } else if (_num_results == 0 && key != "") {
         _page_list.set_has_tooltip(false);
-        // TODO:Show all contents
+        _show_all = true;
+        _page_list_model_filter->refilter();
+        _show_all = false;
         show_not_found();
     } else {
         _page_list.expand_all();
@@ -641,6 +698,8 @@ void InkscapePreferences::highlight_results(Glib::ustring const &key, Gtk::TreeM
  */
 bool InkscapePreferences::recursive_filter(Glib::ustring &key, Gtk::TreeModel::const_iterator const &iter)
 {
+    if(_show_all)
+        return true;
     auto row_label = iter->get_value(_page_list_columns._col_name).lowercase();
     if (key == "") {
         return true;
@@ -813,40 +872,46 @@ void InkscapePreferences::AddNewObjectsStyle(DialogPage &p, Glib::ustring const 
     p.add_line( true, "", *button, "",
                 _("Remember the style of the (first) selected object as this tool's style"));
 }
-
+#define get_tool_action(toolname) ("win.tool-switch('" + toolname + "')")
+Glib::ustring get_tool_action_name(Glib::ustring toolname)
+{
+    auto *iapp = InkscapeApplication::instance();
+    if (iapp)
+        return iapp->get_action_extra_data().get_label_for_action(get_tool_action(toolname));
+    return "";
+}
 void InkscapePreferences::initPageTools()
 {
     Gtk::TreeModel::iterator iter_tools = this->AddPage(_page_tools, _("Tools"), PREFS_PAGE_TOOLS);
-    this->AddPage(_page_selector, _("Selector"), iter_tools, PREFS_PAGE_TOOLS_SELECTOR);
-    this->AddPage(_page_node, _("Node"), iter_tools, PREFS_PAGE_TOOLS_NODE);
+    this->AddPage(_page_selector, get_tool_action_name("Select"), iter_tools, PREFS_PAGE_TOOLS_SELECTOR);
+    this->AddPage(_page_node, get_tool_action_name("Node"), iter_tools, PREFS_PAGE_TOOLS_NODE);
 
     // shapes
     Gtk::TreeModel::iterator iter_shapes = this->AddPage(_page_shapes, _("Shapes"), iter_tools, PREFS_PAGE_TOOLS_SHAPES);
-    this->AddPage(_page_rectangle, _("Rectangle"), iter_shapes, PREFS_PAGE_TOOLS_SHAPES_RECT);
-    this->AddPage(_page_ellipse, _("Ellipse"), iter_shapes, PREFS_PAGE_TOOLS_SHAPES_ELLIPSE);
-    this->AddPage(_page_star, _("Star"), iter_shapes, PREFS_PAGE_TOOLS_SHAPES_STAR);
-    this->AddPage(_page_3dbox, _("3D Box"), iter_shapes, PREFS_PAGE_TOOLS_SHAPES_3DBOX);
-    this->AddPage(_page_spiral, _("Spiral"), iter_shapes, PREFS_PAGE_TOOLS_SHAPES_SPIRAL);
+    this->AddPage(_page_rectangle, get_tool_action_name("Rect"), iter_shapes, PREFS_PAGE_TOOLS_SHAPES_RECT);
+    this->AddPage(_page_ellipse, get_tool_action_name("Arc"), iter_shapes, PREFS_PAGE_TOOLS_SHAPES_ELLIPSE);
+    this->AddPage(_page_star, get_tool_action_name("Star"), iter_shapes, PREFS_PAGE_TOOLS_SHAPES_STAR);
+    this->AddPage(_page_3dbox, get_tool_action_name("3DBox"), iter_shapes, PREFS_PAGE_TOOLS_SHAPES_3DBOX);
+    this->AddPage(_page_spiral, get_tool_action_name("Spiral"), iter_shapes, PREFS_PAGE_TOOLS_SHAPES_SPIRAL);
 
-    this->AddPage(_page_pen, _("Pen"), iter_tools, PREFS_PAGE_TOOLS_PEN);
-    this->AddPage(_page_pencil, _("Pencil"), iter_tools, PREFS_PAGE_TOOLS_PENCIL);
-    this->AddPage(_page_calligraphy, _("Calligraphy"), iter_tools, PREFS_PAGE_TOOLS_CALLIGRAPHY);
-    this->AddPage(_page_text, C_("ContextVerb", "Text"), iter_tools, PREFS_PAGE_TOOLS_TEXT);
+    this->AddPage(_page_pen, get_tool_action_name("Pen"), iter_tools, PREFS_PAGE_TOOLS_PEN);
+    this->AddPage(_page_pencil, get_tool_action_name("Pencil"), iter_tools, PREFS_PAGE_TOOLS_PENCIL);
+    this->AddPage(_page_calligraphy, get_tool_action_name("Calligraphic"), iter_tools, PREFS_PAGE_TOOLS_CALLIGRAPHY);
+    this->AddPage(_page_text, get_tool_action_name("Text"), iter_tools, PREFS_PAGE_TOOLS_TEXT);
 
-    this->AddPage(_page_gradient, _("Gradient"), iter_tools, PREFS_PAGE_TOOLS_GRADIENT);
-    this->AddPage(_page_dropper, _("Dropper"), iter_tools, PREFS_PAGE_TOOLS_DROPPER);
-    this->AddPage(_page_paintbucket, _("Paint Bucket"), iter_tools, PREFS_PAGE_TOOLS_PAINTBUCKET);
+    this->AddPage(_page_gradient, get_tool_action_name("Gradient"), iter_tools, PREFS_PAGE_TOOLS_GRADIENT);
+    this->AddPage(_page_dropper, get_tool_action_name("Dropper"), iter_tools, PREFS_PAGE_TOOLS_DROPPER);
+    this->AddPage(_page_paintbucket, get_tool_action_name("PaintBucket"), iter_tools, PREFS_PAGE_TOOLS_PAINTBUCKET);
 
-    this->AddPage(_page_tweak, _("Tweak"), iter_tools, PREFS_PAGE_TOOLS_TWEAK);
-    this->AddPage(_page_spray, _("Spray"), iter_tools, PREFS_PAGE_TOOLS_SPRAY);
-    this->AddPage(_page_eraser, _("Eraser"), iter_tools, PREFS_PAGE_TOOLS_ERASER);
-    this->AddPage(_page_connector, _("Connector"), iter_tools, PREFS_PAGE_TOOLS_CONNECTOR);
+    this->AddPage(_page_tweak, get_tool_action_name("Tweak"), iter_tools, PREFS_PAGE_TOOLS_TWEAK);
+    this->AddPage(_page_spray, get_tool_action_name("Spray"), iter_tools, PREFS_PAGE_TOOLS_SPRAY);
+    this->AddPage(_page_eraser, get_tool_action_name("Eraser"), iter_tools, PREFS_PAGE_TOOLS_ERASER);
+    this->AddPage(_page_connector, get_tool_action_name("Connector"), iter_tools, PREFS_PAGE_TOOLS_CONNECTOR);
 #ifdef WITH_LPETOOL
-    this->AddPage(_page_lpetool, _("LPE Tool"), iter_tools, PREFS_PAGE_TOOLS_LPETOOL);
+    this->AddPage(_page_lpetool, get_tool_action_name("LPETool"), iter_tools, PREFS_PAGE_TOOLS_LPETOOL);
 #endif // WITH_LPETOOL
-    this->AddPage(_page_zoom, _("Zoom"), iter_tools, PREFS_PAGE_TOOLS_ZOOM);
-    this->AddPage(_page_measure, C_("ContextVerb", "Measure"), iter_tools, PREFS_PAGE_TOOLS_MEASURE);
-
+    this->AddPage(_page_measure, get_tool_action_name("Measure"), iter_tools, PREFS_PAGE_TOOLS_MEASURE);
+    this->AddPage(_page_zoom, get_tool_action_name("Zoom"), iter_tools, PREFS_PAGE_TOOLS_ZOOM);
     _page_tools.add_group_header( _("Bounding box to use"));
     _t_bbox_visual.init ( _("Visual bounding box"), "/tools/bounding_box", 0, false, nullptr); // 0 means visual
     _page_tools.add_line( true, "", _t_bbox_visual, "",
@@ -988,6 +1053,13 @@ void InkscapePreferences::initPageTools()
         cb = Gtk::manage(new PrefCheckButton);
         cb->init ( _("Use SVG2 auto-flowed text"),  "/tools/text/use_svg2", true);
         _page_text.add_line( false, "", *cb, "", _("Use SVG2 auto-flowed text instead of SVG1.2 auto-flowed text. (Recommended)"));
+
+        _recently_used_fonts_size.init("/tools/text/recently_used_fonts_size", 0, 100, 1, 10, 10, true, false);
+        _page_text.add_line( false, _("Fonts in 'Recently used' collection:"), _recently_used_fonts_size, "",
+                           _("Maximum number of fonts in the 'Recently used' font collection"), false);
+        _recently_used_fonts_size.changed_signal.connect([](double new_size) {
+            Inkscape::RecentlyUsedFonts* recently_used_fonts = Inkscape::RecentlyUsedFonts::get();
+            recently_used_fonts->change_max_list_size(new_size); });
     }
 
     //_page_text.add_group_header( _("Text units"));
@@ -1026,6 +1098,13 @@ void InkscapePreferences::initPageTools()
     _page_gradient.add_line( false, _("Linear gradient _angle:"), _misc_gradientangle, "",
                            _("Default angle of new linear gradients in degrees (clockwise from horizontal)"), false);
 
+    _misc_gradient_collect.init(_("Auto-delete unused gradients"), "/option/gradient/auto_collect", true);
+    _page_gradient.add_line(
+        false, "", _misc_gradient_collect, "",
+        _("When enabled, gradients that are not used will be deleted (auto-collected) automatically "
+          "from the SVG file. When disabled, unused gradients will be preserved in "
+          "the file for later use. (Note: This setting only affects new gradients.)"),
+        true);
 
     //Dropper
     this->AddSelcueCheckbox(_page_dropper, "/tools/dropper", true);
@@ -1065,7 +1144,7 @@ void InkscapePreferences::get_highlight_colors(guint32 &colorsetbase, guint32 &c
             size_t startposin = result.find("fill:");
             size_t endposin = result.find(";");
             result = result.substr(startposin + 5, endposin - (startposin + 5));
-            REMOVE_SPACES(result);
+            Util::trim(result);
             Gdk::RGBA base_color = Gdk::RGBA(result);
             SPColor base_color_sp(base_color.get_red(), base_color.get_green(), base_color.get_blue());
             colorsetbase = base_color_sp.toRGBA32(base_color.get_alpha());
@@ -1078,7 +1157,7 @@ void InkscapePreferences::get_highlight_colors(guint32 &colorsetbase, guint32 &c
             size_t startposin = result.find("fill:");
             size_t endposin = result.find(";");
             result = result.substr(startposin + 5, endposin - (startposin + 5));
-            REMOVE_SPACES(result);
+            Util::trim(result);
             Gdk::RGBA success_color = Gdk::RGBA(result);
             SPColor success_color_sp(success_color.get_red(), success_color.get_green(), success_color.get_blue());
             colorsetsuccess = success_color_sp.toRGBA32(success_color.get_alpha());
@@ -1091,7 +1170,7 @@ void InkscapePreferences::get_highlight_colors(guint32 &colorsetbase, guint32 &c
             size_t startposin = result.find("fill:");
             size_t endposin = result.find(";");
             result = result.substr(startposin + 5, endposin - (startposin + 5));
-            REMOVE_SPACES(result);
+            Util::trim(result);
             Gdk::RGBA warning_color = Gdk::RGBA(result);
             SPColor warning_color_sp(warning_color.get_red(), warning_color.get_green(), warning_color.get_blue());
             colorsetwarning = warning_color_sp.toRGBA32(warning_color.get_alpha());
@@ -1104,7 +1183,7 @@ void InkscapePreferences::get_highlight_colors(guint32 &colorsetbase, guint32 &c
             size_t startposin = result.find("fill:");
             size_t endposin = result.find(";");
             result = result.substr(startposin + 5, endposin - (startposin + 5));
-            REMOVE_SPACES(result);
+            Util::trim(result);
             Gdk::RGBA error_color = Gdk::RGBA(result);
             SPColor error_color_sp(error_color.get_red(), error_color.get_green(), error_color.get_blue());
             colorseterror = error_color_sp.toRGBA32(error_color.get_alpha());
@@ -1133,10 +1212,11 @@ void InkscapePreferences::resetIconsColors(bool themechange)
         }
         // This colors are set on style.css of inkscape
         Gdk::RGBA base_color = _symbolic_base_color.get_style_context()->get_color();
-        // This is a hack to fix a proble style is not updated enough fast on
+        // This is a hack to fix a problematic style which isn't updated fast enough on
         // change from dark to bright themes
         if (themechange) {
-            base_color = _symbolic_base_color.get_style_context()->get_background_color();
+            auto sc = _symbolic_base_color.get_style_context();
+            base_color = get_background_color(sc);
         }
         SPColor base_color_sp(base_color.get_red(), base_color.get_green(), base_color.get_blue());
         //we copy highlight to not use
@@ -1250,6 +1330,7 @@ void InkscapePreferences::toggleSymbolic()
         _symbolic_highlight_colors.set_sensitive(false);
     }
     INKSCAPE.themecontext->getChangeThemeSignal().emit();
+    INKSCAPE.themecontext->add_gtk_css(true);
 }
 
 bool InkscapePreferences::contrastChange(GdkEventButton *button_event)
@@ -1294,20 +1375,11 @@ void InkscapePreferences::themeChange(bool contrastslider)
         } else {
             _dark_theme.get_parent()->hide();
         }
-
         auto settings = Gtk::Settings::get_default();
         settings->property_gtk_theme_name() = current_theme;
         bool dark = INKSCAPE.themecontext->isCurrentThemeDark(dynamic_cast<Gtk::Container *>(window));
         bool toggled = prefs->getBool("/theme/darkTheme", false) != dark;
-        if (dark) {
-            prefs->setBool("/theme/darkTheme", true);
-            window->get_style_context()->add_class("dark");
-            window->get_style_context()->remove_class("bright");
-        } else {
-            prefs->setBool("/theme/darkTheme", false);
-            window->get_style_context()->add_class("bright");
-            window->get_style_context()->remove_class("dark");
-        }
+        prefs->setBool("/theme/darkTheme", dark);
         INKSCAPE.themecontext->getChangeThemeSignal().emit();
         INKSCAPE.themecontext->add_gtk_css(true, contrastslider);
         resetIconsColors(toggled);
@@ -1321,15 +1393,7 @@ void InkscapePreferences::preferDarkThemeChange()
         Inkscape::Preferences *prefs = Inkscape::Preferences::get();
         bool dark = INKSCAPE.themecontext->isCurrentThemeDark(dynamic_cast<Gtk::Container *>(window));
         bool toggled = prefs->getBool("/theme/darkTheme", false) != dark;
-        if (dark) {
-            prefs->setBool("/theme/darkTheme", true);
-            window->get_style_context()->add_class("dark");
-            window->get_style_context()->remove_class("bright");
-        } else {
-            prefs->setBool("/theme/darkTheme", false);
-            window->get_style_context()->add_class("bright");
-            window->get_style_context()->remove_class("dark");
-        }
+        prefs->setBool("/theme/darkTheme", dark);
         INKSCAPE.themecontext->getChangeThemeSignal().emit();
         INKSCAPE.themecontext->add_gtk_css(true);
         // we avoid switched base colors
@@ -1545,8 +1609,8 @@ void InkscapePreferences::initPageUI()
     }
 
     _ui_languages.init( "/ui/language", languages, langValues, G_N_ELEMENTS(languages), languages[0]);
-    _page_ui.add_line( false, _("Language (requires restart):"), _ui_languages, "",
-                              _("Set the language for menus and number formats"), true);
+    _page_ui.add_line( false, _("Language:"), _ui_languages, "",
+                              _("Set the language for menus and number formats"), false, reset_icon());
 
     Inkscape::Preferences *prefs = Inkscape::Preferences::get();
 
@@ -1571,29 +1635,40 @@ void InkscapePreferences::initPageUI()
     _ui_realworldzoom.init( _("Show zoom percentage corrected by factor"), "/options/zoomcorrection/shown", true);
     _page_ui.add_line( false, "", _ui_realworldzoom, "", _("Zoom percentage can be either by the physical units or by pixels."));
 
-    _ui_partialdynamic.init( _("Enable dynamic relayout for incomplete sections"), "/options/workarounds/dynamicnotdone", false);
-    _page_ui.add_line( false, "", _ui_partialdynamic, "",
-                       _("When on, will allow dynamic layout of components that are not completely finished being refactored"), true);
+    _ui_pageorigin.init( _("Origin always on current page"), "/options/origincorrection/page", true);
+    _page_ui.add_line( false, "", _ui_pageorigin, "", _("Rulers and tools will display position information relative to the current page, instead of the position on the canvas (corresponding to the first page's position)."));
 
-    /* show infobox */
-    _show_filters_info_box.init( _("Show filter primitives infobox (requires restart)"), "/options/showfiltersinfobox/value", true);
-    _page_ui.add_line(false, "", _show_filters_info_box, "",
-                        _("Show icons and descriptions for the filter primitives available at the filter effects dialog"));
-
-    _ui_yaxisdown.init( _("Origin at upper left with y-axis pointing down (requires restart)"), "/options/yaxisdown", true);
+    _ui_yaxisdown.init( _("Origin at upper left with y-axis pointing down"), "/options/yaxisdown", true);
     _page_ui.add_line( false, "", _ui_yaxisdown, "",
-                       _("When off, origin is at lower left corner and y-axis points up"), true);
+                       _("When off, origin is at lower left corner and y-axis points up"), false, reset_icon());
 
     _ui_rotationlock.init(_("Lock canvas rotation by default"), "/options/rotationlock", false);
     _page_ui.add_line(false, "", _ui_rotationlock, "",
                        _("Prevent accidental canvas rotation by disabling on-canvas keyboard and mouse actions for rotation"), true);
 
-    _page_ui.add_group_header(_("UI"));
+    _ui_rulersel.init( _("Show selection in ruler"), "/options/ruler/show_bbox", true);
+    _page_ui.add_line( false, "", _ui_rulersel, "", _("Shows a blue line in the ruler where the selection is."));
+
+    _page_ui.add_group_header(_("User Interface"));
     // _page_ui.add_group_header(_("Handle size"));
     _mouse_grabsize.init("/options/grabsize/value", 1, 15, 1, 2, 3, 0);
-    _page_ui.add_line(true, "Handle size", _mouse_grabsize, "", _("Set the relative size of node handles"), true);
+    _page_ui.add_line(true, _("Handle size"), _mouse_grabsize, "", _("Set the relative size of node handles"), true);
     _narrow_spinbutton.init(_("Use narrow number entry boxes"), "/theme/narrowSpinButton", false);
     _page_ui.add_line(false, "", _narrow_spinbutton, "", _("Make number editing boxes smaller by limiting padding"), false);
+
+    _page_ui.add_group_header(_("Status bar"));
+    auto sb_style = Gtk::make_managed<UI::Widget::PrefCheckButton>();
+    sb_style->init(_("Show current style"), "/statusbar/visibility/style", true);
+    _page_ui.add_line(false, "", *sb_style, "", _("Control visibility of current fill, stroke and opacity in status bar."), true);
+    auto sb_layer = Gtk::make_managed<UI::Widget::PrefCheckButton>();
+    sb_layer->init(_("Show layer selector"), "/statusbar/visibility/layer", true);
+    _page_ui.add_line(false, "", *sb_layer, "", _("Control visibility of layer selection menu in status bar."), true);
+    auto sb_coords = Gtk::make_managed<UI::Widget::PrefCheckButton>();
+    sb_coords->init(_("Show mouse coordinates"), "/statusbar/visibility/coordinates", true);
+    _page_ui.add_line(false, "", *sb_coords, "", _("Control visibility of mouse coordinates X & Y in status bar."), true);
+    auto sb_rotate = Gtk::make_managed<UI::Widget::PrefCheckButton>();
+    sb_rotate->init(_("Show canvas rotation"), "/statusbar/visibility/rotation", true);
+    _page_ui.add_line(false, "", *sb_rotate, "", _("Control visibility of canvas rotation in status bar."), true);
 
     _page_ui.add_group_header(_("Mouse cursors"));
     _ui_cursorscaling.init(_("Enable scaling"), "/options/cursorscaling", true);
@@ -1635,16 +1710,50 @@ void InkscapePreferences::initPageUI()
         _page_theme.add_line(false, _("Change GTK theme:"), _gtk_theme, "", "", false);
         _gtk_theme.signal_changed().connect(sigc::mem_fun(*this, &InkscapePreferences::comboThemeChange));
     }
+
     _sys_user_themes_dir_copy.init(g_build_filename(g_get_user_data_dir(), "themes", nullptr), _("Open themes folder"));
     _page_theme.add_line(true, _("User themes:"), _sys_user_themes_dir_copy, "", _("Location of the user’s themes"), true, Gtk::manage(new Gtk::Box()));
     _contrast_theme.init("/theme/contrast", 1, 10, 1, 2, 10, 1);
-    Gtk::Widget *space = new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL);
+
+    _page_theme.add_line(true, "", _dark_theme, "", _("Use dark theme"), true);
+    {
+        auto font_scale = new Inkscape::UI::Widget::PrefSlider();
+        font_scale = Gtk::manage(font_scale);
+        font_scale->init(ThemeContext::get_font_scale_pref_path(), 50, 150, 5, 5, 100, 0); // 50% to 150%
+        font_scale->getSlider()->signal_format_value().connect([=](double val) {
+            return Glib::ustring::format(std::fixed, std::setprecision(0), val) + "%";
+        });
+        // Live updates commented out; too disruptive
+        // font_scale->getSlider()->signal_value_changed().connect([=](){
+            // INKSCAPE.themecontext->adjust_global_font_scale(font_scale->getSlider()->get_value() / 100.0);
+        // });
+        auto space = Gtk::make_managed<Gtk::Box>(Gtk::ORIENTATION_HORIZONTAL);
+        space->set_valign(Gtk::ALIGN_CENTER);
+        auto reset = Gtk::make_managed<Gtk::Button>();
+        reset->set_tooltip_text(_("Reset font size to 100%"));
+        reset->set_image_from_icon_name("reset-settings-symbolic");
+        reset->set_size_request(30, -1);
+        auto apply = Gtk::make_managed<Gtk::Button>(_("Apply"));
+        apply->set_tooltip_text(_("Apply font size changes to the UI"));
+        apply->set_valign(Gtk::ALIGN_FILL);
+        apply->set_margin_end(5);
+        reset->set_valign(Gtk::ALIGN_FILL);
+        space->add(*apply);
+        space->add(*reset);
+        reset->signal_clicked().connect([=](){
+            font_scale->getSlider()->set_value(100);
+            INKSCAPE.themecontext->adjustGlobalFontScale(1.0);
+        });
+        apply->signal_clicked().connect([=](){
+            INKSCAPE.themecontext->adjustGlobalFontScale(font_scale->getSlider()->get_value() / 100.0);
+        });
+        _page_theme.add_line(false, _("_Font scale:"), *font_scale, "", _("Adjust size of UI fonts"), true, space);
+    }
+    auto space = Gtk::make_managed<Gtk::Box>(Gtk::ORIENTATION_HORIZONTAL);
     space->set_size_request(_sb_width / 3, -1);
     _page_theme.add_line(false, _("_Contrast:"), _contrast_theme, "",
                          _("Make background brighter or darker to adjust contrast"), true, space);
     _contrast_theme.getSlider()->signal_value_changed().connect(sigc::mem_fun(*this, &InkscapePreferences::contrastThemeChange));
-    _contrast_theme.getSpinButton()->signal_value_changed().connect(sigc::mem_fun(*this, &InkscapePreferences::contrastThemeChange));
-    _page_theme.add_line(true, "", _dark_theme, "", _("Use dark theme"), true);
 
     if (dark_themes[current_theme]) {
         _dark_theme.get_parent()->set_no_show_all(false);
@@ -1720,10 +1829,10 @@ void InkscapePreferences::initPageUI()
     _symbolic_success_color.get_style_context()->add_class("symboliccolors");
     _symbolic_warning_color.get_style_context()->add_class("symboliccolors");
     _symbolic_error_color.get_style_context()->add_class("symboliccolors");
-    _symbolic_base_color.connectChanged(sigc::mem_fun(this, &InkscapePreferences::changeIconsColor));
-    _symbolic_warning_color.connectChanged(sigc::mem_fun(this, &InkscapePreferences::changeIconsColor));
-    _symbolic_success_color.connectChanged(sigc::mem_fun(this, &InkscapePreferences::changeIconsColor));
-    _symbolic_error_color.connectChanged(sigc::mem_fun(this, &InkscapePreferences::changeIconsColor));
+    _symbolic_base_color.connectChanged(sigc::mem_fun(*this, &InkscapePreferences::changeIconsColor));
+    _symbolic_warning_color.connectChanged(sigc::mem_fun(*this, &InkscapePreferences::changeIconsColor));
+    _symbolic_success_color.connectChanged(sigc::mem_fun(*this, &InkscapePreferences::changeIconsColor));
+    _symbolic_error_color.connectChanged(sigc::mem_fun(*this, &InkscapePreferences::changeIconsColor));
     /* _complementary_colors = Gtk::manage(new Gtk::Image()); */
     Gtk::Box *icon_buttons = Gtk::manage(new Gtk::Box());
     icon_buttons->pack_start(_symbolic_base_color, true, true, 4);
@@ -1743,44 +1852,141 @@ void InkscapePreferences::initPageUI()
     _page_theme.add_line(false, "", *icon_buttons_def, "",
                          _("Reset theme colors for some symbolic icon themes"),
                          false);
-    {
-        Glib::ustring sizeLabels[] = { C_("Icon size", "Larger"), C_("Icon size", "Large"), C_("Icon size", "Small"),
-                                       C_("Icon size", "Smaller") };
-        int sizeValues[] = { 3, 2, 0, 1 };
-        // "Larger" is 3 to not break existing preference files. Should fix in GTK3
-
-        _misc_small_tools.init("/toolbox/tools/small", sizeLabels, sizeValues, G_N_ELEMENTS(sizeLabels), 0);
-        _page_theme.add_line(false, _("Toolbox icon size:"), _misc_small_tools, _("(requires restart)"),
-                             _("Set the size for the tool icons."), false);
-
-        _misc_small_toolbar.init("/toolbox/small", sizeLabels, sizeValues, G_N_ELEMENTS(sizeLabels), 0);
-        _page_theme.add_line(false, _("Control bar icon size:"), _misc_small_toolbar, _("(requires restart)"),
-                             _("Set the size for the icons in tools' control bars."), false);
-
-        _misc_small_secondary.init("/toolbox/secondary", sizeLabels, sizeValues, G_N_ELEMENTS(sizeLabels), 1);
-        _page_theme.add_line(false, _("Secondary toolbar icon size:"), _misc_small_secondary, _("(requires restart)"),
-                             _("Set the size for the icons in secondary toolbars."), false);
-    }
-    {
         Glib::ustring menu_icons_labels[] = {_("Yes"), _("No"), _("Theme decides")};
         int menu_icons_values[] = {1, -1, 0};
         _menu_icons.init("/theme/menuIcons", menu_icons_labels, menu_icons_values, G_N_ELEMENTS(menu_icons_labels), 0);
-        _page_theme.add_line(false, _("Show icons in menus:"), _menu_icons, _("(requires restart)"),
-                             _("You can either enable or disable all icons in menus. By default, the setting for the 'show-icons' attribute in the 'menus.xml' file determines whether to display icons in menus."), false);
+        _page_theme.add_line(false, _("Show icons in menus:"), _menu_icons, "",
+                             _("You can either enable or disable all icons in menus. By default, the setting for the 'use-icon' attribute in the 'menus.ui' file determines whether to display icons in menus."), false, reset_icon());
+        _shift_icons.init(_("Shift icons in menus"), "/theme/shiftIcons", true);
+        _page_theme.add_line(true, "", _shift_icons, "",
+                             _("This preference fixes icon positions in menus."), false, reset_icon());
+
+    _page_theme.add_group_header(_("XML Editor"));
+#if WITH_GSOURCEVIEW
+    {
+        auto manager = gtk_source_style_scheme_manager_get_default();
+        auto ids = gtk_source_style_scheme_manager_get_scheme_ids(manager);
+
+        auto syntax = Gtk::make_managed<UI::Widget::PrefCombo>();
+        std::vector<Glib::ustring> labels;
+        std::vector<Glib::ustring> values;
+        for (const char* style = *ids; style; style = *++ids) {
+            if (auto scheme = gtk_source_style_scheme_manager_get_scheme(manager, style)) {
+                auto name = gtk_source_style_scheme_get_name(scheme);
+                labels.emplace_back(name);
+            }
+            else {
+                labels.emplace_back(style);
+            }
+            values.emplace_back(style);
+        }
+        syntax->init("/theme/syntax-color-theme", labels, values, "");
+        _page_theme.add_line(false, _("Color theme:"), *syntax, "", _("Syntax coloring for XML Editor"), false);
     }
+#endif
+    {
+        auto font_button = Gtk::make_managed<Gtk::Button>("...");
+        font_button->set_halign(Gtk::ALIGN_START);
+        auto font_box = Gtk::make_managed<Gtk::Entry>();
+        font_box->set_editable(false);
+        font_box->set_sensitive(false);
+        auto theme = INKSCAPE.themecontext;
+        font_box->set_text(theme->getMonospacedFont().to_string());
+        font_button->signal_clicked().connect([=](){
+            Gtk::FontChooserDialog dlg;
+            // show fixed-size fonts only
+            dlg.set_filter_func([](const Glib::RefPtr<const Pango::FontFamily>& family, const Glib::RefPtr<const Pango::FontFace>& face) {
+                return family && family->is_monospace();
+            });
+            dlg.set_font_desc(theme->getMonospacedFont());
+            dlg.set_position(Gtk::WIN_POS_MOUSE);
+            dlg.set_modal();
+            if (dlg.run() == Gtk::RESPONSE_OK) {
+                auto desc = dlg.get_font_desc();
+                theme->saveMonospacedFont(desc);
+                theme->adjustGlobalFontScale(theme->getFontScale() / 100);
+                font_box->set_text(desc.to_string());
+            }
+        });
+        _page_theme.add_line(false, _("Monospaced font:"), *font_box, "", _("Select fixed-width font"), true, font_button);
+
+        auto mono_font = Gtk::make_managed<UI::Widget::PrefCheckButton>();
+        mono_font->init( _("Use monospaced font"), "/dialogs/xml/mono-font", false);
+        _page_theme.add_line(false, _("XML tree:"), *mono_font, "", _("Use fixed-width font in XML Editor"), false);
+    }
+
+    //=======================================================================================================
 
     this->AddPage(_page_theme, _("Theming"), iter_ui, PREFS_PAGE_UI_THEME);
     symbolicThemeCheck();
+
+    // Toolbars
+    _page_toolbars.add_group_header(_("Toolbars"));
+    try {
+        auto builder = Inkscape::UI::create_builder("toolbar-tool-prefs.ui");
+        Gtk::Widget* toolbox = nullptr;
+        builder->get_widget("tool-toolbar-prefs", toolbox);
+
+        sp_traverse_widget_tree(toolbox, [=](Gtk::Widget* widget){
+            if (auto button = dynamic_cast<Gtk::ToggleButton*>(widget)) {
+                assert(GTK_IS_ACTIONABLE(widget->gobj()));
+                // do not execute any action:
+                gtk_actionable_set_action_name(GTK_ACTIONABLE(widget->gobj()), "");
+
+                button->set_sensitive();
+                auto action_name = sp_get_action_target(button);
+                auto path = ToolboxFactory::get_tool_visible_buttons_path(action_name);
+                auto visible = Inkscape::Preferences::get()->getBool(path, true);
+                button->set_active(visible);
+                button->signal_toggled().connect([=](){
+                    Inkscape::Preferences::get()->setBool(path, button->get_active());
+                });
+                auto *iapp = InkscapeApplication::instance();
+                if (iapp) {
+                    auto tooltip =
+                        iapp->get_action_extra_data().get_tooltip_for_action(get_tool_action(action_name), true, true);
+                    button->set_tooltip_markup(tooltip);
+                }
+            }
+            return false;
+        });
+        _page_toolbars.add_line(false, "", *toolbox, "", _("Select visible tool buttons"), true);
+
+        struct tbar_info {const char* label; const char* prefs;} toolbars[] = {
+            {_("Toolbox icon size:"),     ToolboxFactory::tools_icon_size},
+            {_("Control bar icon size:"), ToolboxFactory::ctrlbars_icon_size},
+        };
+        for (auto&& tbox : toolbars) {
+            auto slider = Gtk::manage(new UI::Widget::PrefSlider(false));
+            const int min = ToolboxFactory::min_pixel_size;
+            const int max = ToolboxFactory::max_pixel_size;
+            slider->init(tbox.prefs, min, max, 1, 4, min, 0);
+            slider->getSlider()->signal_format_value().connect([](double val){
+                return Glib::ustring::format(std::fixed, std::setprecision(0), val * 100.0 / min) + "%";
+            });
+            slider->getSlider()->get_style_context()->add_class("small-marks");
+            for (int i = min; i <= max; i += 8) {
+                slider->getSlider()->add_mark(i, Gtk::POS_BOTTOM, i % min ? "" : (std::to_string(100 * i / min) + "%").c_str());
+            }
+            _page_toolbars.add_line(false, tbox.label, *slider, "", _("Adjust toolbar icon size"));
+        }
+
+        std::vector<PrefItem> snap = {
+            { _("Simple"), 1, _("Present simplified snapping options that manage all advanced settings"), true },
+            { _("Advanced"), 0, _("Expose all snapping options for manual control") },
+            { _("Permanent"), 2, _("All advanced snap options appear in a permanent bar") },
+        };
+        _page_toolbars.add_line(false, _("Snap controls bar:"), *Gtk::make_managed<PrefRadioButtons>(snap, "/toolbox/simplesnap"), "", "");
+    } catch (const Glib::Error &ex) {
+        g_error("Couldn't load toolbar-tool-prefs user interface file.");
+    }
+
+    this->AddPage(_page_toolbars, _("Toolbars"), iter_ui, PREFS_PAGE_UI_TOOLBARS);
+
     // Windows
     _win_save_geom.init ( _("Save and restore window geometry for each document"), "/options/savewindowgeometry/value", PREFS_WINDOW_GEOMETRY_FILE, true, nullptr);
     _win_save_geom_prefs.init ( _("Remember and use last window's geometry"), "/options/savewindowgeometry/value", PREFS_WINDOW_GEOMETRY_LAST, false, &_win_save_geom);
     _win_save_geom_off.init ( _("Don't save window geometry"), "/options/savewindowgeometry/value", PREFS_WINDOW_GEOMETRY_NONE, false, &_win_save_geom);
-
-    _win_save_dialog_pos_on.init ( _("Save and restore dialogs status"), "/options/savedialogposition/value", PREFS_DIALOGS_STATE_SAVE, true, nullptr);
-    _win_save_dialog_pos_off.init ( _("Don't save dialogs status"), "/options/savedialogposition/value", PREFS_DIALOGS_STATE_NONE, false, &_win_save_dialog_pos_on);
-
-    _win_dockable.init ( _("Docked"), "/options/dialogtype/value", PREFS_DIALOGS_BEHAVIOR_DOCKABLE, true, nullptr);
-    _win_floating.init ( _("Floating"), "/options/dialogtype/value", PREFS_DIALOGS_BEHAVIOR_FLOATING, false, &_win_dockable);
 
     _win_native.init ( _("Native open/save dialogs"), "/options/desktopintegration/value", 1, true, nullptr);
     _win_gtk.init ( _("GTK open/save dialogs"), "/options/desktopintegration/value", 0, false, &_win_native);
@@ -1794,7 +2000,8 @@ void InkscapePreferences::initPageUI()
     _win_ontop_agressive.init ( _("Aggressive"), "/options/transientpolicy/value", PREFS_DIALOGS_WINDOWS_AGGRESSIVE, false, &_win_ontop_none);
 
     _win_dialogs_labels_auto.init( _("Automatic"), "/options/notebooklabels/value", PREFS_NOTEBOOK_LABELS_AUTO, true, nullptr);
-    _win_dialogs_labels_off.init( _("Off"), "/options/notebooklabels/value", PREFS_NOTBOOK_LABELS_OFF, false, &_win_dialogs_labels_auto);
+    _win_dialogs_labels_active.init( _("Active"), "/options/notebooklabels/value", PREFS_NOTEBOOK_LABELS_ACTIVE, true, nullptr);
+    _win_dialogs_labels_off.init( _("Off"), "/options/notebooklabels/value", PREFS_NOTEBOOK_LABELS_OFF, false, &_win_dialogs_labels_auto);
 
     {
         Glib::ustring defaultSizeLabels[] = {C_("Window size", "Default"),
@@ -1811,7 +2018,7 @@ void InkscapePreferences::initPageUI()
                            _("Set the default window size"), false);
     }
 
-    _page_windows.add_group_header( _("Saving window geometry (size and position)"));
+    _page_windows.add_group_header( _("Saving window size and position"), 4);
     _page_windows.add_line( true, "", _win_save_geom_off, "",
                             _("Let the window manager determine placement of all windows"));
     _page_windows.add_line( true, "", _win_save_geom_prefs, "",
@@ -1819,19 +2026,6 @@ void InkscapePreferences::initPageUI()
     _page_windows.add_line( true, "", _win_save_geom, "",
                             _("Save and restore window geometry for each document (saves geometry in the document)"));
 
-    _page_windows.add_group_header( _("Saving dialogs' status"));
-    _page_windows.add_line( true, "", _win_save_dialog_pos_off, "",
-                            _("Don't save dialogs' status"));
-    _page_windows.add_line( true, "", _win_save_dialog_pos_on, "",
-                            _("Save and restore dialogs' status (the last open windows dialogs are saved when it closes)"));
-
-
-
-    _page_windows.add_group_header( _("Default dialog behavior (requires restart)"));
-    _page_windows.add_line( true, "", _win_dockable, "",
-                            _("Docked"));
-    _page_windows.add_line( true, "", _win_floating, "",
-                            _("Floating"));
 #ifdef _WIN32
     _page_windows.add_group_header( _("Desktop integration"));
     _page_windows.add_line( true, "", _win_native, "",
@@ -1839,35 +2033,85 @@ void InkscapePreferences::initPageUI()
     _page_windows.add_line( true, "", _win_gtk, "",
                             _("Use GTK open and save dialogs "));
 #endif
+    _page_windows.add_group_header(_("Dialogs settings"), 4);
+
+    std::vector<PrefItem> dock = {
+        { _("Docked"), PREFS_DIALOGS_BEHAVIOR_DOCKABLE, _("Allow dialog docking"), true },
+        { _("Floating"), PREFS_DIALOGS_BEHAVIOR_FLOATING, _("Disable dialog docking") }
+    };
+    _page_windows.add_line(true, _("Dialog behavior"), *Gtk::make_managed<PrefRadioButtons>(dock, "/options/dialogtype/value"), "", "", false, reset_icon());
 
 #ifndef _WIN32 // non-Win32 special code to enable transient dialogs
-    _page_windows.add_group_header( _("Dialogs on top:"));
-
-    _page_windows.add_line( true, "", _win_ontop_none, "",
-                            _("Dialogs are treated as regular windows"));
-    _page_windows.add_line( true, "", _win_ontop_normal, "",
-                            _("Dialogs stay on top of document windows"));
-    _page_windows.add_line( true, "", _win_ontop_agressive, "",
-                            _("Same as Normal but may work better with some window managers"));
+    std::vector<PrefItem> on_top = {
+        { C_("Dialog on top", "None"), PREFS_DIALOGS_WINDOWS_NONE, _("Dialogs are treated as regular windows") },
+        { _("Normal"),    PREFS_DIALOGS_WINDOWS_NORMAL,     _("Dialogs stay on top of document windows"), true },
+        { _("Aggressive"), PREFS_DIALOGS_WINDOWS_AGGRESSIVE, _("Same as Normal but may work better with some window managers") }
+    };
+    _page_windows.add_line(true, _("Dialog on top"), *Gtk::make_managed<PrefRadioButtons>(on_top, "/options/transientpolicy/value"), "", "");
 #endif
+    std::vector<PrefItem> labels = {
+        { _("Automatic"), PREFS_NOTEBOOK_LABELS_AUTO, _("Dialog names will be displayed when there is enough space"), true },
+        { _("Active"), PREFS_NOTEBOOK_LABELS_ACTIVE, _("Only show label on active") },
+        { _("Off"), PREFS_NOTEBOOK_LABELS_OFF, _("Only show dialog icons") }
+    };
+    _page_windows.add_line(true, _("Labels behavior"), *Gtk::make_managed<PrefRadioButtons>(labels, "/options/notebooklabels/value"), "", "", false, reset_icon());
 
-    _page_windows.add_group_header( _("Dialog labels behavior (requires restart)"));
-    _page_windows.add_line( true, "", _win_dialogs_labels_auto, "", _("Dialog names will be displayed when there is enough space"));
-    _page_windows.add_line( true, "", _win_dialogs_labels_off, "", _("Only show dialog icons"));
+    auto save_dlg = Gtk::make_managed<PrefCheckButton>();
+    save_dlg->init(_("Save and restore dialogs' status"), "/options/savedialogposition/value", true);
+    _page_windows.add_line(true, "", *save_dlg, "", _("Save and restore dialogs' status (the last open windows dialogs are saved when it closes)"));
+
+#ifndef _WIN32 // FIXME: Temporary Win32 special code to enable transient dialogs
+    _page_windows.add_line( true, "", _win_hide_task, "",
+                            _("Whether dialog windows are to be hidden in the window manager taskbar"));
+#endif
 
     _page_windows.add_group_header( _("Miscellaneous"));
 
     _page_windows.add_line( true, "", _win_show_boot, "",
                             _("Whether the Welcome dialog will be shown when Inkscape starts."));
-#ifndef _WIN32 // FIXME: Temporary Win32 special code to enable transient dialogs
-    _page_windows.add_line( true, "", _win_hide_task, "",
-                            _("Whether dialog windows are to be hidden in the window manager taskbar"));
-#endif
     _page_windows.add_line( true, "", _win_zoom_resize, "",
                             _("Zoom drawing when document window is resized, to keep the same area visible (this is the default which can be changed in any window using the button above the right scrollbar)"));
     _page_windows.add_line( true, "", _win_save_viewport, "",
                             _("Save documents viewport (zoom and panning position). Useful to turn off when sharing version controlled files."));
+
     this->AddPage(_page_windows, _("Windows"), iter_ui, PREFS_PAGE_UI_WINDOWS);
+
+    // Color pickers
+    _compact_colorselector.init(_("Use compact color selector mode switch"), "/colorselector/switcher", true);
+    _page_color_pickers.add_line(false, "", _compact_colorselector, "", _("Use compact combo box for selecting color modes"), false);
+
+    _page_color_pickers.add_group_header(_("Visible color pickers"));
+    {
+        auto container = Gtk::make_managed<Gtk::Box>(Gtk::ORIENTATION_HORIZONTAL);
+        auto prefs = Inkscape::Preferences::get();
+        for (auto&& picker : Inkscape::UI::Widget::get_color_pickers()) {
+            auto btn = Gtk::make_managed<Gtk::ToggleButton>();
+            auto box = Gtk::make_managed<Gtk::Box>(Gtk::ORIENTATION_HORIZONTAL);
+            auto label = Gtk::make_managed<Gtk::Label>(picker.label);
+            label->set_valign(Gtk::ALIGN_CENTER);
+            box->pack_start(*label);
+            box->pack_start(*Gtk::make_managed<Gtk::Image>(picker.icon, Gtk::ICON_SIZE_BUTTON));
+            box->set_spacing(3);
+            auto path = picker.visibility_path;
+            btn->set_active(prefs->getBool(path));
+            btn->add(*box);
+            btn->signal_toggled().connect([=]() {
+                prefs->setBool(path, btn->get_active());
+                auto buttons = container->get_children();
+                if (std::find_if(begin(buttons), end(buttons), [](Gtk::Widget* b) { return static_cast<Gtk::ToggleButton*>(b)->get_active(); }) == end(buttons)) {
+                    // all pickers hidden; not a good combination; select first one
+                    static_cast<Gtk::ToggleButton*>(buttons.front())->set_active();
+                }
+            });
+            container->pack_start(*btn);
+        }
+        container->show_all();
+        container->set_spacing(5);
+        _page_color_pickers.add_line(true, "", *container, "", _("Select color pickers"), false);
+    }
+
+    AddPage(_page_color_pickers, _("Color Selector"), iter_ui, PREFS_PAGE_UI_COLOR_PICKERS);
+    // end of Color pickers
 
     // Grids
     _page_grids.add_group_header( _("Line color when zooming out"));
@@ -1880,51 +2124,52 @@ void InkscapePreferences::initPageUI()
     _page_grids.add_group_header( _("Default grid settings"));
 
     _page_grids.add_line( true, "", _grids_notebook, "", "", false);
-    _grids_notebook.append_page(_grids_xy,     CanvasGrid::getName( GRID_RECTANGULAR ));
-    _grids_notebook.append_page(_grids_axonom, CanvasGrid::getName( GRID_AXONOMETRIC ));
+    _grids_notebook.append_page(_grids_xy,     N_("Rectangular Grid"));
+    _grids_notebook.append_page(_grids_axonom, N_("Axonometric Grid"));
+    // Rectangular SPGrid properties
         _grids_xy_units.init("/options/grids/xy/units");
         _grids_xy.add_line( false, _("Grid units:"), _grids_xy_units, "", "", false);
         _grids_xy_origin_x.init("/options/grids/xy/origin_x", -10000.0, 10000.0, 0.1, 1.0, 0.0, false, false);
         _grids_xy_origin_y.init("/options/grids/xy/origin_y", -10000.0, 10000.0, 0.1, 1.0, 0.0, false, false);
-        _grids_xy_origin_x.set_digits(5);
-        _grids_xy_origin_y.set_digits(5);
+        _grids_xy_origin_x.set_digits(3);
+        _grids_xy_origin_y.set_digits(3);
         _grids_xy.add_line( false, _("Origin X:"), _grids_xy_origin_x, "", _("X coordinate of grid origin"), false);
         _grids_xy.add_line( false, _("Origin Y:"), _grids_xy_origin_y, "", _("Y coordinate of grid origin"), false);
         _grids_xy_spacing_x.init("/options/grids/xy/spacing_x", -10000.0, 10000.0, 0.1, 1.0, 1.0, false, false);
         _grids_xy_spacing_y.init("/options/grids/xy/spacing_y", -10000.0, 10000.0, 0.1, 1.0, 1.0, false, false);
-        _grids_xy_spacing_x.set_digits(5);
-        _grids_xy_spacing_y.set_digits(5);
+        _grids_xy_spacing_x.set_digits(3);
+        _grids_xy_spacing_y.set_digits(3);
         _grids_xy.add_line( false, _("Spacing X:"), _grids_xy_spacing_x, "", _("Distance between vertical grid lines"), false);
         _grids_xy.add_line( false, _("Spacing Y:"), _grids_xy_spacing_y, "", _("Distance between horizontal grid lines"), false);
 
-        _grids_xy_color.init(_("Minor grid line color:"), "/options/grids/xy/color", GRID_DEFAULT_COLOR);
+        _grids_xy_color.init(_("Minor grid line color:"), "/options/grids/xy/color", GRID_DEFAULT_MINOR_COLOR);
         _grids_xy.add_line( false, _("Minor grid line color:"), _grids_xy_color, "", _("Color used for normal grid lines"), false);
-        _grids_xy_empcolor.init(_("Major grid line color:"), "/options/grids/xy/empcolor", GRID_DEFAULT_EMPCOLOR);
+        _grids_xy_empcolor.init(_("Major grid line color:"), "/options/grids/xy/empcolor", GRID_DEFAULT_MAJOR_COLOR);
         _grids_xy.add_line( false, _("Major grid line color:"), _grids_xy_empcolor, "", _("Color used for major (highlighted) grid lines"), false);
         _grids_xy_empspacing.init("/options/grids/xy/empspacing", 1.0, 1000.0, 1.0, 5.0, 5.0, true, false);
         _grids_xy.add_line( false, _("Major grid line every:"), _grids_xy_empspacing, "", "", false);
         _grids_xy_dotted.init( _("Show dots instead of lines"), "/options/grids/xy/dotted", false);
         _grids_xy.add_line( false, "", _grids_xy_dotted, "", _("If set, display dots at gridpoints instead of gridlines"), false);
 
-    // CanvasAxonomGrid properties:
+    // Axonometric SPGrid properties:
         _grids_axonom_units.init("/options/grids/axonom/units");
         _grids_axonom.add_line( false, _("Grid units:"), _grids_axonom_units, "", "", false);
         _grids_axonom_origin_x.init("/options/grids/axonom/origin_x", -10000.0, 10000.0, 0.1, 1.0, 0.0, false, false);
         _grids_axonom_origin_y.init("/options/grids/axonom/origin_y", -10000.0, 10000.0, 0.1, 1.0, 0.0, false, false);
-        _grids_axonom_origin_x.set_digits(5);
-        _grids_axonom_origin_y.set_digits(5);
+        _grids_axonom_origin_x.set_digits(3);
+        _grids_axonom_origin_y.set_digits(3);
         _grids_axonom.add_line( false, _("Origin X:"), _grids_axonom_origin_x, "", _("X coordinate of grid origin"), false);
         _grids_axonom.add_line( false, _("Origin Y:"), _grids_axonom_origin_y, "", _("Y coordinate of grid origin"), false);
         _grids_axonom_spacing_y.init("/options/grids/axonom/spacing_y", -10000.0, 10000.0, 0.1, 1.0, 1.0, false, false);
-        _grids_axonom_spacing_y.set_digits(5);
+        _grids_axonom_spacing_y.set_digits(3);
         _grids_axonom.add_line( false, _("Spacing Y:"), _grids_axonom_spacing_y, "", _("Base length of z-axis"), false);
         _grids_axonom_angle_x.init("/options/grids/axonom/angle_x", -360.0, 360.0, 1.0, 10.0, 30.0, false, false);
         _grids_axonom_angle_z.init("/options/grids/axonom/angle_z", -360.0, 360.0, 1.0, 10.0, 30.0, false, false);
         _grids_axonom.add_line( false, _("Angle X:"), _grids_axonom_angle_x, "", _("Angle of x-axis"), false);
         _grids_axonom.add_line( false, _("Angle Z:"), _grids_axonom_angle_z, "", _("Angle of z-axis"), false);
-        _grids_axonom_color.init(_("Minor grid line color:"), "/options/grids/axonom/color", GRID_DEFAULT_COLOR);
+        _grids_axonom_color.init(_("Minor grid line color:"), "/options/grids/axonom/color", GRID_DEFAULT_MINOR_COLOR);
         _grids_axonom.add_line( false, _("Minor grid line color:"), _grids_axonom_color, "", _("Color used for normal grid lines"), false);
-        _grids_axonom_empcolor.init(_("Major grid line color:"), "/options/grids/axonom/empcolor", GRID_DEFAULT_EMPCOLOR);
+        _grids_axonom_empcolor.init(_("Major grid line color:"), "/options/grids/axonom/empcolor", GRID_DEFAULT_MAJOR_COLOR);
         _grids_axonom.add_line( false, _("Major grid line color:"), _grids_axonom_empcolor, "", _("Color used for major (highlighted) grid lines"), false);
         _grids_axonom_empspacing.init("/options/grids/axonom/empspacing", 1.0, 1000.0, 1.0, 5.0, 5.0, true, false);
         _grids_axonom.add_line( false, _("Major grid line every:"), _grids_axonom_empspacing, "", "", false);
@@ -1999,21 +2244,25 @@ void InkscapePreferences::initPageIO()
     _page_io.add_line( false, "", _misc_default_metadata, "",
                            _("Add default metadata to new documents. Default metadata can be set from Document Properties->Metadata."), true);
 
+    _export_all_extensions.init( _("Show all outputs in Export Dialog"), "/dialogs/export/show_all_extensions", false);
+    _page_io.add_line( false, "", _export_all_extensions, "",
+                           _("Will list all possible output extensions in the Export Dialog selection."), true);
+
     // Input devices options
     _mouse_sens.init ( "/options/cursortolerance/value", 0.0, 30.0, 1.0, 1.0, 8.0, true, false);
-    _page_mouse.add_line( false, _("_Grab sensitivity:"), _mouse_sens, _("pixels (requires restart)"),
-                           _("How close on the screen you need to be to an object to be able to grab it with mouse (in screen pixels)"), false);
+    _page_mouse.add_line( false, _("_Grab sensitivity:"), _mouse_sens, _("pixels"),
+                           _("How close on the screen you need to be to an object to be able to grab it with mouse (in screen pixels)"), false, reset_icon());
     _mouse_thres.init ( "/options/dragtolerance/value", 0.0, 100.0, 1.0, 1.0, 8.0, true, false);
     _page_mouse.add_line( false, _("_Click/drag threshold:"), _mouse_thres, _("pixels"),
                            _("Maximum mouse drag (in screen pixels) which is considered a click, not a drag"), false);
 
-    _mouse_use_ext_input.init( _("Use pressure-sensitive tablet (requires restart)"), "/options/useextinput/value", true);
+    _mouse_use_ext_input.init( _("Use pressure-sensitive tablet"), "/options/useextinput/value", true);
     _page_mouse.add_line(false, "",_mouse_use_ext_input, "",
-                        _("Use the capabilities of a tablet or other pressure-sensitive device. Disable this only if you have problems with the tablet (you can still use it as a mouse)"));
+                        _("Use the capabilities of a tablet or other pressure-sensitive device. Disable this only if you have problems with the tablet (you can still use it as a mouse)"), false, reset_icon());
 
-    _mouse_switch_on_ext_input.init( _("Switch tool based on tablet device (requires restart)"), "/options/switchonextinput/value", false);
+    _mouse_switch_on_ext_input.init( _("Switch tool based on tablet device"), "/options/switchonextinput/value", false);
     _page_mouse.add_line(false, "",_mouse_switch_on_ext_input, "",
-                        _("Change tool as different devices are used on the tablet (pen, eraser, mouse)"));
+                        _("Change tool as different devices are used on the tablet (pen, eraser, mouse)"), false, reset_icon());
     this->AddPage(_page_mouse, _("Input devices"), iter_io, PREFS_PAGE_IO_MOUSE);
 
     // SVG output options
@@ -2173,13 +2422,6 @@ void InkscapePreferences::initPageIO()
     _page_cms.add_line( true, "", _cms_proof_blackpoint, "",
                         _("Enables black point compensation"), false);
 
-    _cms_proof_preserveblack.init( _("Preserve black"), "/options/softproof/preserveblack", false);
-
-#if !defined(cmsFLAGS_PRESERVEBLACK)
-    _cms_proof_preserveblack.set_sensitive( false );
-#endif // !defined(cmsFLAGS_PRESERVEBLACK)
-
-
     {
         std::vector<Glib::ustring> names = ::Inkscape::CMSSystem::getDisplayNames();
         Glib::ustring current = prefs->getString( "/options/displayprofile/uri" );
@@ -2230,7 +2472,7 @@ void InkscapePreferences::initPageIO()
     _page_autosave.add_line(false, C_("Filesystem", "Autosave _directory:"), _save_autosave_path, "", _("The directory where autosaves will be written. This should be an absolute path (starts with / on UNIX or a drive letter such as C: on Windows)."), false);
     _save_autosave_interval.init("/options/autosave/interval", 1.0, 10800.0, 1.0, 10.0, 10.0, true, false);
     _page_autosave.add_line(false, _("_Interval (in minutes):"), _save_autosave_interval, "", _("Interval (in minutes) at which document will be autosaved"), false);
-    _save_autosave_max.init("/options/autosave/max", 1.0, 100.0, 1.0, 10.0, 10.0, true, false);
+    _save_autosave_max.init("/options/autosave/max", 1.0, 10000.0, 1.0, 10.0, 10.0, true, false);
     _page_autosave.add_line(false, _("_Maximum number of autosaves:"), _save_autosave_max, "", _("Maximum number of autosaved files; use this to limit the storage space used"), false);
 
     // When changing the interval or enabling/disabling the autosave function,
@@ -2266,8 +2508,17 @@ void InkscapePreferences::initPageBehavior()
 
     _sel_layer_deselects.init ( _("Deselect upon layer change"), "/options/selection/layerdeselect", true);
 
+    _sel_touch_topmost_only.init ( _("Select the topmost items only when in touch selection mode"), "/options/selection/touchsel_topmost_only", true);
+    _sel_zero_opacity.init(_("Select transparent objects, strokes, and fills"), "/options/selection/zeroopacity", false);
+
     _page_select.add_line( false, "", _sel_layer_deselects, "",
                            _("Uncheck this to be able to keep the current objects selected when the current layer changes"));
+    _page_select.add_line(
+        false, "", _sel_zero_opacity, "",
+        _("Check to make objects, strokes, and fills which are completely transparent selectable even if not in outline mode"));
+
+    _page_select.add_line( false, "", _sel_touch_topmost_only, "",
+                           _("In touch selection mode, if multiple items overlap at a point, select only the topmost item"));
 
     _page_select.add_group_header( _("Ctrl+A, Tab, Shift+Tab"));
     _page_select.add_line( true, "", _sel_all, "",
@@ -2302,6 +2553,7 @@ void InkscapePreferences::initPageBehavior()
     _trans_scale_corner.init ( _("Scale rounded corners in rectangles"), "/options/transform/rectcorners", false);
     _trans_gradient.init ( _("Transform gradients"), "/options/transform/gradient", true);
     _trans_pattern.init ( _("Transform patterns"), "/options/transform/pattern", false);
+    _trans_dash_scale.init(_("Scale dashes with stroke"), "/options/dash/scale", true);
     _trans_optimized.init ( _("Optimized"), "/options/preservetransform/value", 0, true, nullptr);
     _trans_preserved.init ( _("Preserved"), "/options/preservetransform/value", 1, false, &_trans_optimized);
 
@@ -2313,18 +2565,14 @@ void InkscapePreferences::initPageBehavior()
                                _("Move gradients (in fill or stroke) along with the objects"));
     _page_transforms.add_line( false, "", _trans_pattern, "",
                                _("Move patterns (in fill or stroke) along with the objects"));
+    _page_transforms.add_line(false, "", _trans_dash_scale, "", _("When changing stroke width, scale dash array"));
     _page_transforms.add_group_header( _("Store transformation"));
     _page_transforms.add_line( true, "", _trans_optimized, "",
                                _("If possible, apply transformation to objects without adding a transform= attribute"));
     _page_transforms.add_line( true, "", _trans_preserved, "",
                                _("Always store transformation as a transform= attribute on objects"));
-
+    
     this->AddPage(_page_transforms, _("Transforms"), iter_behavior, PREFS_PAGE_BEHAVIOR_TRANSFORMS);
-
-    _dash_scale.init(_("Scale dashes with stroke"), "/options/dash/scale", true);
-    _page_dashes.add_line(false, "", _dash_scale, "", _("When changing stroke width, scale dash array"));
-
-    this->AddPage(_page_dashes, _("Dashes"), iter_behavior, PREFS_PAGE_BEHAVIOR_DASHES);
 
     // Scrolling options
     _scroll_wheel.init ( "/options/wheelscroll/value", 0.0, 1000.0, 1.0, 1.0, 40.0, true, false);
@@ -2350,12 +2598,6 @@ void InkscapePreferences::initPageBehavior()
     this->AddPage(_page_scrolling, _("Scrolling"), iter_behavior, PREFS_PAGE_BEHAVIOR_SCROLLING);
 
     // Snapping options
-    _page_snapping.add_group_header( _("Snap defaults"));
-
-    _snap_default.init( _("Enable snapping in new documents"), "/options/snapdefault/value", true);
-    _page_snapping.add_line( true, "", _snap_default, "",
-                             _("Initial state of snapping in new documents and SVG files that are opened with Inkscape for the first time. Snap status is subsequently saved per-document."));
-
     _page_snapping.add_group_header( _("Snap indicator"));
 
     _snap_indicator.init( _("Enable snap indicator"), "/options/snapindicator/value", true);
@@ -2391,6 +2633,7 @@ void InkscapePreferences::initPageBehavior()
     _snap_delay.init("/options/snapdelay/value", 0, 1, 0.1, 0.2, 0, 1);
     _page_snapping.add_line( true, _("Delay (in seconds):"), _snap_delay, "",
                              _("Postpone snapping as long as the mouse is moving, and then wait an additional fraction of a second. This additional delay is specified here. When set to zero or to a very small number, snapping will be immediate."), true);
+
 
     this->AddPage(_page_snapping, _("Snapping"), iter_behavior, PREFS_PAGE_BEHAVIOR_SNAPPING);
 
@@ -2465,7 +2708,9 @@ void InkscapePreferences::initPageBehavior()
     _clone_to_curves.init ( _("Path operations unlink clones"), "/options/pathoperationsunlink/value", true);
     _page_clones.add_line(true, "", _clone_to_curves, "",
                         _("The following path operations will unlink clones: Stroke to path, Object to path, Boolean operations, Combine, Break apart"));
-
+    _clone_ignore_to_curves.init ( _("'Object to Path' only unlinks (keeps LPEs, shapes)"), "/options/clonestocurvesjustunlink/value", true);
+    _page_clones.add_line(true, "", _clone_ignore_to_curves, "",
+                        _("'Object to path' only unlinks clones when they are converted to paths, but preserves any LPEs and shapes within the clones."));
     //TRANSLATORS: Heading for the Inkscape Preferences "Clones" Page
     this->AddPage(_page_clones, _("Clones"), iter_behavior, PREFS_PAGE_BEHAVIOR_CLONES);
 
@@ -2473,6 +2718,9 @@ void InkscapePreferences::initPageBehavior()
     _mask_mask_on_top.init ( _("When applying, use the topmost selected object as clippath/mask"), "/options/maskobject/topmost", true);
     _page_mask.add_line(false, "", _mask_mask_on_top, "",
                         _("Uncheck this to use the bottom selected object as the clipping path or mask"));
+    _mask_mask_on_ungroup.init ( _("When ungrouping, clips/masks are preserved in children"), "/options/maskobject/maskonungroup", true);
+    _page_mask.add_line(false, "", _mask_mask_on_ungroup, "",
+                        _("Uncheck this to remove clip/mask on ungroup"));
     _mask_mask_remove.init ( _("Remove clippath/mask object after applying"), "/options/maskobject/remove", true);
     _page_mask.add_line(false, "", _mask_mask_remove, "",
                         _("After applying, remove the object used as the clipping path or mask from the drawing"));
@@ -2500,7 +2748,7 @@ void InkscapePreferences::initPageBehavior()
 
     this->AddPage(_page_mask, _("Clippaths and masks"), iter_behavior, PREFS_PAGE_BEHAVIOR_MASKS);
 
-
+    // Markers options
     _page_markers.add_group_header( _("Stroke Style Markers"));
     _page_markers.add_line( true, "", _markers_color_stock, "",
                            _("Stroke color same as object, fill color either object fill color or marker fill color"));
@@ -2511,56 +2759,72 @@ void InkscapePreferences::initPageBehavior()
 
     this->AddPage(_page_markers, _("Markers"), iter_behavior, PREFS_PAGE_BEHAVIOR_MARKERS);
 
+    // Clipboard options
+    _clipboard_style_computed.init(_("Copy computed style"), "/options/copycomputedstyle/value", 1, true, nullptr);
+    _clipboard_style_verbatim.init(_("Copy class and style attributes verbatim"), "/options/copycomputedstyle/value", 0,
+                                   false, &_clipboard_style_computed);
 
+    _page_clipboard.add_group_header(_("Copying objects to the clipboard"));
+    _page_clipboard.add_line(true, "", _clipboard_style_computed, "",
+                             _("The object's 'style' attribute will be set to the computed style, "
+                               "preserving the object's appearance as in previous Inkscape versions"));
+    _page_clipboard.add_line(
+        true, "", _clipboard_style_verbatim, "",
+        _("The object's 'style' and 'class' values will be copied verbatim, and will replace those of the target object when using 'Paste style'"));
+
+    this->AddPage(_page_clipboard, _("Clipboard"), iter_behavior, PREFS_PAGE_BEHAVIOR_CLIPBOARD);
+
+    // Document cleanup options
     _page_cleanup.add_group_header( _("Document cleanup"));
     _cleanup_swatches.init ( _("Remove unused swatches when doing a document cleanup"), "/options/cleanupswatches/value", false); // text label
     _page_cleanup.add_line( true, "", _cleanup_swatches, "",
                            _("Remove unused swatches when doing a document cleanup")); // tooltip
     this->AddPage(_page_cleanup, _("Cleanup"), iter_behavior, PREFS_PAGE_BEHAVIOR_CLEANUP);
+    _page_lpe.add_group_header( _("General"));
+    _lpe_show_experimental.init ( _("Show experimental effects"), "/dialogs/livepatheffect/showexperimental", false); // text label
+    _page_lpe.add_line( true, "", _lpe_show_experimental, "",
+                            _("Show experimental effects")); // tooltip
+    _lpe_show_gallery.init ( _("Show deprecated LPE gallery"), "/dialogs/livepatheffect/showgallery", false); // text label
+    _page_lpe.add_line( true, "", _lpe_show_gallery, "",
+                            _("Adds a button to the LPE dialog that opens the old-style LPE selection dialog")); // tooltip
+    _page_lpe.add_group_header( _("Tiling"));
+    _lpe_copy_mirroricons.init ( _("Add advanced tiling options"), "/live_effects/copy/mirroricons", true); // text label
+    _page_lpe.add_line( true, "", _lpe_copy_mirroricons, "",
+                           _("Enables using 16 advanced mirror options between the copies (so there can be copies that are mirrored differently between the rows and the columns) for Tiling LPE")); // tooltip
+    this->AddPage(_page_lpe, _("Live Path Effects (LPE)"), iter_behavior, PREFS_PAGE_BEHAVIOR_LPE);
 }
 
 void InkscapePreferences::initPageRendering()
 {
-
-    /* threaded blur */ //related comments/widgets/functions should be renamed and option should be moved elsewhere when inkscape is fully multi-threaded
-    _filter_multi_threaded.init("/options/threading/numthreads", 1.0, 8.0, 1.0, 2.0, 4.0, true, false);
-    _page_rendering.add_line( false, _("Number of _Threads:"), _filter_multi_threaded, _("(requires restart)"),
-                           _("Configure number of processors/threads to use when rendering filters"), false);
+    // render threads
+    _filter_multi_threaded.init("/options/threading/numthreads", 0.0, 32.0, 1.0, 2.0, 0.0, true, false);
+    _page_rendering.add_line(false, _("Number of _Threads:"), _filter_multi_threaded, "", _("Configure number of threads to use when rendering. The default value of zero means choose automatically."), false);
 
     // rendering cache
     _rendering_cache_size.init("/options/renderingcache/size", 0.0, 4096.0, 1.0, 32.0, 64.0, true, false);
     _page_rendering.add_line( false, _("Rendering _cache size:"), _rendering_cache_size, C_("mebibyte (2^20 bytes) abbreviation","MiB"), _("Set the amount of memory per document which can be used to store rendered parts of the drawing for later reuse; set to zero to disable caching"), false);
 
-    // rendering tile multiplier
-    _rendering_tile_multiplier.init("/options/rendering/tile-multiplier", 1.0, 512.0, 1.0, 16.0, 16.0, true, false);
-    _page_rendering.add_line( false, _("Rendering tile multiplier:"), _rendering_tile_multiplier, "",
-                              _("On modern hardware, increasing this value (default is 16) can help to get a better performance when there are large areas with filtered objects (this includes blur and blend modes) in your drawing. Decrease the value to make zooming and panning in relevant areas faster on low-end hardware in drawings with few or no filters."), false);
-    // rendering xray radius
+    // rendering x-ray radius
     _rendering_xray_radius.init("/options/rendering/xray-radius", 1.0, 1500.0, 1.0, 100.0, 100.0, true, false);
-    _page_rendering.add_line( false, _("X-ray radius:"), _rendering_xray_radius, "",
-                             _("Radius of the circular area around the mouse cursor in X-ray mode"), false);
+    _page_rendering.add_line( false, _("X-ray radius:"), _rendering_xray_radius, "", _("Radius of the circular area around the mouse cursor in X-ray mode"), false);
 
-    // rendering outline overlay opcaity
-    _rendering_outline_overlay_opacity.init("/options/rendering/outline-overlay-opacity", 1.0, 100.0, 1.0, 5.0, 50.0, true, false);
-    _rendering_outline_overlay_opacity.signal_focus_out_event().connect(sigc::mem_fun(*this, &InkscapePreferences::on_outline_overlay_changed));
-    _page_rendering.add_line( false, _("Outline overlay opacity:"), _rendering_outline_overlay_opacity, _("%"),
-                             _("Opacity of the color in outline overlay view mode"), false);
+    // rendering outline overlay opacity
+    _rendering_outline_overlay_opacity.init("/options/rendering/outline-overlay-opacity", 0.0, 100.0, 1.0, 5.0, 50.0, true, false);
+    _page_rendering.add_line( false, _("Outline overlay opacity:"), _rendering_outline_overlay_opacity, _("%"), _("Opacity of the overlay in outline overlay view mode"), false);
 
+    // update strategy
     {
-        // if these GTK constants ever change, consider adding a compatibility shim to SPCanvas::addIdle()
-        static_assert(G_PRIORITY_HIGH_IDLE    == 100, "G_PRIORITY_HIGH_IDLE must be 100 to match preferences.xml");
-        static_assert(G_PRIORITY_DEFAULT_IDLE == 200, "G_PRIORITY_DEFAULT_IDLE must be 200 to match preferences.xml");
-
-        Glib::ustring redrawPriorityLabels[] = {_("Responsive"), _("Conservative")};
-        int redrawPriorityValues[] = {G_PRIORITY_HIGH_IDLE, G_PRIORITY_DEFAULT_IDLE};
-
-        // redraw priority
-        _rendering_redraw_priority.init("/options/redrawpriority/value", redrawPriorityLabels, redrawPriorityValues, G_N_ELEMENTS(redrawPriorityLabels), 0);
-        _page_rendering.add_line(false, _("Redraw while editing:"), _rendering_redraw_priority, "",
-                                        _("Set how quickly the canvas display is updated while editing objects"), false);
+        constexpr int values[] = { 1, 2, 3 };
+        Glib::ustring const labels[] = { _("Responsive"), _("Full redraw"), _("Multiscale") };
+        _canvas_update_strategy.init("/options/rendering/update_strategy", labels, values, 3, 3);
+        _page_rendering.add_line(false, _("Update strategy:"), _canvas_update_strategy, "", _("How to update continually changing content when it can't be redrawn fast enough"), false);
     }
 
-    /* blur quality */
+    // opengl
+    _canvas_request_opengl.init(_("Enable OpenGL"), "/options/rendering/request_opengl", false);
+    _page_rendering.add_line(false, "", _canvas_request_opengl, "", _("Request that the canvas should be painted with OpenGL rather than Cairo. If OpenGL is unsupported, it will fall back to Cairo."), false);
+
+    // blur quality
     _blur_quality_best.init ( _("Best quality (slowest)"), "/options/blurquality/value",
                                   BLUR_QUALITY_BEST, false, nullptr);
     _blur_quality_better.init ( _("Better quality (slower)"), "/options/blurquality/value",
@@ -2584,7 +2848,7 @@ void InkscapePreferences::initPageRendering()
     _page_rendering.add_line( true, "", _blur_quality_worst, "",
                            _("Lowest quality (considerable artifacts), but display is fastest"));
 
-    /* filter quality */
+    // filter quality
     _filter_quality_best.init ( _("Best quality (slowest)"), "/options/filterquality/value",
                                   Inkscape::Filters::FILTER_QUALITY_BEST, false, nullptr);
     _filter_quality_better.init ( _("Better quality (slower)"), "/options/filterquality/value",
@@ -2608,7 +2872,110 @@ void InkscapePreferences::initPageRendering()
     _page_rendering.add_line( true, "", _filter_quality_worst, "",
                            _("Lowest quality (considerable artifacts), but display is fastest"));
 
-    this->AddPage(_page_rendering, _("Rendering"), PREFS_PAGE_RENDERING);
+#if CAIRO_VERSION >= CAIRO_VERSION_ENCODE(1, 18, 0)
+    _cairo_dithering.init(_("Use dithering"), "/options/dithering/value", true);
+    _page_rendering.add_line(false, "", _cairo_dithering, "",  _("Makes gradients smoother. This can significantly impact the size of generated PNG files."));
+#endif
+
+    auto grid = Gtk::make_managed<Gtk::Grid>();
+    grid->set_border_width(12);
+    grid->set_orientation(Gtk::ORIENTATION_VERTICAL);
+    grid->set_column_spacing(12);
+    grid->set_row_spacing(6);
+    auto revealer = Gtk::make_managed<Gtk::Revealer>();
+    revealer->add(*grid);
+    revealer->set_reveal_child(Inkscape::Preferences::get()->getBool("/options/rendering/devmode"));
+    _canvas_developer_mode_enabled.init(_("Enable developer mode"), "/options/rendering/devmode", false);
+    _canvas_developer_mode_enabled.signal_toggled().connect([revealer, this] { revealer->set_reveal_child(_canvas_developer_mode_enabled.get_active()); });
+    _page_rendering.add_group_header(_("Developer mode"));
+    _page_rendering.add_line(true, "", _canvas_developer_mode_enabled, "", _("Enable additional debugging options"), false);
+    _page_rendering.add(*revealer);
+
+    auto add_devmode_line = [&] (Glib::ustring const &label, Gtk::Widget &widget, Glib::ustring const &suffix, Glib::ustring const &tip) {
+        widget.set_tooltip_text(tip);
+
+        auto hb = Gtk::make_managed<Gtk::Box>();
+        hb->set_spacing(12);
+        hb->set_hexpand(true);
+        hb->pack_start(widget, false, false);
+        hb->set_valign(Gtk::ALIGN_CENTER);
+
+        auto label_widget = Gtk::make_managed<Gtk::Label>(label, Gtk::ALIGN_START, Gtk::ALIGN_CENTER, true);
+        label_widget->set_mnemonic_widget(widget);
+        label_widget->set_markup(label_widget->get_text());
+        label_widget->set_margin_start(12);
+
+        label_widget->set_valign(Gtk::ALIGN_CENTER);
+        grid->add(*label_widget);
+        grid->attach_next_to(*hb, *label_widget, Gtk::POS_RIGHT, 1, 1);
+
+        if (!suffix.empty()) {
+            auto suffix_widget = Gtk::make_managed<Gtk::Label>(suffix, Gtk::ALIGN_START, Gtk::ALIGN_CENTER, true);
+            suffix_widget->set_markup(suffix_widget->get_text());
+            hb->pack_start(*suffix_widget, false, false);
+        }
+    };
+
+    auto add_devmode_group_header = [&] (Glib::ustring const &name) {
+        auto label_widget = Gtk::make_managed<Gtk::Label>(Glib::ustring(/*"<span size='large'>*/"<b>") + name + Glib::ustring("</b>"/*</span>"*/) , Gtk::ALIGN_START , Gtk::ALIGN_CENTER, true);
+        label_widget->set_use_markup(true);
+        label_widget->set_valign(Gtk::ALIGN_CENTER);
+        grid->add(*label_widget);
+    };
+
+    //TRANSLATORS: The following are options for fine-tuning rendering, meant to be used by developers, 
+    //find more explanations at https://gitlab.com/inkscape/inbox/-/issues/6544#note_886540227
+    add_devmode_group_header(_("Low-level tuning options"));
+    _canvas_tile_size.init("/options/rendering/tile_size", 1.0, 10000.0, 1.0, 0.0, 300.0, true, false);
+    add_devmode_line(_("Tile size"), _canvas_tile_size, "", _("Halve rendering tile rectangles until their largest dimension is this small"));
+    _canvas_render_time_limit.init("/options/rendering/render_time_limit", 1.0, 5000.0, 1.0, 0.0, 80.0, true, false);
+    add_devmode_line(_("Render time limit"), _canvas_render_time_limit, C_("millisecond abbreviation", "ms"), _("The maximum time allowed for a rendering time slice"));
+    _canvas_block_updates.init("", "/options/rendering/block_updates", true);
+    add_devmode_line(_("Use block updates"), _canvas_block_updates, "", _("Update the dragged region as a single block"));
+    {
+        constexpr int values[] = { 1, 2, 3, 4 };
+        Glib::ustring const labels[] = { _("Auto"), _("Persistent"), _("Asynchronous"), _("Synchronous") };
+        _canvas_pixelstreamer_method.init("/options/rendering/pixelstreamer_method", labels, values, 4, 1);
+        add_devmode_line(_("Pixel streaming method"), _canvas_pixelstreamer_method, "", _("Change the method used for streaming pixel data to the GPU. The default is Auto, which picks the best method available at runtime. As for the other options, higher up is better."));
+    }
+    _canvas_padding.init("/options/rendering/padding", 0.0, 1000.0, 1.0, 0.0, 350.0, true, false);
+    add_devmode_line(_("Buffer padding"), _canvas_padding, C_("pixel abbreviation", "px"), _("Use buffers bigger than the window by this amount"));
+    _canvas_prerender.init("/options/rendering/prerender", 0.0, 1000.0, 1.0, 0.0, 100.0, true, false);
+    add_devmode_line(_("Prerender margin"), _canvas_prerender, "", _("Pre-render a margin around the visible region."));
+    _canvas_preempt.init("/options/rendering/preempt", 0.0, 1000.0, 1.0, 0.0, 250.0, true, false);
+    add_devmode_line(_("Preempt size"), _canvas_preempt, "", _("Prevent thin tiles at the rendering edge by making them at least this size."));
+    _canvas_coarsener_min_size.init("/options/rendering/coarsener_min_size", 0.0, 1000.0, 1.0, 0.0, 200.0, true, false);
+    add_devmode_line(_("Min size for coarsener algorithm"), _canvas_coarsener_min_size, C_("pixel abbreviation", "px"), _("Coarsener algorithm only processes rectangles smaller/thinner than this."));
+    _canvas_coarsener_glue_size.init("/options/rendering/coarsener_glue_size", 0.0, 1000.0, 1.0, 0.0, 80.0, true, false);
+    add_devmode_line(_("Glue size for coarsener algorithm"), _canvas_coarsener_glue_size, C_("pixel abbreviation", "px"), _("Coarsener algorithm absorbs nearby rectangles within this distance."));
+    _canvas_coarsener_min_fullness.init("/options/rendering/coarsener_min_fullness", 0.0, 1.0, 0.0, 0.0, 0.3, false, false);
+    add_devmode_line(_("Min fullness for coarsener algorithm"), _canvas_coarsener_min_fullness, "", _("Refuse coarsening algorithm's attempt if the result would be more empty than this."));
+
+    add_devmode_group_header(_("Debugging, profiling and experiments"));
+    _canvas_debug_framecheck.init("", "/options/rendering/debug_framecheck", false);
+    add_devmode_line(_("Framecheck"), _canvas_debug_framecheck, "", _("Print profiling data of selected operations to a file"));
+    _canvas_debug_logging.init("", "/options/rendering/debug_logging", false);
+    add_devmode_line(_("Logging"), _canvas_debug_logging, "", _("Log certain events to the console"));
+    _canvas_debug_delay_redraw.init("", "/options/rendering/debug_delay_redraw", false);
+    add_devmode_line(_("Delay redraw"), _canvas_debug_delay_redraw, "", _("Introduce a fixed delay for each tile"));
+    _canvas_debug_delay_redraw_time.init("/options/rendering/debug_delay_redraw_time", 0.0, 1000000.0, 1.0, 0.0, 50.0, true, false);
+    add_devmode_line(_("Delay redraw time"), _canvas_debug_delay_redraw_time, C_("microsecond abbreviation", "μs"), _("The delay to introduce for each tile"));
+    _canvas_debug_show_redraw.init("", "/options/rendering/debug_show_redraw", false);
+    add_devmode_line(_("Show redraw"), _canvas_debug_show_redraw, "", _("Paint a translucent random colour over each newly drawn tile"));
+    _canvas_debug_show_unclean.init("", "/options/rendering/debug_show_unclean", false);
+    add_devmode_line(_("Show unclean region"), _canvas_debug_show_unclean, "", _("Show the region that needs to be redrawn in red (only in Cairo mode)"));
+    _canvas_debug_show_snapshot.init("", "/options/rendering/debug_show_snapshot", false);
+    add_devmode_line(_("Show snapshot region"), _canvas_debug_show_snapshot, "", _("Show the region that still contains a saved copy of previously rendered content in blue (only in Cairo mode)"));
+    _canvas_debug_show_clean.init("", "/options/rendering/debug_show_clean", false);
+    add_devmode_line(_("Show clean region's fragmentation"), _canvas_debug_show_clean, "", _("Show the outlines of the rectangles in the region where rendering is complete in green (only in Cairo mode)"));
+    _canvas_debug_disable_redraw.init("", "/options/rendering/debug_disable_redraw", false);
+    add_devmode_line(_("Disable redraw"), _canvas_debug_disable_redraw, "", _("Temporarily disable the idle redraw process completely"));
+    _canvas_debug_sticky_decoupled.init("", "/options/rendering/debug_sticky_decoupled", false);
+    add_devmode_line(_("Sticky decoupled mode"), _canvas_debug_sticky_decoupled, "", _("Stay in decoupled mode even after rendering is complete"));
+    _canvas_debug_animate.init("", "/options/rendering/debug_animate", false);
+    add_devmode_line(_("Animate"), _canvas_debug_animate, "", _("Continuously adjust viewing parameters in an animation loop."));
+
+    AddPage(_page_rendering, _("Rendering"), PREFS_PAGE_RENDERING);
 }
 
 void InkscapePreferences::initPageBitmaps()
@@ -2658,8 +3025,8 @@ void InkscapePreferences::initPageBitmaps()
     }
 
     {
-        Glib::ustring labels[] = {_("Include"), _("Embed"), _("Link")};
-        Glib::ustring values[] = {"include", "embed", "link"};
+        Glib::ustring labels[] = {_("Include"), _("Pages"), _("Embed"), _("Link"), _("New")};
+        Glib::ustring values[] = {"include", "pages", "embed", "link", "new"};
         _svg_link.init("/dialogs/import/import_mode_svg", labels, values, G_N_ELEMENTS(values), "include");
         _page_bitmaps.add_line( false, _("SVG import mode:"), _svg_link, "", "", false);
     }
@@ -2752,6 +3119,9 @@ void InkscapePreferences::initKeyboardShortcuts(Gtk::TreeModel::iterator iter_ui
     shortcut_scroller->set_vexpand();
     // -------- Search --------
     _kb_search.init("/options/kbshortcuts/value", true);
+    // clear filter initially to show all shortcuts;
+    // this entry will typically be stale and long forgotten and not what user is looking for
+    _kb_search.set_text({});
     _kb_page_shortcuts.add_line( false, _("Search:"), _kb_search, "", "", true);
     _kb_page_shortcuts.attach(*shortcut_scroller, 0, 3, 2, 1);
 
@@ -2881,6 +3251,13 @@ void InkscapePreferences::onKBExport()
 bool InkscapePreferences::onKBSearchKeyEvent(GdkEventKey * /*event*/)
 {
     _kb_filter->refilter();
+    auto search = _kb_search.get_text();
+    if (search.length() > 2) {
+        _kb_tree.expand_all();
+    }
+    else {
+        _kb_tree.collapse_all();
+    }
     return FALSE;
 }
 
@@ -2911,28 +3288,19 @@ void InkscapePreferences::onKBTreeEdited (const Glib::ustring& path, guint accel
     event.keyval = accel_key;
     event.state = accel_mods;
     event.hardware_keycode = hardware_keycode;
-    Gtk::AccelKey const new_shortcut_key =  shortcuts.get_from_event(&event, true);
+    Gtk::AccelKey const new_shortcut_key = shortcuts.get_from_event(&event, true);
 
     if (!new_shortcut_key.is_null() &&
         (new_shortcut_key.get_key() != current_shortcut_key.get_key() ||
          new_shortcut_key.get_mod() != current_shortcut_key.get_mod())
         ) {
-        // check if there is currently a verb assigned to this shortcut; if yes ask if the shortcut should be reassigned
+        // Check if there is currently an actions assigned to this shortcut; if yes ask if the shortcut should be reassigned
         Glib::ustring action_name;
-        Inkscape::Verb *current_verb = shortcuts.get_verb_from_shortcut(new_shortcut_key);
-        if (current_verb) {
-            action_name = _(current_verb->get_name());
-            Glib::ustring::size_type pos = 0;
-            while ((pos = action_name.find('_', pos)) != action_name.npos) { // strip mnemonics
-                action_name.erase(pos, 1);
-            }
-        } else {
-            Glib::ustring accel = Gtk::AccelGroup::name(accel_key, accel_mods);
-            auto *app = InkscapeApplication::instance()->gtk_app();
-            std::vector<Glib::ustring> actions = app->get_actions_for_accel(accel);
-            if (!actions.empty()) {
-                action_name = actions[0];
-            }
+        Glib::ustring accel = Gtk::AccelGroup::name(accel_key, accel_mods);
+        auto *app = InkscapeApplication::instance()->gtk_app();
+        std::vector<Glib::ustring> actions = app->get_actions_for_accel(accel);
+        if (!actions.empty()) {
+            action_name = actions[0];
         }
 
         if (!action_name.empty()) {
@@ -2957,26 +3325,36 @@ void InkscapePreferences::onKBTreeEdited (const Glib::ustring& path, guint accel
     }
 }
 
-bool InkscapePreferences::onKBSearchFilter(const Gtk::TreeModel::const_iterator& iter)
-{
-    Glib::ustring search = _kb_search.get_text().lowercase();
-    if (search.empty()) {
-        return TRUE;
-    }
-
+static bool is_leaf_visible(const Gtk::TreeModel::const_iterator& iter, const Glib::ustring& search) {
     Glib::ustring name = (*iter)[_kb_columns.name];
     Glib::ustring desc = (*iter)[_kb_columns.description];
     Glib::ustring shortcut = (*iter)[_kb_columns.shortcut];
     Glib::ustring id = (*iter)[_kb_columns.id];
 
-    if (id.empty()) {
-        return TRUE;    // Keep all group nodes visible
+    if (name.lowercase().find(search) != name.npos
+        || shortcut.lowercase().find(search) != name.npos
+        || desc.lowercase().find(search) != name.npos
+        || id.lowercase().find(search) != name.npos) {
+        return true;
     }
 
-    return (name.lowercase().find(search) != name.npos
-            || shortcut.lowercase().find(search) != name.npos
-            || desc.lowercase().find(search) != name.npos
-            || id.lowercase().find(search) != name.npos);
+    for (auto& child : iter->children()) {
+        if (is_leaf_visible(child, search)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+bool InkscapePreferences::onKBSearchFilter(const Gtk::TreeModel::const_iterator& iter)
+{
+    Glib::ustring search = _kb_search.get_text().lowercase();
+    if (search.empty()) {
+        return true;
+    }
+
+    return is_leaf_visible(iter, search);
 }
 
 void InkscapePreferences::onKBRealize()
@@ -2987,19 +3365,13 @@ void InkscapePreferences::onKBRealize()
     }
 }
 
-InkscapePreferences::ModelColumns &InkscapePreferences::onKBGetCols()
-{
-    static InkscapePreferences::ModelColumns cols;
-    return cols;
-}
-
 void InkscapePreferences::onKBShortcutRenderer(Gtk::CellRenderer *renderer, Gtk::TreeIter const &iter) {
 
     Glib::ustring shortcut = (*iter)[onKBGetCols().shortcut];
     unsigned int user_set = (*iter)[onKBGetCols().user_set];
     Gtk::CellRendererAccel *accel = dynamic_cast<Gtk::CellRendererAccel *>(renderer);
     if (user_set) {
-        accel->property_markup() = Glib::ustring("<span foreground=\"blue\"> " + shortcut + " </span>").c_str();
+        accel->property_markup() = Glib::ustring("<span font-weight='bold'> " + shortcut + " </span>").c_str();
     } else {
         accel->property_markup() = Glib::ustring("<span> " + shortcut + " </span>").c_str();
     }
@@ -3009,7 +3381,8 @@ void InkscapePreferences::on_modifier_selection_changed()
 {
     _kb_is_updated = true;
     Gtk::TreeStore::iterator iter = _mod_tree.get_selection()->get_selected();
-    bool selected = (iter);
+    auto selected = static_cast<bool>(iter);
+
     _kb_mod_ctrl.set_sensitive(selected);
     _kb_mod_shift.set_sensitive(selected);
     _kb_mod_alt.set_sensitive(selected);
@@ -3093,83 +3466,6 @@ void InkscapePreferences::onKBListKeyboardShortcuts()
     _kb_store->clear();
     _mod_store->clear();
 
-    std::vector<Verb *>verbs = Inkscape::Verb::getList();
-
-    for (auto verb : verbs) {
-
-        if (!verb) {
-            continue;
-        }
-        if (!verb->get_name()){
-            continue;
-        }
-
-        Gtk::TreeStore::Path path;
-        if (_kb_store->iter_is_valid(_kb_store->get_iter("0"))) {
-            path = _kb_store->get_path(_kb_store->get_iter("0"));
-        }
-
-        // Find this group in the tree
-        Glib::ustring group = verb->get_group() ? _(verb->get_group()) : _("Misc");
-        Glib::ustring verb_id = verb->get_id();
-        if (verb_id .compare(0,26,"org.inkscape.effect.filter") == 0) {
-            group = _("Filters");
-        }
-        Gtk::TreeStore::iterator iter_group;
-        bool found = false;
-        while (path) {
-            iter_group = _kb_store->get_iter(path);
-            if (!_kb_store->iter_is_valid(iter_group)) {
-                break;
-            }
-            Glib::ustring name = (*iter_group)[_kb_columns.name];
-            if ((*iter_group)[_kb_columns.name] == group) {
-                found = true;
-                break;
-            }
-            path.next();
-        }
-
-        if (!found) {
-            // Add the group if not there
-            iter_group = _kb_store->append();
-            (*iter_group)[_kb_columns.name] = group;
-            (*iter_group)[_kb_columns.shortcut] = "";
-            (*iter_group)[_kb_columns.id] = "";
-            (*iter_group)[_kb_columns.description] = "";
-            (*iter_group)[_kb_columns.shortcutkey] = Gtk::AccelKey();
-            (*iter_group)[_kb_columns.user_set] = 0;
-        }
-
-        // Remove the key accelerators from the verb name
-        Glib::ustring name = _(verb->get_name());
-        std::string::size_type k = 0;
-        while((k=name.find('_',k))!=name.npos) {
-            name.erase(k, 1);
-        }
-
-        // Get the shortcut label
-        Gtk::AccelKey shortcut_key = shortcuts.get_shortcut_from_verb(verb);
-        Glib::ustring shortcut_label = "";
-        if (!shortcut_key.is_null()) {
-            shortcut_label = Glib::Markup::escape_text(shortcuts.get_label(shortcut_key));
-        }
-        // Add the verb to the group
-        Gtk::TreeStore::iterator row = _kb_store->append(iter_group->children());
-        (*row)[_kb_columns.name] =  name;
-        (*row)[_kb_columns.shortcut] = shortcut_label;
-        (*row)[_kb_columns.description] = (verb->get_short_tip() && strlen(verb->get_short_tip() )) ? _(verb->get_short_tip()) : "";
-        (*row)[_kb_columns.shortcutkey] = shortcut_key;
-        (*row)[_kb_columns.id] = verb->get_id();
-        (*row)[_kb_columns.user_set] = shortcuts.is_user_set(shortcut_key);
-
-        if (selected_id == verb->get_id()) {
-            Gtk::TreeStore::Path sel_path = _kb_filter->convert_child_path_to_path(_kb_store->get_path(row));
-            _kb_tree.expand_to_path(sel_path);
-            _kb_tree.get_selection()->select(sel_path);
-        }
-    }
-
     // Gio::Actions
 
     auto iapp = InkscapeApplication::instance();
@@ -3198,8 +3494,7 @@ void InkscapePreferences::onKBListKeyboardShortcuts()
         if (section.empty()) section = "Misc";
         if (section != old_section) {
             iter_group = _kb_store->append();
-            Glib::ustring name = Glib::ustring::compose("%1: %2", _("Actions"), section);
-            (*iter_group)[_kb_columns.name] = name;
+            (*iter_group)[_kb_columns.name] = section;
             (*iter_group)[_kb_columns.shortcut] = "";
             (*iter_group)[_kb_columns.description] = "";
             (*iter_group)[_kb_columns.shortcutkey] = Gtk::AccelKey();
@@ -3306,7 +3601,7 @@ void InkscapePreferences::onKBListKeyboardShortcuts()
         if(window) {
           SPDesktopWidget *dtw = window->get_desktop_widget();
           if(dtw)
-            reload_menu(desktop, dtw->_menubar);
+            build_menu();
         }
       }
     }
@@ -3340,14 +3635,13 @@ static void appendList(Glib::ustring& tmp, const std::vector<string_type> &listi
 
 void InkscapePreferences::initPageSystem()
 {
-    _misc_latency_skew.init("/debug/latency/skew", 0.5, 2.0, 0.01, 0.10, 1.0, false, false);
-    _page_system.add_line( false, _("Latency _skew:"), _misc_latency_skew, _("(requires restart)"),
-                           _("Factor by which the event clock is skewed from the actual time (0.9766 on some systems)"), false);
     Inkscape::Preferences *prefs = Inkscape::Preferences::get();
-    _misc_namedicon_delay.init( _("Pre-render named icons"), "/options/iconrender/named_nodelay", false);
-    _page_system.add_line( false, "", _misc_namedicon_delay, "",
-                           _("When on, named icons will be rendered before displaying the ui. This is for working around bugs in GTK+ named icon notification"), true);
-
+    _sys_shared_path.init("/options/resources/sharedpath", true);
+    auto box = new Gtk::Box();
+    box->pack_start(_sys_shared_path);
+    box->set_size_request(300, -1);
+    _page_system.add_line( false, _("Shared default resources folder:"), *box, "",
+                            _("A folder structured like a user's Inkscape preferences directory. This makes it possible to share a set of resources, such as extensions, fonts, icon sets, keyboard shortcuts, patterns/hatches, palettes, symbols, templates, themes and user interface definition files, between multiple users who have access to that folder (on the same computer or in the network). Requires a restart of Inkscape to work when changed."), false, reset_icon());
     _page_system.add_group_header( _("System info"));
 
     _sys_user_prefs.set_text(prefs->getPrefsFilename());
@@ -3357,8 +3651,8 @@ void InkscapePreferences::initPageSystem()
 
     _page_system.add_line(true, _("User preferences:"), _sys_user_prefs, "",
                           _("Location of the user’s preferences file"), true, reset_prefs);
-
-    _sys_user_config.init((char const *)Inkscape::IO::Resource::profile_path(""), _("Open preferences folder"));
+    auto profilefolder = Inkscape::IO::Resource::profile_path();
+    _sys_user_config.init(profilefolder.c_str(), _("Open preferences folder"));
     _page_system.add_line(true, _("User config:"), _sys_user_config, "", _("Location of users configuration"), true);
 
     auto extensions_folder = IO::Resource::get_path_string(IO::Resource::USER, IO::Resource::EXTENSIONS);

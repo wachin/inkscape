@@ -9,11 +9,10 @@
 
 #include <glibmm/i18n.h>
 
-#include "verbs.h"
-
 #include "live_effects/effect.h"
 #include "svg/svg.h"
 #include "svg/stringstream.h"
+#include "ui/icon-names.h"
 #include "ui/knot/knot-holder.h"
 #include "ui/knot/knot-holder-entity.h"
 #include "ui/widget/registered-widget.h"
@@ -33,8 +32,7 @@ VectorParam::VectorParam( const Glib::ustring& label, const Glib::ustring& tip,
 {
 }
 
-VectorParam::~VectorParam()
-= default;
+VectorParam::~VectorParam() = default;
 
 void
 VectorParam::param_set_default()
@@ -116,7 +114,7 @@ VectorParam::param_newWidget()
     pointwdg->setPolarCoords();
     pointwdg->setValue( vector, origin );
     pointwdg->clearProgrammatically();
-    pointwdg->set_undo_parameters(SP_VERB_DIALOG_LIVE_PATH_EFFECT, _("Change vector parameter"));
+    pointwdg->set_undo_parameters(_("Change vector parameter"), INKSCAPE_ICON("dialog-path-effects"));
 
     Gtk::Box * hbox = Gtk::manage( new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL) );
     hbox->pack_start(*pointwdg, true, true);
@@ -175,18 +173,17 @@ public:
         Geom::Point const s = snap_knot_position(p, state);
         param->setOrigin(s);
         param->set_and_write_new_values(param->origin, param->vector);
-        sp_lpe_item_update_patheffect(SP_LPE_ITEM(item), false, false);
+        sp_lpe_item_update_patheffect(cast<SPLPEItem>(item), false, false);
     };
     Geom::Point knot_get() const override {
         return param->origin;
     };
     void knot_ungrabbed(Geom::Point const &p, Geom::Point const &origin, guint state) override
     {
-        param->param_effect->refresh_widgets = true;
-        param->write_to_SVG();
+        param->param_effect->makeUndoDone(_("Move handle"));
     };
     void knot_click(guint /*state*/) override{
-        g_print ("This is the origin handle associated to parameter '%s'\n", param->param_key.c_str());
+        g_message ("This is the origin handle associated to parameter '%s'", param->param_key.c_str());
     };
 
 private:
@@ -203,18 +200,17 @@ public:
         /// @todo implement angle snapping when holding CTRL
         param->setVector(s);
         param->set_and_write_new_values(param->origin, param->vector);
-        sp_lpe_item_update_patheffect(SP_LPE_ITEM(item), false, false);
+        sp_lpe_item_update_patheffect(cast<SPLPEItem>(item), false, false);
     };
     Geom::Point knot_get() const override {
         return param->origin + param->vector;
     };
     void knot_ungrabbed(Geom::Point const &p, Geom::Point const &origin, guint state) override
     {
-        param->param_effect->refresh_widgets = true;
-        param->write_to_SVG();
-    };
+        param->param_effect->makeUndoDone(_("Move handle"));
+    }
     void knot_click(guint /*state*/) override{
-        g_print ("This is the vector handle associated to parameter '%s'\n", param->param_key.c_str());
+        g_message ("This is the vector handle associated to parameter '%s'", param->param_key.c_str());
     };
 
 private:

@@ -16,6 +16,7 @@
 #include <2geom/circle.h>
 
 #include "helper/geom-pathstroke.h"
+#include "helper/geom.h"
 
 namespace Geom {
 
@@ -1142,7 +1143,73 @@ void outline_join(Geom::Path &res, Geom::Path const& temp, Geom::Point in_tang, 
             jf = &miter_join;
     }
     jf(jd);
- }
+}
+
+std::vector<std::vector<int>> connected_components(int size, std::function<bool(int, int)> const &adj_test)
+{
+    auto components = std::vector<std::vector<int>>();
+    auto visited = std::vector<bool>(size, false);
+
+    for (int i = 0; i < size; i++) {
+        if (visited[i]) continue;
+
+        auto component = std::vector<int>({ i });
+        visited[i] = true;
+
+        for (int cur = 0; cur < component.size(); cur++) {
+            for (int j = 0; j < size; j++) {
+                if (!visited[j] && adj_test(component[cur], j)) {
+                    component.emplace_back(j);
+                    visited[j] = true;
+                }
+            }
+        }
+
+        components.emplace_back(std::move(component));
+    }
+
+    return components;
+}
+
+/**
+ * Check for an empty path.
+ */
+bool is_path_empty(Geom::Path const &path)
+{
+    double area;
+    Geom::Point pt;
+    Geom::centroid(path.toPwSb(), pt, area);
+    return std::abs(area) < 1e-3;
+}
+
+std::vector<Geom::PathVector> split_non_intersecting_paths(Geom::PathVector &&paths, bool remove_empty)
+{
+    // Get connected components of indices.
+    auto const comps = connected_components(paths.size(), [&] (int i, int j) {
+        return pathvs_have_nonempty_overlap(paths[i], paths[j]);
+    });
+
+    // Split paths into batches.
+    std::vector<Geom::PathVector> result;
+    result.reserve(comps.size());
+
+    for (auto const &comp : comps) {
+        Geom::PathVector pv;
+         // Todo: Fix when 2geom supports reserve.
+
+        for (auto i : comp) {
+            if (remove_empty && is_path_empty(paths[i])) {
+                continue;
+            }
+
+            pv.push_back(std::move(paths[i])); // Todo: Fix when 2geom supports emplace.
+        }
+
+        result.emplace_back(std::move(pv));
+    }
+
+    return result;
+}
 
 } // namespace Inkscape
 

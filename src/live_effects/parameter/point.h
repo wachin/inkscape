@@ -61,6 +61,7 @@ public:
 
     bool providesKnotHolderEntities() const override { return true; }
     void addKnotHolderEntities(KnotHolder *knotholder, SPItem *item) override;
+    ParamType paramType() const override { return ParamType::POINT; };
     friend class PointParamKnotHolderEntity;
 private:
     PointParam(const PointParam&) = delete;
@@ -68,7 +69,7 @@ private:
     bool on_button_release(GdkEventButton* button_event);
     Geom::Point defvalue;
     bool liveupdate;
-    KnotHolderEntity * _knot_entity = nullptr;
+    KnotHolderEntity *_knot_entity = nullptr;
     Inkscape::CanvasItemCtrlShape knot_shape = Inkscape::CANVAS_ITEM_CTRL_SHAPE_DIAMOND;
     Inkscape::CanvasItemCtrlMode knot_mode = Inkscape::CANVAS_ITEM_CTRL_MODE_XOR;
     guint32 knot_color = 0xffffff00;

@@ -18,17 +18,20 @@
 #include "svg/svg-length.h"
 
 /** Linear gradient. */
-class SPLinearGradient : public SPGradient {
+class SPLinearGradient final
+    : public SPGradient
+{
 public:
     SPLinearGradient();
     ~SPLinearGradient() override;
+    int tag() const override { return tag_of<decltype(*this)>; }
 
     SVGLength x1;
     SVGLength y1;
     SVGLength x2;
     SVGLength y2;
 
-    cairo_pattern_t* pattern_new(cairo_t *ct, Geom::OptRect const &bbox, double opacity) override;
+    std::unique_ptr<Inkscape::DrawingPaintServer> create_drawing_paintserver() override;
 
 protected:
     void build(SPDocument *document, Inkscape::XML::Node *repr) override;
@@ -36,9 +39,6 @@ protected:
     void update(SPCtx *ctx, guint flags) override;
     Inkscape::XML::Node* write(Inkscape::XML::Document *xml_doc, Inkscape::XML::Node *repr, unsigned int flags) override;
 };
-
-MAKE_SP_OBJECT_DOWNCAST_FUNCTIONS(SP_LINEARGRADIENT, SPLinearGradient)
-MAKE_SP_OBJECT_TYPECHECK_FUNCTIONS(SP_IS_LINEARGRADIENT, SPLinearGradient)
 
 #endif /* !SP_LINEAR_GRADIENT_H */
 

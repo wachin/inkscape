@@ -46,7 +46,7 @@ SPGradient *sp_item_set_gradient(SPItem *item, SPGradient *gr, SPGradientType ty
 /*
  * Get default normalized gradient vector of document, create if there is none
  */
-SPGradient *sp_document_default_gradient_vector( SPDocument *document, SPColor const &color, bool singleStop );
+SPGradient *sp_document_default_gradient_vector( SPDocument *document, SPColor const &color, double opacity, bool singleStop );
 
 /**
  * Return the preferred vector for \a o, made from (in order of preference) its current vector,

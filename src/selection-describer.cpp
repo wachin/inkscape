@@ -21,7 +21,7 @@
 
 #include "selection-describer.h"
 
-#include "layer-model.h"
+#include "layer-manager.h"
 #include "selection.h"
 #include "desktop.h"
 
@@ -92,8 +92,8 @@ SelectionDescriber::SelectionDescriber(Inkscape::Selection *selection, std::shar
 {
     _selection_changed_connection = new sigc::connection (
              selection->connectChanged(
-                 sigc::mem_fun(*this, &SelectionDescriber::_updateMessageFromSelection)));
-    _updateMessageFromSelection(selection);
+                 sigc::mem_fun(*this, &SelectionDescriber::updateMessage)));
+    updateMessage(selection);
 }
 
 SelectionDescriber::~SelectionDescriber()
@@ -102,7 +102,7 @@ SelectionDescriber::~SelectionDescriber()
     delete _selection_changed_connection;
 }
 
-void SelectionDescriber::_updateMessageFromSelection(Inkscape::Selection *selection) {
+void SelectionDescriber::updateMessage(Inkscape::Selection *selection) {
 	std::vector<SPItem*> items(selection->items().begin(), selection->items().end());
 
     if (items.empty()) { // no items
@@ -110,8 +110,8 @@ void SelectionDescriber::_updateMessageFromSelection(Inkscape::Selection *select
     } else {
         SPItem *item = items[0];
         g_assert(item != nullptr);
-        SPObject *layer = selection->layers()->layerForObject(item);
-        SPObject *root = selection->layers()->currentRoot();
+        SPObject *layer = selection->desktop()->layerManager().layerForObject(item);
+        SPObject *root = selection->desktop()->layerManager().currentRoot();
 
         // Layer name
         gchar *layer_name;
@@ -175,29 +175,29 @@ void SelectionDescriber::_updateMessageFromSelection(Inkscape::Selection *select
         if (items.size()==1) { // one item
             char *item_desc = item->detailedDescription();
 
-            bool isUse = dynamic_cast<SPUse *>(item) != nullptr;
-            if (isUse && dynamic_cast<SPSymbol *>(item->firstChild())) {
+            bool isUse = is<SPUse>(item);
+            if (isUse && is<SPSymbol>(item->firstChild())) {
                 _context.setF(Inkscape::NORMAL_MESSAGE, "%s%s. %s. %s.",
                               item_desc, in_phrase,
                               _("Convert symbol to group to edit"), _when_selected);
-            } else if (dynamic_cast<SPSymbol *>(item)) {
+            } else if (is<SPSymbol>(item)) {
                 _context.setF(Inkscape::NORMAL_MESSAGE, "%s%s. %s.",
                               item_desc, in_phrase,
                               _("Remove from symbols tray to edit symbol"));
             } else {
-                SPOffset *offset = (isUse) ? nullptr : dynamic_cast<SPOffset *>(item);
+                SPOffset *offset = isUse ? nullptr : cast<SPOffset>(item);
                 if (isUse || (offset && offset->sourceHref)) {
                     _context.setF(Inkscape::NORMAL_MESSAGE, "%s%s. %s. %s.",
                                   item_desc, in_phrase,
                                   _("Use <b>Shift+D</b> to look up original"), _when_selected);
                 } else {
-                    SPText *text = dynamic_cast<SPText *>(item);
-                    if (text && text->firstChild() && dynamic_cast<SPText *>(text->firstChild())) {
+                    auto text = cast<SPText>(item);
+                    if (text && text->firstChild() && is<SPText>(text->firstChild())) {
                         _context.setF(Inkscape::NORMAL_MESSAGE, "%s%s. %s. %s.",
                                       item_desc, in_phrase,
                                       _("Use <b>Shift+D</b> to look up path"), _when_selected);
                     } else {
-                        SPFlowtext *flowtext = dynamic_cast<SPFlowtext *>(item);
+                        auto flowtext = cast<SPFlowtext>(item);
                         if (flowtext && !flowtext->has_internal_frame()) {
                             _context.setF(Inkscape::NORMAL_MESSAGE, "%s%s. %s. %s.",
                                           item_desc, in_phrase,

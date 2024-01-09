@@ -13,6 +13,7 @@
 
 #include "color-palette.h"
 #include "ui/builder-utils.h"
+#include "ui/dialog/color-item.h"
 
 namespace Inkscape {
 namespace UI {
@@ -20,7 +21,8 @@ namespace Widget {
 
 ColorPalette::ColorPalette():
     _builder(create_builder("color-palette.glade")),
-    _flowbox(get_widget<Gtk::FlowBox>(_builder, "flow-box")),
+    _normal_box(get_widget<Gtk::FlowBox>(_builder, "flow-box")),
+    _pinned_box(get_widget<Gtk::FlowBox>(_builder, "pinned")),
     _menu(get_widget<Gtk::Menu>(_builder, "menu")),
     _scroll_btn(get_widget<Gtk::FlowBox>(_builder, "scroll-buttons")),
     _scroll_left(get_widget<Gtk::Button>(_builder, "btn-left")),
@@ -73,7 +75,6 @@ ColorPalette::ColorPalette():
         _enable_scrollbar(sb.get_active());
         _signal_settings_changed.emit();
     });
-    update_checkbox();
 
     auto& stretch = get_widget<Gtk::CheckButton>(_builder, "stretch");
     stretch.set_active(_force_scrollbar);
@@ -82,6 +83,23 @@ ColorPalette::ColorPalette():
         _signal_settings_changed.emit();
     });
     update_stretch();
+
+    auto& large = get_widget<Gtk::CheckButton>(_builder, "enlarge");
+    large.set_active(_large_pinned_panel);
+    large.signal_toggled().connect([=,&large](){
+        _set_large_pinned_panel(large.get_active());
+        _signal_settings_changed.emit();
+    });
+    update_checkbox();
+
+    auto& sl = get_widget<Gtk::CheckButton>(_builder, "show-labels");
+    sl.set_visible(false);
+    sl.set_active(_show_labels);
+    sl.signal_toggled().connect([=,&sl](){
+        _show_labels = sl.get_active();
+        _signal_settings_changed.emit();
+        rebuild_widgets();
+    });
 
     _scroll.set_min_content_height(1);
 
@@ -118,7 +136,8 @@ ColorPalette::ColorPalette():
         " min-height: 1px;"
         "}");
         _scroll.get_style_context()->add_provider(css_provider, GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
-        _flowbox.get_style_context()->add_provider(css_provider, GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+        _normal_box.get_style_context()->add_provider(css_provider, GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+        _pinned_box.get_style_context()->add_provider(css_provider, GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
     }
 
     // remove padding/margins from FlowBoxChild widgets, so previews can be adjacent to each other
@@ -322,6 +341,8 @@ void ColorPalette::set_compact(bool compact) {
 
         get_widget<Gtk::Scale>(_builder, "row-slider").set_visible(compact);
         get_widget<Gtk::Label>(_builder, "row-label").set_visible(compact);
+        get_widget<Gtk::CheckButton>(_builder, "enlarge").set_visible(compact);
+        get_widget<Gtk::CheckButton>(_builder, "show-labels").set_visible(!compact);
     }
 }
 
@@ -343,9 +364,15 @@ void ColorPalette::_enable_stretch(bool enable) {
     if (_stretch_tiles == enable) return;
 
     _stretch_tiles = enable;
-    _flowbox.set_halign(enable ? Gtk::ALIGN_FILL : Gtk::ALIGN_START);
+    _normal_box.set_halign(enable ? Gtk::ALIGN_FILL : Gtk::ALIGN_START);
     update_stretch();
     set_up_scrolling();
+}
+
+void ColorPalette::enable_labels(bool labels) {
+    auto& sl = get_widget<Gtk::CheckButton>(_builder, "show-labels");
+    sl.set_active(labels);
+    _show_labels = labels;
 }
 
 void ColorPalette::update_stretch() {
@@ -371,22 +398,28 @@ void ColorPalette::_enable_scrollbar(bool show) {
 void ColorPalette::set_up_scrolling() {
     auto& box = get_widget<Gtk::Box>(_builder, "palette-box");
     auto& btn_menu = get_widget<Gtk::MenuButton>(_builder, "btn-menu");
+    auto normal_count = std::max(1, static_cast<int>(_normal_box.get_children().size()));
+    auto pinned_count = std::max(1, static_cast<int>(_pinned_box.get_children().size()));
+
+    _normal_box.set_max_children_per_line(_show_labels ? 1 : normal_count);
+    _normal_box.set_min_children_per_line(1);
+    _pinned_box.set_max_children_per_line(_show_labels ? 1 : pinned_count);
+    _pinned_box.set_min_children_per_line(1);
 
     if (_compact) {
         box.set_orientation(Gtk::ORIENTATION_HORIZONTAL);
         btn_menu.set_margin_bottom(0);
-        btn_menu.set_margin_right(0);
+        btn_menu.set_margin_end(0);
         // in compact mode scrollbars are hidden; they take up too much space
         set_valign(Gtk::ALIGN_START);
         set_vexpand(false);
 
         _scroll.set_valign(Gtk::ALIGN_END);
-        _flowbox.set_valign(Gtk::ALIGN_END);
+        _normal_box.set_valign(Gtk::ALIGN_END);
 
         if (_rows == 1 && _force_scrollbar) {
             // horizontal scrolling with single row
-            _flowbox.set_max_children_per_line(_count);
-            _flowbox.set_min_children_per_line(_count);
+            _normal_box.set_min_children_per_line(normal_count);
 
             _scroll_btn.hide();
 
@@ -407,17 +440,19 @@ void ColorPalette::set_up_scrolling() {
             // vertical scrolling with multiple rows
             // 'external' allows scrollbar to shrink vertically
             _scroll.set_policy(Gtk::POLICY_NEVER, Gtk::POLICY_EXTERNAL);
-            _flowbox.set_min_children_per_line(1);
-            _flowbox.set_max_children_per_line(_count);
             _scroll_left.hide();
             _scroll_right.hide();
             _scroll_btn.show();
         }
+
+        int div = _large_pinned_panel ? (_rows > 2 ? 2 : 1) : _rows;
+        _pinned_box.set_max_children_per_line(std::max((pinned_count + div - 1) / div, 1));
+        _pinned_box.set_margin_end(_border);
     }
     else {
         box.set_orientation(Gtk::ORIENTATION_VERTICAL);
         btn_menu.set_margin_bottom(2);
-        btn_menu.set_margin_right(2);
+        btn_menu.set_margin_end(2);
         // in normal mode use regular full-size scrollbars
         set_valign(Gtk::ALIGN_FILL);
         set_vexpand(true);
@@ -426,10 +461,7 @@ void ColorPalette::set_up_scrolling() {
         _scroll_right.hide();
         _scroll_btn.hide();
 
-        _flowbox.set_valign(Gtk::ALIGN_START);
-        _flowbox.set_min_children_per_line(1);
-        _flowbox.set_max_children_per_line(_count);
-
+        _normal_box.set_valign(Gtk::ALIGN_START);
         _scroll.set_valign(Gtk::ALIGN_FILL);
         // 'always' allocates space for scrollbar
         _scroll.set_policy(Gtk::POLICY_NEVER, Gtk::POLICY_ALWAYS);
@@ -466,8 +498,29 @@ int ColorPalette::get_palette_height() const {
     return (get_tile_height() + _border) * _rows;
 }
 
+void ColorPalette::set_large_pinned_panel(bool large) {
+    auto& checkbox = get_widget<Gtk::CheckButton>(_builder, "enlarge");
+    checkbox.set_active(large);
+    _set_large_pinned_panel(large);
+}
+
+void ColorPalette::_set_large_pinned_panel(bool large) {
+    if (_large_pinned_panel == large) return;
+
+    _large_pinned_panel = large;
+    set_up_scrolling();
+}
+
+bool ColorPalette::is_pinned_panel_large() const {
+    return _large_pinned_panel;
+}
+
+bool ColorPalette::are_labels_enabled() const {
+    return _show_labels;
+}
+
 void ColorPalette::resize() {
-    if (_rows == 1 && _force_scrollbar || !_compact) {
+    if ((_rows == 1 && _force_scrollbar) || !_compact) {
         // auto size for single row to allocate space for scrollbar
         _scroll.set_size_request(-1, -1);
     }
@@ -477,48 +530,101 @@ void ColorPalette::resize() {
         _scroll.set_size_request(1, height);
     }
 
-    _flowbox.set_column_spacing(_border);
-    _flowbox.set_row_spacing(_border);
+    _normal_box.set_column_spacing(_border);
+    _normal_box.set_row_spacing(_border);
+    _pinned_box.set_column_spacing(_border);
+    _pinned_box.set_row_spacing(_border);
 
-    int width = get_tile_width();
-    int height = get_tile_height();
-    _flowbox.foreach([=](Gtk::Widget& w){
-        w.set_size_request(width, height);
-    });
+    double scale = _show_labels ? 2.0 : 1.0;
+
+    int width = get_tile_width() * scale;
+    int height = get_tile_height() * scale;
+    for (auto item : _normal_items) {
+        item->set_size_request(width, height);
+    }
+
+    int pinned_width = width;
+    int pinned_height = height;
+    if (_large_pinned_panel) {
+        double mult = _rows > 2 ? _rows / 2.0 : 2.0;
+        pinned_width = pinned_height = static_cast<int>((height + _border) * mult - _border);
+    }
+    for (auto item : _pinned_items) {
+        item->set_size_request(pinned_width, pinned_height);
+    }
 }
 
-void ColorPalette::free() {
-    for (auto widget : _flowbox.get_children()) {
+void free_colors(Gtk::FlowBox& flowbox) {
+    for (auto widget : flowbox.get_children()) {
         if (widget) {
-            _flowbox.remove(*widget);
-            delete widget;
+            flowbox.remove(*widget);
         }
     }
 }
 
-void ColorPalette::set_colors(const std::vector<Gtk::Widget*>& swatches) {
-    _flowbox.freeze_notify();
-    _flowbox.freeze_child_notify();
-
-    free();
-
-    int count = 0;
-    for (auto widget : swatches) {
-        if (widget) {
-            _flowbox.add(*widget);
-            ++count;
+void ColorPalette::set_colors(std::vector<Dialog::ColorItem*> const &swatches)
+{
+    _normal_items.clear();
+    _pinned_items.clear();
+    
+    for (auto item : swatches) {
+        if (item->is_pinned()) {
+            _pinned_items.emplace_back(item);
+        } else {
+            _normal_items.emplace_back(item);
         }
-    }    
+        item->signal_modified().connect([=] {
+            item->get_parent()->foreach([=](Gtk::Widget& w) {
+                if (auto label = dynamic_cast<Gtk::Label *>(&w)) {
+                    label->set_text(item->get_description());
+                }
+            });
+        });
+    }
+    rebuild_widgets();
+}
 
-    _flowbox.show_all();
-    _count = std::max(1, count);
-    _flowbox.set_max_children_per_line(_count);
+Gtk::Widget *ColorPalette::_get_widget(Dialog::ColorItem *item) {
+    if (auto parent = item->get_parent()) {
+        parent->remove(*item);
+    }
+    if (_show_labels) {
+        item->set_valign(Gtk::ALIGN_CENTER);
+        auto box = Gtk::make_managed<Gtk::Box>();
+        auto label = Gtk::make_managed<Gtk::Label>(item->get_description());
+        box->add(*item);
+        box->add(*label);
+        return box;
+    }
+    return Gtk::manage(item);
+}
 
-    // resize();
+void ColorPalette::rebuild_widgets()
+{
+    _normal_box.freeze_notify();
+    _normal_box.freeze_child_notify();
+    _pinned_box.freeze_notify();
+    _pinned_box.freeze_child_notify();
+
+    free_colors(_normal_box);
+    free_colors(_pinned_box);
+
+    for (auto item : _normal_items) {
+        _normal_box.add(*_get_widget(item));
+    }
+    for (auto item : _pinned_items) {
+        _pinned_box.add(*_get_widget(item));
+    }
+
+    _normal_box.show_all();
+    _pinned_box.show_all();
+
     set_up_scrolling();
 
-    _flowbox.thaw_child_notify();
-    _flowbox.thaw_notify();
+    _normal_box.thaw_child_notify();
+    _normal_box.thaw_notify();
+    _pinned_box.thaw_child_notify();
+    _pinned_box.thaw_notify();
 }
 
 class CustomMenuItem : public Gtk::RadioMenuItem {
@@ -596,11 +702,11 @@ void ColorPalette::set_palettes(const std::vector<ColorPalette::palette_t>& pale
     }
 }
 
-sigc::signal<void, Glib::ustring>& ColorPalette::get_palette_selected_signal() {
+sigc::signal<void (Glib::ustring)>& ColorPalette::get_palette_selected_signal() {
     return _signal_palette_selected;
 }
 
-sigc::signal<void>& ColorPalette::get_settings_changed_signal() {
+sigc::signal<void ()>& ColorPalette::get_settings_changed_signal() {
     return _signal_settings_changed;
 }
 

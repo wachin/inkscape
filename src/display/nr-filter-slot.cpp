@@ -16,27 +16,27 @@
 #include <cstring>
 
 #include <2geom/transforms.h>
-#include "display/cairo-utils.h"
-#include "display/drawing-context.h"
-#include "display/nr-filter-types.h"
-#include "display/nr-filter-gaussian.h"
-#include "display/nr-filter-slot.h"
-#include "display/nr-filter-units.h"
+#include "cairo-utils.h"
+#include "drawing-context.h"
+#include "drawing-surface.h"
+#include "nr-filter-types.h"
+#include "nr-filter-gaussian.h"
+#include "nr-filter-slot.h"
+#include "nr-filter-units.h"
 
 namespace Inkscape {
 namespace Filters {
 
-FilterSlot::FilterSlot(DrawingItem *item, DrawingContext *bgdc,
-        DrawingContext &graphic, FilterUnits const &u)
-    : _item(item)
-    , _source_graphic(graphic.rawTarget())
+FilterSlot::FilterSlot(DrawingContext *bgdc, DrawingContext &graphic, FilterUnits const &units, RenderContext &rc, int blurquality)
+    : _source_graphic(graphic.rawTarget())
     , _background_ct(bgdc ? bgdc->raw() : nullptr)
     , _source_graphic_area(graphic.targetLogicalBounds().roundOutwards()) // fixme
     , _background_area(bgdc ? bgdc->targetLogicalBounds().roundOutwards() : Geom::IntRect()) // fixme
-    , _units(u)
+    , _units(units)
     , _last_out(NR_FILTER_SOURCEGRAPHIC)
-    , filterquality(FILTER_QUALITY_BEST)
-    , blurquality(BLUR_QUALITY_BEST)
+    , _blurquality(blurquality)
+    , rc(rc)
+    , device_scale(graphic.surface()->device_scale())
 {
     using Geom::X;
     using Geom::Y;
@@ -52,14 +52,14 @@ FilterSlot::FilterSlot(DrawingItem *item, DrawingContext *bgdc,
         _slot_w = _source_graphic_area.width();
         _slot_h = _source_graphic_area.height();
     } else {
-        _slot_w = ceil(bbox_trans.width());
-        _slot_h = ceil(bbox_trans.height());
+        _slot_w = std::ceil(bbox_trans.width());
+        _slot_h = std::ceil(bbox_trans.height());
     }
 }
 
 FilterSlot::~FilterSlot()
 {
-    for (auto & _slot : _slots) {
+    for (auto &_slot : _slots) {
         cairo_surface_destroy(_slot.second);
     }
 }
@@ -125,10 +125,16 @@ cairo_surface_t *FilterSlot::getcairo(int slot_nr)
         cairo_surface_destroy(empty);
         s = _slots.find(slot_nr);
     }
+
+    if (s->second && cairo_surface_status(s->second) == CAIRO_STATUS_NO_MEMORY) {
+        // Simulate Cairomm behaviour by throwing std::bad_alloc.
+        throw std::bad_alloc();
+    }
+
     return s->second;
 }
 
-cairo_surface_t *FilterSlot::_get_transformed_source_graphic()
+cairo_surface_t *FilterSlot::_get_transformed_source_graphic() const
 {
     Geom::Affine trans = _units.get_matrix_display2pb();
 
@@ -153,7 +159,7 @@ cairo_surface_t *FilterSlot::_get_transformed_source_graphic()
     return tsg;
 }
 
-cairo_surface_t *FilterSlot::_get_transformed_background()
+cairo_surface_t *FilterSlot::_get_transformed_background() const
 {
     Geom::Affine trans = _units.get_matrix_display2pb();
 
@@ -174,7 +180,7 @@ cairo_surface_t *FilterSlot::_get_transformed_background()
         cairo_paint(tbg_ct);
         cairo_destroy(tbg_ct);
     } else {
-        tbg = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, _slot_w, _slot_h);
+        tbg = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, _slot_w * device_scale, _slot_h * device_scale);
     }
 
     return tbg;
@@ -241,53 +247,26 @@ void FilterSlot::set_primitive_area(int slot_nr, Geom::Rect &area)
     _primitiveAreas[slot_nr] = area;
 }
 
-Geom::Rect FilterSlot::get_primitive_area(int slot_nr)
+Geom::Rect FilterSlot::get_primitive_area(int slot_nr) const
 {
     if (slot_nr == NR_FILTER_SLOT_NOT_SET)
         slot_nr = _last_out;
 
-    PrimitiveAreaMap::iterator s = _primitiveAreas.find(slot_nr);
+    auto s = _primitiveAreas.find(slot_nr);
 
     if (s == _primitiveAreas.end()) {
-        return *(_units.get_filter_area());
+        return *_units.get_filter_area();
     }
     return s->second;
 }
 
-int FilterSlot::get_slot_count()
+Geom::Rect FilterSlot::get_slot_area() const
 {
-    return _slots.size();
+    return Geom::Rect::from_xywh(_slot_x, _slot_y, _slot_w, _slot_h);
 }
 
-void FilterSlot::set_quality(FilterQuality const q) {
-    filterquality = q;
-}
-
-void FilterSlot::set_blurquality(int const q) {
-    blurquality = q;
-}
-
-int FilterSlot::get_blurquality() {
-    return blurquality;
-}
-
-void FilterSlot::set_device_scale(int const s) {
-    device_scale = s;
-}
-
-int FilterSlot::get_device_scale() {
-    return device_scale;
-}
-
-Geom::Rect FilterSlot::get_slot_area() const {
-    Geom::Point p(_slot_x, _slot_y);
-    Geom::Point dim(_slot_w, _slot_h);
-    Geom::Rect r(p, p+dim);
-    return r;
-}
-
-} /* namespace Filters */
-} /* namespace Inkscape */
+} // namespace Filters
+} // namespace Inkscape
 
 /*
   Local Variables:

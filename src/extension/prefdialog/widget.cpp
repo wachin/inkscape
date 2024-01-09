@@ -111,6 +111,7 @@ InxWidget::InxWidget(Inkscape::XML::Node *in_repr, Inkscape::Extension::Extensio
     const char *gui_hidden = in_repr->attribute("gui-hidden");
     if (gui_hidden != nullptr) {
         if (strcmp(gui_hidden, "true") == 0) {
+            _gui_hidden = true;
             _hidden = true;
         }
     }
@@ -142,7 +143,7 @@ InxWidget::~InxWidget()
 }
 
 Gtk::Widget *
-InxWidget::get_widget(sigc::signal<void> * /*changeSignal*/)
+InxWidget::get_widget(sigc::signal<void ()> * /*changeSignal*/)
 {
     // if we end up here we're missing a definition of ::get_widget() in one of the subclasses
     g_critical("InxWidget::get_widget called from widget of type '%s' in extension '%s'",

@@ -18,10 +18,11 @@
 #include "svg/svg-length.h"
 #include "sp-shape.h"
 
-class SPLine : public SPShape {
+class SPLine final : public SPShape {
 public:
 	SPLine();
 	~SPLine() override;
+    int tag() const override { return tag_of<decltype(*this)>; }
 
     SVGLength x1;
     SVGLength y1;

@@ -89,7 +89,7 @@ SPUsePath::start_listening(SPObject* to)
     sourceObject = to;
     sourceRepr = to->getRepr();
     _delete_connection = to->connectDelete(sigc::bind(sigc::ptr_fun(&sp_usepath_delete_self), this));
-    _transformed_connection = SP_ITEM(to)->connectTransformed(sigc::bind(sigc::ptr_fun(&sp_usepath_move_compensate), this));
+    _transformed_connection = cast<SPItem>(to)->connectTransformed(sigc::bind(sigc::ptr_fun(&sp_usepath_move_compensate), this));
     _modified_connection = to->connectModified(sigc::bind<2>(sigc::ptr_fun(&sp_usepath_source_modified), this));
 }
 
@@ -126,7 +126,7 @@ sp_usepath_move_compensate(Geom::Affine const *mp, SPItem *original, SPUsePath *
     if (mode == SP_CLONE_COMPENSATION_NONE) {
         return;
     }
-    SPItem *item = SP_ITEM(self->owner);
+    auto item = cast<SPItem>(self->owner);
 
 // TODO kill naughty naughty #if 0
 #if 0
@@ -189,17 +189,18 @@ void SPUsePath::refresh_source()
 {
     sourceDirty = false;
 
-    originalPath = nullptr;
+    originalPath.reset();
 
     SPObject *refobj = sourceObject;
     if ( refobj == nullptr ) return;
 
-    if (auto shape = dynamic_cast<SPShape const *>(refobj)) {
-        originalPath = SPCurve::copy(shape->curve());
-        if (originalPath == nullptr) {
+    if (auto shape = cast<SPShape>(refobj)) {
+        if (shape->curve()) {
+            originalPath = *shape->curve();
+        } else {
             sourceDirty = true;
         }
-    } else if (auto text = dynamic_cast<SPText const *>(refobj)) {
+    } else if (auto text = cast<SPText>(refobj)) {
         originalPath = text->getNormalizedBpath();
     }
 }

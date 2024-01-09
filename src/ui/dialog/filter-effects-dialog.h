@@ -17,16 +17,24 @@
 
 #include <glibmm/property.h>
 #include <glibmm/propertyproxy.h>
+#include <glibmm/refptr.h>
+#include <glibmm/ustring.h>
+#include <gtkmm/box.h>
+#include <gtkmm/builder.h>
+#include <gtkmm/checkbutton.h>
 #include <gtkmm/notebook.h>
 #include <gtkmm/paned.h>
 #include <gtkmm/scrolledwindow.h>
+#include <gtkmm/treeiter.h>
 #include <memory>
+#include <sigc++/connection.h>
 
 #include "attributes.h"
 #include "display/nr-filter-types.h"
 #include "helper/auto-connection.h"
 #include "ui/dialog/dialog-base.h"
 #include "ui/widget/combo-enums.h"
+#include "ui/widget/completion-popup.h"
 #include "ui/widget/spin-scale.h"
 #include "xml/helper-observer.h"
 
@@ -48,8 +56,6 @@ public:
     FilterEffectsDialog();
     ~FilterEffectsDialog() override;
 
-    static FilterEffectsDialog &getInstance() { return *new FilterEffectsDialog(); }
-
     void set_attrs_locked(const bool);
 protected:
     void show_all_vfunc() override;
@@ -66,17 +72,24 @@ private:
     class FilterModifier : public Gtk::Box
     {
     public:
-        FilterModifier(FilterEffectsDialog&);
+        FilterModifier(FilterEffectsDialog& d, Glib::RefPtr<Gtk::Builder> builder);
 
         void update_filters();
         void update_selection(Selection *);
 
         SPFilter* get_selected_filter();
         void select_filter(const SPFilter*);
+        void add_filter();
+        bool is_selected_filter_active();
+        void toggle_current_filter();
+        bool filters_present() const;
 
-        sigc::signal<void>& signal_filter_changed()
+        sigc::signal<void ()>& signal_filter_changed()
         {
             return _signal_filter_changed;
+        }
+        sigc::signal<void ()>& signal_filters_updated() {
+            return _signal_filters_updated;
         }
 
     private:
@@ -101,24 +114,29 @@ private:
         void on_name_edited(const Glib::ustring&, const Glib::ustring&);
         bool on_filter_move(const Glib::RefPtr<Gdk::DragContext>& /*context*/, int x, int y, guint /*time*/);
         void on_selection_toggled(const Glib::ustring&);
+        void selection_toggled(Gtk::TreeIter iter, bool toggle);
 
         void update_counts();
         void filter_list_button_release(GdkEventButton*);
-        void add_filter();
         void remove_filter();
         void duplicate_filter();
         void rename_filter();
         void select_filter_elements();
 
+        Glib::RefPtr<Gtk::Builder> _builder;
         FilterEffectsDialog& _dialog;
-        Gtk::TreeView _list;
-        Glib::RefPtr<Gtk::ListStore> _model;
+        Gtk::TreeView& _list;
+        Glib::RefPtr<Gtk::ListStore> _filters_model;
         Columns _columns;
         Gtk::CellRendererToggle _cell_toggle;
-        Gtk::Button _add;
-        Gtk::Menu   *_menu;
-        sigc::signal<void> _signal_filter_changed;
+        Gtk::Button& _add;
+        Gtk::Button& _dup;
+        Gtk::Button& _del;
+        Gtk::Button& _select;
+        Gtk::Menu& _menu;
+        sigc::signal<void ()> _signal_filter_changed;
         std::unique_ptr<Inkscape::XML::SignalObserver> _observer;
+        sigc::signal<void ()> _signal_filters_updated;
     };
 
     class PrimitiveColumns : public Gtk::TreeModel::ColumnRecord
@@ -144,7 +162,8 @@ private:
         CellRendererConnection();
         Glib::PropertyProxy<void*> property_primitive();
 
-        static const int size = 24;
+        static const int size_w = 16;
+        static const int size_h = 21;
 
     protected:
         void get_preferred_width_vfunc(Gtk::Widget& widget,
@@ -174,19 +193,20 @@ private:
     public:
         PrimitiveList(FilterEffectsDialog&);
 
-        sigc::signal<void>& signal_primitive_changed();
+        sigc::signal<void ()>& signal_primitive_changed();
 
         void update();
         void set_menu(Gtk::Widget      &parent,
-                      sigc::slot<void>  dup,
-                      sigc::slot<void>  rem);
+                      sigc::slot<void ()>  dup,
+                      sigc::slot<void ()>  rem);
 
         SPFilterPrimitive* get_selected();
         void select(SPFilterPrimitive *prim);
         void remove_selected();
-
         int primitive_count() const;
         int get_input_type_width() const;
+        void set_inputs_count(int count);
+        int get_inputs_count() const;
 
     protected:
         bool on_draw_signal(const Cairo::RefPtr<Cairo::Context> &cr);
@@ -199,11 +219,7 @@ private:
     private:
         void init_text();
 
-	void draw_connection_node(const Cairo::RefPtr<Cairo::Context>& cr,
-                                  const std::vector<Gdk::Point>& points,
-				  const bool fill);
-
-	bool do_connection_node(const Gtk::TreeIter& row, const int input, std::vector<Gdk::Point>& points,
+        bool do_connection_node(const Gtk::TreeIter& row, const int input, std::vector<Gdk::Point>& points,
                                 const int ix, const int iy);
 
         const Gtk::TreeIter find_result(const Gtk::TreeIter& start, const SPAttr attr, int& src_id, const int pos);
@@ -224,13 +240,14 @@ private:
         Glib::RefPtr<Pango::Layout> _vertical_layout;
         int _in_drag;
         SPFilterPrimitive* _drag_prim;
-        sigc::signal<void> _signal_primitive_changed;
+        sigc::signal<void ()> _signal_primitive_changed;
         sigc::connection _scroll_connection;
         int _autoscroll_y;
         int _autoscroll_x;
         std::unique_ptr<Inkscape::XML::SignalObserver> _observer;
         int _input_type_width;
         int _input_type_height;
+        int _inputs_count;
     };
 
     void init_settings_widgets();
@@ -242,6 +259,7 @@ private:
     void convolve_order_changed();
     void image_x_changed();
     void image_y_changed();
+    void add_filter_primitive(Filters::FilterPrimitiveType type);
 
     void set_attr_direct(const UI::Widget::AttrWidget*);
     void set_child_attr_direct(const UI::Widget::AttrWidget*);
@@ -252,25 +270,31 @@ private:
     void update_settings_sensitivity();
     void update_color_matrix();
     void update_automatic_region(Gtk::CheckButton *btn);
-    void update_primitive_infobox();
+    void add_effects(Inkscape::UI::Widget::CompletionPopup& popup, bool symbolic);
 
-    // Primitives Info Box
-    Gtk::Label _infobox_desc;
-    Gtk::Image _infobox_icon;
-    Gtk::ScrolledWindow* _sw_infobox;
-
+    Glib::RefPtr<Gtk::Builder> _builder;
+    Glib::ustring _prefs = "/dialogs/filters";
+    Gtk::Paned& _paned;
+    Gtk::Grid& _main_grid;
+    Gtk::Box& _params_box;
+    Gtk::Box& _search_box;
+    Gtk::Box& _search_wide_box;
+    Gtk::ScrolledWindow& _filter_wnd;
+    bool _narrow_dialog = true;
+    Gtk::CheckButton& _cur_filter_btn;
+    sigc::connection _cur_filter_toggle;
     // View/add primitives
-    Gtk::Paned* _primitive_box;
+    Gtk::ScrolledWindow* _primitive_box;
 
     UI::Widget::ComboBoxEnum<Inkscape::Filters::FilterPrimitiveType> _add_primitive_type;
     Gtk::Button _add_primitive;
 
     // Bottom pane (filter effect primitive settings)
-    Gtk::Notebook _settings_tabs;
-    Gtk::Box _settings_tab2;
-    Gtk::Box _settings_tab1;
+    Gtk::Box _settings_filter;
+    Gtk::Box _settings_effect;
     Gtk::Label _empty_settings;
     Gtk::Label _no_filter_selected;
+    Gtk::Label* _cur_effect_name;
     bool _settings_initialized;
 
     class Settings;
@@ -310,9 +334,7 @@ private:
     // other FilterEffectsDialog members
     FilterModifier _filter_modifier;
     PrimitiveList _primitive_list;
-
-    FilterEffectsDialog(FilterEffectsDialog const &d);
-    FilterEffectsDialog& operator=(FilterEffectsDialog const &d);
+    Inkscape::UI::Widget::CompletionPopup _effects_popup;
 };
 
 } // namespace Dialog

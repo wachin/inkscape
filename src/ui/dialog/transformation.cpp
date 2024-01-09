@@ -12,24 +12,24 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
+#include "transformation.h"
+
 #include <gtkmm/dialog.h>
 
 #include <2geom/transforms.h>
 
-#include "align-and-distribute.h"
 #include "desktop.h"
 #include "document-undo.h"
 #include "document.h"
 #include "inkscape.h"
 #include "message-stack.h"
 #include "selection-chemistry.h"
-#include "transformation.h"
-#include "verbs.h"
 
+#include "object/algorithms/bboxsort.h"
 #include "object/sp-item-transform.h"
 #include "object/sp-namedview.h"
-#include "ui/icon-loader.h"
 
+#include "ui/icon-loader.h"
 #include "ui/icon-names.h"
 
 
@@ -132,30 +132,30 @@ Transformation::Transformation()
     ((Gtk::Entry *) (_scalar_skew_horizontal.getWidget()))->signal_activate().connect(sigc::mem_fun(*this, &Transformation::_apply));
     ((Gtk::Entry *) (_scalar_skew_vertical.getWidget()))->signal_activate().connect(sigc::mem_fun(*this, &Transformation::_apply));
 
-    resetButton = Gtk::manage(new Gtk::Button(_("_Clear")));
+    resetButton = Gtk::manage(new Gtk::Button());
+    resetButton->set_image_from_icon_name("reset-settings-symbolic");
+    resetButton->set_size_request(30, -1);
+    resetButton->set_halign(Gtk::ALIGN_CENTER);
     resetButton->set_use_underline();
-    if (resetButton) {
-        resetButton->set_tooltip_text(_("Reset the values on the current tab to defaults"));
-        resetButton->set_sensitive(true);
-        resetButton->signal_clicked().connect(sigc::mem_fun(*this, &Transformation::onClear));
-    }
+    resetButton->set_tooltip_text(_("Reset the values on the current tab to defaults"));
+    resetButton->set_sensitive(true);
+    resetButton->signal_clicked().connect(sigc::mem_fun(*this, &Transformation::onClear));
 
     applyButton = Gtk::manage(new Gtk::Button(_("_Apply")));
     applyButton->set_use_underline();
-    if (applyButton) {
-        applyButton->set_tooltip_text(_("Apply transformation to selection"));
-        applyButton->set_sensitive(false);
-        applyButton->signal_clicked().connect(sigc::mem_fun(*this, &Transformation::_apply));
-    }
+    applyButton->set_halign(Gtk::ALIGN_CENTER);
+    applyButton->set_tooltip_text(_("Apply transformation to selection"));
+    applyButton->set_sensitive(false);
+    applyButton->signal_clicked().connect(sigc::mem_fun(*this, &Transformation::_apply));
+    applyButton->get_style_context()->add_class("wide-apply-button");
 
-    Gtk::ButtonBox *button_box = Gtk::manage(new Gtk::ButtonBox());
-    button_box->set_layout(Gtk::BUTTONBOX_END);
-    button_box->set_spacing(6);
-    button_box->set_border_width(4);
-    pack_end(*button_box, Gtk::PACK_SHRINK, 0);
-
-    button_box->pack_end(*resetButton);
-    button_box->pack_end(*applyButton);
+    auto button_box = Gtk::manage(new Gtk::Box());
+    button_box->set_margin_top(4);
+    button_box->set_spacing(8);
+    button_box->set_halign(Gtk::ALIGN_CENTER);
+    button_box->pack_start(*applyButton);
+    button_box->pack_start(*resetButton);
+    pack_start(*button_box, Gtk::PACK_SHRINK, 0);
 
     show_all_children();
 }
@@ -462,11 +462,11 @@ void Transformation::layoutPageTransform()
     descr->set_line_wrap();
     descr->set_line_wrap_mode(Pango::WRAP_WORD);
     descr->set_text(
-        "<small>"
+        _("<small>"
         "<a href=\"https://www.w3.org/TR/SVG11/coords.html#TransformMatrixDefined\">"
         "2D transformation matrix</a> that combines translation (E,F), scaling (A,D),"
         " rotation (A-D) and shearing (B,C)."
-        "</small>"
+        "</small>")
     );
     descr->set_use_markup();
     _page_transform.table().attach(*descr, 1, 5, 2, 1);
@@ -747,8 +747,7 @@ void Transformation::applyPageMove(Inkscape::Selection *selection)
         }
     }
 
-    DocumentUndo::done( selection->desktop()->getDocument() , SP_VERB_DIALOG_TRANSFORM,
-                        _("Move"));
+    DocumentUndo::done( selection->desktop()->getDocument(), _("Move"), INKSCAPE_ICON("dialog-transform"));
 }
 
 void Transformation::applyPageScale(Inkscape::Selection *selection)
@@ -810,8 +809,7 @@ void Transformation::applyPageScale(Inkscape::Selection *selection)
         }
     }
 
-    DocumentUndo::done(selection->desktop()->getDocument(), SP_VERB_DIALOG_TRANSFORM,
-                       _("Scale"));
+    DocumentUndo::done(selection->desktop()->getDocument(), _("Scale"), INKSCAPE_ICON("dialog-transform"));
 }
 
 void Transformation::applyPageRotate(Inkscape::Selection *selection)
@@ -836,8 +834,7 @@ void Transformation::applyPageRotate(Inkscape::Selection *selection)
         }
     }
 
-    DocumentUndo::done(selection->desktop()->getDocument(), SP_VERB_DIALOG_TRANSFORM,
-                       _("Rotate"));
+    DocumentUndo::done(selection->desktop()->getDocument(), _("Rotate"), INKSCAPE_ICON("dialog-transform"));
 }
 
 void Transformation::applyPageSkew(Inkscape::Selection *selection)
@@ -933,8 +930,7 @@ void Transformation::applyPageSkew(Inkscape::Selection *selection)
         }
     }
 
-    DocumentUndo::done(selection->desktop()->getDocument(), SP_VERB_DIALOG_TRANSFORM,
-                       _("Skew"));
+    DocumentUndo::done(selection->desktop()->getDocument(), _("Skew"), INKSCAPE_ICON("dialog-transform"));
 }
 
 
@@ -964,8 +960,7 @@ void Transformation::applyPageTransform(Inkscape::Selection *selection)
         selection->applyAffine(displayed); // post-multiply each object's transform
     }
 
-    DocumentUndo::done(selection->desktop()->getDocument(), SP_VERB_DIALOG_TRANSFORM,
-                       _("Edit transformation matrix"));
+    DocumentUndo::done(selection->desktop()->getDocument(), _("Edit transformation matrix"), INKSCAPE_ICON("dialog-transform"));
 }
 
 

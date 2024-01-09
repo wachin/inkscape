@@ -23,7 +23,6 @@ public:
                 const Glib::ustring& key,
                 Inkscape::UI::Widget::Registry* wr,
                 Effect* effect);
-    ~OriginalPathParam() override;
     bool linksToPath() const { return (href != nullptr); }
     SPItem * getObject() const { return ref.getObject(); }
 
@@ -32,7 +31,7 @@ public:
     void param_editOncanvas(SPItem * /*item*/, SPDesktop * /*dt*/) override {};
     /** Disable the canvas indicators of parent class by overriding this method */
     void addCanvasIndicators(SPLPEItem const* /*lpeitem*/, std::vector<Geom::PathVector> & /*hp_vec*/) override {};
-
+    ParamType paramType() const override { return ParamType::ORIGINAL_PATH; };
 protected:
     void on_select_original_button_click();
 

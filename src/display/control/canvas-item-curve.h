@@ -24,10 +24,8 @@
 
 namespace Inkscape {
 
-class CanvasItemGroup; // A canvas control that contains other canvas controls.
-
-class CanvasItemCurve : public CanvasItem {
-
+class CanvasItemCurve final : public CanvasItem
+{
 public:
     CanvasItemCurve(CanvasItemGroup *group);
     CanvasItemCurve(CanvasItemGroup *group, Geom::Point const &p0, Geom::Point const &p1);
@@ -37,39 +35,28 @@ public:
     // Geometry
     void set_coords(Geom::Point const &p0, Geom::Point const &p1);
     void set_coords(Geom::Point const &p0, Geom::Point const &p1, Geom::Point const &p2, Geom::Point const &p3);
-    void set(Geom::BezierCurve &curve);
-    void set_width(int w);
+    void set_width(int width);
     void set_bg_alpha(float alpha);
-    bool is_line() { return _curve->size() == 2; }
+    bool is_line() const { return _curve->size() == 2; }
 
-    void update(Geom::Affine const &affine) override;
-    double closest_distance_to(Geom::Point const &p); // Maybe not needed
+    double closest_distance_to(Geom::Point const &p) const;
 
     // Selection
     bool contains(Geom::Point const &p, double tolerance = 0) override;
-
-    // Display
-    void render(Inkscape::CanvasItemBuffer *buf) override;
-
-    // Properties
-    void set_is_fill(bool is_fill) { _is_fill = is_fill; }
-    bool get_is_fill() { return _is_fill; }
-    void set_corner0(int corner0) { _corner0 = corner0; } // Used for meshes
-    int  get_corner0() { return _corner0; }
-    void set_corner1(int corner1) { _corner1 = corner1; }
-    int  get_corner1() { return _corner1; }
  
 protected:
-    std::unique_ptr<Geom::BezierCurve> _curve; 
-    bool _is_fill = true; // Fill or stroke, used by meshes.
+    ~CanvasItemCurve() override = default;
 
-    int width = 1;
+    void _update(bool propagate) override;
+    void _render(Inkscape::CanvasItemBuffer &buf) const override;
+
+    // Display
+    std::unique_ptr<Geom::BezierCurve> _curve;
+
+    int _width = 1;
     int background_width = 3; // this should be an odd number so that the background appears on both the sides of the curve.
     float bg_alpha = 0.5f;
-    int _corner0 = -1; // For meshes
-    int _corner1 = -1; // For meshes
 };
-
 
 } // namespace Inkscape
 

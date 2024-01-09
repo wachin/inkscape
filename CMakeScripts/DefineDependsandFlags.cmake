@@ -30,6 +30,13 @@ else()
     list(APPEND INKSCAPE_CXX_FLAGS "-D_FORTIFY_SOURCE=2")
 endif()
 
+# Disable deprecated Gtk and friends
+list(APPEND INKSCAPE_CXX_FLAGS "-DGLIBMM_DISABLE_DEPRECATED")
+list(APPEND INKSCAPE_CXX_FLAGS "-DGTKMM_DISABLE_DEPRECATED")
+list(APPEND INKSCAPE_CXX_FLAGS "-DGDKMM_DISABLE_DEPRECATED")
+list(APPEND INKSCAPE_CXX_FLAGS "-DGTK_DISABLE_DEPRECATED")
+list(APPEND INKSCAPE_CXX_FLAGS "-DGDK_DISABLE_DEPRECATED")
+
 # Errors for common mistakes
 list(APPEND INKSCAPE_CXX_FLAGS "-fstack-protector-strong")
 list(APPEND INKSCAPE_CXX_FLAGS "-Werror=format")                # e.g.: printf("%s", std::string("foo"))
@@ -37,6 +44,7 @@ list(APPEND INKSCAPE_CXX_FLAGS "-Werror=format-security")       # e.g.: printf(v
 list(APPEND INKSCAPE_CXX_FLAGS "-Werror=ignored-qualifiers")    # e.g.: const int foo();
 list(APPEND INKSCAPE_CXX_FLAGS "-Werror=return-type")           # non-void functions that don't return a value
 list(APPEND INKSCAPE_CXX_FLAGS "-Wno-switch")                   # See !849 for discussion
+list(APPEND INKSCAPE_CXX_FLAGS "-Wmisleading-indentation")
 list(APPEND INKSCAPE_CXX_FLAGS_DEBUG "-Og")                     # -Og for _FORTIFY_SOURCE. One could add -Weffc++ here to see approx. 6000 warnings
 list(APPEND INKSCAPE_CXX_FLAGS_DEBUG "-Wcomment")
 list(APPEND INKSCAPE_CXX_FLAGS_DEBUG "-Wunused-function")
@@ -96,10 +104,11 @@ if(WIN32)
     list(APPEND INKSCAPE_LIBS "-lmscms")
 
     list(APPEND INKSCAPE_CXX_FLAGS "-mms-bitfields")
-    list(APPEND INKSCAPE_CXX_FLAGS "-mwindows")
-    list(APPEND INKSCAPE_CXX_FLAGS "-mthreads")
+    if(${CMAKE_CXX_COMPILER_ID} STREQUAL "GNU")
+      list(APPEND INKSCAPE_CXX_FLAGS "-mwindows")
+      list(APPEND INKSCAPE_CXX_FLAGS "-mthreads")
+    endif()
 
-    list(APPEND INKSCAPE_LIBS "-lgomp")
     list(APPEND INKSCAPE_LIBS "-lwinpthread")
 
     if(HAVE_MINGW64)
@@ -112,7 +121,7 @@ endif()
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(INKSCAPE_DEP REQUIRED
                   harfbuzz
-                  pangocairo
+                  pangocairo>=1.44
                   pangoft2
                   fontconfig
                   gsl
@@ -151,7 +160,7 @@ add_definitions(${Intl_DEFINITIONS})
 
 # Check for system-wide version of 2geom and fallback to internal copy if not found
 if(NOT WITH_INTERNAL_2GEOM)
-    pkg_check_modules(2Geom QUIET IMPORTED_TARGET GLOBAL 2geom>=1.1.0)
+    pkg_check_modules(2Geom QUIET IMPORTED_TARGET GLOBAL 2geom>=1.3.0)
     if(2Geom_FOUND)
         add_library(2Geom::2geom ALIAS PkgConfig::2Geom)
     else()
@@ -236,36 +245,10 @@ find_package(Potrace REQUIRED)
 list(APPEND INKSCAPE_INCS_SYS ${POTRACE_INCLUDE_DIRS})
 list(APPEND INKSCAPE_LIBS ${POTRACE_LIBRARIES})
 
-
-if(WITH_DBUS)
-    pkg_check_modules(DBUS dbus-1 dbus-glib-1)
-    if(DBUS_FOUND)
-        sanitize_ldflags_for_libs(DBUS_LDFLAGS)
-        list(APPEND INKSCAPE_LIBS ${DBUS_LDFLAGS})
-        list(APPEND INKSCAPE_INCS_SYS ${DBUS_INCLUDE_DIRS} ${CMAKE_BINARY_DIR}/src/extension/dbus/)
-        add_definitions(${DBUS_CFLAGS_OTHER})
-    else()
-        set(WITH_DBUS OFF)
-    endif()
-endif()
-
 if(WITH_SVG2)
-    add_definitions(-DWITH_MESH -DWITH_CSSBLEND -DWITH_CSSCOMPOSITE -DWITH_SVG2)
+    add_definitions(-DWITH_MESH -DWITH_CSSBLEND -DWITH_SVG2)
 else()
-    add_definitions(-UWITH_MESH -UWITH_CSSBLEND -UWITH_CSSCOMPOSITE -UWITH_SVG2)
-endif()
-
-if(APPLE)
-  # gtk+-3.0.pc should have targets=quartz (or not targets=x11)
-  if(${CMAKE_VERSION} VERSION_GREATER_EQUAL "3.4")
-    pkg_get_variable(GTK3_TARGETS gtk+-3.0 targets)
-  endif()
-  if(NOT("${GTK3_TARGETS}" MATCHES "x11"))
-    pkg_check_modules(MacIntegration REQUIRED gtk-mac-integration-gtk3)
-    list(APPEND INKSCAPE_INCS_SYS ${MacIntegration_INCLUDE_DIRS})
-    sanitize_ldflags_for_libs(MacIntegration_LDFLAGS)
-    list(APPEND INKSCAPE_LIBS ${MacIntegration_LDFLAGS})
-  endif()
+    add_definitions(-UWITH_MESH -UWITH_CSSBLEND -UWITH_SVG2)
 endif()
 
 # ----------------------------------------------------------------------------
@@ -299,7 +282,43 @@ if(WITH_GSPELL)
     endif()
 endif()
 
-find_package(Boost 1.19.0 REQUIRED COMPONENTS filesystem)
+if(WITH_GSOURCEVIEW)
+    pkg_check_modules(GSOURCEVIEW gtksourceview-4)
+    if("${GSOURCEVIEW_FOUND}")
+        message(STATUS "Using gtksourceview-4")
+        list(APPEND INKSCAPE_INCS_SYS ${GSOURCEVIEW_INCLUDE_DIRS})
+        sanitize_ldflags_for_libs(GSOURCEVIEW_LDFLAGS)
+        list(APPEND INKSCAPE_LIBS ${GSOURCEVIEW_LDFLAGS})
+    else()
+        set(WITH_GSOURCEVIEW OFF)
+    endif()
+endif()
+
+# stacktrace print on crash
+if(WIN32)
+    find_package(Boost 1.19.0 REQUIRED COMPONENTS filesystem stacktrace_windbg)
+    list(APPEND INKSCAPE_LIBS "-lole32")
+    list(APPEND INKSCAPE_LIBS "-ldbgeng")
+    add_definitions("-DBOOST_STACKTRACE_USE_WINDBG")
+elseif(APPLE)
+    find_package(Boost 1.19.0 REQUIRED COMPONENTS filesystem stacktrace_basic)
+    list(APPEND INKSCAPE_CXX_FLAGS "-D_GNU_SOURCE")
+else()
+    find_package(Boost 1.19.0 REQUIRED COMPONENTS filesystem)
+    # The package stacktrace_backtrace may not be available on all distros.
+    find_package(Boost 1.19.0 COMPONENTS stacktrace_backtrace)
+    if (BOOST_FOUND)
+        list(APPEND INKSCAPE_LIBS "-lbacktrace")
+        add_definitions("-DBOOST_STACKTRACE_USE_BACKTRACE")
+    else() # fall back to stacktrace_basic
+        find_package(Boost 1.19.0 REQUIRED COMPONENTS stacktrace_basic)
+        list(APPEND INKSCAPE_CXX_FLAGS "-D_GNU_SOURCE")
+    endif()
+endif()
+# enable explicit debug symbols
+set(CMAKE_ENABLE_EXPORTS ON)
+
+
 
 if (CMAKE_COMPILER_IS_GNUCC AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 7 AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 9)
     list(APPEND INKSCAPE_LIBS "-lstdc++fs")
@@ -327,7 +346,7 @@ if(WITH_OPENMP)
     if(OPENMP_FOUND)
         set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS}")
         list(APPEND INKSCAPE_CXX_FLAGS  ${OpenMP_CXX_FLAGS})
-        if(APPLE)
+        if(APPLE OR (MINGW AND ${CMAKE_CXX_COMPILER_ID} STREQUAL "Clang"))
             list(APPEND INKSCAPE_LIBS "-lomp")
         endif()
         mark_as_advanced(OpenMP_C_FLAGS)
@@ -403,14 +422,29 @@ endif(WITH_NLS)
 pkg_check_modules(SIGC++ REQUIRED sigc++-2.0 )
 sanitize_ldflags_for_libs(SIGC++_LDFLAGS)
 list(APPEND INKSCAPE_LIBS ${SIGC++_LDFLAGS})
-list(APPEND INKSCAPE_CXX_FLAGS ${SIGC++_CFLAGS_OTHER})
+list(APPEND INKSCAPE_CXX_FLAGS ${SIGC++_CFLAGS_OTHER} "-DSIGCXX_DISABLE_DEPRECATED")
 
-# Some linkers, like gold, don't find symbols recursively. So we have to link against X11 explicitly
-find_package(X11)
-if(X11_FOUND)
+pkg_check_modules(EPOXY REQUIRED epoxy )
+sanitize_ldflags_for_libs(EPOXY_LDFLAGS)
+list(APPEND INKSCAPE_LIBS ${EPOXY_LDFLAGS})
+list(APPEND INKSCAPE_CXX_FLAGS ${EPOXY_CFLAGS_OTHER})
+
+if(WITH_X11)
+    find_package(X11 REQUIRED)
     list(APPEND INKSCAPE_INCS_SYS ${X11_INCLUDE_DIRS})
     list(APPEND INKSCAPE_LIBS ${X11_LIBRARIES})
-endif(X11_FOUND)
+    add_definitions(-DHAVE_X11)
+
+    pkg_get_variable(GTK3_TARGETS gtk+-3.0 targets)
+    if(NOT("${GTK3_TARGETS}" MATCHES "x11"))
+        message(FATAL_ERROR "GTK+3 doesn't targets X11, this is required for WITH_X11")
+    endif()
+endif(WITH_X11)
+
+if(WITH_INTERNAL_CAIRO)
+    include_directories(${CMAKE_SOURCE_DIR}/src/3rdparty/cairo/src)
+    link_directories(${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}/${CMAKE_LIBRARY_ARCHITECTURE})
+endif()
 
 # end Dependencies
 

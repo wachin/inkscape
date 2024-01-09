@@ -7,8 +7,6 @@ set(debug_SRC
 	logger.cpp
 	sysv-heap.cpp
 	timestamp.cpp
-	gdk-event-latency-tracker.cpp
-
 
 	# ------
 	# Header
@@ -16,7 +14,6 @@ set(debug_SRC
 	event-tracker.h
 	event.h
 	gc-heap.h
-	gdk-event-latency-tracker.h
 	heap.h
 	log-display-config.h
 	logger.h

@@ -22,13 +22,13 @@
 #include "document-undo.h"
 #include "perspective-line.h"
 #include "snap.h"
-#include "verbs.h"
 
 #include "display/control/canvas-item-curve.h"
 
 #include "object/sp-namedview.h"
 #include "object/box3d.h"
 
+#include "ui/icon-names.h"
 #include "ui/knot/knot.h"
 #include "ui/shape-editor.h"
 #include "ui/tools/tool-base.h"
@@ -122,7 +122,7 @@ static void vp_knot_moved_handler(SPKnot *knot, Geom::Point const &ppointer, gui
             }
             // FIXME: Do we need to create a new dragger as well?
             dragger->updateZOrders();
-            DocumentUndo::done(SP_ACTIVE_DESKTOP->getDocument(), SP_VERB_CONTEXT_3DBOX, _("Split vanishing points"));
+            DocumentUndo::done(SP_ACTIVE_DESKTOP->getDocument(), _("Split vanishing points"), INKSCAPE_ICON("draw-cuboid"));
             return;
         }
     }
@@ -168,8 +168,7 @@ static void vp_knot_moved_handler(SPKnot *knot, Geom::Point const &ppointer, gui
                 //       deleted according to changes in the svg representation, not based on any user input
                 //       as is currently the case.
 
-                DocumentUndo::done(SP_ACTIVE_DESKTOP->getDocument(), SP_VERB_CONTEXT_3DBOX,
-                                   _("Merge vanishing points"));
+                DocumentUndo::done(SP_ACTIVE_DESKTOP->getDocument(), _("Merge vanishing points"), INKSCAPE_ICON("draw-cuboid"));
 
                 return;
             }
@@ -236,7 +235,7 @@ static void vp_knot_ungrabbed_handler(SPKnot *knot, guint /*state*/, gpointer da
     // TODO: Undo machinery!!
     g_return_if_fail(dragger->parent);
     g_return_if_fail(dragger->parent->document);
-    DocumentUndo::done(dragger->parent->document, SP_VERB_CONTEXT_3DBOX, _("3D box: Move vanishing point"));
+    DocumentUndo::done(dragger->parent->document, _("3D box: Move vanishing point"), INKSCAPE_ICON("draw-cuboid"));
 }
 
 unsigned int VanishingPoint::global_counter = 0;
@@ -254,7 +253,7 @@ std::list<SPBox3D *> VanishingPoint::selectedBoxes(Inkscape::Selection *sel)
     auto itemlist = sel->items();
     for (auto i = itemlist.begin(); i != itemlist.end(); ++i) {
         SPItem *item = *i;
-        SPBox3D *box = dynamic_cast<SPBox3D *>(item);
+        auto box = cast<SPBox3D>(item);
         if (box && this->hasBox(box)) {
             sel_boxes.push_back(box);
         }
@@ -392,7 +391,7 @@ std::set<VanishingPoint *> VPDragger::VPsOfSelectedBoxes()
     auto itemlist = sel->items();
     for (auto i = itemlist.begin(); i != itemlist.end(); ++i) {
         SPItem *item = *i;
-        SPBox3D *box = dynamic_cast<SPBox3D *>(item);
+        auto box = cast<SPBox3D>(item);
         if (box) {
             vp = this->findVPWithBox(box);
             if (vp) {
@@ -505,9 +504,6 @@ VPDrag::~VPDrag()
     }
     this->draggers.clear();
 
-    for (auto item_curve : item_curves) {
-        delete item_curve;
-    }
     item_curves.clear();
 }
 
@@ -555,7 +551,7 @@ void VPDrag::updateDraggers()
     auto itemlist = this->selection->items();
     for (auto i = itemlist.begin(); i != itemlist.end(); ++i) {
         SPItem *item = *i;
-        SPBox3D *box = dynamic_cast<SPBox3D *>(item);
+        auto box = cast<SPBox3D>(item);
         if (box) {
             VanishingPoint vp;
             for (int i = 0; i < 3; ++i) {
@@ -573,9 +569,6 @@ of a dragger, so that lines are always in sync with the actual perspective
 void VPDrag::updateLines()
 {
     // Delete old lines
-    for (auto curve : item_curves) {
-        delete curve;
-    }
     item_curves.clear();
 
     // do nothing if perspective lines are currently disabled
@@ -587,7 +580,7 @@ void VPDrag::updateLines()
     auto itemlist = this->selection->items();
     for (auto i = itemlist.begin(); i != itemlist.end(); ++i) {
         SPItem *item = *i;
-        SPBox3D *box = dynamic_cast<SPBox3D *>(item);
+        auto box = cast<SPBox3D>(item);
         if (box) {
             this->drawLinesForFace(box, Proj::X);
             this->drawLinesForFace(box, Proj::Y);
@@ -610,7 +603,7 @@ void VPDrag::updateBoxHandles()
         return;
     }
 
-    Inkscape::UI::Tools::ToolBase *ec = INKSCAPE.active_event_context();
+    Inkscape::UI::Tools::ToolBase *ec = SP_ACTIVE_DESKTOP->getEventContext();
     g_assert(ec != nullptr);
     if (ec->shape_editor != nullptr) {
         ec->shape_editor->update_knotholder();
@@ -747,7 +740,7 @@ void VPDrag::addCurve(Geom::Point const &p1, Geom::Point const &p2, Inkscape::Ca
     auto item_curve = new Inkscape::CanvasItemCurve(SP_ACTIVE_DESKTOP->getCanvasControls(), p1, p2);
     item_curve->set_name("3DBoxCurve");
     item_curve->set_stroke(color);
-    item_curves.push_back(item_curve);
+    item_curves.emplace_back(item_curve);
 }
 
 } // namespace Box3D

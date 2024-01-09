@@ -8,9 +8,11 @@ set(svg_SRC
 	strip-trailing-zeros.cpp
 	svg-affine.cpp
 	svg-affine-parser.cpp
+	svg-box.cpp
 	svg-color.cpp
 	svg-angle.cpp
 	svg-length.cpp
+	svg-bool.cpp
 	svg-path.cpp
 
 
@@ -20,10 +22,12 @@ set(svg_SRC
 	path-string.h
 	stringstream.h
 	strip-trailing-zeros.h
+	svg-box.h
 	svg-color.h
 	svg-icc-color.h
 	svg-angle.h
 	svg-length.h
+	svg-bool.h
 	svg.h
 
 )

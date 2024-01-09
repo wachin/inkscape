@@ -140,10 +140,7 @@ unsigned int PrintEmf::begin(Inkscape::Extension::Print *mod, SPDocument *doc)
 
     char *ansi_uri = (char *) utf8_fn;
 
-
     // width and height in px
-    _width  = doc->getWidth().value("px");
-    _height = doc->getHeight().value("px");
     _doc_unit_scale = doc->getDocumentScale()[Geom::X];
 
     // initialize a few global variables
@@ -170,7 +167,7 @@ unsigned int PrintEmf::begin(Inkscape::Extension::Print *mod, SPDocument *doc)
 
     Geom::Rect d;
     if (pageBoundingBox) {
-        d = Geom::Rect::from_xywh(0, 0, _width, _height);
+        d = *(doc->preferredBounds());
     } else {
         SPItem *doc_item = doc->getRoot();
         Geom::OptRect bbox = doc_item->desktopVisualBounds();
@@ -251,7 +248,9 @@ unsigned int PrintEmf::begin(Inkscape::Extension::Print *mod, SPDocument *doc)
             g_error("Fatal programming error in PrintEmf::begin at textcomment_set 1");
         }
 
-        snprintf(buff, sizeof(buff) - 1, "Drawing=%.1fx%.1fpx, %.1fx%.1fmm", _width, _height, Inkscape::Util::Quantity::convert(dwInchesX, "in", "mm"), Inkscape::Util::Quantity::convert(dwInchesY, "in", "mm"));
+        snprintf(buff, sizeof(buff) - 1, "Drawing=%.1fx%.1fpx, %.1fx%.1fmm", doc->preferredBounds()->width(),
+                 doc->preferredBounds()->height(), Inkscape::Util::Quantity::convert(dwInchesX, "in", "mm"),
+                 Inkscape::Util::Quantity::convert(dwInchesY, "in", "mm"));
         rec = textcomment_set(buff);
         if (!rec || emf_append((PU_ENHMETARECORD)rec, et, U_REC_FREE)) {
             g_error("Fatal programming error in PrintEmf::begin at textcomment_set 1");
@@ -328,7 +327,7 @@ int PrintEmf::create_brush(SPStyle const *style, PU_COLORREF fcolor)
     U_LOGBRUSH    lb;
     uint32_t      brush, fmode;
     MFDrawMode    fill_mode;
-    Inkscape::Pixbuf *pixbuf;
+    Inkscape::Pixbuf const *pixbuf;
     uint32_t      brushStyle;
     int           hatchType;
     U_COLORREF    hatchColor;
@@ -366,9 +365,9 @@ int PrintEmf::create_brush(SPStyle const *style, PU_COLORREF fcolor)
             hatchColor = U_RGB(255 * rgb[0], 255 * rgb[1], 255 * rgb[2]);
 
             fmode = style->fill_rule.computed == 0 ? U_WINDING : (style->fill_rule.computed == 2 ? U_ALTERNATE : U_ALTERNATE);
-        } else if (SP_IS_PATTERN(SP_STYLE_FILL_SERVER(style))) { // must be paint-server
+        } else if (is<SPPattern>(SP_STYLE_FILL_SERVER(style))) { // must be paint-server
             SPPaintServer *paintserver = style->fill.value.href->getObject();
-            SPPattern *pat = SP_PATTERN(paintserver);
+            auto pat = cast<SPPattern>(paintserver);
             double dwidth  = pat->width();
             double dheight = pat->height();
             width  = dwidth;
@@ -391,18 +390,18 @@ int PrintEmf::create_brush(SPStyle const *style, PU_COLORREF fcolor)
                 }
             }
             brushStyle = U_BS_HATCHED;
-        } else if (SP_IS_GRADIENT(SP_STYLE_FILL_SERVER(style))) { // must be a gradient
+        } else if (is<SPGradient>(SP_STYLE_FILL_SERVER(style))) { // must be a gradient
             // currently we do not do anything with gradients, the code below just sets the color to the average of the stops
             SPPaintServer *paintserver = style->fill.value.href->getObject();
             SPLinearGradient *lg = nullptr;
             SPRadialGradient *rg = nullptr;
 
-            if (SP_IS_LINEARGRADIENT(paintserver)) {
-                lg = SP_LINEARGRADIENT(paintserver);
+            if (is<SPLinearGradient>(paintserver)) {
+                lg = cast<SPLinearGradient>(paintserver);
                 lg->ensureVector(); // when exporting from commandline, vector is not built
                 fill_mode = DRAW_LINEAR_GRADIENT;
-            } else if (SP_IS_RADIALGRADIENT(paintserver)) {
-                rg = SP_RADIALGRADIENT(paintserver);
+            } else if (is<SPRadialGradient>(paintserver)) {
+                rg = cast<SPRadialGradient>(paintserver);
                 rg->ensureVector(); // when exporting from commandline, vector is not built
                 fill_mode = DRAW_RADIAL_GRADIENT;
             } else {
@@ -452,14 +451,14 @@ int PrintEmf::create_brush(SPStyle const *style, PU_COLORREF fcolor)
         break;
     case DRAW_IMAGE:
         char                *px;
-        char                *rgba_px;
+        char const          *rgba_px;
         uint32_t             cbPx;
         uint32_t             colortype;
         PU_RGBQUAD           ct;
         int                  numCt;
         U_BITMAPINFOHEADER   Bmih;
         PU_BITMAPINFO        Bmi;
-        rgba_px = (char *) pixbuf->pixels(); // Do NOT free this!!!
+        rgba_px = (char const*) pixbuf->pixels(); // Do NOT free this!!!
         colortype = U_BCBM_COLOR32;
         (void) RGBA_to_DIB(&px, &cbPx, &ct, &numCt,  rgba_px,  width, height, width * 4, colortype, 0, 1);
         // pixbuf can be either PF_CAIRO or PF_GDK, and these have R and B bytes swapped
@@ -524,7 +523,7 @@ int PrintEmf::create_pen(SPStyle const *style, const Geom::Affine &transform)
     int                  linejoin  = 0;
     uint32_t             pen;
     uint32_t             brushStyle;
-    Inkscape::Pixbuf    *pixbuf;
+    Inkscape::Pixbuf const *pixbuf;
     int                  hatchType;
     U_COLORREF           hatchColor;
     U_COLORREF           bkColor;
@@ -551,9 +550,9 @@ int PrintEmf::create_pen(SPStyle const *style, const Geom::Affine &transform)
     if (style) {
         float rgb[3];
 
-        if (SP_IS_PATTERN(SP_STYLE_STROKE_SERVER(style))) { // must be paint-server
+        if (is<SPPattern>(SP_STYLE_STROKE_SERVER(style))) { // must be paint-server
             SPPaintServer *paintserver = style->stroke.value.href->getObject();
-            SPPattern *pat = SP_PATTERN(paintserver);
+            auto pat = cast<SPPattern>(paintserver);
             double dwidth  = pat->width();
             double dheight = pat->height();
             width  = dwidth;
@@ -592,12 +591,12 @@ int PrintEmf::create_pen(SPStyle const *style, const Geom::Affine &transform)
                     hatchColor   = U_RGB(0xFF, 0xC3, 0xC3);
                 }
             }
-        } else if (SP_IS_GRADIENT(SP_STYLE_STROKE_SERVER(style))) { // must be a gradient
+        } else if (is<SPGradient>(SP_STYLE_STROKE_SERVER(style))) { // must be a gradient
             // currently we do not do anything with gradients, the code below has no net effect.
 
             SPPaintServer *paintserver = style->stroke.value.href->getObject();
-            if (SP_IS_LINEARGRADIENT(paintserver)) {
-                SPLinearGradient *lg = SP_LINEARGRADIENT(paintserver);
+            if (is<SPLinearGradient>(paintserver)) {
+                auto lg = cast<SPLinearGradient>(paintserver);
 
                 lg->ensureVector(); // when exporting from commandline, vector is not built
 
@@ -609,8 +608,8 @@ int PrintEmf::create_pen(SPStyle const *style, const Geom::Affine &transform)
                     p2 = p2 * lg->gradientTransform;
                 }
                 hatchColor = avg_stop_color(lg);
-            } else if (SP_IS_RADIALGRADIENT(paintserver)) {
-                SPRadialGradient *rg = SP_RADIALGRADIENT(paintserver);
+            } else if (is<SPRadialGradient>(paintserver)) {
+                auto rg = cast<SPRadialGradient>(paintserver);
 
                 rg->ensureVector(); // when exporting from commandline, vector is not built
                 double r = rg->r.computed;
@@ -990,12 +989,12 @@ void  PrintEmf::do_clip_if_present(SPStyle const *style){
         */
         /*  find the first clip_ref at object or up the stack.  There may not be one. */
         SPClipPath *scp = nullptr;
-        SPItem *item = SP_ITEM(style->object);
+        auto item = cast<SPItem>(style->object);
         while(true) {
             scp = item->getClipObject();
             if(scp)break;
-            item = SP_ITEM(item->parent);
-            if(!item || SP_IS_ROOT(item))break; // this will never be a clipping path
+            item = cast<SPItem>(item->parent);
+            if(!item || is<SPRoot>(item))break; // this will never be a clipping path
         }
 
         if(scp != scpActive){  // change or remove the clipping
@@ -1014,7 +1013,7 @@ void  PrintEmf::do_clip_if_present(SPStyle const *style){
                 Geom::Affine tf = item->transform;
                 SPItem *scan_item = item;
                 while(true) {
-                   scan_item = SP_ITEM(scan_item->parent);
+                   scan_item = cast<SPItem>(scan_item->parent);
                    if(!scan_item)break;
                    tf *= scan_item->transform;
                 }
@@ -1024,14 +1023,14 @@ void  PrintEmf::do_clip_if_present(SPStyle const *style){
                 Geom::PathVector combined_pathvector;
                 Geom::Affine tfc;   // clipping transform, generally not the same as item transform
                 for (auto& child: scp->children) {
-                    item = SP_ITEM(&child);
+                    item = cast<SPItem>(&child);
                     if (!item) {
                         break;
                     }
-                    if (SP_IS_GROUP(item)) {      // not implemented
+                    if (is<SPGroup>(item)) {      // not implemented
                         // return sp_group_render(item);
                         combined_pathvector = merge_PathVector_with_group(combined_pathvector, item, tfc);
-                    } else if (SP_IS_SHAPE(item)) {
+                    } else if (is<SPShape>(item)) {
                         combined_pathvector = merge_PathVector_with_shape(combined_pathvector, item, tfc);
                     } else {        // not implemented
                     }
@@ -1061,20 +1060,20 @@ void  PrintEmf::do_clip_if_present(SPStyle const *style){
 Geom::PathVector PrintEmf::merge_PathVector_with_group(Geom::PathVector const &combined_pathvector, SPItem const *item, const Geom::Affine &transform)
 {
     // sanity test, only a group should be passed in, return empty if something else happens
-    auto group = dynamic_cast<SPGroup const *>(item);
+    auto group = cast<SPGroup>(item);
     if (!group)
         return {};
 
     Geom::PathVector new_combined_pathvector = combined_pathvector;
     Geom::Affine tfc = item->transform * transform;
     for (auto& child: group->children) {
-        item = SP_ITEM(&child);
+        item = cast<SPItem>(&child);
         if (!item) {
             break;
         }
-        if (SP_IS_GROUP(item)) {
+        if (is<SPGroup>(item)) {
             new_combined_pathvector = merge_PathVector_with_group(new_combined_pathvector, item, tfc); // could be endlessly recursive on a badly formed SVG
-        } else if (SP_IS_SHAPE(item)) {
+        } else if (is<SPShape>(item)) {
             new_combined_pathvector = merge_PathVector_with_shape(new_combined_pathvector, item, tfc);
         } else {        // not implemented
         }
@@ -1085,7 +1084,7 @@ Geom::PathVector PrintEmf::merge_PathVector_with_group(Geom::PathVector const &c
 Geom::PathVector PrintEmf::merge_PathVector_with_shape(Geom::PathVector const &combined_pathvector, SPItem const *item, const Geom::Affine &transform)
 {
     Geom::PathVector new_combined_pathvector;
-    auto shape = dynamic_cast<SPShape const *>(item);
+    auto shape = cast<SPShape>(item);
 
     // sanity test, only a shape should be passed in, return empty if something else happens
     if (!shape)

@@ -70,23 +70,40 @@ LPEVonKoch::LPEVonKoch(LivePathEffectObject *lpeobject) :
     maxComplexity.param_set_range(0, std::numeric_limits<gint>::max());
 }
 
-LPEVonKoch::~LPEVonKoch()
-= default;
+LPEVonKoch::~LPEVonKoch() = default;
+
+bool 
+LPEVonKoch::doOnOpen(SPLPEItem const *lpeitem)
+{
+    if (!is_load || is_applied) {
+        return false;
+    }
+    generator.reload();
+    ref_path.reload();
+    return false;
+}
+
 
 Geom::PathVector
 LPEVonKoch::doEffect_path (Geom::PathVector const & path_in)
 {
     using namespace Geom;
-
-    Geom::PathVector generating_path = generator.get_pathvector();
+    Geom::Affine affine = generator.get_relative_affine();
+    Geom::PathVector generating_path = generator.get_pathvector() * affine;
     
     if (generating_path.empty()) {
         return path_in;
     }
+    if (is_load) {
+        generator.reload();
+        ref_path.reload();
+    }
 
     //Collect transform matrices.
+    affine = ref_path.get_relative_affine();
+
     Affine m0;
-    Geom::Path refpath = ref_path.get_pathvector().front();
+    Geom::Path refpath = ref_path.get_pathvector().front() * affine ;
     Point A = refpath.pointAt(0);
     Point B = refpath.pointAt(refpath.size());
     Point u = B-A;
@@ -268,7 +285,7 @@ LPEVonKoch::resetDefaults(SPItem const* item)
     Effect::resetDefaults(item);
 
     using namespace Geom;
-    original_bbox(SP_LPE_ITEM(item), false, true);
+    original_bbox(cast<SPLPEItem>(item), false, true);
 
     Point A,B;
     A[Geom::X] = boundingbox_X.min();

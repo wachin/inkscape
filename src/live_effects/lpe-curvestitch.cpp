@@ -60,19 +60,35 @@ LPECurveStitch::LPECurveStitch(LivePathEffectObject *lpeobject) :
     transformed = false;
 }
 
-LPECurveStitch::~LPECurveStitch()
-= default;
+LPECurveStitch::~LPECurveStitch() = default;
+
+bool 
+LPECurveStitch::doOnOpen(SPLPEItem const *lpeitem)
+{
+    if (!is_load || is_applied) {
+        return false;
+    }
+    strokepath.reload();
+    return false;
+}
+
 
 Geom::PathVector
 LPECurveStitch::doEffect_path (Geom::PathVector const & path_in)
 {
+
+    if (is_load) {
+        strokepath.reload();
+    }
+
     if (path_in.size() >= 2) {
         startpoint_edge_variation.resetRandomizer();
         endpoint_edge_variation.resetRandomizer();
         startpoint_spacing_variation.resetRandomizer();
         endpoint_spacing_variation.resetRandomizer();
+        Geom::Affine affine = strokepath.get_relative_affine().withoutTranslation();
 
-        D2<Piecewise<SBasis> > stroke = make_cuts_independent(strokepath.get_pwd2());
+        D2<Piecewise<SBasis> > stroke = make_cuts_independent(strokepath.get_pwd2() * affine);
         OptInterval bndsStroke = bounds_exact(stroke[0]);
         OptInterval bndsStrokeY = bounds_exact(stroke[1]);
         if (!bndsStroke && !bndsStrokeY) {
@@ -150,7 +166,7 @@ LPECurveStitch::resetDefaults(SPItem const* item)
 {
     Effect::resetDefaults(item);
 
-    if (!SP_IS_PATH(item)) return;
+    if (!is<SPPath>(item)) return;
 
     using namespace Geom;
 

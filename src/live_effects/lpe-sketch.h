@@ -26,6 +26,7 @@ namespace Inkscape {
 namespace LivePathEffect {
 
 class LPESketch : public Effect {
+    
 public:
     LPESketch(LivePathEffectObject *lpeobject);
     ~LPESketch() override;
@@ -33,6 +34,7 @@ public:
     Geom::Piecewise<Geom::D2<Geom::SBasis> > doEffect_pwd2 (Geom::Piecewise<Geom::D2<Geom::SBasis> > const & pwd2_in) override;
 
     void doBeforeEffect (SPLPEItem const* lpeitem) override;
+    Gtk::Widget *newWidget() override;
 
 private:
     // add the parameters for your effect here:

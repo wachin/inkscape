@@ -41,7 +41,7 @@ protected:
 
 class SPUsePath : public SPUseReference {
 public:
-    std::unique_ptr<SPCurve> originalPath{nullptr};
+    std::optional<SPCurve> originalPath;
     bool sourceDirty{false};
 
     SPObject            *owner;

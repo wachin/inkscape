@@ -383,8 +383,10 @@ std::vector<AttributeInfo> getKnownAttrs()
         // Extra attributes.
         AttributeInfo("-inkscape-stroke", true),
         AttributeInfo("id", true),
-        AttributeInfo("inkscape:bbox-nodes", true),
-        AttributeInfo("inkscape:bbox-paths", true),
+        // AttributeInfo("inkscape:bbox-nodes", true),
+        // AttributeInfo("inkscape:bbox-paths", true),
+        AttributeInfo("inkscape:deskcolor", true),
+        AttributeInfo("inkscape:deskopacity", true),
         AttributeInfo("inkscape:box3dsidetype", true),
         AttributeInfo("inkscape:collect", true),
         AttributeInfo("inkscape:color", true),
@@ -418,8 +420,11 @@ std::vector<AttributeInfo> getKnownAttrs()
         AttributeInfo("inkscape:layoutOptions", true),
         AttributeInfo("inkscape:lockguides", true),
         AttributeInfo("inkscape:locked", true),
-        AttributeInfo("inkscape:object-nodes", true),
-        AttributeInfo("inkscape:object-paths", true),
+        AttributeInfo("margin", true),
+        AttributeInfo("bleed", true),
+        AttributeInfo("page-size", true),
+        // AttributeInfo("inkscape:object-nodes", true),
+        // AttributeInfo("inkscape:object-paths", true),
         AttributeInfo("inkscape:original", true),
         AttributeInfo("inkscape:original-d", true),
         AttributeInfo("inkscape:pagecheckerboard", true),
@@ -432,29 +437,29 @@ std::vector<AttributeInfo> getKnownAttrs()
         AttributeInfo("inkscape:radius", true),
         AttributeInfo("inkscape:randomized", true),
         AttributeInfo("inkscape:rounded", true),
-        AttributeInfo("inkscape:snap-alignment", true),
-        AttributeInfo("inkscape:snap-alignment-self", true),
-        AttributeInfo("inkscape:snap-distribution", true),
-        AttributeInfo("inkscape:snap-bbox", true),
-        AttributeInfo("inkscape:snap-bbox-edge-midpoints", true),
-        AttributeInfo("inkscape:snap-bbox-midpoints", true),
-        AttributeInfo("inkscape:snap-center", true),
-        AttributeInfo("inkscape:snap-global", true),
-        AttributeInfo("inkscape:snap-grids", true),
-        AttributeInfo("inkscape:snap-intersection-paths", true),
-        AttributeInfo("inkscape:snap-midpoints", true),
-        AttributeInfo("inkscape:snap-nodes", true),
-        AttributeInfo("inkscape:snap-object-midpoints", true),
-        AttributeInfo("inkscape:snap-others", true),
-        AttributeInfo("inkscape:snap-from-guide", true),
-        AttributeInfo("inkscape:snap-page", true),
-        AttributeInfo("inkscape:snap-path-clip", true),
-        AttributeInfo("inkscape:snap-path-mask", true),
-        AttributeInfo("inkscape:snap-perpendicular", true),
-        AttributeInfo("inkscape:snap-smooth-nodes", true),
-        AttributeInfo("inkscape:snap-tangential", true),
-        AttributeInfo("inkscape:snap-text-baseline", true),
-        AttributeInfo("inkscape:snap-to-guides", true),
+        // AttributeInfo("inkscape:snap-alignment", true),
+        // AttributeInfo("inkscape:snap-alignment-self", true),
+        // AttributeInfo("inkscape:snap-distribution", true),
+        // AttributeInfo("inkscape:snap-bbox", true),
+        // AttributeInfo("inkscape:snap-bbox-edge-midpoints", true),
+        // AttributeInfo("inkscape:snap-bbox-midpoints", true),
+        // AttributeInfo("inkscape:snap-center", true),
+        // AttributeInfo("inkscape:snap-global", true),
+        // AttributeInfo("inkscape:snap-grids", true),
+        // AttributeInfo("inkscape:snap-intersection-paths", true),
+        // AttributeInfo("inkscape:snap-midpoints", true),
+        // AttributeInfo("inkscape:snap-nodes", true),
+        // AttributeInfo("inkscape:snap-object-midpoints", true),
+        // AttributeInfo("inkscape:snap-others", true),
+        // AttributeInfo("inkscape:snap-from-guide", true),
+        // AttributeInfo("inkscape:snap-page", true),
+        // AttributeInfo("inkscape:snap-path-clip", true),
+        // AttributeInfo("inkscape:snap-path-mask", true),
+        // AttributeInfo("inkscape:snap-perpendicular", true),
+        // AttributeInfo("inkscape:snap-smooth-nodes", true),
+        // AttributeInfo("inkscape:snap-tangential", true),
+        // AttributeInfo("inkscape:snap-text-baseline", true),
+        // AttributeInfo("inkscape:snap-to-guides", true),
         AttributeInfo("inkscape:spray-origin", true),
         AttributeInfo("inkscape:srcNoMarkup", true),
         AttributeInfo("inkscape:srcPango", true),
@@ -472,6 +477,7 @@ std::vector<AttributeInfo> getKnownAttrs()
         AttributeInfo("inkscape:zoom", true),
         AttributeInfo("inkscape:svg-dpi", true),
         AttributeInfo("inkscape:swatch", true),
+        AttributeInfo("inkscape:pinned", true),
         AttributeInfo("sodipodi:arc-type", true),
         AttributeInfo("sodipodi:arg1", true),
         AttributeInfo("sodipodi:arg2", true),
@@ -537,9 +543,28 @@ std::vector<AttributeInfo> getKnownAttrs()
         AttributeInfo("bordercolor", true),
         AttributeInfo("borderopacity", true),
         AttributeInfo("pagecolor", true),
+        AttributeInfo("labelstyle", true),
+
+        // SPGrid
+        AttributeInfo("originx", true),
+        AttributeInfo("originy", true),
+        AttributeInfo("spacingx", true),
+        AttributeInfo("spacingy", true),
+        AttributeInfo("gridanglex", true),
+        AttributeInfo("gridanglez", true),
+        AttributeInfo("enabled", true),
+        AttributeInfo("visible", true),
+        AttributeInfo("empopacity", true),
+        AttributeInfo("empcolor", true),
+        AttributeInfo("empspacing", true),
+        AttributeInfo("dotted", true),
+        AttributeInfo("snapvisiblegridlinesonly", true),
 
         // SPGuide
-        AttributeInfo("position", true)
+        AttributeInfo("position", true),
+
+        // don't know what that is
+        AttributeInfo("effect", true)
     };
 
     size_t count = sizeof(all_attrs) / sizeof(all_attrs[0]);
@@ -593,6 +618,12 @@ TEST(AttributesTest, NameRoundTrip)
             }
         }
     }
+}
+
+// Equivalent aliases, e.g. with and without namespace
+TEST(AttributesTest, Aliases)
+{
+    EXPECT_EQ(sp_attribute_lookup("href"), SPAttr::XLINK_HREF);
 }
 
 /* Test for any attributes that this test program doesn't know about.

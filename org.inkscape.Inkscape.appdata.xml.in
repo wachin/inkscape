@@ -5,6 +5,7 @@
   <id>org.inkscape.Inkscape</id>
   <launchable type="desktop-id">org.inkscape.Inkscape.desktop</launchable>
   <metadata_license>CC0-1.0</metadata_license>
+  <developer_name>The Inkscape Community</developer_name>
   <project_license>GPL-2.0-or-later</project_license>
   <translation type="gettext">inkscape</translation>
   <name>Inkscape</name>
@@ -33,6 +34,9 @@
   <url type="help">https://inkscape.org/learn</url>
   <url type="donation">https://inkscape.org/support-us/donate</url>
   <url type="translate">https://inkscape.org/contribute/translations</url>
+  <url type="faq">https://inkscape.org/learn/faq</url>
+  <url type="vcs-browser">https://gitlab.com/inkscape/inkscape</url>
+  <url type="contribute">https://inkscape.org/contribute</url>
   <screenshots>
     <screenshot type="default">
       <image>https://media.inkscape.org/media/resources/file/Screenshot_Freedom_Machine_Inkscape_master_FB3NeUU.png</image>
@@ -40,11 +44,76 @@
     </screenshot>
   </screenshots>
   <releases>
-    <release version="1.1-alpha" date="2021-01-17">
+    <release version="1.3.2" date="2023-11-25">
       <description>
-        <p>Inkscape 1.1-alpha</p>
+        <p>Inkscape 1.3.2</p>
         <ul>
-          <li>Alpha release</li>
+          <li>Fix for a regression introduced in 1.3.1 with path data for shapes</li>
+        </ul>
+      </description>
+      <url>http://wiki.inkscape.org/wiki/index.php/Release_notes/1.3.2</url>
+    </release>
+    <release version="1.3.1" date="2023-11-18">
+      <description>
+        <p>Inkscape 1.3.1</p>
+        <ul>
+          <li>Improvements on node count when using shape builder</li>
+          <li>Ability to disable snapping to grid lines</li>
+          <li>Possibility to split text into characters while keeping kerning</li>
+          <li>Lots of bugfixes and crash fixes, and translation improvements</li>
+        </ul>
+      </description>
+      <url>http://wiki.inkscape.org/wiki/index.php/Release_notes/1.3.1</url>
+    </release>
+    <release version="1.3" date="2023-07-21">
+      <description>
+        <p>Inkscape 1.3</p>
+        <ul>
+          <li>Shape builder tool</li>
+          <li>On-canvas pattern editing</li>
+          <li>Pattern editor</li>
+          <li>Pages margins and bleed</li>
+          <li>Document resources dialog</li>
+          <li>Font collections</li>
+          <li>Syntax highlighting in XML Editor</li>
+          <li>LPE dialog user interface redesign</li>
+          <li>Lots of performance improvements and bugfixes</li>
+        </ul>
+      </description>
+      <url>http://wiki.inkscape.org/wiki/index.php/Release_notes/1.3</url>
+    </release>
+    <release version="1.2" date="2022-05-16">
+      <description>
+        <p>Inkscape 1.2</p>
+        <ul>
+          <li>Multiple pages support</li>
+          <li>Editable markers and dash patterns</li>
+          <li>On-canvas alignment and snapping</li>
+          <li>Selectable origin for numerical transforms</li>
+          <li>Single dialog for alignment options</li>
+          <li>Gradient editing in Fill and Stroke dialog</li>
+          <li>Layers and Objects dialog merged</li>
+          <li>New UI for Snap settings</li>
+          <li>More customization options</li>
+          <li>Various performance improvements and bugfixes</li>
+        </ul>
+      </description>
+      <url>http://wiki.inkscape.org/wiki/index.php/Release_notes/1.2</url>
+    </release>
+    <release version="1.1" date="2021-05-24">
+      <description>
+        <p>Inkscape 1.1</p>
+        <ul>
+          <li>Welcome dialog</li>
+          <li>Command palette to search for functions</li>
+          <li>Copypaste parts of paths</li>
+          <li>Complete rework of the dialog docking system</li>
+          <li>New outline overlay mode</li>
+          <li>Search field in Preferences dialog</li>
+          <li>Improved Export PNG dialog</li>
+          <li>Ability to directly export JPG, TIFF, optimized PNG, and WebP</li>
+          <li>Paste now pastes directly above selected object</li>
+          <li>Beta Extension Manager</li>
         </ul>
       </description>
       <url>http://wiki.inkscape.org/wiki/index.php/Release_notes/1.1</url>
@@ -133,4 +202,12 @@
     <id>inkscape.desktop</id>
   </provides>
   <content_rating type="oars-1.1" />
+  <supports>
+    <control>pointing</control>
+    <control>keyboard</control>
+    <control>tablet</control>
+  </supports>
+  <recommends>
+    <display_length compare="ge">medium</display_length>
+  </recommends>
 </component>

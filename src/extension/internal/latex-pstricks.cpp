@@ -98,12 +98,12 @@ unsigned int PrintLatex::begin (Inkscape::Extension::Print *mod, SPDocument *doc
     res = fprintf(_stream, "%%LaTeX with PSTricks extensions\n");
     /* flush this to test output stream as early as possible */
     if (fflush(_stream)) {
-        /*g_print("caught error in sp_module_print_plain_begin\n");*/
+        /*g_warning("caught error in sp_module_print_plain_begin");*/
         if (ferror(_stream)) {
-            g_print("Error %d on output stream: %s\n", errno,
+            g_warning("Error %d on output stream: %s", errno,
                     g_strerror(errno));
         }
-        g_print("Printing failed\n");
+        g_warning("Printing failed");
         /* fixme: should use pclose() for pipes */
         fclose(_stream);
         _stream = nullptr;

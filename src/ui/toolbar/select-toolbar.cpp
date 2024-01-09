@@ -28,11 +28,11 @@
 #include "selection.h"
 #include "message-stack.h"
 #include "selection-chemistry.h"
-#include "verbs.h"
-
 
 #include "object/sp-item-transform.h"
 #include "object/sp-namedview.h"
+
+#include "page-manager.h"
 
 #include "ui/icon-names.h"
 #include "ui/widget/canvas.h" // Focus widget
@@ -56,20 +56,44 @@ namespace Toolbar {
 SelectToolbar::SelectToolbar(SPDesktop *desktop) :
     Toolbar(desktop),
     _tracker(new UnitTracker(Inkscape::Util::UNIT_TYPE_LINEAR)),
-    _update(false),
     _lock_btn(Gtk::manage(new Gtk::ToggleToolButton())),
     _select_touch_btn(Gtk::manage(new Gtk::ToggleToolButton())),
     _transform_stroke_btn(Gtk::manage(new Gtk::ToggleToolButton())),
     _transform_corners_btn(Gtk::manage(new Gtk::ToggleToolButton())),
     _transform_gradient_btn(Gtk::manage(new Gtk::ToggleToolButton())),
-    _transform_pattern_btn(Gtk::manage(new Gtk::ToggleToolButton()))
+    _transform_pattern_btn(Gtk::manage(new Gtk::ToggleToolButton())),
+    _update(false),
+    _action_prefix("selector:toolbar:")
 {
     Inkscape::Preferences *prefs = Inkscape::Preferences::get();
 
-    add_toolbutton_for_verb(SP_VERB_EDIT_SELECT_ALL);
-    add_toolbutton_for_verb(SP_VERB_EDIT_SELECT_ALL_IN_ALL_LAYERS);
-    auto deselect_button                 = add_toolbutton_for_verb(SP_VERB_EDIT_DESELECT);
-    _context_items.push_back(deselect_button);
+    {
+        auto button = Gtk::manage(new Gtk::ToolButton(N_("Select Al_l")));
+        button->set_tooltip_text(N_("Select all objects"));
+        button->set_icon_name(INKSCAPE_ICON("edit-select-all"));
+        // Must use C API until GTK4
+        gtk_actionable_set_action_name(GTK_ACTIONABLE(button->gobj()), "win.select-all");
+        add(*button);
+    }
+
+    {
+        auto button = Gtk::manage(new Gtk::ToolButton(N_("Select All in All La_yers")));
+        button->set_tooltip_text(N_("Select all objects in all visible and unlocked layers"));
+        button->set_icon_name(INKSCAPE_ICON("edit-select-all-layers"));
+        // Must use C API until GTK4
+        gtk_actionable_set_action_name(GTK_ACTIONABLE(button->gobj()), "win.select-all-layers");
+        add(*button);
+    }
+
+    {
+        auto button = Gtk::manage(new Gtk::ToolButton(N_("D_eselect")));
+        button->set_tooltip_text(N_("Deselect any selected objects"));
+        button->set_icon_name(INKSCAPE_ICON("edit-select-none"));
+        // Must use C API until GTK4
+        gtk_actionable_set_action_name(GTK_ACTIONABLE(button->gobj()), "win.select-none");
+        add(*button);
+        _context_items.push_back(button);
+    }
 
     _select_touch_btn->set_label(_("Select by touch"));
     _select_touch_btn->set_tooltip_text(_("Toggle selection box to select all touched objects."));
@@ -81,31 +105,87 @@ SelectToolbar::SelectToolbar(SPDesktop *desktop) :
 
     add(* Gtk::manage(new Gtk::SeparatorToolItem()));
 
-    auto object_rotate_90_ccw_button     = add_toolbutton_for_verb(SP_VERB_OBJECT_ROTATE_90_CCW);
-    _context_items.push_back(object_rotate_90_ccw_button);
+    {
+        auto button = Gtk::manage(new Gtk::ToolButton(N_("Rotate _90\xc2\xb0 CCW")));
+        button->set_tooltip_text(N_("Rotate selection 90\xc2\xb0 counter-clockwise"));
+        button->set_icon_name(INKSCAPE_ICON("object-rotate-left"));
+        // Must use C API until GTK4
+        gtk_actionable_set_action_name(GTK_ACTIONABLE(button->gobj()), "app.object-rotate-90-ccw");
+        add(*button);
+        _context_items.push_back(button);
+    }
 
-    auto object_rotate_90_cw_button      = add_toolbutton_for_verb(SP_VERB_OBJECT_ROTATE_90_CW);
-    _context_items.push_back(object_rotate_90_cw_button);
+    {
+        auto button = Gtk::manage(new Gtk::ToolButton(N_("Rotate _90\xc2\xb0 CW")));
+        button->set_tooltip_text(N_("Rotate selection 90\xc2\xb0 clockwise"));
+        button->set_icon_name(INKSCAPE_ICON("object-rotate-right"));
+        // Must use C API until GTK4
+        gtk_actionable_set_action_name(GTK_ACTIONABLE(button->gobj()), "app.object-rotate-90-cw");
+        add(*button);
+        _context_items.push_back(button);
+    }
 
-    auto object_flip_horizontal_button   = add_toolbutton_for_verb(SP_VERB_OBJECT_FLIP_HORIZONTAL);
-    _context_items.push_back(object_flip_horizontal_button);
+    {
+        auto button = Gtk::manage(new Gtk::ToolButton(N_("Flip _Horizontal")));
+        button->set_tooltip_text(N_("Flip selected objects horizontally"));
+        button->set_icon_name(INKSCAPE_ICON("object-flip-horizontal"));
+        // Must use C API until GTK4
+        gtk_actionable_set_action_name(GTK_ACTIONABLE(button->gobj()), "app.object-flip-horizontal");
+        add(*button);
+        _context_items.push_back(button);
+    }
 
-    auto object_flip_vertical_button     = add_toolbutton_for_verb(SP_VERB_OBJECT_FLIP_VERTICAL);
-    _context_items.push_back(object_flip_vertical_button);
+    {
+        auto button = Gtk::manage(new Gtk::ToolButton(N_("Flip _Vertical")));
+        button->set_tooltip_text(N_("Flip selected objects vertically"));
+        button->set_icon_name(INKSCAPE_ICON("object-flip-vertical"));
+        // Must use C API until GTK4
+        gtk_actionable_set_action_name(GTK_ACTIONABLE(button->gobj()), "app.object-flip-vertical");
+        add(*button);
+        _context_items.push_back(button);
+    }
 
     add(* Gtk::manage(new Gtk::SeparatorToolItem()));
 
-    auto selection_to_front_button       = add_toolbutton_for_verb(SP_VERB_SELECTION_TO_FRONT);
-    _context_items.push_back(selection_to_front_button);
+    {
+        auto button = Gtk::manage(new Gtk::ToolButton(N_("Raise to _Top")));
+        button->set_tooltip_text(N_("Raise selection to top"));
+        button->set_icon_name(INKSCAPE_ICON("selection-top"));
+        // Must use C API until GTK4
+        gtk_actionable_set_action_name(GTK_ACTIONABLE(button->gobj()), "app.selection-top");
+        add(*button);
+        _context_items.push_back(button);
+    }
 
-    auto selection_raise_button          = add_toolbutton_for_verb(SP_VERB_SELECTION_RAISE);
-    _context_items.push_back(selection_raise_button);
+    {
+        auto button = Gtk::manage(new Gtk::ToolButton(N_("_Raise")));
+        button->set_tooltip_text(N_("Raise selection one step"));
+        button->set_icon_name(INKSCAPE_ICON("selection-raise"));
+        // Must use C API until GTK4
+        gtk_actionable_set_action_name(GTK_ACTIONABLE(button->gobj()), "app.selection-raise");
+        add(*button);
+        _context_items.push_back(button);
+    }
 
-    auto selection_lower_button          = add_toolbutton_for_verb(SP_VERB_SELECTION_LOWER);
-    _context_items.push_back(selection_lower_button);
+    {
+        auto button = Gtk::manage(new Gtk::ToolButton(N_("_Lower")));
+        button->set_tooltip_text(N_("Lower selection one step"));
+        button->set_icon_name(INKSCAPE_ICON("selection-lower"));
+        // Must use C API until GTK4
+        gtk_actionable_set_action_name(GTK_ACTIONABLE(button->gobj()), "app.selection-lower");
+        add(*button);
+        _context_items.push_back(button);
+    }
 
-    auto selection_to_back_button        = add_toolbutton_for_verb(SP_VERB_SELECTION_TO_BACK);
-    _context_items.push_back(selection_to_back_button);
+    {
+        auto button = Gtk::manage(new Gtk::ToolButton(N_("Lower to _Bottom")));
+        button->set_tooltip_text(N_("Lower selection to bottom"));
+        button->set_icon_name(INKSCAPE_ICON("selection-bottom"));
+        // Must use C API until GTK4
+        gtk_actionable_set_action_name(GTK_ACTIONABLE(button->gobj()), "app.selection-bottom");
+        add(*button);
+        _context_items.push_back(button);
+    }
 
     add(* Gtk::manage(new Gtk::SeparatorToolItem()));
 
@@ -271,11 +351,14 @@ SelectToolbar::any_value_changed(Glib::RefPtr<Gtk::Adjustment>& adj)
     }
     _update = true;
 
-    SPDesktop *desktop = _desktop;
-    Inkscape::Selection *selection = desktop->getSelection();
-    SPDocument *document = desktop->getDocument();
+    auto prefs = Inkscape::Preferences::get();
+    auto selection = _desktop->getSelection();
+    auto document = _desktop->getDocument();
+    auto &pm = document->getPageManager();
+    auto page = pm.getSelectedPageRect();
+    auto page_correction = prefs->getBool("/options/origincorrection/page", true);
 
-    document->ensureUpToDate ();
+    document->ensureUpToDate();
 
     Geom::OptRect bbox_vis = selection->visualBounds();
     Geom::OptRect bbox_geom = selection->geometricBounds();
@@ -303,6 +386,12 @@ SelectToolbar::any_value_changed(Glib::RefPtr<Gtk::Adjustment>& adj)
         gdouble old_x = bbox_user->min()[Geom::X] + (old_w * selection->anchor_x);
         gdouble old_y = bbox_user->min()[Geom::Y] + (old_h * selection->anchor_y);
 
+        // Adjust against selected page, so later correction isn't broken.
+        if (page_correction) {
+            old_x -= page.left();
+            old_y -= page.top();
+        }
+
         new_x = old_x * (_adj_x->get_value() / 100 / unit->factor);
         new_y = old_y * (_adj_y->get_value() / 100 / unit->factor);
         new_w = old_w * (_adj_w->get_value() / 100 / unit->factor);
@@ -312,6 +401,12 @@ SelectToolbar::any_value_changed(Glib::RefPtr<Gtk::Adjustment>& adj)
     // Adjust depending on the selected anchor.
     gdouble x0 = (new_x - (old_w * selection->anchor_x)) - ((new_w - old_w) * selection->anchor_x);
     gdouble y0 = (new_y - (old_h * selection->anchor_y)) - ((new_h - old_h) * selection->anchor_y);
+
+    // Adjust according to the selected page, if needed
+    if (page_correction) {
+        x0 += page.left();
+        y0 += page.top();
+    }
 
     gdouble x1 = x0 + new_w;
     gdouble xrel = new_w / old_w;
@@ -341,22 +436,10 @@ SelectToolbar::any_value_changed(Glib::RefPtr<Gtk::Adjustment>& adj)
         sv = Quantity::convert(sv, "px", unit);
     }
 
-    // do the action only if one of the scales/moves is greater than half the last significant
-    // digit in the spinbox (currently spinboxes have 3 fractional digits, so that makes 0.0005). If
-    // the value was changed by the user, the difference will be at least that much; otherwise it's
-    // just rounding difference between the spinbox value and actual value, so no action is
-    // performed
-    char const * const actionkey = ( mh > 5e-4 ? "selector:toolbar:move:horizontal" :
-                                     sh > 5e-4 ? "selector:toolbar:scale:horizontal" :
-                                     mv > 5e-4 ? "selector:toolbar:move:vertical" :
-                                     sv > 5e-4 ? "selector:toolbar:scale:vertical" : nullptr );
+    char const *const actionkey = get_action_key(mh, sh, mv, sv);
 
     if (actionkey != nullptr) {
 
-        // FIXME: fix for GTK breakage, see comment in SelectedStyle::on_opacity_changed
-        desktop->getCanvas()->forced_redraws_start(0);
-
-        Inkscape::Preferences *prefs = Inkscape::Preferences::get();
         bool transform_stroke = prefs->getBool("/options/transform/stroke", true);
         bool preserve = prefs->getBool("/options/preservetransform/value", false);
 
@@ -372,11 +455,7 @@ SelectToolbar::any_value_changed(Glib::RefPtr<Gtk::Adjustment>& adj)
         }
 
         selection->applyAffine(scaler);
-        DocumentUndo::maybeDone(document, actionkey, SP_VERB_CONTEXT_SELECT,
-                                _("Transform by toolbar"));
-
-        // resume interruptibility
-        desktop->getCanvas()->forced_redraws_stop();
+        DocumentUndo::maybeDone(document, actionkey, _("Transform by toolbar"), INKSCAPE_ICON("tool-pointer"));
     }
 
     _update = false;
@@ -402,6 +481,14 @@ SelectToolbar::layout_widget_update(Inkscape::Selection *sel)
             auto height = bbox->dimensions()[Y];
             auto x = bbox->min()[X] + (width * sel->anchor_x);
             auto y = bbox->min()[Y] + (height * sel->anchor_y);
+
+            auto prefs = Inkscape::Preferences::get();
+            if (prefs->getBool("/options/origincorrection/page", true)) {
+                auto &pm = _desktop->getDocument()->getPageManager();
+                auto page = pm.getSelectedPageRect();
+                x -= page.left();
+                y -= page.top();
+            }
 
             if (unit->type == Inkscape::Util::UNIT_TYPE_DIMENSIONLESS) {
                 double const val = unit->factor * 100;
@@ -454,13 +541,42 @@ SelectToolbar::on_inkscape_selection_changed(Inkscape::Selection *selection)
     }
 }
 
+char const *SelectToolbar::get_action_key(double mh, double sh, double mv, double sv)
+{
+    // do the action only if one of the scales/moves is greater than half the last significant
+    // digit in the spinbox (currently spinboxes have 3 fractional digits, so that makes 0.0005). If
+    // the value was changed by the user, the difference will be at least that much; otherwise it's
+    // just rounding difference between the spinbox value and actual value, so no action is
+    // performed
+    double const threshold = 5e-4;
+    char const *const action = ( mh > threshold ? "move:horizontal:" :
+                                 sh > threshold ? "scale:horizontal:" :
+                                 mv > threshold ? "move:vertical:" :
+                                 sv > threshold ? "scale:vertical:" : nullptr );
+    if (!action) {
+        return nullptr;
+    }
+    _action_key = _action_prefix + action;
+    return _action_key.c_str();
+}
+
 void
 SelectToolbar::toggle_lock() {
-    if ( _lock_btn->get_active() ) {
-        _lock_btn->set_icon_name(INKSCAPE_ICON("object-locked"));
-    } else {
-        _lock_btn->set_icon_name(INKSCAPE_ICON("object-unlocked"));
+    // use this roundabout way of changing image to make sure its size is preserved
+    auto btn = static_cast<Gtk::ToggleButton*>(_lock_btn->get_child());
+    auto image = static_cast<Gtk::Image*>(btn->get_child());
+    if (!image) {
+        g_warning("No GTK image in toolbar button 'lock'");
+        return;
     }
+    auto size = image->get_pixel_size();
+
+    if ( _lock_btn->get_active() ) {
+        image->set_from_icon_name("object-locked", Gtk::ICON_SIZE_BUTTON);
+    } else {
+        image->set_from_icon_name("object-unlocked", Gtk::ICON_SIZE_BUTTON);
+    }
+    image->set_pixel_size(size);
 }
 
 void

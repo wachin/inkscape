@@ -33,8 +33,6 @@ class Node;
 }
 }
 
-extern void recreateCurve(SPCurve *curve, Avoid::ConnRef *connRef, double curvature);
-
 class SPConnEndPair {
 public:
     SPConnEndPair(SPPath *);
@@ -45,9 +43,9 @@ public:
     void getAttachedItems(SPItem *[2]) const;
     void getEndpoints(Geom::Point endPts[]) const;
     double getCurvature() const;
-    SPConnEnd** getConnEnds();
+    SPConnEnd **getConnEnds();
     bool isOrthogonal() const;
-    friend void recreateCurve(SPCurve *curve, Avoid::ConnRef *connRef, double curvature);
+    static SPCurve createCurve(Avoid::ConnRef *connRef, double curvature);
     void tellLibavoidNewEndpoints(bool const processTransaction = false);
     bool reroutePathFromLibavoid();
     void makePathInvalid();
@@ -82,7 +80,6 @@ enum {
     SP_CONNECTOR_POLYLINE,    // Object avoiding polyline.
     SP_CONNECTOR_ORTHOGONAL   // Object avoiding orthogonal polyline (only horizontal and vertical segments).
 };
-
 
 #endif /* !SEEN_SP_CONN_END_PAIR */
 

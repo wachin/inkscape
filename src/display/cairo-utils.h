@@ -21,66 +21,8 @@ struct SPColor;
 typedef struct _GdkPixbuf GdkPixbuf;
 
 void ink_cairo_pixbuf_cleanup(unsigned char *, void *);
-void convert_pixbuf_argb32_to_normal(GdkPixbuf *pb);
 
 namespace Inkscape {
-
-/**
- * RAII idiom for Cairo groups.
- * Groups are temporary surfaces used when rendering e.g. masks and opacity.
- * Use this class to ensure that each group push is matched with a pop.
- */
-class CairoGroup {
-public:
-    CairoGroup(cairo_t *_ct);
-    ~CairoGroup();
-    void push();
-    void push_with_content(cairo_content_t content);
-    cairo_pattern_t *pop();
-    Cairo::RefPtr<Cairo::Pattern> popmm();
-    void pop_to_source();
-private:
-    cairo_t *ct;
-    bool pushed;
-};
-
-/** RAII idiom for Cairo state saving. */
-class CairoSave {
-public:
-    CairoSave(cairo_t *_ct, bool save=false)
-        : ct(_ct)
-        , saved(save)
-    {
-        if (save) {
-            cairo_save(ct);
-        }
-    }
-    void save() {
-        if (!saved) {
-            cairo_save(ct);
-            saved = true;
-        }
-    }
-    ~CairoSave() {
-        if (saved)
-            cairo_restore(ct);
-    }
-private:
-    cairo_t *ct;
-    bool saved;
-};
-
-/** Cairo context with Inkscape-specific operations. */
-class CairoContext : public Cairo::Context {
-public:
-    CairoContext(cairo_t *obj, bool ref = false);
-
-    void transform(Geom::Affine const &m);
-    void set_source_rgba32(guint32 color);
-    void append_path(Geom::PathVector const &pv);
-
-    static Cairo::RefPtr<CairoContext> create(Cairo::RefPtr<Cairo::Surface> const &target);
-};
 
 /** Class to hold image data for raster images.
  * Allows easy interoperation with GdkPixbuf and Cairo. */
@@ -97,11 +39,14 @@ public:
     Pixbuf(Inkscape::Pixbuf const &other);
     ~Pixbuf();
 
-    GdkPixbuf *getPixbufRaw(bool convert_format = true);
-    //Glib::RefPtr<Gdk::Pixbuf> getPixbuf(bool convert_format = true);
+    Pixbuf *cropTo(const Geom::IntRect &area) const;
 
-    cairo_surface_t *getSurfaceRaw(bool convert_format = true);
-    Cairo::RefPtr<Cairo::Surface> getSurface(bool convert_format = true);
+    GdkPixbuf *getPixbufRaw(bool convert_format = true);
+    GdkPixbuf *getPixbufRaw() const;
+
+    cairo_surface_t *getSurfaceRaw();
+    cairo_surface_t *getSurfaceRaw() const;
+    Cairo::RefPtr<Cairo::Surface> getSurface();
 
     int width() const;
     int height() const;
@@ -117,6 +62,8 @@ public:
 
     PixelFormat pixelFormat() const { return _pixel_format; }
     void ensurePixelFormat(PixelFormat fmt);
+    static void ensure_pixbuf(GdkPixbuf *pb);
+    static void ensure_argb32(GdkPixbuf *pb);
 
     static Pixbuf *create_from_data_uri(gchar const *uri, double svgdpi = 0);
     static Pixbuf *create_from_file(std::string const &fn, double svgddpi = 0);
@@ -124,6 +71,8 @@ public:
 
   private:
     static Pixbuf *create_from_buffer(gchar *&&, gsize, double svgddpi = 0, std::string const &fn = "");
+    static Geom::Affine get_embedded_orientation(GdkPixbuf *buf);
+    static GdkPixbuf *apply_embedded_orientation(GdkPixbuf *buf);
 
     void _ensurePixelsARGB32();
     void _ensurePixelsPixbuf();
@@ -140,9 +89,9 @@ public:
 
 } // namespace Inkscape
 
-// TODO: these declarations may not be needed in the header
-extern cairo_user_data_key_t ink_color_interpolation_key;
-extern cairo_user_data_key_t ink_pixbuf_key;
+// Atomic accessors to global variable governing number of filter threads.
+int  get_num_filter_threads();
+void set_num_filter_threads(int);
 
 SPColorInterpolation get_cairo_surface_ci(cairo_surface_t *surface);
 void set_cairo_surface_ci(cairo_surface_t *surface, SPColorInterpolation cif);
@@ -154,6 +103,7 @@ void ink_cairo_set_source_rgba32(cairo_t *ct, guint32 rgba);
 void ink_cairo_transform(cairo_t *ct, Geom::Affine const &m);
 void ink_cairo_pattern_set_matrix(cairo_pattern_t *cp, Geom::Affine const &m);
 void ink_cairo_set_hairline(cairo_t *ct);
+void ink_cairo_pattern_set_dither(cairo_pattern_t *pattern, bool enabled);
 
 void ink_matrix_to_2geom(Geom::Affine &, cairo_matrix_t const &);
 void ink_matrix_to_cairo(cairo_matrix_t &, Geom::Affine const &);
@@ -177,18 +127,22 @@ double srgb_to_linear( const double c );
 int ink_cairo_surface_srgb_to_linear(cairo_surface_t *surface);
 int ink_cairo_surface_linear_to_srgb(cairo_surface_t *surface);
 
-cairo_pattern_t *ink_cairo_pattern_create_checkerboard(guint32 rgba = 0xC4C4C4FF);
+cairo_pattern_t *ink_cairo_pattern_create_checkerboard(guint32 rgba = 0xC4C4C4FF, bool use_alpha = false);
+// draw drop shadow around the 'rect' with given 'size' and 'color'; shadow extends to the right and bottom of rect
+void ink_cairo_draw_drop_shadow(const Cairo::RefPtr<Cairo::Context> &ctx, const Geom::Rect& rect, double size, guint32 color, double color_alpha);
 
 GdkPixbuf *ink_pixbuf_create_from_cairo_surface(cairo_surface_t *s);
 void convert_pixels_pixbuf_to_argb32(guchar *data, int w, int h, int rs);
-void convert_pixels_argb32_to_pixbuf(guchar *data, int w, int h, int rs);
+void convert_pixels_argb32_to_pixbuf(guchar *data, int w, int h, int rs, guint32 bgcolor=0);
 
 G_GNUC_CONST guint32 argb32_from_pixbuf(guint32 in);
-G_GNUC_CONST guint32 pixbuf_from_argb32(guint32 in);
+G_GNUC_CONST guint32 pixbuf_from_argb32(guint32 in, guint32 bgcolor=0);
 const guchar* pixbuf_to_png(guchar const**rows, guchar* px, int nrows, int ncols, int stride, int color_type, int bit_depth);
 
 /** Convert a pixel in 0xRRGGBBAA format to Cairo ARGB32 format. */
 G_GNUC_CONST guint32 argb32_from_rgba(guint32 in);
+/** Convert a pixel in 0xAARRGGBB format to 0xRRGGBBAA format. */
+G_GNUC_CONST guint32 rgba_from_argb32(guint32 in);
 
 
 G_GNUC_CONST inline guint32
@@ -200,13 +154,16 @@ premul_alpha(const guint32 color, const guint32 alpha)
 G_GNUC_CONST inline guint32
 unpremul_alpha(const guint32 color, const guint32 alpha)
 {
-    // NOTE: you must check for alpha != 0 yourself.
+    if (color >= alpha)
+        return 0xff;
     return (255 * color + alpha/2) / alpha;
 }
 
 // TODO: move those to 2Geom
 void feed_pathvector_to_cairo (cairo_t *ct, Geom::PathVector const &pathv, Geom::Affine trans, Geom::OptRect area, bool optimize_stroke, double stroke_width);
 void feed_pathvector_to_cairo (cairo_t *ct, Geom::PathVector const &pathv);
+
+std::optional<Geom::PathVector> extract_pathvector_from_cairo(cairo_t *ct);
 
 #define EXTRACT_ARGB32(px,a,r,g,b) \
     guint32 a, r, g, b; \

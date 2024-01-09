@@ -15,6 +15,8 @@
 #include "style.h"
 #include "xml/repr.h"
 
+#include "display/drawing-paintserver.h"
+
 /*
  * Linear Gradient
  */
@@ -118,16 +120,11 @@ Inkscape::XML::Node* SPLinearGradient::write(Inkscape::XML::Document *xml_doc, I
     return repr;
 }
 
-cairo_pattern_t* SPLinearGradient::pattern_new(cairo_t * /*ct*/, Geom::OptRect const &bbox, double opacity) {
-    this->ensureVector();
-
-    cairo_pattern_t *cp = cairo_pattern_create_linear(
-        this->x1.computed, this->y1.computed,
-        this->x2.computed, this->y2.computed);
-
-    sp_gradient_pattern_common_setup(cp, this, bbox, opacity);
-
-    return cp;
+std::unique_ptr<Inkscape::DrawingPaintServer> SPLinearGradient::create_drawing_paintserver()
+{
+    ensureVector();
+    return std::make_unique<Inkscape::DrawingLinearGradient>(getSpread(), getUnits(), gradientTransform,
+                                                             x1.computed, y1.computed, x2.computed, y2.computed, vector.stops);
 }
 
 /*

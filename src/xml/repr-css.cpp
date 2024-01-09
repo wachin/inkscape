@@ -33,7 +33,7 @@
 
 #include <glibmm/ustring.h>
 
-#include "3rdparty/libcroco/cr-declaration.h"
+#include "3rdparty/libcroco/src/cr-declaration.h"
 
 #include "svg/css-ostringstream.h"
 
@@ -219,6 +219,17 @@ double sp_repr_css_double_property(SPCSSAttr *css, gchar const *name, double def
     g_assert(name != nullptr);
     
     return css->getAttributeDouble(name, defval);
+}
+
+/**
+ * Set a style property to a new float value (e.g. opacity to 0.5).
+ */
+void sp_repr_css_set_property_double(SPCSSAttr *css, gchar const *name, double value)
+{
+    g_assert(css != nullptr);
+    g_assert(name != nullptr);
+    
+    ((Node *) css)->setAttributeCssDouble(name, value);
 }
 
 /**

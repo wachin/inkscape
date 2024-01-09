@@ -25,7 +25,8 @@ using OverlayState = int;
 enum OverlayStates : OverlayState {
     OVERLAY_NONE = 0,     // Nothing special about the object.
     OVERLAY_CLIP = 1,     // Object has a clip
-    OVERLAY_MASK = 2      // Object has a mask
+    OVERLAY_MASK = 2,     // Object has a mask
+    OVERLAY_BOTH = 3,     // Object has both clip and mask
 };
 
 /* Custom cell renderer for type icon */
@@ -39,7 +40,8 @@ public:
         _property_color(*this, "color", 0),
         _property_clipmask(*this, "clipmask", 0),
         _clip_overlay(nullptr),
-        _mask_overlay(nullptr)
+        _mask_overlay(nullptr),
+        _both_overlay(nullptr)
     {
         Gtk::IconSize::lookup(Gtk::ICON_SIZE_MENU, _size, _size);
     } 
@@ -55,6 +57,11 @@ public:
         return _property_clipmask.get_proxy();
     }
   
+    typedef sigc::signal<void (Glib::ustring)> type_signal_activated;
+    type_signal_activated signal_activated() {
+        return _signal_activated;
+    }
+
 protected:
     void render_vfunc(const Cairo::RefPtr<Cairo::Context>& cr, 
                       Gtk::Widget& widget,
@@ -69,8 +76,14 @@ protected:
     void get_preferred_width_vfunc(Gtk::Widget& widget, int& min_w, int& nat_w) const override;
     void get_preferred_height_vfunc(Gtk::Widget& widget, int& min_h, int& nat_h) const override;
 
+    bool activate_vfunc(GdkEvent* event,
+                        Gtk::Widget& widget,
+                        const Glib::ustring& path,
+                        const Gdk::Rectangle& background_area,
+                        const Gdk::Rectangle& cell_area,
+                        Gtk::CellRendererState flags) override;
 private:
-  
+    type_signal_activated _signal_activated;
     int _size;
     Glib::Property<std::string> _property_shape_type;
     Glib::Property<unsigned int> _property_color;
@@ -80,6 +93,7 @@ private:
     // Overlay indicators
     Glib::RefPtr<Gdk::Pixbuf> _mask_overlay;
     Glib::RefPtr<Gdk::Pixbuf> _clip_overlay;
+    Glib::RefPtr<Gdk::Pixbuf> _both_overlay;
 };
 
 } // namespace Widget

@@ -31,6 +31,14 @@ public:
     static void init();
 };
 
+struct PDFOptions {
+    bool text_to_path      : 1; ///< Convert text to paths?
+    bool text_to_latex     : 1; ///< Put text in a LaTeX document?
+    bool rasterize_filters : 1; ///< Rasterize filter effects?
+    bool drawing_only      : 1; ///< Set page size to drawing + margin instead of document page.
+    bool stretch_to_fit    : 1; ///< Compensate for Cairo's page size rounding to integers (in pt)?
+};
+
 } } }  /* namespace Inkscape, Extension, Internal */
 
 #endif /* !EXTENSION_INTERNAL_CAIRO_RENDERER_PDF_OUT_H */

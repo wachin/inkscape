@@ -14,9 +14,6 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
-#include <glib.h>
-
-// In same directory
 #include "distantlight.h"
 #include "diffuselighting.h"
 #include "specularlighting.h"
@@ -27,124 +24,76 @@
 #include "xml/repr.h"
 
 SPFeDistantLight::SPFeDistantLight()
-    : SPObject(), azimuth(0), azimuth_set(FALSE), elevation(0), elevation_set(FALSE) {
+    : azimuth(0)
+    , azimuth_set(false)
+    , elevation(0)
+    , elevation_set(false)
+{
 }
 
 SPFeDistantLight::~SPFeDistantLight() = default;
 
-/**
- * Reads the Inkscape::XML::Node, and initializes SPDistantLight variables.  For this to get called,
- * our name must be associated with a repr via "sp_object_type_register".  Best done through
- * sp-object-repr.cpp's repr_name_entries array.
- */
-void SPFeDistantLight::build(SPDocument *document, Inkscape::XML::Node *repr) {
+void SPFeDistantLight::build(SPDocument *document, Inkscape::XML::Node *repr)
+{
 	SPObject::build(document, repr);
 
-    //Read values of key attributes from XML nodes into object.
-    this->readAttr(SPAttr::AZIMUTH);
-    this->readAttr(SPAttr::ELEVATION);
+    readAttr(SPAttr::AZIMUTH);
+    readAttr(SPAttr::ELEVATION);
 
-//is this necessary?
     document->addResource("fedistantlight", this);
 }
 
-/**
- * Drops any allocated memory.
- */
-void SPFeDistantLight::release() {
-    if ( this->document ) {
-        // Unregister ourselves
-        this->document->removeResource("fedistantlight", this);
+void SPFeDistantLight::release()
+{
+    if (document) {
+        document->removeResource("fedistantlight", this);
     }
 
-//TODO: release resources here
+    SPObject::release();
 }
 
-/**
- * Sets a specific value in the SPFeDistantLight.
- */
-void SPFeDistantLight::set(SPAttr key, gchar const *value) {
-    gchar *end_ptr;
+void SPFeDistantLight::set(SPAttr key, char const *value)
+{
+    auto read_float = [=] (float &var, float def = 0) -> bool {
+        if (value) {
+            char *end_ptr;
+            auto tmp = g_ascii_strtod(value, &end_ptr);
+            if (end_ptr) {
+                var = tmp;
+                return true;
+            }
+        }
+        var = def;
+        return false;
+    };
 
     switch (key) {
-    case SPAttr::AZIMUTH:
-        end_ptr =nullptr;
-
-        if (value) {
-            this->azimuth = g_ascii_strtod(value, &end_ptr);
-
-            if (end_ptr) {
-                this->azimuth_set = TRUE;
-            }
-        }
-
-        if (!value || !end_ptr) {
-                this->azimuth_set = FALSE;
-                this->azimuth = 0;
-        }
-
-        if (this->parent &&
-                (SP_IS_FEDIFFUSELIGHTING(this->parent) ||
-                 SP_IS_FESPECULARLIGHTING(this->parent))) {
-            this->parent->parent->requestModified(SP_OBJECT_MODIFIED_FLAG);
-        }
-        break;
-    case SPAttr::ELEVATION:
-        end_ptr =nullptr;
-
-        if (value) {
-            this->elevation = g_ascii_strtod(value, &end_ptr);
-
-            if (end_ptr) {
-                this->elevation_set = TRUE;
-            }
-        }
-
-        if (!value || !end_ptr) {
-                this->elevation_set = FALSE;
-                this->elevation = 0;
-        }
-
-        if (this->parent &&
-                (SP_IS_FEDIFFUSELIGHTING(this->parent) ||
-                 SP_IS_FESPECULARLIGHTING(this->parent))) {
-            this->parent->parent->requestModified(SP_OBJECT_MODIFIED_FLAG);
-        }
-        break;
-    default:
-        // See if any parents need this value.
-    	SPObject::set(key, value);
-        break;
+        case SPAttr::AZIMUTH:
+            azimuth_set = read_float(azimuth);
+            requestModified(SP_OBJECT_MODIFIED_FLAG);
+            break;
+        case SPAttr::ELEVATION:
+            elevation_set = read_float(elevation);
+            requestModified(SP_OBJECT_MODIFIED_FLAG);
+            break;
+        default:
+            SPObject::set(key, value);
+            break;
     }
 }
 
-/**
- *  * Receives update notifications.
- *   */
-void SPFeDistantLight::update(SPCtx *ctx, guint flags) {
-    if (flags & SP_OBJECT_MODIFIED_FLAG) {
-        /* do something to trigger redisplay, updates? */
-        this->readAttr(SPAttr::AZIMUTH);
-        this->readAttr(SPAttr::ELEVATION);
-    }
-
-    SPObject::update(ctx, flags);
-}
-
-/**
- * Writes its settings to an incoming repr object, if any.
- */
-Inkscape::XML::Node* SPFeDistantLight::write(Inkscape::XML::Document *doc, Inkscape::XML::Node *repr, guint flags) {
+Inkscape::XML::Node *SPFeDistantLight::write(Inkscape::XML::Document *doc, Inkscape::XML::Node *repr, unsigned flags)
+{
     if (!repr) {
-        repr = this->getRepr()->duplicate(doc);
+        repr = getRepr()->duplicate(doc);
     }
 
-    if (this->azimuth_set) {
-        repr->setAttributeCssDouble("azimuth", this->azimuth);
+    if (azimuth_set) {
+        repr->setAttributeCssDouble("azimuth", azimuth);
     }
 
-    if (this->elevation_set) {
-        repr->setAttributeCssDouble("elevation", this->elevation);
+    if (elevation_set) {
+        repr->setAttributeCssDouble("elevation", elevation);
     }
 
     SPObject::write(doc, repr, flags);

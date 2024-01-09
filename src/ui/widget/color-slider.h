@@ -36,10 +36,10 @@ public:
 
     void setBackground(guint dark, guint light, guint size);
 
-    sigc::signal<void> signal_grabbed;
-    sigc::signal<void> signal_dragged;
-    sigc::signal<void> signal_released;
-    sigc::signal<void> signal_value_changed;
+    sigc::signal<void ()> signal_grabbed;
+    sigc::signal<void ()> signal_dragged;
+    sigc::signal<void ()> signal_released;
+    sigc::signal<void ()> signal_value_changed;
 
 protected:
     void on_size_allocate(Gtk::Allocation &allocation) override;

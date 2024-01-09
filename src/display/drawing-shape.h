@@ -10,13 +10,11 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
-#ifndef SEEN_INKSCAPE_DISPLAY_DRAWING_SHAPE_H
-#define SEEN_INKSCAPE_DISPLAY_DRAWING_SHAPE_H
+#ifndef INKSCAPE_DISPLAY_DRAWING_SHAPE_H
+#define INKSCAPE_DISPLAY_DRAWING_SHAPE_H
 
 #include "display/drawing-item.h"
 #include "display/nr-style.h"
-
-#include <memory>
 
 class SPStyle;
 class SPCurve;
@@ -28,36 +26,41 @@ class DrawingShape
 {
 public:
     DrawingShape(Drawing &drawing);
-    ~DrawingShape() override;
+    int tag() const override { return tag_of<decltype(*this)>; }
 
-    void setPath(SPCurve *curve);
-    void setStyle(SPStyle *style, SPStyle *context_style = nullptr) override;
-    void setChildrenStyle(SPStyle *context_style) override;
+    void setPath(std::shared_ptr<SPCurve const> curve);
+    void setStyle(SPStyle const *style, SPStyle const *context_style = nullptr) override;
+    void setChildrenStyle(SPStyle const *context_style) override;
 
 protected:
-    unsigned _updateItem(Geom::IntRect const &area, UpdateContext const &ctx,
-                                 unsigned flags, unsigned reset) override;
-    unsigned _renderItem(DrawingContext &dc, Geom::IntRect const &area, unsigned flags,
-                                 DrawingItem *stop_at) override;
-    void _clipItem(DrawingContext &dc, Geom::IntRect const &area) override;
+    ~DrawingShape() override = default;
+
+    unsigned _updateItem(Geom::IntRect const &area, UpdateContext const &ctx, unsigned flags, unsigned reset) override;
+    unsigned _renderItem(DrawingContext &dc, RenderContext &rc, Geom::IntRect const &area, unsigned flags, DrawingItem const *stop_at) const override;
+    void _clipItem(DrawingContext &dc, RenderContext &rc, Geom::IntRect const &area) const override;
     DrawingItem *_pickItem(Geom::Point const &p, double delta, unsigned flags) override;
-    bool _canClip() override;
+    bool _canClip() const override { return true; }
 
-    void _renderFill(DrawingContext &dc);
-    void _renderStroke(DrawingContext &dc);
-    void _renderMarkers(DrawingContext &dc, Geom::IntRect const &area, unsigned flags,
-                        DrawingItem *stop_at);
+    void _renderFill(DrawingContext &dc, RenderContext &rc, Geom::IntRect const &area) const;
+    void _renderStroke(DrawingContext &dc, RenderContext &rc, Geom::IntRect const &area, unsigned flags) const;
+    void _renderMarkers(DrawingContext &dc, RenderContext &rc, Geom::IntRect const &area, unsigned flags, DrawingItem const *stop_at) const;
 
-    std::unique_ptr<SPCurve> _curve;
+    bool style_vector_effect_stroke : 1;
+    bool style_stroke_extensions_hairline : 1;
+    SPWindRule style_clip_rule;
+    SPWindRule style_fill_rule;
+    unsigned style_opacity : 24;
+
+    std::shared_ptr<SPCurve const> _curve;
     NRStyle _nrstyle;
 
     DrawingItem *_last_pick;
     unsigned _repick_after;
 };
 
-} // end namespace Inkscape
+} // namespace Inkscape
 
-#endif // !SEEN_INKSCAPE_DISPLAY_DRAWING_ITEM_H
+#endif // INKSCAPE_DISPLAY_DRAWING_SHAPE_H
 
 /*
   Local Variables:

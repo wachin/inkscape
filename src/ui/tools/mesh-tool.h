@@ -20,6 +20,7 @@
 
 #include <cstddef>
 #include <sigc++/sigc++.h>
+#include "gradient-drag.h"
 #include "ui/tools/tool-base.h"
 
 #include "object/sp-mesh-array.h"
@@ -28,12 +29,16 @@
 #define SP_IS_MESH_CONTEXT(obj) (dynamic_cast<const Inkscape::UI::Tools::MeshTool*>((const Inkscape::UI::Tools::ToolBase*)obj) != NULL)
 
 namespace Inkscape {
+
+class Selection;
+class CanvasItemCurve;
+
 namespace UI {
 namespace Tools {
 
 class MeshTool : public ToolBase {
 public:
-    MeshTool();
+    MeshTool(SPDesktop *desktop);
     ~MeshTool() override;
 
     Geom::Point origin;
@@ -43,29 +48,24 @@ public:
     sigc::connection *selcon;
     sigc::connection *subselcon;
 
-    static const std::string prefsPath;
-
-    void setup() override;
     void set(const Inkscape::Preferences::Entry& val) override;
     bool root_handler(GdkEvent* event) override;
-
-    const std::string& getPrefsPath() override;
+    void fit_mesh_in_bbox();
+    void corner_operation(MeshCornerOperation operation);
 
 private:
-    void selection_changed(Inkscape::Selection* sel);
-
     bool cursor_addnode;
     bool show_handles;
     bool edit_fill;
     bool edit_stroke;
 
-
+    void selection_changed(Inkscape::Selection *sel);
+    void select_next();
+    void select_prev();
+    void new_default();
+    void split_near_point(SPItem *item, Geom::Point mouse_p, guint32 /*etime*/);
+    std::vector<GrDrag::ItemCurve*> over_curve(Geom::Point event_p, bool first = true);
 };
-
-void sp_mesh_context_select_next(ToolBase *event_context);
-void sp_mesh_context_select_prev(ToolBase *event_context);
-void sp_mesh_context_corner_operation(MeshTool *event_context, MeshCornerOperation operation );
-void sp_mesh_context_fit_mesh_in_bbox(MeshTool *event_context);
 
 }
 }

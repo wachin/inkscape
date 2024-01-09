@@ -211,12 +211,12 @@ SvgFont::scaled_font_text_to_glyphs (cairo_scaled_font_t  */*scaled_font*/,
                         break;
                     }
                     //apply glyph kerning if appropriate
-                    SPHkern *hkern = dynamic_cast<SPHkern *>(&node);
+                    auto hkern = cast<SPHkern>(&node);
                     if (hkern && is_horizontal_text &&
                         MatchHKerningRule(hkern, this->glyphs[i], previous_unicode, previous_glyph_name) ){
                         x -= (hkern->k / font_height);
                     }
-                    SPVkern *vkern = dynamic_cast<SPVkern *>(&node);
+                    auto vkern = cast<SPVkern>(&node);
                     if (vkern && !is_horizontal_text &&
                         MatchVKerningRule(vkern, this->glyphs[i], previous_unicode, previous_glyph_name) ){
                         y -= (vkern->k / font_height);
@@ -285,7 +285,7 @@ Geom::PathVector
 SvgFont::flip_coordinate_system(SPFont* spfont, Geom::PathVector pathv){
     double units_per_em = 1024;
     for(auto& obj: spfont->children) {
-        if (dynamic_cast<SPFontFace *>(&obj)) {
+        if (is<SPFontFace>(&obj)) {
             //XML Tree being directly used here while it shouldn't be.
             units_per_em = obj.getRepr()->getAttributeDouble("units_per_em", units_per_em);
         }
@@ -322,11 +322,11 @@ SvgFont::scaled_font_render_glyph (cairo_scaled_font_t  */*scaled_font*/,
         node = glyphs[glyph];
     }
 
-    if (!dynamic_cast<SPGlyph *>(node) && !dynamic_cast<SPMissingGlyph *>(node)) {
+    if (!is<SPGlyph>(node) && !is<SPMissingGlyph>(node)) {
         return CAIRO_STATUS_SUCCESS;  // FIXME: is this the right code to return?
     }
 
-    SPFont* spfont = dynamic_cast<SPFont *>(node->parent);
+    auto spfont = cast<SPFont>(node->parent);
     if (!spfont) {
         return CAIRO_STATUS_SUCCESS;  // FIXME: is this the right code to return?
     }
@@ -336,13 +336,13 @@ SvgFont::scaled_font_render_glyph (cairo_scaled_font_t  */*scaled_font*/,
     // pathv stores the path description from the d attribute:
     Geom::PathVector pathv;
     
-    SPGlyph *glyphNode = dynamic_cast<SPGlyph *>(node);
+    auto glyphNode = cast<SPGlyph>(node);
     if (glyphNode && glyphNode->d) {
         pathv = sp_svg_read_pathv(glyphNode->d);
         pathv = flip_coordinate_system(spfont, pathv);
         render_glyph_path(cr, &pathv);
     } else {
-        SPMissingGlyph *missing = dynamic_cast<SPMissingGlyph *>(node);
+        auto missing = cast<SPMissingGlyph>(node);
         if (missing && missing->d) {
             pathv = sp_svg_read_pathv(missing->d);
             pathv = flip_coordinate_system(spfont, pathv);
@@ -354,22 +354,22 @@ SvgFont::scaled_font_render_glyph (cairo_scaled_font_t  */*scaled_font*/,
         //render the SVG described on this glyph's child nodes.
         for(auto& child: node->children) {
             {
-                SPPath *path = dynamic_cast<SPPath *>(&child);
+                auto path = cast<SPPath>(&child);
                 if (path) {
                     pathv = path->curve()->get_pathvector();
                     pathv = flip_coordinate_system(spfont, pathv);
                     render_glyph_path(cr, &pathv);
                 }
             }
-            if (dynamic_cast<SPObjectGroup *>(&child)) {
+            if (is<SPObjectGroup>(&child)) {
                 g_warning("TODO: svgfonts: render OBJECTGROUP");
             }
-            SPUse *use = dynamic_cast<SPUse *>(&child);
+            auto use = cast<SPUse>(&child);
             if (use) {
                 SPItem* item = use->ref->getObject();
-                SPPath *path = dynamic_cast<SPPath *>(item);
+                auto path = cast<SPPath>(item);
                 if (path) {
-                    SPShape *shape = dynamic_cast<SPShape *>(item);
+                    auto shape = cast<SPShape>(item);
                     g_assert(shape != nullptr);
                     pathv = shape->curve()->get_pathvector();
                     pathv = flip_coordinate_system(spfont, pathv);
@@ -388,11 +388,11 @@ cairo_font_face_t*
 SvgFont::get_font_face(){
     if (!this->userfont) {
         for(auto& node: font->children) {
-            SPGlyph *glyph = dynamic_cast<SPGlyph *>(&node);
+            auto glyph = cast<SPGlyph>(&node);
             if (glyph) {
                 glyphs.push_back(glyph);
             }
-            SPMissingGlyph *missing = dynamic_cast<SPMissingGlyph *>(&node);
+            auto missing = cast<SPMissingGlyph>(&node);
             if (missing) {
                 missingglyph = missing;
             }
@@ -411,7 +411,7 @@ void SvgFont::refresh(){
 double SvgFont::units_per_em() {
     double units_per_em = 1024;
     for (auto& obj: font->children) {
-        if (dynamic_cast<SPFontFace *>(&obj)) {
+        if (is<SPFontFace>(&obj)) {
             //XML Tree being directly used here while it shouldn't be.
             units_per_em = obj.getRepr()->getAttributeDouble("units-per-em", units_per_em);
         }

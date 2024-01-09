@@ -19,13 +19,15 @@
  */
 
 #include <2geom/affine.h>
+#include "sp-dimensions.h"
 #include "sp-item-group.h"
 #include "viewbox.h"
 
-class SPSymbol : public SPGroup, public SPViewBox {
+class SPSymbol final : public SPGroup, public SPViewBox, public SPDimensions {
 public:
 	SPSymbol();
 	~SPSymbol() override;
+	int tag() const override { return tag_of<decltype(*this)>; }
 
 	void build(SPDocument *document, Inkscape::XML::Node *repr) override;
 	void release() override;
@@ -37,12 +39,16 @@ public:
 	void modified(unsigned int flags) override;
 	void child_added(Inkscape::XML::Node* child, Inkscape::XML::Node* ref) override;
 
+    std::optional<Geom::PathVector> documentExactBounds() const override;
 	Inkscape::DrawingItem* show(Inkscape::Drawing &drawing, unsigned int key, unsigned int flags) override;
 	void print(SPPrintContext *ctx) override;
 	Geom::OptRect bbox(Geom::Affine const &transform, SPItem::BBoxType type) const override;
 	void hide (unsigned int key) override;
-};
 
-MAKE_SP_OBJECT_TYPECHECK_FUNCTIONS(SP_IS_SYMBOL, SPSymbol)
+public:
+    // reference point
+    SVGLength refX;
+    SVGLength refY;
+};
 
 #endif

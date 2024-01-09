@@ -22,6 +22,7 @@
 #include "object/object-set.h"
 #include "path/path-outline.h"
 #include "path/path-simplify.h"
+#include "ui/icon-names.h"
 
 using Inkscape::ObjectSet;
 
@@ -33,16 +34,17 @@ ObjectSet::strokesToPaths(bool legacy, bool skip_undo)
     return false;
   }
 
+  bool did = false;
+
   Inkscape::Preferences *prefs = Inkscape::Preferences::get();
   if (prefs->getBool("/options/pathoperationsunlink/value", true)) {
-      unlinkRecursive(true);
+      did = unlinkRecursive(true);
   }
 
   // Need to turn on stroke scaling to ensure stroke is scaled when transformed!
   bool scale_stroke = prefs->getBool("/options/transform/stroke", true);
   prefs->setBool("/options/transform/stroke", true);
 
-  bool did = false;
 
   std::vector<SPItem *> my_items(items().begin(), items().end());
 
@@ -76,7 +78,9 @@ ObjectSet::strokesToPaths(bool legacy, bool skip_undo)
   }
 
   if (did && !skip_undo) {
-    Inkscape::DocumentUndo::done(document(), SP_VERB_NONE, _("Convert stroke to path"));
+    Inkscape::DocumentUndo::done(document(), _("Convert stroke to path"), "");
+  } else if (!did && !skip_undo) {
+    Inkscape::DocumentUndo::cancel(document());
   }
 
   return did;
@@ -135,7 +139,7 @@ ObjectSet::simplifyPaths(bool skip_undo)
     }
 
     if (pathsSimplified > 0 && !skip_undo) {
-        DocumentUndo::done(document(), SP_VERB_SELECTION_SIMPLIFY,  _("Simplify"));
+        DocumentUndo::done(document(), _("Simplify"), INKSCAPE_ICON("path-simplify"));
     }
 
     if (desktop()) {

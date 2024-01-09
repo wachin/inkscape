@@ -19,18 +19,20 @@
 # include "config.h"  // only include where actually required!
 #endif
 
+#include <cstddef>
+#include <2geom/point.h>
+#include <sigc++/connection.h>
 #include <gtkmm.h>
 
 #include "message.h"
+#include "preferences.h"
 #include "ui/view/view-widget.h"
-
-#include <cstddef>
-#include <sigc++/connection.h>
-#include <2geom/point.h>
+#include "display/control/canvas-item-ptr.h"
 
 // forward declaration
 typedef struct _EgeColorProfTracker EgeColorProfTracker;
 
+class InkscapeWindow;
 struct SPCanvasItem;
 class SPDocument;
 class SPDesktop;
@@ -51,6 +53,7 @@ namespace Widget {
   class Canvas;
   class CanvasGrid;
   class LayerSelector;
+  class PageSelector;
   class SelectedStyle;
   class SpinButton;
   class Ruler;
@@ -68,23 +71,21 @@ void sp_desktop_widget_update_vruler (SPDesktopWidget *dtw);
 /* Show/hide rulers & scrollbars */
 void sp_desktop_widget_update_scrollbars (SPDesktopWidget *dtw, double scale);
 
-void sp_dtw_desktop_activate (SPDesktopWidget *dtw);
-void sp_dtw_desktop_deactivate (SPDesktopWidget *dtw);
-
 /// A GtkEventBox on an SPDesktop.
 class SPDesktopWidget : public SPViewWidget {
     using parent_type = SPViewWidget;
 
-    SPDesktopWidget();
+    SPDesktopWidget(InkscapeWindow *inkscape_window);
 
 public:
-    SPDesktopWidget(SPDocument *document);
+    SPDesktopWidget(InkscapeWindow *inkscape_window, SPDocument *document);
     ~SPDesktopWidget() override;
 
     Inkscape::UI::Widget::CanvasGrid *get_canvas_grid() { return _canvas_grid; }  // Temp, I hope!
     Inkscape::UI::Widget::Canvas     *get_canvas()      { return _canvas; }
 
-    void on_size_allocate(Gtk::Allocation &) override;
+    Gio::ActionMap* get_action_map();
+
     void on_realize() override;
     void on_unrealize() override;
 
@@ -92,7 +93,7 @@ public:
 
     SPDesktop *desktop = nullptr;
 
-    Gtk::Window *window = nullptr;
+    InkscapeWindow *window = nullptr;
     Gtk::MenuBar *_menubar;
 private:
     // Flags for ruler event handling
@@ -101,7 +102,7 @@ private:
 
     bool update = false;
 
-    Inkscape::CanvasItemGuideLine *_active_guide = nullptr; ///< The guide being handled during a ruler event
+    CanvasItemPtr<Inkscape::CanvasItemGuideLine> _active_guide; ///< The guide being handled during a ruler event
     Geom::Point _normal; ///< Normal to the guide currently being handled during ruler event
     int _xp = 0; ///< x coordinate for start of drag
     int _yp = 0; ///< y coordinate for start of drag
@@ -109,9 +110,11 @@ private:
     // The root vbox of the window layout.
     Gtk::Box *_vbox;
 
+    Gtk::Paned *_tbbox;
     Gtk::Box *_hbox;
     Inkscape::UI::Dialog::DialogContainer *_container = nullptr;
     Inkscape::UI::Dialog::DialogMultipaned *_columns;
+    Gtk::Grid* _top_toolbars;
 
     Gtk::Box     *_statusbar;
 
@@ -122,16 +125,19 @@ private:
 
     Gtk::Grid *_coord_status;
 
+    Gtk::Label *_select_status;
     Gtk::Label *_coord_status_x;
     Gtk::Label *_coord_status_y;
+
+    Gtk::Box* _zoom_status_box;
     Inkscape::UI::Widget::SpinButton *_zoom_status;
     sigc::connection _zoom_status_input_connection;
     sigc::connection _zoom_status_output_connection;
     sigc::connection _zoom_status_value_changed_connection;
     sigc::connection _zoom_status_populate_popup_connection;
-    Gtk::Label *_select_status;
-    Inkscape::UI::Widget::SpinButton *_rotation_status = nullptr;
 
+    Gtk::Box* _rotation_status_box;
+    Inkscape::UI::Widget::SpinButton *_rotation_status = nullptr;
     sigc::connection _rotation_status_input_connection;
     sigc::connection _rotation_status_output_connection;
     sigc::connection _rotation_status_value_changed_connection;
@@ -146,22 +152,19 @@ private:
     unsigned int _interaction_disabled_counter = 0;
 
 public:
-    Geom::Point _ruler_origin;
     double _dt2r;
 
 private:
     Inkscape::UI::Widget::Canvas *_canvas = nullptr;
-
     std::vector<sigc::connection> _connections;
+    Inkscape::PrefObserver _statusbar_preferences_observer;
+    Inkscape::UI::Widget::LayerSelector* _layer_selector;
+    Inkscape::UI::Widget::PageSelector* _page_selector;
 
 public:
-    Inkscape::UI::Widget::LayerSelector *layer_selector;
-
     EgeColorProfTracker* _tracker;
 
     void setMessage(Inkscape::MessageType type, gchar const *message);
-    Geom::Point window_get_pointer();
-    bool shutdown();
     void viewSetPosition (Geom::Point p);
     void letZoomGrabFocus();
     void getWindowGeometry (gint &x, gint &y, gint &w, gint &h);
@@ -175,16 +178,13 @@ public:
     void setToolboxFocusTo (gchar const *);
     void setToolboxAdjustmentValue (gchar const * id, double value);
     bool isToolboxButtonActive (gchar const *id);
-    void setToolboxPosition(Glib::ustring const& id, GtkPositionType pos);
     void setCoordinateStatus(Geom::Point p);
-    void storeDesktopPosition(bool store_maximize = true);
-    void requestCanvasUpdate();
-    void requestCanvasUpdateAndWait();
     void enableInteraction();
     void disableInteraction();
     void updateTitle(gchar const *uri);
     bool onFocusInEvent(GdkEventFocus *);
-    Inkscape::UI::Dialog::DialogContainer *getContainer();
+    Inkscape::UI::Dialog::DialogContainer *getDialogContainer();
+    void showNotice(Glib::ustring const &msg, unsigned timeout = 0);
 
     Gtk::MenuBar *menubar() { return _menubar; }
 
@@ -198,6 +198,7 @@ public:
     void update_zoom();
     void update_rotation();
     void update_rulers();
+    void repack_snaptoolbar();
 
     void iconify();
     void maximize();
@@ -210,12 +211,19 @@ public:
     void toggle_command_palette();
     void toggle_rulers();
     void sticky_zoom_toggled();
+    void sticky_zoom_updated();
 
+    Gtk::Widget *get_tool_toolbox() const { return Glib::wrap(tool_toolbox); }
 private:
     GtkWidget *tool_toolbox;
     GtkWidget *aux_toolbox;
     GtkWidget *commands_toolbox;
     GtkWidget *snap_toolbox;
+    Inkscape::PrefObserver _tb_snap_pos;
+    Inkscape::PrefObserver _tb_icon_sizes1;
+    Inkscape::PrefObserver _tb_icon_sizes2;
+    Inkscape::PrefObserver _tb_visible_buttons;
+    Inkscape::PrefObserver _ds_sticky_zoom;
 
     void namedviewModified(SPObject *obj, guint flags);
     int zoom_input(double *new_val);
@@ -227,6 +235,8 @@ private:
     void rotation_value_changed();
     void rotation_populate_popup(Gtk::Menu *menu);
   //void canvas_tbl_size_allocate(Gtk::Allocation &allocation);
+    void update_statusbar_visibility();
+    void apply_ctrlbar_settings();
 
 public:
     void cms_adjust_toggled();

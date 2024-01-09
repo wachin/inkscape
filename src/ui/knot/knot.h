@@ -18,15 +18,18 @@
 #include <2geom/point.h>
 #include <sigc++/sigc++.h>
 #include <glibmm/ustring.h>
+#include <glibmm/refptr.h>
+#include <gdkmm/cursor.h>
 
 #include "knot-enums.h"
 #include "display/control/canvas-item-enums.h"
+#include "display/control/canvas-item-ptr.h"
 #include "enums.h"
+#include "helper/auto-connection.h"
 
 class SPDesktop;
 class SPItem;
 
-typedef struct _GdkCursor GdkCursor;
 typedef union _GdkEvent GdkEvent;
 typedef unsigned int guint32;
 
@@ -57,7 +60,7 @@ public:
     int ref_count; // FIXME encapsulation
 
     SPDesktop *desktop  = nullptr;                  /**< Desktop we are on. */
-    Inkscape::CanvasItemCtrl *ctrl = nullptr;       /**< Our CanvasItemCtrl. */
+    CanvasItemPtr<Inkscape::CanvasItemCtrl> ctrl;   /**< Our CanvasItemCtrl. */
     SPItem *owner       = nullptr;                  /**< Optional Owner Item */
     SPItem *sub_owner   = nullptr;                  /**< Optional SubOwner Item */
     unsigned int flags  = SP_KNOT_VISIBLE;
@@ -65,6 +68,7 @@ public:
     unsigned int size   = 9;                        /**< Always square. Must be odd. */
     bool size_set       = false;                    /**< Use default size unless explicitly set. */
     double angle        = 0.0;                      /**< Angle of mesh handle. */
+    bool is_lpe         = false;                    /**< is lpe knot. */
     Geom::Point pos;                                /**< Our desktop coordinates. */
     Geom::Point grabbed_rel_pos;                    /**< Grabbed relative position. */
     Geom::Point drag_origin;                        /**< Origin of drag. */
@@ -85,29 +89,25 @@ public:
     guint32 fill[SP_KNOT_VISIBLE_STATES];
     guint32 stroke[SP_KNOT_VISIBLE_STATES];
     unsigned char *image[SP_KNOT_VISIBLE_STATES];
-
-    GdkCursor *cursor[SP_KNOT_VISIBLE_STATES];
-
-    GdkCursor *saved_cursor = nullptr;
-    void* pixbuf            = nullptr;
+    Glib::RefPtr<Gdk::Cursor> _cursors[SP_KNOT_VISIBLE_STATES];
 
     char *tip               = nullptr;
 
-    sigc::connection _event_connection;
+    Inkscape::auto_connection _event_connection;
 
     double pressure         = 0.0;    /**< The tablet pen pressure when the knot is being dragged. */
 
     // FIXME: signals should NOT need to emit the object they came from, the callee should
     // be able to figure that out
-    sigc::signal<void, SPKnot *, unsigned int> click_signal;
-    sigc::signal<void, SPKnot*, unsigned int> doubleclicked_signal;
-    sigc::signal<void, SPKnot*, unsigned int> mousedown_signal;
-    sigc::signal<void, SPKnot*, unsigned int> grabbed_signal;
-    sigc::signal<void, SPKnot *, unsigned int> ungrabbed_signal;
-    sigc::signal<void, SPKnot *, Geom::Point const &, unsigned int> moved_signal;
-    sigc::signal<bool, SPKnot*, GdkEvent*> event_signal;
+    sigc::signal<void (SPKnot *, unsigned int)> click_signal;
+    sigc::signal<void (SPKnot*, unsigned int)> doubleclicked_signal;
+    sigc::signal<void (SPKnot*, unsigned int)> mousedown_signal;
+    sigc::signal<void (SPKnot*, unsigned int)> grabbed_signal;
+    sigc::signal<void (SPKnot *, unsigned int)> ungrabbed_signal;
+    sigc::signal<void (SPKnot *, Geom::Point const &, unsigned int)> moved_signal;
+    sigc::signal<bool (SPKnot*, GdkEvent*)> event_signal;
 
-    sigc::signal<bool, SPKnot*, Geom::Point*, unsigned int> request_signal;
+    sigc::signal<bool (SPKnot*, Geom::Point*, unsigned int)> request_signal;
 
 
     //TODO: all the members above should eventualle become private, accessible via setters/getters
@@ -115,14 +115,13 @@ public:
     void setShape(Inkscape::CanvasItemCtrlShape s);
     void setAnchor(unsigned int i);
     void setMode(Inkscape::CanvasItemCtrlMode m);
-    void setPixbuf(void* p);
     void setAngle(double i);
 
     void setFill(guint32 normal, guint32 mouseover, guint32 dragging, guint32 selected);
     void setStroke(guint32 normal, guint32 mouseover, guint32 dragging, guint32 selected);
     void setImage(unsigned char* normal, unsigned char* mouseover, unsigned char* dragging, unsigned char* selected);
 
-    void setCursor(GdkCursor* normal, GdkCursor* mouseover, GdkCursor* dragging, GdkCursor* selected);
+    void setCursor(SPKnotStateType type, Glib::RefPtr<Gdk::Cursor> cursor);
 
     /**
      * Show knot on its canvas.
@@ -140,7 +139,7 @@ public:
     void setFlag(unsigned int flag, bool set);
 
     /**
-     * Update knot's pixbuf and set its control state.
+     * Update knot's control state.
      */
     void updateCtrl();
 
@@ -178,11 +177,11 @@ public:
      */
     bool eventHandler(GdkEvent *event);
 
-    bool is_visible()   { return (flags & SP_KNOT_VISIBLE)   != 0; }
-    bool is_selected()  { return (flags & SP_KNOT_SELECTED)  != 0; }
-    bool is_mouseover() { return (flags & SP_KNOT_MOUSEOVER) != 0; }
-    bool is_dragging()  { return (flags & SP_KNOT_DRAGGING)  != 0; }
-    bool is_grabbed()   { return (flags & SP_KNOT_GRABBED)   != 0; }
+    bool is_visible()   const { return (flags & SP_KNOT_VISIBLE)   != 0; }
+    bool is_selected()  const { return (flags & SP_KNOT_SELECTED)  != 0; }
+    bool is_mouseover() const { return (flags & SP_KNOT_MOUSEOVER) != 0; }
+    bool is_dragging()  const { return (flags & SP_KNOT_DRAGGING)  != 0; }
+    bool is_grabbed()   const { return (flags & SP_KNOT_GRABBED)   != 0; }
 
 private:
     /**

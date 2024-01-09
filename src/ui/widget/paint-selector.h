@@ -16,6 +16,7 @@
 #include "fill-or-stroke.h"
 #include <glib.h>
 #include <gtkmm/box.h>
+#include <optional>
 
 #include "object/sp-gradient-spread.h"
 #include "object/sp-gradient-units.h"
@@ -46,8 +47,8 @@ namespace Widget {
 
 class FillRuleRadioButton;
 class StyleToggleButton;
-class GradientSelector;
 class GradientEditor;
+class PatternEditor;
 
 /**
  * Generic paint selector widget.
@@ -98,8 +99,8 @@ class PaintSelector : public Gtk::Box {
     Gtk::Box         *_selector_solid_color = nullptr;
     GradientEditor   *_selector_gradient = nullptr;
     Gtk::Box         *_selector_mesh = nullptr;
-    Gtk::Box         *_selector_pattern = nullptr;
     SwatchSelector   *_selector_swatch = nullptr;
+    PatternEditor* _selector_pattern = nullptr;
 
     Gtk::Label *_label;
     GtkWidget *_patternmenu = nullptr;
@@ -117,13 +118,14 @@ class PaintSelector : public Gtk::Box {
     static gboolean isSeparator(GtkTreeModel *model, GtkTreeIter *iter, gpointer data);
 
   private:
-    sigc::signal<void, FillRule> _signal_fillrule_changed;
-    sigc::signal<void> _signal_dragged;
-    sigc::signal<void, Mode, bool> _signal_mode_changed;
-    sigc::signal<void> _signal_grabbed;
-    sigc::signal<void> _signal_released;
-    sigc::signal<void> _signal_changed;
+    sigc::signal<void (FillRule)> _signal_fillrule_changed;
+    sigc::signal<void ()> _signal_dragged;
+    sigc::signal<void (Mode, bool)> _signal_mode_changed;
+    sigc::signal<void ()> _signal_grabbed;
+    sigc::signal<void ()> _signal_released;
+    sigc::signal<void ()> _signal_changed;
     sigc::signal<void (SPStop*)> _signal_stop_selected;
+    sigc::signal<void> _signal_edit_pattern;
 
     StyleToggleButton *style_button_add(gchar const *px, PaintSelector::Mode mode, gchar const *tip);
     void style_button_toggled(StyleToggleButton *tb);
@@ -171,6 +173,7 @@ class PaintSelector : public Gtk::Box {
     inline decltype(_signal_released) signal_released() const { return _signal_released; }
     inline decltype(_signal_changed) signal_changed() const { return _signal_changed; }
     inline decltype(_signal_stop_selected) signal_stop_selected() const { return _signal_stop_selected; }
+    inline decltype(_signal_edit_pattern) signal_edit_pattern() const { return _signal_edit_pattern; }
 
     void setMode(Mode mode);
     static Mode getModeForStyle(SPStyle const &style, FillOrStroke kind);
@@ -199,6 +202,12 @@ class PaintSelector : public Gtk::Box {
     SPGradient *getGradientVector();
     void pushAttrsToGradient(SPGradient *gr) const;
     SPPattern *getPattern();
+    std::optional<unsigned int> get_pattern_color();
+    Geom::Affine get_pattern_transform();
+    Geom::Point get_pattern_offset();
+    Geom::Scale get_pattern_gap();
+    Glib::ustring get_pattern_label();
+    bool is_pattern_scale_uniform();
 };
 
 enum {

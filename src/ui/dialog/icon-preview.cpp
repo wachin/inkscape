@@ -26,7 +26,7 @@
 #include "desktop.h"
 #include "document.h"
 #include "inkscape.h"
-#include "verbs.h"
+#include "page-manager.h"
 
 #include "display/cairo-utils.h"
 #include "display/drawing.h"
@@ -51,16 +51,6 @@ sp_icon_doc_icon( SPDocument *doc, Inkscape::Drawing &drawing,
 namespace Inkscape {
 namespace UI {
 namespace Dialog {
-
-
-IconPreviewPanel &IconPreviewPanel::getInstance()
-{
-    IconPreviewPanel *instance = new IconPreviewPanel();
-
-    instance->refreshPreview();
-
-    return *instance;
-}
 
 //#########################################################################
 //## E V E N T S
@@ -89,6 +79,7 @@ void IconPreviewPanel::on_button_clicked(int which)
 IconPreviewPanel::IconPreviewPanel()
     : DialogBase("/dialogs/iconpreview", "IconPreview")
     , drawing(nullptr)
+    , drawing_doc(nullptr)
     , visionkey(0)
     , timer(nullptr)
     , renderTimer(nullptr)
@@ -240,14 +231,13 @@ IconPreviewPanel::IconPreviewPanel()
     pack_start(iconBox, Gtk::PACK_SHRINK);
 
     show_all_children();
+
+    refreshPreview();
 }
 
 IconPreviewPanel::~IconPreviewPanel()
 {
-    if (drawing) {
-        delete drawing;
-        drawing = nullptr;
-    }
+    removeDrawing();
     if (timer) {
         timer->stop();
         delete timer;
@@ -291,19 +281,28 @@ void IconPreviewPanel::selectionModified(Selection *selection, guint flags)
 
 void IconPreviewPanel::documentReplaced()
 {
-    if (drawing) {
-        if (auto document = getDocument()) {
-            document->getRoot()->invoke_hide(visionkey);
-        }
-        delete drawing;
-        drawing = nullptr;
-    }
-    if (auto document = getDocument()) {
+    removeDrawing();
+    drawing_doc = getDocument();
+    if (drawing_doc) {
         drawing = new Inkscape::Drawing();
         visionkey = SPItem::display_key_new(1);
-        drawing->setRoot(document->getRoot()->invoke_show(*drawing, visionkey, SP_ITEM_SHOW_DISPLAY));
+        drawing->setRoot(drawing_doc->getRoot()->invoke_show(*drawing, visionkey, SP_ITEM_SHOW_DISPLAY));
+        docDesConn = drawing_doc->connectDestroy([=]() { removeDrawing(); });
         queueRefresh();
     }
+}
+
+/// Safely delete the Inkscape::Drawing and references to it.
+void IconPreviewPanel::removeDrawing()
+{
+    docDesConn.disconnect();
+    if (!drawing) {
+        return;
+    }
+    drawing_doc->getRoot()->invoke_hide(visionkey);
+    delete drawing;
+    drawing = nullptr;
+    drawing_doc = nullptr;
 }
 
 void IconPreviewPanel::refreshPreview()
@@ -339,7 +338,7 @@ void IconPreviewPanel::refreshPreview()
                 }
             }
         } else {
-            target = getDesktop()->currentRoot();
+            target = getDesktop()->getDocument()->getRoot();
         }
         if (target) {
             renderPreview(target);
@@ -381,7 +380,7 @@ void IconPreviewPanel::queueRefresh()
         if (!timer) {
             timer = new Glib::Timer();
         }
-        Glib::signal_idle().connect( sigc::mem_fun(this, &IconPreviewPanel::refreshCB), Glib::PRIORITY_DEFAULT_IDLE );
+        Glib::signal_idle().connect( sigc::mem_fun(*this, &IconPreviewPanel::refreshCB), Glib::PRIORITY_DEFAULT_IDLE );
     }
 }
 
@@ -465,15 +464,14 @@ sp_icon_doc_icon( SPDocument *doc, Inkscape::Drawing &drawing,
 
     if (doc) {
         SPObject *object = doc->getObjectById(name);
-        if (object && SP_IS_ITEM(object)) {
-            SPItem *item = SP_ITEM(object);
+        if (object && is<SPItem>(object)) {
+            auto item = cast<SPItem>(object);
             // Find bbox in document
             Geom::OptRect dbox = item->documentVisualBounds();
 
             if ( object->parent == nullptr )
             {
-                dbox = Geom::Rect(Geom::Point(0, 0),
-                                Geom::Point(doc->getWidth().value("px"), doc->getHeight().value("px")));
+                dbox = *(doc->preferredBounds());
             }
 
             /* This is in document coordinates, i.e. pixels */
@@ -551,14 +549,10 @@ sp_icon_doc_icon( SPDocument *doc, Inkscape::Drawing &drawing,
                     CAIRO_FORMAT_ARGB32, psize, psize, stride);
                 Inkscape::DrawingContext dc(s, ua.min());
 
-                SPNamedView *nv = sp_document_namedview(doc, nullptr);
-                float bg_r = SP_RGBA32_R_F(nv->pagecolor);
-                float bg_g = SP_RGBA32_G_F(nv->pagecolor);
-                float bg_b = SP_RGBA32_B_F(nv->pagecolor);
-                float bg_a = SP_RGBA32_A_F(nv->pagecolor);
+                auto bg = doc->getPageManager().getDefaultBackgroundColor();
 
                 cairo_t *cr = cairo_create(s);
-                cairo_set_source_rgba(cr, bg_r, bg_g, bg_b, bg_a);
+                cairo_set_source_rgba(cr, bg[0], bg[1], bg[2], bg[3]);
                 cairo_rectangle(cr, 0, 0, psize, psize);
                 cairo_fill(cr);
                 cairo_save(cr);

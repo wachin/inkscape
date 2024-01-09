@@ -14,26 +14,30 @@
  */
 
 #include "selectorsdialog.h"
+
+#include <map>
+#include <regex>
+#include <utility>
+
+#include <glibmm/i18n.h>
+#include <glibmm/regex.h>
+
 #include "attribute-rel-svg.h"
 #include "document-undo.h"
 #include "inkscape.h"
 #include "selection.h"
 #include "style.h"
+
 #include "ui/icon-loader.h"
 #include "ui/icon-names.h"
 #include "ui/widget/iconrenderer.h"
-#include "verbs.h"
+
+#include "util/trim.h"
 
 #include "xml/attribute-record.h"
 #include "xml/node-observer.h"
 #include "xml/sp-css-attr.h"
 
-#include <glibmm/i18n.h>
-#include <glibmm/regex.h>
-
-#include <map>
-#include <regex>
-#include <utility>
 
 // G_MESSAGES_DEBUG=DEBUG_SELECTORSDIALOG  gdb ./inkscape
 // #define DEBUG_SELECTORSDIALOG
@@ -41,25 +45,14 @@
 
 using Inkscape::DocumentUndo;
 
-/**
- * This macro is used to remove spaces around selectors or any strings when
- * parsing is done to update XML style element or row labels in this dialog.
- */
-#define REMOVE_SPACES(x)                                                                                               \
-    x.erase(0, x.find_first_not_of(' '));                                                                              \
-    if (x.size() && x[0] == ',')                                                                                       \
-        x.erase(0, 1);                                                                                                 \
-    if (x.size() && x[x.size() - 1] == ',')                                                                            \
-        x.erase(x.size() - 1, 1);                                                                                      \
-    x.erase(x.find_last_not_of(' ') + 1);
-
 namespace Inkscape {
 namespace UI {
 namespace Dialog {
 
 // Keeps a watch on style element
-class SelectorsDialog::NodeObserver : public Inkscape::XML::NodeObserver {
-  public:
+class SelectorsDialog::NodeObserver : public Inkscape::XML::NodeObserver
+{
+public:
     NodeObserver(SelectorsDialog *selectorsdialog)
         : _selectorsdialog(selectorsdialog)
     {
@@ -67,55 +60,53 @@ class SelectorsDialog::NodeObserver : public Inkscape::XML::NodeObserver {
     };
 
     void notifyContentChanged(Inkscape::XML::Node &node,
-                                      Inkscape::Util::ptr_shared old_content,
-                                      Inkscape::Util::ptr_shared new_content) override;
+                              Inkscape::Util::ptr_shared old_content,
+                              Inkscape::Util::ptr_shared new_content) override;
 
     SelectorsDialog *_selectorsdialog;
 };
 
-
-void SelectorsDialog::NodeObserver::notifyContentChanged(Inkscape::XML::Node & /*node*/,
-                                                         Inkscape::Util::ptr_shared /*old_content*/,
-                                                         Inkscape::Util::ptr_shared /*new_content*/)
+void SelectorsDialog::NodeObserver::notifyContentChanged(Inkscape::XML::Node &,
+                                                         Inkscape::Util::ptr_shared,
+                                                         Inkscape::Util::ptr_shared)
 {
-
     g_debug("SelectorsDialog::NodeObserver::notifyContentChanged");
-    _selectorsdialog->_scroollock = true;
+    _selectorsdialog->_scrollock = true;
     _selectorsdialog->_updating = false;
     _selectorsdialog->_readStyleElement();
     _selectorsdialog->_selectRow();
 }
 
-
 // Keeps a watch for new/removed/changed nodes
 // (Must update objects that selectors match.)
-class SelectorsDialog::NodeWatcher : public Inkscape::XML::NodeObserver {
-  public:
+class SelectorsDialog::NodeWatcher : public Inkscape::XML::NodeObserver
+{
+public:
     NodeWatcher(SelectorsDialog *selectorsdialog)
         : _selectorsdialog(selectorsdialog)
     {
         g_debug("SelectorsDialog::NodeWatcher: Constructor");
     };
 
-    void notifyChildAdded( Inkscape::XML::Node &/*node*/,
-                                   Inkscape::XML::Node &child,
-                                   Inkscape::XML::Node */*prev*/ ) override
+    void notifyChildAdded(Inkscape::XML::Node &,
+                          Inkscape::XML::Node &child,
+                          Inkscape::XML::Node *) override
     {
-            _selectorsdialog->_nodeAdded(child);
+        _selectorsdialog->_nodeAdded(child);
     }
 
-    void notifyChildRemoved( Inkscape::XML::Node &/*node*/,
-                                     Inkscape::XML::Node &child,
-                                     Inkscape::XML::Node */*prev*/ ) override
+    void notifyChildRemoved(Inkscape::XML::Node &,
+                            Inkscape::XML::Node &child,
+                            Inkscape::XML::Node *) override
     {
-            _selectorsdialog->_nodeRemoved(child);
+        _selectorsdialog->_nodeRemoved(child);
     }
 
-    void notifyAttributeChanged( Inkscape::XML::Node &node,
-                                         GQuark qname,
-                                         Util::ptr_shared /*old_value*/,
-                                         Util::ptr_shared /*new_value*/ ) override {
-
+    void notifyAttributeChanged(Inkscape::XML::Node &node,
+                                GQuark qname,
+                                Util::ptr_shared,
+                                Util::ptr_shared) override
+    {
         static GQuark const CODE_id = g_quark_from_static_string("id");
         static GQuark const CODE_class = g_quark_from_static_string("class");
 
@@ -145,17 +136,15 @@ void SelectorsDialog::_nodeRemoved(Inkscape::XML::Node &repr)
 
 void SelectorsDialog::_nodeChanged(Inkscape::XML::Node &object)
 {
-
     g_debug("SelectorsDialog::NodeChanged");
 
-    _scroollock = true;
+    _scrollock = true;
 
     _readStyleElement();
     _selectRow();
 }
 
 SelectorsDialog::TreeStore::TreeStore() = default;
-
 
 /**
  * Allow dragging only selectors.
@@ -218,15 +207,11 @@ Glib::RefPtr<SelectorsDialog::TreeStore> SelectorsDialog::TreeStore::create(Sele
  */
 SelectorsDialog::SelectorsDialog()
     : DialogBase("/dialogs/selectors", "Selectors")
-    , _updating(false)
-    , _textNode(nullptr)
-    , _scroolpos(0)
-    , _scroollock(false)
 {
     g_debug("SelectorsDialog::SelectorsDialog");
 
-    m_nodewatcher.reset(new SelectorsDialog::NodeWatcher(this));
-    m_styletextwatcher.reset(new SelectorsDialog::NodeObserver(this));
+    m_nodewatcher = std::make_unique<NodeWatcher>(this);
+    m_styletextwatcher = std::make_unique<NodeObserver>(this);
 
     // Tree
     Inkscape::UI::Widget::IconRenderer * addRenderer = manage(
@@ -276,13 +261,13 @@ SelectorsDialog::SelectorsDialog()
 }
 
 
-void SelectorsDialog::_vscrool()
+void SelectorsDialog::_vscroll()
 {
-    if (!_scroollock) {
-        _scroolpos = _vadj->get_value();
+    if (!_scrollock) {
+        _scrollpos = _vadj->get_value();
     } else {
-        _vadj->set_value(_scroolpos);
-        _scroollock = false;
+        _vadj->set_value(_scrollpos);
+        _scrollock = false;
     }
 }
 
@@ -298,8 +283,9 @@ void SelectorsDialog::_showWidgets()
     _selectors_box.set_name("SelectorsDialog");
     _scrolled_window_selectors.add(_treeView);
     _scrolled_window_selectors.set_policy(Gtk::POLICY_AUTOMATIC, Gtk::POLICY_AUTOMATIC);
+    _scrolled_window_selectors.set_overlay_scrolling(false);
     _vadj = _scrolled_window_selectors.get_vadjustment();
-    _vadj->signal_value_changed().connect(sigc::mem_fun(*this, &SelectorsDialog::_vscrool));
+    _vadj->signal_value_changed().connect(sigc::mem_fun(*this, &SelectorsDialog::_vscroll));
     _selectors_box.pack_start(_scrolled_window_selectors, Gtk::PACK_EXPAND_WIDGET);
     /* Gtk::Label *dirtogglerlabel = Gtk::manage(new Gtk::Label(_("Paned vertical")));
     dirtogglerlabel->get_style_context()->add_class("inksmall");
@@ -327,7 +313,7 @@ void SelectorsDialog::_showWidgets()
     _button_box.pack_end(*_vertical, false, false, 0);
     _del.signal_clicked().connect(sigc::mem_fun(*this, &SelectorsDialog::_delSelector));
     _del.hide();
-    _style_dialog = new StyleDialog;
+    _style_dialog = Gtk::make_managed<StyleDialog>();
     _style_dialog->set_name("StyleDialog");
     _paned.pack1(*_style_dialog, Gtk::SHRINK);
     _paned.pack2(_selectors_box, true, true);
@@ -337,55 +323,13 @@ void SelectorsDialog::_showWidgets()
     contents->pack_start(_button_box, false, false, 0);
     contents->set_valign(Gtk::ALIGN_FILL);
     contents->child_property_fill(_paned);
-    Gtk::ScrolledWindow *dialog_scroller = new Gtk::ScrolledWindow();
-    dialog_scroller->set_policy(Gtk::POLICY_AUTOMATIC, Gtk::POLICY_AUTOMATIC);
-    dialog_scroller->set_shadow_type(Gtk::SHADOW_IN);
-    dialog_scroller->add(*Gtk::manage(contents));
-    pack_start(*dialog_scroller, Gtk::PACK_EXPAND_WIDGET);
+    pack_start(*contents, Gtk::PACK_EXPAND_WIDGET);
     show_all();
-    int widthpos = _paned.property_max_position() - _paned.property_min_position();
-    int panedpos = prefs->getInt("/dialogs/selectors/panedpos", widthpos / 2);
-    _paned.property_position().signal_changed().connect(sigc::mem_fun(*this, &SelectorsDialog::_childresized));
-    _paned.signal_size_allocate().connect(sigc::mem_fun(*this, &SelectorsDialog::_panedresized));
     _updating = true;
-    _paned.property_position() = panedpos;
+    _paned.property_position() = 200;
     _updating = false;
-    set_size_request(320, 260);
+    set_size_request(320, -1);
     set_name("SelectorsAndStyleDialog");
-}
-
-void SelectorsDialog::_panedresized(Gtk::Allocation allocation)
-{
-    g_debug("SelectorsDialog::_panedresized");
-    _resized();
-}
-
-void SelectorsDialog::_childresized()
-{
-    g_debug("SelectorsDialog::_childresized");
-    _resized();
-}
-
-void SelectorsDialog::_resized()
-{
-    g_debug("SelectorsDialog::_resized");
-    _scroollock = true;
-    if (_updating) {
-        return;
-    }
-    _updating = true;
-    Inkscape::Preferences *prefs = Inkscape::Preferences::get();
-    int max = int(_paned.property_max_position() * 0.95);
-    int min = int(_paned.property_max_position() * 0.05);
-    if (_paned.property_position() > max) {
-        _paned.property_position() = max;
-    }
-    if (_paned.property_position() < min) {
-        _paned.property_position() = min;
-    }
-
-    prefs->setInt("/dialogs/selectors/panedpos", _paned.property_position());
-    _updating = false;
 }
 
 void SelectorsDialog::_toggleDirection(Gtk::RadioButton *vertical)
@@ -436,7 +380,7 @@ void SelectorsDialog::_readStyleElement()
 
     if (_updating) return; // Don't read if we wrote style element.
     _updating = true;
-    _scroollock = true;
+    _scrollock = true;
     Inkscape::XML::Node * textNode = _getStyleTextNode();
 
     // Get content from style text node.
@@ -477,7 +421,7 @@ void SelectorsDialog::_readStyleElement()
     std::vector<std::pair<Glib::ustring, bool>> expanderstatus;
     for (unsigned i = 0; i < tokens.size() - 1; i += 2) {
         Glib::ustring selector = tokens[i];
-        REMOVE_SPACES(selector); // Remove leading/trailing spaces
+        Util::trim(selector, ","); // Remove leading/trailing spaces and commas
         std::vector<Glib::ustring> selectordata = Glib::Regex::split_simple(";", selector);
         if (!selectordata.empty()) {
             selector = selectordata.back();
@@ -496,7 +440,7 @@ void SelectorsDialog::_readStyleElement()
 
     for (unsigned i = 0; i < tokens.size()-1; i += 2) {
         Glib::ustring selector = tokens[i];
-        REMOVE_SPACES(selector); // Remove leading/trailing spaces
+        Util::trim(selector, ","); // Remove leading/trailing spaces and commas
         std::vector<Glib::ustring> selectordata = Glib::Regex::split_simple(";", selector);
         for (auto selectoritem : selectordata) {
             if (selectordata[selectordata.size() - 1] == selectoritem) {
@@ -533,7 +477,7 @@ void SelectorsDialog::_readStyleElement()
                          "for last selector!"
                       << std::endl;
         }
-        REMOVE_SPACES(properties);
+        Util::trim(properties);
         bool colExpand = false;
         for (auto rowstatus : expanderstatus) {
             if (selector == rowstatus.first) {
@@ -570,8 +514,8 @@ void SelectorsDialog::_readStyleElement()
     if (rewrite) {
         _writeStyleElement();
     }
-    _scroollock = false;
-    _vadj->set_value(std::min(_scroolpos, _vadj->get_upper()));
+    _scrollock = false;
+    _vadj->set_value(std::min(_scrollpos, _vadj->get_upper()));
 }
 
 void SelectorsDialog::_rowExpand(const Gtk::TreeModel::iterator &iter, const Gtk::TreeModel::Path &path)
@@ -599,17 +543,13 @@ void SelectorsDialog::_writeStyleElement()
 
     g_debug("SelectorsDialog::_writeStyleElement");
 
-    _scroollock = true;
+    _scrollock = true;
     _updating = true;
     Glib::ustring styleContent = "";
     for (auto& row: _store->children()) {
         Glib::ustring selector = row[_mColumns._colSelector];
 #if 0
-                REMOVE_SPACES(selector);
-                size_t len = selector.size();
-                if(selector[len-1] == ','){
-                    selector.erase(len-1);
-                }
+                Util::trim(selector, ",");
                 row[_mColumns._colSelector] =  selector;
 #endif
         if (row[_mColumns._colType] == OTHER) {
@@ -632,50 +572,23 @@ void SelectorsDialog::_writeStyleElement()
         textNode->setContent(styleContent.c_str());
     }
     textNode->setContent(styleContent.c_str());
-    DocumentUndo::done(SP_ACTIVE_DOCUMENT, SP_VERB_DIALOG_SELECTORS, _("Edited style element."));
+    DocumentUndo::done(SP_ACTIVE_DOCUMENT, _("Edited style element."), INKSCAPE_ICON("dialog-selectors"));
 
     _updating = false;
-    _scroollock = false;
-    _vadj->set_value(std::min(_scroolpos, _vadj->get_upper()));
+    _scrollock = false;
+    _vadj->set_value(std::min(_scrollpos, _vadj->get_upper()));
     g_debug("SelectorsDialog::_writeStyleElement(): | %s |", styleContent.c_str());
 }
 
-/*
-void sp_get_selector_active(Glib::ustring &selector)
+Glib::ustring SelectorsDialog::_getSelectorClasses(Glib::ustring selector)
 {
-    std::vector<Glib::ustring> tokensplus = Glib::Regex::split_simple("[ ]+", selector);
-    selector = tokensplus[tokensplus.size() - 1];
-    // Erase any comma/space
-    REMOVE_SPACES(selector);
-    Glib::ustring toadd = Glib::ustring(selector);
-    Glib::ustring toparse = Glib::ustring(selector);
-    Glib::ustring tag = "";
-    if (toadd[0] != '.' || toadd[0] != '#') {
-        auto i = std::min(toadd.find("#"), toadd.find("."));
-        tag = toadd.substr(0,i-1);
-        toparse.erase(0, i-1);
-    }
-    auto i = toparse.find("#");
-    toparse.erase(i, 1);
-    auto j = toparse.find("#");
-    if (j == std::string::npos) {
-        selector = "";
-    } else if (i != std::string::npos) {
-        Glib::ustring post = toadd.substr(0,i-1);
-        Glib::ustring pre = toadd.substr(i, (toadd.size()-1)-i);
-        selector = tag + pre + post;
-    }
-} */
-
-Glib::ustring sp_get_selector_classes(Glib::ustring selector) //, SelectorType selectortype,  Glib::ustring id = "")
-{
-    g_debug("SelectorsDialog::sp_get_selector_classes");
+    g_debug("SelectorsDialog::_getSelectorClasses");
 
     std::pair<Glib::ustring, Glib::ustring> result;
     std::vector<Glib::ustring> tokensplus = Glib::Regex::split_simple("[ ]+", selector);
     selector = tokensplus[tokensplus.size() - 1];
     // Erase any comma/space
-    REMOVE_SPACES(selector);
+    Util::trim(selector, ",");
     Glib::ustring toparse = Glib::ustring(selector);
     selector = Glib::ustring("");
     auto i = toparse.find(".");
@@ -738,7 +651,7 @@ void SelectorsDialog::_addToSelector(Gtk::TreeModel::Row row)
             if (!id)
                 continue;
             for (auto tok : tokens) {
-                Glib::ustring clases = sp_get_selector_classes(tok);
+                Glib::ustring clases = _getSelectorClasses(tok);
                 if (!clases.empty()) {
                     _insertClass(obj, clases);
                     std::vector<SPObject *> currentobjs = _getObjVec(multiselector);
@@ -806,7 +719,7 @@ void SelectorsDialog::_removeFromSelector(Gtk::TreeModel::Row row)
 {
     g_debug("SelectorsDialog::_removeFromSelector: Entrance");
     if (*row) {
-        _scroollock = true;
+        _scrollock = true;
         _updating = true;
         SPObject *obj = nullptr;
         Glib::ustring objectLabel = row[_mColumns._colSelector];
@@ -814,7 +727,7 @@ void SelectorsDialog::_removeFromSelector(Gtk::TreeModel::Row row)
         if (iter) {
             Gtk::TreeModel::Row parent = *iter;
             Glib::ustring multiselector = parent[_mColumns._colSelector];
-            REMOVE_SPACES(multiselector);
+            Util::trim(multiselector, ",");
             obj = _getObjVec(objectLabel)[0];
             std::vector<Glib::ustring> tokens = Glib::Regex::split_simple("[,]+", multiselector);
             Glib::ustring selector = "";
@@ -823,7 +736,7 @@ void SelectorsDialog::_removeFromSelector(Gtk::TreeModel::Row row)
                     continue;
                 }
                 // TODO: handle when other selectors has the removed class applied to maybe not remove
-                Glib::ustring clases = sp_get_selector_classes(tok);
+                Glib::ustring clases = _getSelectorClasses(tok);
                 if (!clases.empty()) {
                     _removeClass(obj, tok, true);
                 }
@@ -832,7 +745,7 @@ void SelectorsDialog::_removeFromSelector(Gtk::TreeModel::Row row)
                     selector = selector.empty() ? tok : selector + "," + tok;
                 }
             }
-            REMOVE_SPACES(selector);
+            Util::trim(selector);
             if (selector.empty()) {
                 _store->erase(parent);
 
@@ -849,8 +762,8 @@ void SelectorsDialog::_removeFromSelector(Gtk::TreeModel::Row row)
         _writeStyleElement();
         obj->style->readFromObject(obj);
         obj->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG | SP_OBJECT_STYLE_MODIFIED_FLAG);
-        _scroollock = false;
-        _vadj->set_value(std::min(_scroolpos, _vadj->get_upper()));
+        _scrollock = false;
+        _vadj->set_value(std::min(_scrollpos, _vadj->get_upper()));
     }
 }
 
@@ -977,7 +890,7 @@ void SelectorsDialog::_removeClass(SPObject *obj, const Glib::ustring &className
         if (all && notfound) {
             classAttr = classAttrRestore;
         }
-        REMOVE_SPACES(classAttr);
+        Util::trim(classAttr, ",");
         if (classAttr.empty()) {
             obj->getRepr()->removeAttribute("class");
         } else {
@@ -1006,12 +919,12 @@ void SelectorsDialog::_selectObjects(int eventX, int eventY)
             return;
         }
         if (col == _treeView.get_column(1) && x2 > 25) {
-            getDesktop()->selection->clear();
+            getDesktop()->getSelection()->clear();
             Gtk::TreeModel::iterator iter = _store->get_iter(path);
             if (iter) {
                 Gtk::TreeModel::Row row = *iter;
                 if (row[_mColumns._colObj]) {
-                    getDesktop()->selection->add(row[_mColumns._colObj]);
+                    getDesktop()->getSelection()->add(row[_mColumns._colObj]);
                 }
                 Gtk::TreeModel::Children children = row.children();
                 if (children.empty() || children.size() == 1) {
@@ -1020,7 +933,7 @@ void SelectorsDialog::_selectObjects(int eventX, int eventY)
                 for (auto child : row.children()) {
                     Gtk::TreeModel::Row child_row = *child;
                     if (child[_mColumns._colObj]) {
-                        getDesktop()->selection->add(child[_mColumns._colObj]);
+                        getDesktop()->getSelection()->add(child[_mColumns._colObj]);
                     }
                 }
             }
@@ -1037,7 +950,7 @@ void SelectorsDialog::_selectObjects(int eventX, int eventY)
 void SelectorsDialog::_addSelector()
 {
     g_debug("SelectorsDialog::_addSelector: Entrance");
-    _scroollock = true;
+    _scrollock = true;
     // Store list of selected elements on desktop (not to be confused with selector).
     Inkscape::Selection* selection = getDesktop()->getSelection();
     std::vector<SPObject *> objVec( selection->objects().begin(),
@@ -1112,7 +1025,7 @@ void SelectorsDialog::_addSelector()
     delete textDialogPtr;
     // ==== Handle response ====
     // If class selector, add selector name to class attribute for each object
-    REMOVE_SPACES(selectorValue);
+    Util::trim(selectorValue, ",");
     if (originalValue.find("@import ") != std::string::npos) {
         Gtk::TreeModel::Row row = *(_store->prepend());
         row[_mColumns._colSelector] = originalValue;
@@ -1126,7 +1039,7 @@ void SelectorsDialog::_addSelector()
         std::vector<Glib::ustring> tokens = Glib::Regex::split_simple("[,]+", selectorValue);
         for (auto &obj : objVec) {
             for (auto tok : tokens) {
-                Glib::ustring clases = sp_get_selector_classes(tok);
+                Glib::ustring clases = _getSelectorClasses(tok);
                 if (clases.empty()) {
                     continue;
                 }
@@ -1167,8 +1080,8 @@ void SelectorsDialog::_addSelector()
     }
     // Add entry to style element
     _writeStyleElement();
-    _scroollock = false;
-    _vadj->set_value(std::min(_scroolpos, _vadj->get_upper()));
+    _scrollock = false;
+    _vadj->set_value(std::min(_scrollpos, _vadj->get_upper()));
 }
 
 void SelectorsDialog::_closeDialog(Gtk::Dialog *textDialogPtr) { textDialogPtr->response(Gtk::RESPONSE_OK); }
@@ -1181,11 +1094,11 @@ void SelectorsDialog::_delSelector()
 {
     g_debug("SelectorsDialog::_delSelector");
 
-    _scroollock = true;
+    _scrollock = true;
     Glib::RefPtr<Gtk::TreeSelection> refTreeSelection = _treeView.get_selection();
     Gtk::TreeModel::iterator iter = refTreeSelection->get_selected();
     if (iter) {
-        _vscrool();
+        _vscroll();
         Gtk::TreeModel::Row row = *iter;
         if (row.children().size() > 2) {
             return;
@@ -1195,8 +1108,8 @@ void SelectorsDialog::_delSelector()
         _updating = false;
         _writeStyleElement();
         _del.hide();
-        _scroollock = false;
-        _vadj->set_value(std::min(_scroolpos, _vadj->get_upper()));
+        _scrollock = false;
+        _vadj->set_value(std::min(_scrollpos, _vadj->get_upper()));
     }
 }
 
@@ -1212,7 +1125,7 @@ bool SelectorsDialog::_handleButtonEvent(GdkEventButton *event)
 {
     g_debug("SelectorsDialog::_handleButtonEvent: Entrance");
     if (event->type == GDK_BUTTON_RELEASE && event->button == 1) {
-        _scroollock = true;
+        _scrollock = true;
         Gtk::TreeViewColumn *col = nullptr;
         Gtk::TreeModel::Path path;
         int x = static_cast<int>(event->x);
@@ -1222,7 +1135,7 @@ bool SelectorsDialog::_handleButtonEvent(GdkEventButton *event)
 
         if (_treeView.get_path_at_pos(x, y, path, col, x2, y2)) {
             if (col == _treeView.get_column(0)) {
-                _vscrool();
+                _vscroll();
                 Gtk::TreeModel::iterator iter = _store->get_iter(path);
                 Gtk::TreeModel::Row row = *iter;
                 if (!row.parent()) {
@@ -1230,7 +1143,7 @@ bool SelectorsDialog::_handleButtonEvent(GdkEventButton *event)
                 } else {
                     _removeFromSelector(row);
                 }
-                _vadj->set_value(std::min(_scroolpos, _vadj->get_upper()));
+                _vadj->set_value(std::min(_scrollpos, _vadj->get_upper()));
             }
         }
     }
@@ -1294,6 +1207,7 @@ void SelectorsDialog::documentReplaced()
         m_root = document->getReprRoot();
         m_root->addSubtreeObserver(*m_nodewatcher);
     }
+    selectionChanged(getSelection());
 }
 
 void SelectorsDialog::selectionChanged(Selection *selection)
@@ -1330,7 +1244,7 @@ void SelectorsDialog::_buttonEventsSelectObjs(GdkEventButton *event)
  */
 void SelectorsDialog::_selectRow()
 {
-    _scroollock = true;
+    _scrollock = true;
     g_debug("SelectorsDialog::_selectRow: updating: %s", (_updating ? "true" : "false"));
     _del.hide();
     std::vector<Gtk::TreeModel::Path> selectedrows = _treeView.get_selection()->get_selected_rows();
@@ -1349,10 +1263,7 @@ void SelectorsDialog::_selectRow()
 
     Gtk::TreeModel::Children children = _store->children();
     Inkscape::Selection* selection = getDesktop()->getSelection();
-    SPObject *obj = nullptr;
-    if (!selection->isEmpty()) {
-        obj = selection->objects().back();
-    } else {
+    if (selection->isEmpty()) {
         _style_dialog->setCurrentSelector("");
     }
     for (auto row : children) {
@@ -1392,7 +1303,7 @@ void SelectorsDialog::_selectRow()
             _treeView.expand_to_path(Gtk::TreePath(row));
         }
     }
-    _vadj->set_value(std::min(_scroolpos, _vadj->get_upper()));
+    _vadj->set_value(std::min(_scrollpos, _vadj->get_upper()));
 }
 
 /**

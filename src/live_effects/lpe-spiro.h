@@ -26,7 +26,7 @@ public:
     void doEffect(SPCurve * curve) override;
 };
 
-void sp_spiro_do_effect(SPCurve *curve);
+void sp_spiro_do_effect(SPCurve &curve);
 
 }; //namespace LivePathEffect
 }; //namespace Inkscape

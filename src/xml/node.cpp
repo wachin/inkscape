@@ -26,6 +26,25 @@ void Node::setAttribute(Util::const_char_ptr key, Util::const_char_ptr value)
     this->setAttributeImpl(key.data(), value.data());
 }
 
+bool Node::copyAttribute(Util::const_char_ptr key, Node const *source_node, bool remove_if_empty)
+{
+    if (source_node) {
+        if (auto const value = source_node->attribute(key.data())) {
+            if (*value || !remove_if_empty) {
+                setAttribute(key, value);
+            }
+            return true;
+        }
+
+        if (remove_if_empty) {
+            removeAttribute(key);
+            return true;
+        }
+    }
+
+    return false;
+}
+
 bool Node::getAttributeBoolean(Util::const_char_ptr key, bool default_value) const
 {
     auto v = this->attribute(key.data());

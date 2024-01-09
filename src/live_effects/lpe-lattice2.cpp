@@ -98,15 +98,14 @@ LPELattice2::LPELattice2(LivePathEffectObject *lpeobject) :
     apply_to_clippath_and_mask = true;
 }
 
-LPELattice2::~LPELattice2()
-= default;
+LPELattice2::~LPELattice2() = default;
 
 Geom::Piecewise<Geom::D2<Geom::SBasis> >
 LPELattice2::doEffect_pwd2 (Geom::Piecewise<Geom::D2<Geom::SBasis> > const & pwd2_in)
 {
     PathVector pathv = path_from_piecewise(pwd2_in,0.001);
     //this is because strange problems with sb2 and LineSegment
-    PathVector cubic = pathv_to_cubicbezier(pathv);
+    PathVector cubic = pathv_to_cubicbezier(pathv, true);
     if (cubic.empty()) {
         return pwd2_in;
     }
@@ -255,7 +254,7 @@ LPELattice2::newWidget()
                     vbox_expander->pack_start(*widg, true, true, 2);
                 }
                 if (tip) {
-                    widg->set_tooltip_text(*tip);
+                    widg->set_tooltip_markup(*tip);
                 } else {
                     widg->set_tooltip_text("");
                     widg->set_has_tooltip(false);
@@ -271,9 +270,6 @@ LPELattice2::newWidget()
     expander->set_expanded(expanded);
     vbox->pack_start(*expander, true, true, 2);
     expander->property_expanded().signal_changed().connect(sigc::mem_fun(*this, &LPELattice2::onExpanderChanged) );
-    if(Gtk::Widget* widg = defaultParamSet()) {
-        vbox->pack_start(*widg, true, true, 2);
-    }
     return dynamic_cast<Gtk::Widget *>(vbox);
 }
 
@@ -560,7 +556,7 @@ void
 LPELattice2::resetDefaults(SPItem const* item)
 {
     Effect::resetDefaults(item);
-    original_bbox(SP_LPE_ITEM(item), false, true);
+    original_bbox(cast<SPLPEItem>(item), false, true);
     setDefaults();
     resetGrid();
 }

@@ -31,6 +31,8 @@ namespace Inkscape {
 
         struct PathSharedData;
     }
+
+    class Rubberband;
 }
 
 struct SPCanvasGroup;
@@ -44,27 +46,24 @@ namespace Tools {
 
 class NodeTool : public ToolBase {
 public:
-    NodeTool();
+    NodeTool(SPDesktop *desktop);
     ~NodeTool() override;
 
     Inkscape::UI::ControlPointSelection* _selected_nodes = nullptr;
     Inkscape::UI::MultiPathManipulator* _multipath = nullptr;
     std::vector<Inkscape::Display::TemporaryItem *> _helperpath_tmpitem;
+    std::map<SPItem *, std::unique_ptr<ShapeEditor>> _shape_editors;
 
     bool edit_clipping_paths = false;
     bool edit_masks = false;
 
-    static const std::string prefsPath;
-
-    void setup() override;
-    void finish() override;
     void set(const Inkscape::Preferences::Entry& val) override;
     bool root_handler(GdkEvent* event) override;
-
-    const std::string& getPrefsPath() override;
-    std::map<SPItem *, std::unique_ptr<ShapeEditor>> _shape_editors;
-
+    bool item_handler(SPItem *item, GdkEvent *event) override;
+    void deleteSelected();
 private:
+    Inkscape::Rubberband *get_rubberband() const;
+
     sigc::connection _selection_changed_connection;
     sigc::connection _mouseover_changed_connection;
 
@@ -90,8 +89,8 @@ private:
 
     void selection_changed(Inkscape::Selection *sel);
 
-    void select_area(Geom::Rect const &sel, GdkEventButton *event);
-    void select_point(Geom::Point const &sel, GdkEventButton *event);
+    void select_area(Geom::Path const &path, GdkEventButton *event);
+    void select_point(GdkEventButton *event);
     void mouseover_changed(Inkscape::UI::ControlPoint *p);
     void update_tip(GdkEvent *event);
     void handleControlUiStyleChange();

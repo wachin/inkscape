@@ -40,6 +40,12 @@ elseif(EXISTS ${INKSCAPE_SOURCE_DIR}/debian/git-build-recipe.manifest)
     set(INKSCAPE_REVISION "${DEB_VERSION}")
 endif()
 
+if(${INKSCAPE_REVISION_DATE} MATCHES "^([0-9][0-9][0-9][0-9])-[0-9][0-9]-[0-9][0-9]$")
+    set(INKSCAPE_BUILD_YEAR ${CMAKE_MATCH_1})
+else()
+    string(TIMESTAMP INKSCAPE_BUILD_YEAR %Y UTC)
+endif()
+
 if(NOT "${INKSCAPE_BINARY_DIR}" STREQUAL "")
     message("revision is " ${INKSCAPE_REVISION})
     configure_file(${INKSCAPE_BINARY_DIR}/src/inkscape-version.cpp.in ${INKSCAPE_BINARY_DIR}/src/inkscape-version.cpp)

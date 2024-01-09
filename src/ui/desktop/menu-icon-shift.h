@@ -25,12 +25,7 @@ namespace Gtk {
 /**
  * Call back to shift icons into place reserved for toggles (i.e. check and radio items).
  */
-void shift_icons(Gtk::MenuShell *menu);
-
-/**
- * Add callbacks recursively to menus.
- */
-void shift_icons_recursive(Gtk::MenuShell *menu);
+bool shift_icons(Gtk::MenuShell *menu);
 
 #endif // SEEN_DESKTOP_MENU_ITEM_SHIFT_H
 

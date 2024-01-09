@@ -48,6 +48,9 @@ namespace Gtk {
 /** Which output module should be used? */
 #define SP_MODULE_KEY_OUTPUT_DEFAULT SP_MODULE_KEY_AUTODETECT
 
+/** Internal raster extensions */
+#define SP_MODULE_KEY_RASTER_PNG "org.inkscape.output.png.inkscape"
+
 /** Defines the key for Postscript printing */
 #define SP_MODULE_KEY_PRINT_PS    "org.inkscape.print.ps"
 #define SP_MODULE_KEY_PRINT_CAIRO_PS    "org.inkscape.print.ps.cairo"
@@ -80,6 +83,7 @@ enum ModuleImpType
 };
 enum ModuleFuncType
 {
+    MODULE_TEMPLATE,
     MODULE_INPUT,
     MODULE_OUTPUT,
     MODULE_FILTER,
@@ -129,10 +133,11 @@ private:
     gchar     *_id = nullptr;                  /**< The unique identifier for the Extension */
     gchar     *_name = nullptr;                /**< A user friendly name for the Extension */
     state_t    _state = STATE_UNLOADED;        /**< Which state the Extension is currently in */
+    int _priority = 0;                         /**< when sorted, should this come before any others */
     std::vector<Dependency *>  _deps;          /**< Dependencies for this extension */
     static FILE *error_file;                   /**< This is the place where errors get reported */
-    bool _gui;
     std::string _error_reason;                 /**< Short, textual explanation for the latest error */
+    bool _gui;
 
 protected:
     Inkscape::XML::Node *repr;                 /**< The XML description of the Extension */
@@ -159,10 +164,11 @@ public:
     state_t       get_state    ();
     bool          loaded       ();
     virtual bool  check        ();
+    virtual bool prefs();
     Inkscape::XML::Node *      get_repr     ();
     gchar *       get_id       () const;
     const gchar * get_name     () const;
-    void          deactivate   ();
+    virtual void  deactivate   ();
     bool          deactivated  ();
     void          printFailure (Glib::ustring reason);
     std::string const &getErrorReason() { return _error_reason; };
@@ -176,7 +182,10 @@ public:
     void          set_environment(const SPDocument *doc=nullptr);
     ModuleImpType get_implementation_type();
 
-/* Parameter Stuff */
+    int get_sort_priority() const { return _priority; }
+    void set_sort_priority(int priority) { _priority = priority; }
+
+    /* Parameter Stuff */
 private:
     std::vector<InxWidget *> _widgets; /**< A list of widgets for this extension. */
 
@@ -224,9 +233,14 @@ private:
 
 public:
     bool        get_param_bool          (const gchar *name) const;
+    bool        get_param_bool          (const gchar *name, bool alt) const;
     int         get_param_int           (const gchar *name) const;
+    int         get_param_int           (const gchar *name, int alt) const;
     double      get_param_float         (const gchar *name) const;
+    double      get_param_float         (const gchar *name, double alt) const;
+    const char *get_param_string        (const gchar *name, const char *alt) const;
     const char *get_param_string        (const gchar *name) const;
+    const char *get_param_optiongroup   (const gchar *name, const char *alt) const;
     const char *get_param_optiongroup   (const gchar *name) const;
     guint32     get_param_color         (const gchar *name) const;
 
@@ -238,7 +252,8 @@ public:
     const char *set_param_string        (const gchar *name, const char   *value);
     const char *set_param_optiongroup   (const gchar *name, const char   *value);
     guint32     set_param_color         (const gchar *name, const guint32 color);
-
+    void set_param_any(const gchar *name, std::string value);
+    void set_param_hidden(const gchar *name, bool hidden);
 
     /* Error file handling */
 public:
@@ -247,7 +262,7 @@ public:
     static void      error_file_write (Glib::ustring text);
 
 public:
-    Gtk::Widget *autogui (SPDocument *doc, Inkscape::XML::Node *node, sigc::signal<void> *changeSignal = nullptr);
+    Gtk::Widget *autogui (SPDocument *doc, Inkscape::XML::Node *node, sigc::signal<void ()> *changeSignal = nullptr);
     void paramListString(std::list <std::string> &retlist);
     void set_gui(bool s) { _gui = s; }
     bool get_gui() { return _gui; }

@@ -24,10 +24,11 @@
 class SPDefs;
 
 /** \<svg\> element */
-class SPRoot : public SPGroup, public SPViewBox, public SPDimensions {
+class SPRoot final : public SPGroup, public SPViewBox, public SPDimensions {
 public:
 	SPRoot();
 	~SPRoot() override;
+    int tag() const override { return tag_of<decltype(*this)>; }
 
     struct {
         Inkscape::Version svg;
@@ -62,9 +63,6 @@ private:
     void unset_x_and_y();
     void setRootDimensions();
 };
-
-MAKE_SP_OBJECT_DOWNCAST_FUNCTIONS(SP_ROOT, SPRoot)
-MAKE_SP_OBJECT_TYPECHECK_FUNCTIONS(SP_IS_ROOT, SPRoot)
 
 #endif /* !SP_ROOT_H_SEEN */
 

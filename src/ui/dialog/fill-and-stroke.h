@@ -39,8 +39,6 @@ public:
     FillAndStroke();
     ~FillAndStroke() override;
 
-    static FillAndStroke &getInstance() { return *new FillAndStroke(); }
-
     void desktopReplaced() override;
 
     void showPageFill();
@@ -67,8 +65,8 @@ protected:
     void _onSwitchPage(Gtk::Widget *page, guint pagenum);
 
 private:
-    FillAndStroke(FillAndStroke const &d) = delete;
-    FillAndStroke& operator=(FillAndStroke const &d) = delete;
+    void selectionChanged(Selection *selection) override;
+    void selectionModified(Selection *selection, guint flags) override;
 
     UI::Widget::FillNStroke *fillWdgt;
     UI::Widget::FillNStroke *strokeWdgt;

@@ -23,11 +23,13 @@
 
 #include "document.h"
 #include "document-undo.h"
-#include "verbs.h"
 
 #include "object/sp-object.h"
 
+#include "ui/icon-names.h"
+
 #include "xml/node.h"
+#include "xml/href-attribute-helper.h"
 
 namespace Inkscape {
 
@@ -53,7 +55,7 @@ static std::vector<std::string> splitPath( std::string const &path )
     return parts;
 }
 
-static std::string convertPathToRelative( std::string const &path, std::string const &docbase )
+std::string convertPathToRelative( std::string const &path, std::string const &docbase )
 {
     std::string result = path;
 
@@ -206,7 +208,7 @@ static std::vector<Glib::ustring> findBrokenLinks( SPDocument *doc )
         for (auto image : images) {
             Inkscape::XML::Node *ir = image->getRepr();
 
-            gchar const *href = ir->attribute("xlink:href");
+            gchar const *href = Inkscape::getHrefAttribute(*ir).second;
             if ( href &&  ( uniques.find(href) == uniques.end() ) ) {
                 std::string filename;
                 if (extractFilepath(href, filename)) {
@@ -334,21 +336,20 @@ bool fixBrokenLinks(SPDocument *doc)
             // TODO debug g_message("     [%s] ==> {%s}", it->first.c_str(), it->second.c_str());
         }
 
-        bool savedUndoState = DocumentUndo::getUndoSensitive(doc);
-        DocumentUndo::setUndoSensitive(doc, true);
+        DocumentUndo::ScopedInsensitive _no_undo(doc);
         
         std::vector<SPObject *> images = doc->getResourceList("image");
         for (auto image : images) {
             Inkscape::XML::Node *ir = image->getRepr();
 
-            gchar const *href = ir->attribute("xlink:href");
+            auto [href_key, href] = Inkscape::getHrefAttribute(*ir);
             if ( href ) {
                 // TODO debug g_message("                  consider [%s]", href);
                 
                 if ( mapping.find(href) != mapping.end() ) {
                     // TODO debug g_message("                     Found a replacement");
 
-                    ir->setAttributeOrRemoveIfEmpty( "xlink:href", mapping[href] );
+                    ir->setAttributeOrRemoveIfEmpty(href_key, mapping[href]);
                     if ( ir->attribute( "sodipodi:absref" ) ) {
                         ir->removeAttribute("sodipodi:absref"); // Remove this attribute
                     }
@@ -364,9 +365,8 @@ bool fixBrokenLinks(SPDocument *doc)
             }
         }
         if ( changed ) {
-            DocumentUndo::done( doc, SP_VERB_DIALOG_XML_EDITOR, _("Fixup broken links") );
+            DocumentUndo::done( doc, _("Fixup broken links"), INKSCAPE_ICON("dialog-xml-editor"));
         }
-        DocumentUndo::setUndoSensitive(doc, savedUndoState);
     }
 
     return changed;

@@ -23,7 +23,9 @@
 #include "object/uri.h"
 
 #include "xml/node.h"
+#include "xml/repr.h"
 #include "xml/rebase-hrefs.h"
+#include "xml/href-attribute-helper.h"
 
 using Inkscape::XML::AttributeRecord;
 using Inkscape::XML::AttributeVector;
@@ -67,7 +69,8 @@ Inkscape::XML::rebase_href_attrs(gchar const *const old_abs_base,
         return ret;
     }
 
-    static GQuark const href_key = g_quark_from_static_string("xlink:href");
+    static GQuark const href_key = g_quark_from_static_string("href");
+    static GQuark const xlink_href_key = g_quark_from_static_string("xlink:href");
     static GQuark const absref_key = g_quark_from_static_string("sodipodi:absref");
 
     auto const find_record = [&ret](GQuark const key) {
@@ -75,6 +78,9 @@ Inkscape::XML::rebase_href_attrs(gchar const *const old_abs_base,
     };
 
     auto href_it = find_record(href_key);
+    if (href_it == ret.end()) {
+        href_it = find_record(xlink_href_key);
+    }
     if (href_it == ret.end() || !href_needs_rebasing(href_it->value.pointer())) {
         return ret;
     }
@@ -104,83 +110,73 @@ Inkscape::XML::rebase_href_attrs(gchar const *const old_abs_base,
     return ret;
 }
 
-void Inkscape::XML::rebase_hrefs(SPDocument *const doc, gchar const *const new_base, bool const spns)
+static void rebase_image_href(Inkscape::XML::Node *ir, std::string const &old_base_url_str, std::string const &new_base_url_str, bool const spns) {
+    
+    using Inkscape::URI;
+
+    auto [href_key, href_cstr] = Inkscape::getHrefAttribute(*ir);
+    if (!href_cstr) {
+        return;
+    }
+
+    if (!href_needs_rebasing(href_cstr)) {
+        return;
+    }
+
+    // make absolute
+    URI url;
+    try {
+        url = URI(href_cstr, old_base_url_str.c_str());
+    } catch (...) {
+        return;
+    }
+
+    // skip non-file URLs
+    if (!url.hasScheme("file")) {
+        return;
+    }
+
+    // if path doesn't exist, use sodipodi:absref
+    if (!g_file_test(url.toNativeFilename().c_str(), G_FILE_TEST_EXISTS)) {
+        auto spabsref = ir->attribute("sodipodi:absref");
+        if (spabsref && g_file_test(spabsref, G_FILE_TEST_EXISTS)) {
+            url = URI::from_native_filename(spabsref);
+        }
+    } else if (spns) {
+        ir->setAttributeOrRemoveIfEmpty("sodipodi:absref", url.toNativeFilename());
+    }
+
+    if (!spns) {
+        ir->removeAttribute("sodipodi:absref");
+    }
+
+    auto href_str = url.str(new_base_url_str.c_str());
+    href_str = Inkscape::uri_to_iri(href_str.c_str());
+
+    ir->setAttribute(href_key, href_str);
+}
+
+void Inkscape::XML::rebase_hrefs(Inkscape::XML::Node *rootxml, gchar const *const old_base, gchar const *const new_base, bool const spns)
 {
     using Inkscape::URI;
 
-    std::string old_base_url_str = URI::from_dirname(doc->getDocumentBase()).str();
+    std::string old_base_url_str = URI::from_dirname(old_base).str();
     std::string new_base_url_str;
 
     if (new_base) {
         new_base_url_str = URI::from_dirname(new_base).str();
     }
-
-    /* TODO: Should handle not just image but also:
-     *
-     *    a, altGlyph, animElementAttrs, animate, animateColor, animateMotion, animateTransform,
-     *    animation, audio, color-profile, cursor, definition-src, discard, feImage, filter,
-     *    font-face-uri, foreignObject, glyphRef, handler, linearGradient, mpath, pattern,
-     *    prefetch, radialGradient, script, set, textPath, tref, use, video
-     *
-     * (taken from the union of the xlink:href elements listed at
-     * http://www.w3.org/TR/SVG11/attindex.html and
-     * http://www.w3.org/TR/SVGMobile12/attributeTable.html).
-     *
-     * Also possibly some other attributes of type <URI> or <IRI> or list-thereof, or types like
-     * <paint> that can include an IRI/URI, and stylesheets and style attributes.  (xlink:base is a
-     * special case.  xlink:role and xlink:arcrole can be assumed to be already absolute, based on
-     * http://www.w3.org/TR/SVG11/struct.html#xlinkRefAttrs .)
-     *
-     * Note that it may not useful to set sodipodi:absref for anything other than image.
-     *
-     * Note also that Inkscape only supports fragment hrefs (href="#pattern257") for many of these
-     * cases. */
-    std::vector<SPObject *> images = doc->getResourceList("image");
-    for (auto image : images) {
-        Inkscape::XML::Node *ir = image->getRepr();
-
-        auto href_cstr = ir->attribute("xlink:href");
-        if (!href_cstr) {
-            continue;
+    sp_repr_visit_descendants(rootxml, [&](Inkscape::XML::Node *ir) {
+        if (!strcmp("svg:image", ir->name())) {
+            rebase_image_href(ir, old_base_url_str, new_base_url_str, spns);
         }
+        return true;
+    });
+}
 
-        if (!href_needs_rebasing(href_cstr)) {
-            continue;
-        }
-
-        // make absolute
-        URI url;
-        try {
-            url = URI(href_cstr, old_base_url_str.c_str());
-        } catch (...) {
-            continue;
-        }
-
-        // skip non-file URLs
-        if (!url.hasScheme("file")) {
-            continue;
-        }
-
-        // if path doesn't exist, use sodipodi:absref
-        if (!g_file_test(url.toNativeFilename().c_str(), G_FILE_TEST_EXISTS)) {
-            auto spabsref = ir->attribute("sodipodi:absref");
-            if (spabsref && g_file_test(spabsref, G_FILE_TEST_EXISTS)) {
-                url = URI::from_native_filename(spabsref);
-            }
-        } else if (spns) {
-            ir->setAttributeOrRemoveIfEmpty("sodipodi:absref", url.toNativeFilename());
-        }
-
-        if (!spns) {
-            ir->removeAttribute("sodipodi:absref");
-        }
-
-        auto href_str = url.str(new_base_url_str.c_str());
-        href_str = Inkscape::uri_to_iri(href_str.c_str());
-
-        ir->setAttribute("xlink:href", href_str);
-    }
-
+void Inkscape::XML::rebase_hrefs(SPDocument *const doc, gchar const *const new_base, bool const spns)
+{
+    rebase_hrefs(doc->getReprRoot(), doc->getDocumentBase(), new_base, spns);
     doc->setDocumentBase(new_base);
 }
 

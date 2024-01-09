@@ -13,35 +13,30 @@
 #ifndef SP_FEFLOOD_H_SEEN
 #define SP_FEFLOOD_H_SEEN
 
+#include <optional>
+#include <cstdint>
 #include "sp-filter-primitive.h"
 #include "svg/svg-icc-color.h"
 
-#define SP_FEFLOOD(obj) (dynamic_cast<SPFeFlood*>((SPObject*)obj))
-#define SP_IS_FEFLOOD(obj) (dynamic_cast<const SPFeFlood*>((SPObject*)obj) != NULL)
-
-class SPFeFlood : public SPFilterPrimitive {
+class SPFeFlood final
+    : public SPFilterPrimitive
+{
 public:
-	SPFeFlood();
-	~SPFeFlood() override;
+    int tag() const override { return tag_of<decltype(*this)>; }
 
-    guint32 color;
-    SVGICCColor *icc;
-    double opacity;
+private:
+    uint32_t color = 0x0;
+    double opacity = 1.0;
+    std::optional<SVGICCColor> icc;
 
 protected:
-	void build(SPDocument* doc, Inkscape::XML::Node* repr) override;
-	void release() override;
+    void build(SPDocument *doc, Inkscape::XML::Node *repr) override;
+    void set(SPAttr key, char const *value) override;
 
-	void set(SPAttr key, const gchar* value) override;
-
-	void update(SPCtx* ctx, unsigned int flags) override;
-
-	Inkscape::XML::Node* write(Inkscape::XML::Document* doc, Inkscape::XML::Node* repr, guint flags) override;
-
-	void build_renderer(Inkscape::Filters::Filter* filter) override;
+    std::unique_ptr<Inkscape::Filters::FilterPrimitive> build_renderer(Inkscape::DrawingItem *item) const override;
 };
 
-#endif /* !SP_FEFLOOD_H_SEEN */
+#endif // SP_FEFLOOD_H_SEEN
 
 /*
   Local Variables:

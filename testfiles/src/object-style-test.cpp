@@ -65,7 +65,7 @@ TEST_F(ObjectTest, Styles) {
     ASSERT_TRUE(root->getRepr() != nullptr);
     ASSERT_TRUE(root->hasChildren());
 
-    SPRect *one = dynamic_cast<SPRect *>(doc->getObjectById("one"));
+    auto one = cast<SPRect>(doc->getObjectById("one"));
     ASSERT_TRUE(one != nullptr);
 
     // TODO: Fix when Inkscape preserves colour names (i.e. 'red')
@@ -74,7 +74,7 @@ TEST_F(ObjectTest, Styles) {
     EXPECT_EQ(one->style->opacity.get_value(), Glib::ustring("0.5"));
     EXPECT_EQ(one->style->stroke_width.get_value(), Glib::ustring("2px"));
 
-    SPRect *two = dynamic_cast<SPRect *>(doc->getObjectById("two"));
+    auto two = cast<SPRect>(doc->getObjectById("two"));
     ASSERT_TRUE(two != nullptr);
 
     EXPECT_EQ(two->style->fill.get_value(), Glib::ustring("#808080"));
@@ -82,7 +82,7 @@ TEST_F(ObjectTest, Styles) {
     EXPECT_EQ(two->style->opacity.get_value(), Glib::ustring("0.5"));
     EXPECT_EQ(two->style->stroke_width.get_value(), Glib::ustring("4px"));
 
-    SPRect *three = dynamic_cast<SPRect *>(doc->getObjectById("three"));
+    auto three = cast<SPRect>(doc->getObjectById("three"));
     ASSERT_TRUE(three != nullptr);
 
     EXPECT_EQ(three->style->fill.get_value(), Glib::ustring("#cccccc"));
@@ -90,7 +90,7 @@ TEST_F(ObjectTest, Styles) {
     EXPECT_EQ(three->style->opacity.get_value(), Glib::ustring("1"));
     EXPECT_EQ(three->style->stroke_width.get_value(), Glib::ustring("2px"));
 
-    SPRect *four = dynamic_cast<SPRect *>(doc->getObjectById("four"));
+    auto four = cast<SPRect>(doc->getObjectById("four"));
     ASSERT_TRUE(four != nullptr);
 
     EXPECT_EQ(four->style->fill.get_value(), Glib::ustring("#d0d0d0"));
@@ -110,7 +110,7 @@ TEST_F(ObjectTest, StyleSource) {
     ASSERT_TRUE(root->getRepr() != nullptr);
     ASSERT_TRUE(root->hasChildren());
 
-    SPRect *one = dynamic_cast<SPRect *>(doc->getObjectById("one"));
+    auto one = cast<SPRect>(doc->getObjectById("one"));
     ASSERT_TRUE(one != nullptr);
 
     EXPECT_EQ(one->style->fill.style_src, SPStyleSrc::STYLE_PROP);
@@ -118,7 +118,7 @@ TEST_F(ObjectTest, StyleSource) {
     EXPECT_EQ(one->style->opacity.style_src, SPStyleSrc::STYLE_SHEET);
     EXPECT_EQ(one->style->stroke_width.style_src, SPStyleSrc::STYLE_PROP);
 
-    SPRect *two = dynamic_cast<SPRect *>(doc->getObjectById("two"));
+    auto two = cast<SPRect>(doc->getObjectById("two"));
     ASSERT_TRUE(two != nullptr);
 
     EXPECT_EQ(two->style->fill.style_src, SPStyleSrc::STYLE_SHEET);
@@ -126,7 +126,7 @@ TEST_F(ObjectTest, StyleSource) {
     EXPECT_EQ(two->style->opacity.style_src, SPStyleSrc::STYLE_SHEET);
     EXPECT_EQ(two->style->stroke_width.style_src, SPStyleSrc::STYLE_PROP);
 
-    SPRect *three = dynamic_cast<SPRect *>(doc->getObjectById("three"));
+    auto three = cast<SPRect>(doc->getObjectById("three"));
     ASSERT_TRUE(three != nullptr);
 
     EXPECT_EQ(three->style->fill.style_src, SPStyleSrc::STYLE_PROP);
@@ -134,7 +134,7 @@ TEST_F(ObjectTest, StyleSource) {
     EXPECT_EQ(three->style->opacity.style_src, SPStyleSrc::STYLE_SHEET);
     EXPECT_EQ(three->style->stroke_width.style_src, SPStyleSrc::STYLE_PROP);
 
-    SPRect *four = dynamic_cast<SPRect *>(doc->getObjectById("four"));
+    auto four = cast<SPRect>(doc->getObjectById("four"));
     ASSERT_TRUE(four != nullptr);
 
     EXPECT_EQ(four->style->fill.style_src, SPStyleSrc::STYLE_SHEET);
@@ -154,7 +154,7 @@ TEST_F(ObjectTest, StyleFont) {
     ASSERT_TRUE(root->getRepr() != nullptr);
     ASSERT_TRUE(root->hasChildren());
 
-    SPRect *five = dynamic_cast<SPRect *>(doc->getObjectById("five"));
+    auto five = cast<SPRect>(doc->getObjectById("five"));
     ASSERT_TRUE(five != nullptr);
 
     // Font property is ALWAYS unset as it's converted into specific font css properties
@@ -176,19 +176,19 @@ TEST_F(ObjectTest, StyleFontSizes) {
     ASSERT_TRUE(root->getRepr() != nullptr);
     ASSERT_TRUE(root->hasChildren());
 
-    SPRect *six = dynamic_cast<SPRect *>(doc->getObjectById("six"));
+    auto six = cast<SPRect>(doc->getObjectById("six"));
     ASSERT_TRUE(six != nullptr);
 
     EXPECT_EQ(six->style->stroke_width.get_value(), Glib::ustring("1em"));
     EXPECT_EQ(six->style->stroke_width.computed, 14);
 
-    SPRect *seven = dynamic_cast<SPRect *>(doc->getObjectById("seven"));
+    auto seven = cast<SPRect>(doc->getObjectById("seven"));
     ASSERT_TRUE(seven != nullptr);
 
     EXPECT_EQ(seven->style->stroke_width.get_value(), Glib::ustring("1ex"));
     EXPECT_EQ(seven->style->stroke_width.computed, 7);
 
-    SPRect *eight = dynamic_cast<SPRect *>(doc->getObjectById("eight"));
+    auto eight = cast<SPRect>(doc->getObjectById("eight"));
     ASSERT_TRUE(eight != nullptr);
 
     EXPECT_EQ(eight->style->stroke_width.get_value(), Glib::ustring("50%"));

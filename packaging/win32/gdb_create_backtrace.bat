@@ -8,10 +8,10 @@ echo.
 echo After Inkscape starts, try to force the crash.
 echo The backtrace will be recorded automatically.
 echo.
-echo Gathering sytem info...
+echo Gathering system info...
 
 echo --- INKSCAPE VERSION --- > %TRACEFILE%
-inkscape.com -V >> %TRACEFILE%
+inkscape.com --debug-info >> %TRACEFILE%
 echo. >> %TRACEFILE%
 echo --- SYSTEM INFO --- >> %TRACEFILE%
 systeminfo >> %TRACEFILE%
@@ -21,7 +21,7 @@ echo Launching Inkscape, please wait...
 
 echo. >> %TRACEFILE%
 echo --- BACKTRACE --- >> %TRACEFILE%
-gdb.exe -batch -ex "run" -ex "bt" inkscape.exe >> %TRACEFILE%
+gdb.exe -batch -ex "run --app-id-tag gdbbt" -ex "bt" inkscape.exe >> %TRACEFILE%
 
 echo.
 echo Backtrace written to %TRACEFILE%

@@ -12,10 +12,11 @@
 
 #include "sp-shape.h"
 
-class SPPolyLine : public SPShape {
+class SPPolyLine final : public SPShape {
 public:
 	SPPolyLine();
 	~SPPolyLine() override;
+    int tag() const override { return tag_of<decltype(*this)>; }
 
 	void build(SPDocument* doc, Inkscape::XML::Node* repr) override;
 	void set(SPAttr key, char const* value) override;

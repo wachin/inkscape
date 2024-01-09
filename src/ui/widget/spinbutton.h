@@ -23,6 +23,18 @@ class UnitMenu;
 class UnitTracker;
 
 /**
+ * A spin button for use with builders.
+ */
+class MathSpinButton : public Gtk::SpinButton
+{
+public:
+    MathSpinButton(BaseObjectType *cobject, const Glib::RefPtr<Gtk::Builder> &refGlade);
+    ~MathSpinButton() override{};
+protected:
+    int on_input(double* newvalue) override;
+};
+
+/**
  * SpinButton widget, that allows entry of simple math expressions (also units, when linked with UnitMenu),
  * and allows entry of both '.' and ',' for the decimal, even when in numeric mode.
  *

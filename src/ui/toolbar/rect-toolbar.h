@@ -28,9 +28,11 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
+#include <gtkmm/adjustment.h>
+
 #include "toolbar.h"
 
-#include <gtkmm/adjustment.h>
+#include "xml/node-observer.h"
 
 class SPDesktop;
 class SPItem;
@@ -59,11 +61,14 @@ class UnitTracker;
 }
 
 namespace Toolbar {
-class RectToolbar : public Toolbar {
+class RectToolbar
+	: public Toolbar
+	, private Inkscape::XML::NodeObserver
+{
 private:
     UI::Widget::UnitTracker *_tracker;
 
-    XML::Node *_repr;
+    XML::Node *_repr{nullptr};
     SPItem *_item;
 
     UI::Widget::LabelToolItem      *_mode_item;
@@ -78,8 +83,8 @@ private:
     Glib::RefPtr<Gtk::Adjustment> _rx_adj;
     Glib::RefPtr<Gtk::Adjustment> _ry_adj;
 
-    bool _freeze;
-    bool _single;
+    bool _freeze{false};
+    bool _single{true};
 
     void value_changed(Glib::RefPtr<Gtk::Adjustment>&  adj,
                        gchar const                    *value_name,
@@ -90,20 +95,18 @@ private:
     void watch_ec(SPDesktop* desktop, Inkscape::UI::Tools::ToolBase* ec);
     void selection_changed(Inkscape::Selection *selection);
 
+    sigc::connection _changed;
+
+	void notifyAttributeChanged(Inkscape::XML::Node &node, GQuark name,
+								Inkscape::Util::ptr_shared old_value,
+								Inkscape::Util::ptr_shared new_value) final;
+
 protected:
     RectToolbar(SPDesktop *desktop);
     ~RectToolbar() override;
 
 public:
     static GtkWidget * create(SPDesktop *desktop);
-
-    static void event_attr_changed(Inkscape::XML::Node *repr,
-                                   gchar const         *name,
-                                   gchar const         *old_value,
-                                   gchar const         *new_value,
-                                   bool                 is_interactive,
-                                   gpointer             data);
-
 };
 
 }

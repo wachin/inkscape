@@ -30,16 +30,13 @@
 #include "message-context.h"
 #include "selection-chemistry.h"
 #include "selection.h"
-#include "verbs.h"
-
 
 #include "object/sp-rect.h"
 #include "object/sp-namedview.h"
 
+#include "ui/icon-names.h"
 #include "ui/shape-editor.h"
 #include "ui/tools/rect-tool.h"
-
-#include "xml/node-event-vector.h"
 
 using Inkscape::DocumentUndo;
 
@@ -47,30 +44,41 @@ namespace Inkscape {
 namespace UI {
 namespace Tools {
 
-const std::string& RectTool::getPrefsPath() {
-	return RectTool::prefsPath;
-}
-
-const std::string RectTool::prefsPath = "/tools/shapes/rect";
-
-RectTool::RectTool()
-    : ToolBase("rect.svg")
+RectTool::RectTool(SPDesktop *desktop)
+    : ToolBase(desktop, "/tools/shapes/rect", "rect.svg")
     , rect(nullptr)
     , rx(0)
     , ry(0)
 {
-}
+    this->shape_editor = new ShapeEditor(desktop);
 
-void RectTool::finish() {
-    ungrabCanvasEvents();
-    
-    this->finishItem();
+    SPItem *item = desktop->getSelection()->singleItem();
+    if (item) {
+        this->shape_editor->set_item(item);
+    }
+
     this->sel_changed_connection.disconnect();
+    this->sel_changed_connection = desktop->getSelection()->connectChanged(
+        sigc::mem_fun(*this, &RectTool::selection_changed)
+    );
 
-    ToolBase::finish();
+    sp_event_context_read(this, "rx");
+    sp_event_context_read(this, "ry");
+
+    Inkscape::Preferences *prefs = Inkscape::Preferences::get();
+    if (prefs->getBool("/tools/shapes/selcue")) {
+        this->enableSelectionCue();
+    }
+
+    if (prefs->getBool("/tools/shapes/gradientdrag")) {
+        this->enableGrDrag();
+    }
 }
 
 RectTool::~RectTool() {
+    ungrabCanvasEvents();
+
+    this->finishItem();
     this->enableGrDrag(false);
 
     this->sel_changed_connection.disconnect();
@@ -93,34 +101,6 @@ void RectTool::selection_changed(Inkscape::Selection* selection) {
     this->shape_editor->set_item(selection->singleItem());
 }
 
-void RectTool::setup() {
-    ToolBase::setup();
-
-    this->shape_editor = new ShapeEditor(this->desktop);
-
-    SPItem *item = this->desktop->getSelection()->singleItem();
-    if (item) {
-        this->shape_editor->set_item(item);
-    }
-
-    this->sel_changed_connection.disconnect();
-    this->sel_changed_connection = this->desktop->getSelection()->connectChanged(
-    	sigc::mem_fun(this, &RectTool::selection_changed)
-    );
-
-    sp_event_context_read(this, "rx");
-    sp_event_context_read(this, "ry");
-
-    Inkscape::Preferences *prefs = Inkscape::Preferences::get();
-    if (prefs->getBool("/tools/shapes/selcue")) {
-        this->enableSelectionCue();
-    }
-
-    if (prefs->getBool("/tools/shapes/gradientdrag")) {
-        this->enableGrDrag();
-    }
-}
-
 void RectTool::set(const Inkscape::Preferences::Entry& val) {
     /* fixme: Proper error handling for non-numeric data.  Use a locale-independent function like
      * g_ascii_strtod (or a thin wrapper that does the right thing for invalid values inf/nan). */
@@ -139,7 +119,7 @@ bool RectTool::item_handler(SPItem* item, GdkEvent* event) {
     switch (event->type) {
     case GDK_BUTTON_PRESS:
         if ( event->button.button == 1) {
-            Inkscape::setup_for_drag_start(desktop, this, event);
+            this->setup_for_drag_start(event);
         }
         break;
         // motion and release are always on root (why?)
@@ -147,7 +127,7 @@ bool RectTool::item_handler(SPItem* item, GdkEvent* event) {
         break;
     }
 
-   	ret = ToolBase::item_handler(item, event);
+       ret = ToolBase::item_handler(item, event);
 
     return ret;
 }
@@ -155,8 +135,7 @@ bool RectTool::item_handler(SPItem* item, GdkEvent* event) {
 bool RectTool::root_handler(GdkEvent* event) {
     static bool dragging;
 
-    SPDesktop *desktop = this->desktop;
-    Inkscape::Selection *selection = desktop->getSelection();
+    Inkscape::Selection *selection = _desktop->getSelection();
 
     Inkscape::Preferences *prefs = Inkscape::Preferences::get();
 
@@ -175,17 +154,17 @@ bool RectTool::root_handler(GdkEvent* event) {
             this->within_tolerance = true;
 
             // remember clicked item, disregarding groups, honoring Alt
-            this->item_to_select = sp_event_context_find_item (desktop, button_w, event->button.state & GDK_MOD1_MASK, TRUE);
+            this->item_to_select = sp_event_context_find_item (_desktop, button_w, event->button.state & GDK_MOD1_MASK, TRUE);
 
             dragging = true;
 
             /* Position center */
-            Geom::Point button_dt(desktop->w2d(button_w));
+            Geom::Point button_dt(_desktop->w2d(button_w));
             this->center = button_dt;
 
             /* Snap center */
-            SnapManager &m = desktop->namedview->snap_manager;
-            m.setup(desktop);
+            SnapManager &m = _desktop->namedview->snap_manager;
+            m.setup(_desktop);
             m.freeSnapReturnByRef(button_dt, Inkscape::SNAPSOURCE_NODE_HANDLE);
             m.unSetup();
             this->center = button_dt;
@@ -209,17 +188,17 @@ bool RectTool::root_handler(GdkEvent* event) {
             this->within_tolerance = false;
 
             Geom::Point const motion_w(event->motion.x, event->motion.y);
-            Geom::Point motion_dt(desktop->w2d(motion_w));
+            Geom::Point motion_dt(_desktop->w2d(motion_w));
 
             this->drag(motion_dt, event->motion.state); // this will also handle the snapping
             gobble_motion_events(GDK_BUTTON1_MASK);
             ret = TRUE;
         } else if (!this->sp_event_context_knot_mouseover()) {
-            SnapManager &m = desktop->namedview->snap_manager;
-            m.setup(desktop);
+            SnapManager &m = _desktop->namedview->snap_manager;
+            m.setup(_desktop);
 
             Geom::Point const motion_w(event->motion.x, event->motion.y);
-            Geom::Point motion_dt(desktop->w2d(motion_w));
+            Geom::Point motion_dt(_desktop->w2d(motion_w));
 
             m.preSnap(Inkscape::SnapCandidatePoint(motion_dt, Inkscape::SNAPSOURCE_NODE_HANDLE));
             m.unSetup();
@@ -227,18 +206,18 @@ bool RectTool::root_handler(GdkEvent* event) {
         break;
     case GDK_BUTTON_RELEASE:
         this->xp = this->yp = 0;
-        if (event->button.button == 1) {
+        if (dragging && event->button.button == 1) {
             dragging = false;
-            sp_event_context_discard_delayed_snap_event(this);
+            this->discard_delayed_snap_event();
 
-            if (!this->within_tolerance) {
+            if (rect) {
                 // we've been dragging, finish the rect
                 this->finishItem();
             } else if (this->item_to_select) {
                 // no dragging, select clicked item if any
                 if (event->button.state & GDK_SHIFT_MASK) {
                     selection->toggle(this->item_to_select);
-                } else {
+                } else if (!selection->includes(this->item_to_select)) {
                     selection->set(this->item_to_select);
                 }
             } else {
@@ -271,7 +250,7 @@ bool RectTool::root_handler(GdkEvent* event) {
         case GDK_KEY_x:
         case GDK_KEY_X:
             if (MOD__ALT_ONLY(event)) {
-                desktop->setToolboxFocusTo("rect-width");
+                _desktop->setToolboxFocusTo("rect-width");
                 ret = TRUE;
             }
             break;
@@ -279,7 +258,7 @@ bool RectTool::root_handler(GdkEvent* event) {
         case GDK_KEY_g:
         case GDK_KEY_G:
             if (MOD__SHIFT_ONLY(event)) {
-                desktop->selection->toGuides();
+                _desktop->getSelection()->toGuides();
                 ret = true;
             }
             break;
@@ -287,7 +266,7 @@ bool RectTool::root_handler(GdkEvent* event) {
         case GDK_KEY_Escape:
             if (dragging) {
                 dragging = false;
-                sp_event_context_discard_delayed_snap_event(this);
+                this->discard_delayed_snap_event();
                 // if drawing, cancel, otherwise pass it up for deselecting
                 this->cancel();
                 ret = TRUE;
@@ -298,8 +277,8 @@ bool RectTool::root_handler(GdkEvent* event) {
             if (dragging) {
                 ungrabCanvasEvents();
                 dragging = false;
-                sp_event_context_discard_delayed_snap_event(this);
-                
+                this->discard_delayed_snap_event();
+
                 if (!this->within_tolerance) {
                     // we've been dragging, finish the rect
                     this->finishItem();
@@ -339,49 +318,46 @@ bool RectTool::root_handler(GdkEvent* event) {
     }
 
     if (!ret) {
-    	ret = ToolBase::root_handler(event);
+        ret = ToolBase::root_handler(event);
     }
 
     return ret;
 }
 
 void RectTool::drag(Geom::Point const pt, guint state) {
-    SPDesktop *desktop = this->desktop;
-
     if (!this->rect) {
-        if (Inkscape::have_viable_layer(desktop, defaultMessageContext()) == false) {
+        if (Inkscape::have_viable_layer(_desktop, defaultMessageContext()) == false) {
             return;
         }
 
         // Create object
-        Inkscape::XML::Document *xml_doc = this->desktop->doc()->getReprDoc();
+        Inkscape::XML::Document *xml_doc = _desktop->doc()->getReprDoc();
         Inkscape::XML::Node *repr = xml_doc->createElement("svg:rect");
 
         // Set style
-        sp_desktop_apply_style_tool (desktop, repr, "/tools/shapes/rect", false);
+        sp_desktop_apply_style_tool(_desktop, repr, "/tools/shapes/rect", false);
 
-        this->rect = SP_RECT(desktop->currentLayer()->appendChildRepr(repr));
+        this->rect = cast<SPRect>(currentLayer()->appendChildRepr(repr));
         Inkscape::GC::release(repr);
 
-        this->rect->transform = SP_ITEM(desktop->currentLayer())->i2doc_affine().inverse();
+        this->rect->transform = currentLayer()->i2doc_affine().inverse();
         this->rect->updateRepr();
-
-        forced_redraws_start(5);
     }
 
-    Geom::Rect const r = Inkscape::snap_rectangular_box(desktop, this->rect, pt, this->center, state);
+    Geom::Rect const r = Inkscape::snap_rectangular_box(_desktop, this->rect, pt, this->center, state);
 
     this->rect->setPosition(r.min()[Geom::X], r.min()[Geom::Y], r.dimensions()[Geom::X], r.dimensions()[Geom::Y]);
 
     if (this->rx != 0.0) {
-    	this->rect->setRx(true, this->rx);
+        this->rect->setRx(true, this->rx);
     }
 
     if (this->ry != 0.0) {
-        if (this->rx == 0.0)
-        	this->rect->setRy(true, CLAMP(this->ry, 0, MIN(r.dimensions()[Geom::X], r.dimensions()[Geom::Y])/2));
-        else
-        	this->rect->setRy(true, CLAMP(this->ry, 0, r.dimensions()[Geom::Y]));
+        if (this->rx == 0.0) {
+            this->rect->setRy(true, CLAMP(this->ry, 0, MIN(r.dimensions()[Geom::X], r.dimensions()[Geom::Y])/2));
+        } else {
+            this->rect->setRy(true, CLAMP(this->ry, 0, r.dimensions()[Geom::Y]));
+        }
     }
 
     // status text
@@ -390,8 +366,8 @@ void RectTool::drag(Geom::Point const pt, guint state) {
 
     Inkscape::Util::Quantity rdimx_q = Inkscape::Util::Quantity(rdimx, "px");
     Inkscape::Util::Quantity rdimy_q = Inkscape::Util::Quantity(rdimy, "px");
-    Glib::ustring xs = rdimx_q.string(desktop->namedview->display_units);
-    Glib::ustring ys = rdimy_q.string(desktop->namedview->display_units);
+    Glib::ustring xs = rdimx_q.string(_desktop->namedview->display_units);
+    Glib::ustring ys = rdimy_q.string(_desktop->namedview->display_units);
 
     if (state & GDK_CONTROL_MASK) {
         int ratio_x, ratio_y;
@@ -447,18 +423,18 @@ void RectTool::finishItem() {
         this->rect->updateRepr();
         this->rect->doWriteTransform(this->rect->transform, nullptr, true);
 
-        forced_redraws_stop();
-        
-        this->desktop->getSelection()->set(this->rect);
+        // update while creating inside a LPE group
+        sp_lpe_item_update_patheffect(this->rect, true, true);
+        _desktop->getSelection()->set(this->rect);
 
-        DocumentUndo::done(this->desktop->getDocument(), SP_VERB_CONTEXT_RECT, _("Create rectangle"));
+        DocumentUndo::done(_desktop->getDocument(), _("Create rectangle"), INKSCAPE_ICON("draw-rectangle"));
 
         this->rect = nullptr;
     }
 }
 
 void RectTool::cancel(){
-    this->desktop->getSelection()->clear();
+    _desktop->getSelection()->clear();
     ungrabCanvasEvents();
 
     if (this->rect != nullptr) {
@@ -471,9 +447,7 @@ void RectTool::cancel(){
     this->yp = 0;
     this->item_to_select = nullptr;
 
-    forced_redraws_stop();
-
-    DocumentUndo::cancel(this->desktop->getDocument());
+    DocumentUndo::cancel(_desktop->getDocument());
 }
 
 }

@@ -29,45 +29,43 @@ namespace Tools {
 
 class SelectTool : public ToolBase {
 public:
-	SelectTool();
-	~SelectTool() override;
+    SelectTool(SPDesktop *desktop);
+    ~SelectTool() override;
 
-	bool dragging;
-	bool moved;
-	guint button_press_state;
+    bool dragging;
+    bool moved;
+    guint button_press_state;
 
         std::vector<SPItem *> cycling_items;
         std::vector<SPItem *> cycling_items_cmp;
         SPItem *cycling_cur_item;
-	bool cycling_wrap;
+    bool cycling_wrap;
 
-	SPItem *item;
+    SPItem *item;
         Inkscape::CanvasItem *grabbed = nullptr;
-	Inkscape::SelTrans *_seltrans;
-	Inkscape::SelectionDescriber *_describer;
-	gchar *no_selection_msg = nullptr;
+    Inkscape::SelTrans *_seltrans;
+    Inkscape::SelectionDescriber *_describer;
+    gchar *no_selection_msg = nullptr;
 
-	static const std::string prefsPath;
+    void set(const Inkscape::Preferences::Entry& val) override;
+    bool root_handler(GdkEvent* event) override;
+    bool item_handler(SPItem* item, GdkEvent* event) override;
 
-	void setup() override;
-	void set(const Inkscape::Preferences::Entry& val) override;
-	bool root_handler(GdkEvent* event) override;
-	bool item_handler(SPItem* item, GdkEvent* event) override;
-
-	const std::string& getPrefsPath() override;
-
+    void updateDescriber(Inkscape::Selection *sel);
 private:
-	bool sp_select_context_abort();
-	void sp_select_context_cycle_through_items(Inkscape::Selection *selection, GdkEventScroll *scroll_event);
-	void sp_select_context_reset_opacities();
+    bool sp_select_context_abort();
+    void sp_select_context_cycle_through_items(Inkscape::Selection *selection, GdkEventScroll *scroll_event);
+    void sp_select_context_reset_opacities();
 
-    Glib::RefPtr<Gdk::Cursor> _cursor_mouseover;
-    Glib::RefPtr<Gdk::Cursor> _cursor_dragging;
+    bool _alt_on;
+    bool _force_dragging;
+
+    std::string _default_cursor;
 };
 
-}
-}
-}
+} // namespace Tools
+} // namespace UI
+} // namespace Inkscape
 
 #endif
 

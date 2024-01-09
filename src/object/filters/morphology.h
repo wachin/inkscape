@@ -17,31 +17,25 @@
 #include "number-opt-number.h"
 #include "display/nr-filter-morphology.h"
 
-#define SP_FEMORPHOLOGY(obj) (dynamic_cast<SPFeMorphology*>((SPObject*)obj))
-#define SP_IS_FEMORPHOLOGY(obj) (dynamic_cast<const SPFeMorphology*>((SPObject*)obj) != NULL)
-
-class SPFeMorphology : public SPFilterPrimitive {
+class SPFeMorphology final
+    : public SPFilterPrimitive
+{
 public:
-	SPFeMorphology();
-	~SPFeMorphology() override;
+    int tag() const override { return tag_of<decltype(*this)>; }
+    Geom::Rect calculate_region(Geom::Rect const &region) const override;
 
-    Inkscape::Filters::FilterMorphologyOperator Operator;
-    NumberOptNumber radius;
+private:
+    Inkscape::Filters::FilterMorphologyOperator Operator = Inkscape::Filters::MORPHOLOGY_OPERATOR_ERODE;
+    NumberOptNumber radius = NumberOptNumber(0);
 
 protected:
-	void build(SPDocument* doc, Inkscape::XML::Node* repr) override;
-	void release() override;
+    void build(SPDocument *doc, Inkscape::XML::Node *repr) override;
+    void set(SPAttr key, char const *value) override;
 
-	void set(SPAttr key, const gchar* value) override;
-
-	void update(SPCtx* ctx, unsigned int flags) override;
-
-	Inkscape::XML::Node* write(Inkscape::XML::Document* doc, Inkscape::XML::Node* repr, guint flags) override;
-
-	void build_renderer(Inkscape::Filters::Filter* filter) override;
+    std::unique_ptr<Inkscape::Filters::FilterPrimitive> build_renderer(Inkscape::DrawingItem *item) const override;
 };
 
-#endif /* !SP_FEMORPHOLOGY_H_SEEN */
+#endif // SP_FEMORPHOLOGY_H_SEEN
 
 /*
   Local Variables:

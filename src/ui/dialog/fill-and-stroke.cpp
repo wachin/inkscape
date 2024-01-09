@@ -23,7 +23,6 @@
 #include "filter-chemistry.h"
 #include "inkscape.h"
 #include "preferences.h"
-#include "verbs.h"
 
 #include "svg/css-ostringstream.h"
 
@@ -44,7 +43,8 @@ FillAndStroke::FillAndStroke()
     , _page_fill(Gtk::manage(new UI::Widget::NotebookPage(1, 1, true, true)))
     , _page_stroke_paint(Gtk::manage(new UI::Widget::NotebookPage(1, 1, true, true)))
     , _page_stroke_style(Gtk::manage(new UI::Widget::NotebookPage(1, 1, true, true)))
-    , _composite_settings(SP_VERB_DIALOG_FILL_STROKE, "fillstroke",
+    , _composite_settings(INKSCAPE_ICON("dialog-fill-and-stroke"),
+                          "fillstroke",
                           UI::Widget::SimpleFilterModifier::ISOLATION |
                           UI::Widget::SimpleFilterModifier::BLEND |
                           UI::Widget::SimpleFilterModifier::BLUR |
@@ -60,7 +60,7 @@ FillAndStroke::FillAndStroke()
     _notebook.append_page(*_page_stroke_style, _createPageTabLabel(_("Stroke st_yle"), INKSCAPE_ICON("object-stroke-style")));
     _notebook.set_vexpand(true);
 
-    _notebook.signal_switch_page().connect(sigc::mem_fun(this, &FillAndStroke::_onSwitchPage));
+    _notebook.signal_switch_page().connect(sigc::mem_fun(*this, &FillAndStroke::_onSwitchPage));
 
     _layoutPageFill();
     _layoutPageStrokePaint();
@@ -81,6 +81,31 @@ FillAndStroke::~FillAndStroke()
     strokeWdgt->setDesktop(nullptr);
     strokeStyleWdgt->setDesktop(nullptr);
     _subject.setDesktop(nullptr);
+}
+
+void FillAndStroke::selectionChanged(Selection *selection)
+{
+    if (fillWdgt) {
+        fillWdgt->performUpdate();
+    }
+    if (strokeWdgt) {
+        strokeWdgt->performUpdate();
+    }
+    if (strokeStyleWdgt) {
+        strokeStyleWdgt->selectionChangedCB();
+    }
+}
+void FillAndStroke::selectionModified(Selection *selection, guint flags)
+{
+    if (fillWdgt) {
+        fillWdgt->selectionModifiedCB(flags);
+    }
+    if (strokeWdgt) {
+        strokeWdgt->selectionModifiedCB(flags);
+    }
+    if (strokeStyleWdgt) {
+        strokeStyleWdgt->selectionModifiedCB(flags);
+    }
 }
 
 void FillAndStroke::desktopReplaced()

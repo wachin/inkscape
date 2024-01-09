@@ -31,7 +31,6 @@
 
 #include "display/curve.h"
 
-// derived from Path_for_item
 Path *
 Path_for_pathvector(Geom::PathVector const &epathv)
 {
@@ -49,13 +48,14 @@ Path_for_pathvector(Geom::PathVector const &epathv)
 Path *
 Path_for_item(SPItem *item, bool doTransformation, bool transformFull)
 {
-    std::unique_ptr<SPCurve> curve = curve_for_item(item);
+    auto curve = curve_for_item(item);
 
-    if (curve == nullptr)
+    if (!curve) {
         return nullptr;
+    }
 
     Geom::PathVector *pathv =
-        pathvector_for_curve(item, curve.get(), doTransformation, transformFull, Geom::identity(), Geom::identity());
+        pathvector_for_curve(item, &*curve, doTransformation, transformFull, Geom::identity(), Geom::identity());
 
     /*std::cout << "converting to Livarot path" << std::endl;
 
@@ -76,19 +76,17 @@ Path_for_item(SPItem *item, bool doTransformation, bool transformFull)
     return dest;
 }
 
-/**
- * Obtains an item's Path before the LPE stack has been applied.
- */
 Path *
 Path_for_item_before_LPE(SPItem *item, bool doTransformation, bool transformFull)
 {
-    std::unique_ptr<SPCurve> curve = curve_for_item_before_LPE(item);
+    auto curve = curve_for_item_before_LPE(item);
 
-    if (curve == nullptr)
+    if (!curve) {
         return nullptr;
+    }
     
     Geom::PathVector *pathv =
-        pathvector_for_curve(item, curve.get(), doTransformation, transformFull, Geom::identity(), Geom::identity());
+        pathvector_for_curve(item, &*curve, doTransformation, transformFull, Geom::identity(), Geom::identity());
     
     Path *dest = new Path;
     dest->LoadPathVector(*pathv);
@@ -97,10 +95,6 @@ Path_for_item_before_LPE(SPItem *item, bool doTransformation, bool transformFull
     return dest;
 }
 
-/* 
- * NOTE: Returns empty pathvector if curve == NULL
- * TODO: see if calling this method can be optimized. All the pathvector copying might be slow.
- */
 Geom::PathVector*
 pathvector_for_curve(SPItem *item, SPCurve *curve, bool doTransformation, bool transformFull, Geom::Affine extraPreAffine, Geom::Affine extraPostAffine)
 {
@@ -123,56 +117,51 @@ pathvector_for_curve(SPItem *item, SPCurve *curve, bool doTransformation, bool t
     return dest;
 }
 
-/**
- * Obtains an item's curve. For SPPath, it is the path *before* LPE. For SPShapes other than path, it is the path *after* LPE.
- * So the result is somewhat ill-defined, and probably this method should not be used... See curve_for_item_before_LPE.
- */
-std::unique_ptr<SPCurve> curve_for_item(SPItem *item)
+std::optional<SPCurve> curve_for_item(SPItem *item)
 {
-    if (!item) 
-        return nullptr;
-    
-    std::unique_ptr<SPCurve> curve;
-
-    if (auto path = dynamic_cast<SPPath const *>(item)) {
-        curve = SPCurve::copy(path->curveForEdit());
-    } else if (auto shape = dynamic_cast<SPShape const *>(item)) {
-        curve = SPCurve::copy(shape->curve());
-    } else if (SP_IS_TEXT(item) || SP_IS_FLOWTEXT(item)) {
-        curve = te_get_layout(item)->convertToCurves();
-    } else if (auto image = dynamic_cast<SPImage const *>(item)) {
-        curve = image->get_curve();
+    if (!item) {
+        return {};
     }
-
-    return curve;
+    
+    if (auto path = cast<SPPath>(item)) {
+        return SPCurve::ptr_to_opt(path->curveForEdit());
+    } else if (auto shape = cast<SPShape>(item)) {
+        return SPCurve::ptr_to_opt(shape->curve());
+    } else if (is<SPText>(item) || is<SPFlowtext>(item)) {
+        return te_get_layout(item)->convertToCurves();
+    } else if (auto image = cast<SPImage>(item)) {
+        return SPCurve::ptr_to_opt(image->get_curve());
+    }
+    
+    return {};
 }
 
-/**
- * Obtains an item's curve *before* LPE.
- */
-std::unique_ptr<SPCurve> curve_for_item_before_LPE(SPItem *item)
+std::optional<SPCurve> curve_for_item_before_LPE(SPItem *item)
 {
-    if (!item) 
-        return nullptr;
-    
-    std::unique_ptr<SPCurve> curve;
-
-    if (auto shape = dynamic_cast<SPShape const *>(item)) {
-        curve = SPCurve::copy(shape->curveForEdit());
-    } else if (SP_IS_TEXT(item) || SP_IS_FLOWTEXT(item)) {
-        curve = te_get_layout(item)->convertToCurves();
-    } else if (auto image = dynamic_cast<SPImage const *>(item)) {
-        curve = image->get_curve();
+    if (!item) {
+        return {};
     }
 
-    return curve;
+    if (auto shape = cast<SPShape>(item)) {
+        return SPCurve::ptr_to_opt(shape->curveForEdit());
+    } else if (is<SPText>(item) || is<SPFlowtext>(item)) {
+        return te_get_layout(item)->convertToCurves();
+    } else if (auto image = cast<SPImage>(item)) {
+        return SPCurve::ptr_to_opt(image->get_curve());
+    }
+    
+    return {};
 }
 
 std::optional<Path::cut_position> get_nearest_position_on_Path(Path *path, Geom::Point p, unsigned seg)
 {
+    std::optional<Path::cut_position> result;
+    if (!path) {
+        return result; // returns empty std::optional
+    }
     //get nearest position on path
-    Path::cut_position pos = path->PointToCurvilignPosition(p, seg);
-    return pos;
+    result = path->PointToCurvilignPosition(p, seg);
+    return result;
 }
 
 Geom::Point get_point_on_Path(Path *path, int piece, double t)

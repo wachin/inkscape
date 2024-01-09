@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-#ifndef SEEN_NR_FILTER_H
-#define SEEN_NR_FILTER_H
+#ifndef INKSCAPE_DISPLAY_NR_FILTER_H
+#define INKSCAPE_DISPLAY_NR_FILTER_H
 
 /*
  * SVG filters rendering
@@ -13,28 +13,32 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
-//#include "display/nr-arena-item.h"
+#include <memory>
 #include <cairo.h>
 #include "display/nr-filter-primitive.h"
 #include "display/nr-filter-types.h"
 #include "svg/svg-length.h"
 #include "object/sp-filter-units.h"
-#include "inkgc/gc-managed.h"
 
 namespace Inkscape {
 class DrawingContext;
 class DrawingItem;
+class RenderContext;
 
 namespace Filters {
 
-class Filter {
+class Filter final
+{
 public:
+    /// Update any embedded DrawingItems prior to rendering.
+    void update();
+
     /** Given background state from @a bgdc and an intermediate rendering from the surface
      * backing @a graphic, modify the contents of the surface backing @a graphic to represent
      * the results of filter rendering. @a bgarea and @a area specify bounding boxes
      * of both surfaces in world coordinates; Cairo contexts are assumed to be in default state
      * (0,0 = surface origin, no path, OVER operator) */
-    int render(Inkscape::DrawingItem const *item, DrawingContext &graphic, DrawingContext *bgdc);
+    int render(Inkscape::DrawingItem const *item, DrawingContext &graphic, DrawingContext *bgdc, RenderContext &rc) const;
 
     /**
      * Creates a new filter primitive under this filter object.
@@ -44,35 +48,17 @@ public:
      * is enlarged to accommodate the new filter element. It may be enlarged by
      * more that one element.
      * Returns a handle (non-negative integer) to the filter primitive created.
-     * Returns -1, if type is not valid filter primitive type or filter
+     * Returns -1 if type is not a valid filter primitive type or a filter
      * primitive of such type cannot be created.
      */
-    int add_primitive(FilterPrimitiveType type);
+    void add_primitive(std::unique_ptr<FilterPrimitive> primitive);
+
     /**
      * Removes all filter primitives from this filter.
      * All pointers to filter primitives inside this filter should be
      * considered invalid after calling this function.
      */
     void clear_primitives();
-    /**
-     * Replaces filter primitive pointed by 'target' with a new filter
-     * primitive of type 'type'
-     * If 'target' does not correspond to any primitive inside this filter OR
-     * 'type' is not a valid filter primitive type OR
-     * filter primitive of such type cannot be created,
-     * this function returns -1 and doesn't change the internal state of this
-     * filter.
-     * Otherwise, a new filter primitive is created. Any pointers to filter
-     * primitive 'target' should be considered invalid. A handle to the
-     * newly created primitive is returned.
-     */
-    int replace_primitive(int primitive, FilterPrimitiveType type);
-
-    /**
-     * Returns a pointer to the primitive, which the handle corresponds to.
-     * If the handle is not valid, returns NULL.
-     */
-    FilterPrimitive *get_primitive(int handle);
 
     /**
      * Sets the slot number 'slot' to be used as result from this filter.
@@ -94,8 +80,8 @@ public:
      * results in that parameter not being changed.
      * Filter will not hold any references to the passed SVGLength object after
      * function returns.
-     * If any of these parameters does not get set, the default value, as
-     * defined in SVG standard, for that parameter is used instead.
+     * If any of these parameters does not get set, the default value for that
+     * parameter as defined in the SVG standard is used instead.
      */
     void set_region(SVGLength const &x, SVGLength const &y,
                     SVGLength const &width, SVGLength const &height);
@@ -111,7 +97,7 @@ public:
      * resolution is determined automatically. If x_pixels is less than zero,
      * calling this function results in no changes to filter state.
      */
-    void set_resolution(double const x_pixels);
+    void set_resolution(double x_pixels);
 
     /**
      * Sets the width and height of intermediate images in pixels. If not set,
@@ -119,7 +105,7 @@ public:
      * less than zero, calling this function results in no changes to filter
      * state.
      */
-    void set_resolution(double const x_pixels, double const y_pixels);
+    void set_resolution(double x_pixels, double y_pixels);
 
     /**
      * Resets the filter resolution to its default value, i.e. automatically
@@ -151,36 +137,37 @@ public:
      * drawn correctly.
      */
     void area_enlarge(Geom::IntRect &area, Inkscape::DrawingItem const *item) const;
+
     /**
      * Returns the filter effects area in user coordinate system.
      * The given bounding box should be a bounding box as specified in
      * SVG standard and in user coordinate system.
      */
-    Geom::OptRect filter_effect_area(Geom::OptRect const &bbox);
+    Geom::OptRect filter_effect_area(Geom::OptRect const &bbox) const;
 
     // returns cache score factor
-    double complexity(Geom::Affine const &ctm);
+    double complexity(Geom::Affine const &ctm) const;
 
     // says whether the filter accesses any of the background images
-    bool uses_background();
+    bool uses_background() const;
 
     /** Creates a new filter with space for one filter element */
     Filter();
+
     /** 
      * Creates a new filter with space for n filter elements. If number of
      * filter elements is known beforehand, it's better to use this
      * constructor.
      */
     Filter(int n);
-    /** Destroys the filter and all its primitives */
-    virtual ~Filter();
 
 private:
-    std::vector<FilterPrimitive*> _primitive;
-    /** Amount of image slots used, when this filter was rendered last time */
+    std::vector<std::unique_ptr<FilterPrimitive>> primitives;
+
+    /** Amount of image slots used when this filter was rendered last time */
     int _slot_count;
 
-    /** Image slot, from which filter output should be read.
+    /** Image slot from which filter output should be read.
      * Negative values mean 'not set' */
     int _output_slot;
 
@@ -191,27 +178,24 @@ private:
 
     /* x- and y-resolutions for filter rendering.
      * Negative values mean 'not set'.
-     * If _y_pixels is set, _x_pixels should be set, too. */
+     * If _y_pixels is set, _x_pixels should be set too. */
     double _x_pixels;
     double _y_pixels;
 
     SPFilterUnits _filter_units;
     SPFilterUnits _primitive_units;
 
-    void _create_constructor_table();
     void _common_init();
-    int _resolution_limit(FilterQuality const quality) const;
-    std::pair<double,double> _filter_resolution(Geom::Rect const &area,
-                                                Geom::Affine const &trans,
-                                                FilterQuality const q) const;
+    static int _resolution_limit(FilterQuality quality);
+    std::pair<double, double> _filter_resolution(Geom::Rect const &area,
+                                                 Geom::Affine const &trans,
+                                                 FilterQuality q) const;
 };
 
+} // namespace Filters
+} // namespace Inkscape
 
-} /* namespace Filters */
-} /* namespace Inkscape */
-
-
-#endif /* __NR_FILTER_H__ */
+#endif // INKSCAPE_DISPLAY_NR_FILTER_H
 /*
   Local Variables:
   mode:c++

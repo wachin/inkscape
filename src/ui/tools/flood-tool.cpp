@@ -28,17 +28,19 @@
 
 #include <2geom/pathvector.h>
 
+#include "async/progress.h"
 #include "color.h"
 #include "context-fns.h"
 #include "desktop-style.h"
 #include "desktop.h"
 #include "document-undo.h"
 #include "document.h"
+#include "layer-manager.h"
 #include "message-context.h"
 #include "message-stack.h"
 #include "rubberband.h"
 #include "selection.h"
-#include "verbs.h"
+#include "page-manager.h"
 
 #include "display/cairo-utils.h"
 #include "display/drawing-context.h"
@@ -59,10 +61,9 @@
 #include "trace/imagemap.h"
 #include "trace/potrace/inkscape-potrace.h"
 
+#include "ui/icon-names.h"
 #include "ui/shape-editor.h"
 #include "ui/widget/canvas.h"  // Canvas area
-
-#include "xml/node-event-vector.h"
 
 using Inkscape::DocumentUndo;
 
@@ -73,12 +74,6 @@ using Inkscape::Display::AssembleARGB32;
 namespace Inkscape {
 namespace UI {
 namespace Tools {
-
-const std::string& FloodTool::getPrefsPath() {
-	return FloodTool::prefsPath;
-}
-
-const std::string FloodTool::prefsPath = "/tools/paintbucket";
 
 // TODO: Replace by C++11 initialization
 // Must match PaintBucketChannels enum
@@ -102,19 +97,37 @@ Glib::ustring gap_init[4] = {
 };
 const std::vector<Glib::ustring> FloodTool::gap_list( gap_init, gap_init+4 );
 
-FloodTool::FloodTool()
-    : ToolBase("flood.svg")
+FloodTool::FloodTool(SPDesktop *desktop)
+    : ToolBase(desktop, "/tools/paintbucket", "flood.svg")
     , item(nullptr)
 {
     // TODO: Why does the flood tool use a hardcoded tolerance instead of a pref?
     this->tolerance = 4;
+
+    this->shape_editor = new ShapeEditor(desktop);
+
+    SPItem *item = desktop->getSelection()->singleItem();
+    if (item) {
+        this->shape_editor->set_item(item);
+    }
+
+    this->sel_changed_connection.disconnect();
+    this->sel_changed_connection = desktop->getSelection()->connectChanged(
+        sigc::mem_fun(*this, &FloodTool::selection_changed)
+    );
+
+    Inkscape::Preferences *prefs = Inkscape::Preferences::get();
+
+    if (prefs->getBool("/tools/paintbucket/selcue")) {
+        this->enableSelectionCue();
+    }
 }
 
 FloodTool::~FloodTool() {
     this->sel_changed_connection.disconnect();
 
-    delete this->shape_editor;
-    this->shape_editor = nullptr;
+    delete shape_editor;
+    shape_editor = nullptr;
 
     /* fixme: This is necessary because we do not grab */
     if (this->item) {
@@ -130,29 +143,6 @@ void FloodTool::selection_changed(Inkscape::Selection* selection) {
     this->shape_editor->unset_item();
     this->shape_editor->set_item(selection->singleItem());
 }
-
-void FloodTool::setup() {
-    ToolBase::setup();
-
-    this->shape_editor = new ShapeEditor(this->desktop);
-
-    SPItem *item = this->desktop->getSelection()->singleItem();
-    if (item) {
-        this->shape_editor->set_item(item);
-    }
-
-    this->sel_changed_connection.disconnect();
-    this->sel_changed_connection = this->desktop->getSelection()->connectChanged(
-    	sigc::mem_fun(this, &FloodTool::selection_changed)
-    );
-
-    Inkscape::Preferences *prefs = Inkscape::Preferences::get();
-
-    if (prefs->getBool("/tools/paintbucket/selcue")) {
-        this->enableSelectionCue();
-    }
-}
-
 
 // Changes from 0.48 -> 0.49 (Cairo)
 // 0.49: Ignores alpha in background
@@ -356,52 +346,44 @@ inline static bool check_if_pixel_is_paintable(guchar *px, unsigned char *trace_
  * @param transform The transform to apply to the final SVG path.
  * @param union_with_selection If true, merge the final SVG path with the current selection.
  */
-static void do_trace(bitmap_coords_info bci, guchar *trace_px, SPDesktop *desktop, Geom::Affine transform, unsigned int min_x, unsigned int max_x, unsigned int min_y, unsigned int max_y, bool union_with_selection) {
+static void do_trace(bitmap_coords_info bci, guchar *trace_px, SPDesktop *desktop, Geom::Affine transform, unsigned int min_x, unsigned int max_x, unsigned int min_y, unsigned int max_y, bool union_with_selection)
+{
     SPDocument *document = desktop->getDocument();
 
     unsigned char *trace_t;
 
-    GrayMap *gray_map = GrayMapCreate((max_x - min_x + 1), (max_y - min_y + 1));
-    if (!gray_map) {
-        desktop->messageStack()->flash(Inkscape::ERROR_MESSAGE, _("Failed mid-operation, no objects created."));
-        return;
-    }
-    unsigned int gray_map_y = 0;
-    for (unsigned int y = min_y; y <= max_y; y++) {
-        unsigned long *gray_map_t = gray_map->rows[gray_map_y];
+    auto gray_map = Trace::GrayMap(max_x - min_x + 1, max_y - min_y + 1);
+    unsigned gray_map_y = 0;
+    for (unsigned y = min_y; y <= max_y; y++) {
+        auto gray_map_t = gray_map.row(gray_map_y);
 
         trace_t = get_trace_pixel(trace_px, min_x, y, bci.width);
-        for (unsigned int x = min_x; x <= max_x; x++) {
-            *gray_map_t = is_pixel_colored(trace_t) ? GRAYMAP_BLACK : GRAYMAP_WHITE;
+        for (unsigned x = min_x; x <= max_x; x++) {
+            *gray_map_t = is_pixel_colored(trace_t) ? Trace::GrayMap::BLACK : Trace::GrayMap::WHITE;
             gray_map_t++;
             trace_t++;
         }
         gray_map_y++;
     }
 
-    Inkscape::Trace::Potrace::PotraceTracingEngine pte;
-    pte.keepGoing = 1;
-    std::vector<Inkscape::Trace::TracingEngineResult> results = pte.traceGrayMap(gray_map);
-    gray_map->destroy(gray_map);
+    Trace::Potrace::PotraceTracingEngine pte;
+    auto progress = Async::ProgressAlways<double>();
+    auto results = pte.traceGrayMap(gray_map, progress);
 
-    //XML Tree being used here directly while it shouldn't be...."
+    // XML Tree being used here directly while it shouldn't be...."
     Inkscape::XML::Document *xml_doc = desktop->doc()->getReprDoc();
-
-    long totalNodeCount = 0L;
 
     Inkscape::Preferences *prefs = Inkscape::Preferences::get();
     double offset = prefs->getDouble("/tools/paintbucket/offset", 0.0);
 
     for (auto result : results) {
-        totalNodeCount += result.getNodeCount();
 
         Inkscape::XML::Node *pathRepr = xml_doc->createElement("svg:path");
         /* Set style */
         sp_desktop_apply_style_tool (desktop, pathRepr, "/tools/paintbucket", false);
 
-        Geom::PathVector pathv = sp_svg_read_pathv(result.getPathData().c_str());
         Path *path = new Path;
-        path->LoadPathVector(pathv);
+        path->LoadPathVector(result.path);
 
         if (offset != 0) {
         
@@ -447,14 +429,15 @@ static void do_trace(bitmap_coords_info bci, guchar *trace_px, SPDesktop *deskto
             g_free(str);
         }
 
-        desktop->currentLayer()->addChild(pathRepr,nullptr);
+        auto layer = desktop->layerManager().currentLayer();
+        layer->addChild(pathRepr, nullptr);
 
         SPObject *reprobj = document->getObjectByRepr(pathRepr);
         if (reprobj) {
-            SP_ITEM(reprobj)->doWriteTransform(transform);
+            cast<SPItem>(reprobj)->doWriteTransform(transform);
             
             // premultiply the item transform by the accumulated parent transform in the paste layer
-            Geom::Affine local (SP_GROUP(desktop->currentLayer())->i2doc_affine());
+            Geom::Affine local (layer->i2doc_affine());
             if (!local.isIdentity()) {
                 gchar const *t_str = pathRepr->attribute("transform");
                 Geom::Affine item_t (Geom::identity());
@@ -472,13 +455,13 @@ static void do_trace(bitmap_coords_info bci, guchar *trace_px, SPDesktop *deskto
             if (union_with_selection) {
                 desktop->messageStack()->flashF( Inkscape::WARNING_MESSAGE,
                     ngettext("Area filled, path with <b>%d</b> node created and unioned with selection.","Area filled, path with <b>%d</b> nodes created and unioned with selection.",
-                    SP_PATH(reprobj)->nodesInPath()), SP_PATH(reprobj)->nodesInPath() );
+                    cast<SPPath>(reprobj)->nodesInPath()), cast<SPPath>(reprobj)->nodesInPath() );
                 selection->add(reprobj);
                 selection->pathUnion(true);
             } else {
                 desktop->messageStack()->flashF( Inkscape::WARNING_MESSAGE,
                     ngettext("Area filled, path with <b>%d</b> node created.","Area filled, path with <b>%d</b> nodes created.",
-                    SP_PATH(reprobj)->nodesInPath()), SP_PATH(reprobj)->nodesInPath() );
+                    cast<SPPath>(reprobj)->nodesInPath()), cast<SPPath>(reprobj)->nodesInPath() );
                 selection->set(reprobj);
             }
 
@@ -733,14 +716,15 @@ static bool sort_fill_queue_horizontal(Geom::Point a, Geom::Point b) {
 
 /**
  * Perform a flood fill operation.
- * @param event_context The event context for this tool.
+ * @param desktop The desktop of this tool's event context.
  * @param event The details of this event.
  * @param union_with_selection If true, union the new fill with the current selection.
  * @param is_point_fill If false, use the Rubberband "touch selection" to get the initial points for the fill.
  * @param is_touch_fill If true, use only the initial contact point in the Rubberband "touch selection" as the fill target color.
  */
-static void sp_flood_do_flood_fill(ToolBase *event_context, GdkEvent *event, bool union_with_selection, bool is_point_fill, bool is_touch_fill) {
-    SPDesktop *desktop = event_context->getDesktop();
+static void sp_flood_do_flood_fill(SPDesktop *desktop, GdkEvent *event,
+                                   bool union_with_selection, bool is_point_fill, bool is_touch_fill) {
+
     SPDocument *document = desktop->getDocument();
 
     document->ensureUpToDate();
@@ -787,10 +771,10 @@ static void sp_flood_do_flood_fill(ToolBase *event_context, GdkEvent *event, boo
         Inkscape::DrawingContext dc(s, Geom::Point(0,0));
         // cairo_translate not necessary here - surface origin is at 0,0
 
-        SPNamedView *nv = desktop->getNamedView();
-        bgcolor = nv->pagecolor;
+        bgcolor = document->getPageManager().background_color;
+        bgcolor &= 0xffffff00; // make color transparent for 'alpha' flood mode to work
         // bgcolor is 0xrrggbbaa, we need 0xaarrggbb
-        dtc = (bgcolor >> 8) | (bgcolor << 24);
+        dtc = bgcolor >> 8; // keep color transparent; page color doesn't support transparency anymore
 
         dc.setSource(bgcolor);
         dc.setOperator(CAIRO_OPERATOR_SOURCE);
@@ -1073,7 +1057,7 @@ static void sp_flood_do_flood_fill(ToolBase *event_context, GdkEvent *event, boo
 
     g_free(trace_px);
     
-    DocumentUndo::done(document, SP_VERB_CONTEXT_PAINTBUCKET, _("Fill bounded area"));
+    DocumentUndo::done(document, _("Fill bounded area"), INKSCAPE_ICON("color-fill"));
 }
 
 bool FloodTool::item_handler(SPItem* item, GdkEvent* event) {
@@ -1083,13 +1067,13 @@ bool FloodTool::item_handler(SPItem* item, GdkEvent* event) {
     case GDK_BUTTON_PRESS:
         if ((event->button.state & GDK_CONTROL_MASK) && event->button.button == 1) {
             Geom::Point const button_w(event->button.x, event->button.y);
-            
-            SPItem *item = sp_event_context_find_item (desktop, button_w, TRUE, TRUE);
-            
-            // Set style
-            desktop->applyCurrentOrToolStyle(item, "/tools/paintbucket", false);
 
-            DocumentUndo::done(desktop->getDocument(), SP_VERB_CONTEXT_PAINTBUCKET, _("Set style on object"));
+            SPItem *item = sp_event_context_find_item(_desktop, button_w, TRUE, TRUE);
+
+            // Set style
+            _desktop->applyCurrentOrToolStyle(item, "/tools/paintbucket", false);
+
+            DocumentUndo::done(_desktop->getDocument(), _("Set style on object"), INKSCAPE_ICON("color-fill"));
             // Dead assignment: Value stored to 'ret' is never read
             //ret = TRUE;
         }
@@ -1118,18 +1102,18 @@ bool FloodTool::root_handler(GdkEvent* event) {
         if (event->button.button == 1) {
             if (!(event->button.state & GDK_CONTROL_MASK)) {
                 Geom::Point const button_w(event->button.x, event->button.y);
-    
-                if (Inkscape::have_viable_layer(desktop, this->defaultMessageContext())) {
+
+                if (Inkscape::have_viable_layer(_desktop, this->defaultMessageContext())) {
                     // save drag origin
                     this->xp = (gint) button_w[Geom::X];
                     this->yp = (gint) button_w[Geom::Y];
                     this->within_tolerance = true;
                       
                     dragging = true;
-                    
-                    Geom::Point const p(desktop->w2d(button_w));
-                    Inkscape::Rubberband::get(desktop)->setMode(RUBBERBAND_MODE_TOUCHPATH);
-                    Inkscape::Rubberband::get(desktop)->start(desktop, p);
+
+                    Geom::Point const p(_desktop->w2d(button_w));
+                    Inkscape::Rubberband::get(_desktop)->setMode(RUBBERBAND_MODE_TOUCHPATH);
+                    Inkscape::Rubberband::get(_desktop)->start(_desktop, p);
                 }
             }
         }
@@ -1145,10 +1129,10 @@ bool FloodTool::root_handler(GdkEvent* event) {
             this->within_tolerance = false;
             
             Geom::Point const motion_pt(event->motion.x, event->motion.y);
-            Geom::Point const p(desktop->w2d(motion_pt));
+            Geom::Point const p(_desktop->w2d(motion_pt));
 
-            if (Inkscape::Rubberband::get(desktop)->is_started()) {
-                Inkscape::Rubberband::get(desktop)->move(p);
+            if (Inkscape::Rubberband::get(_desktop)->is_started()) {
+                Inkscape::Rubberband::get(_desktop)->move(p);
                 this->defaultMessageContext()->set(Inkscape::NORMAL_MESSAGE, _("<b>Draw over</b> areas to add to fill, hold <b>Alt</b> for touch fill"));
                 gobble_motion_events(GDK_BUTTON1_MASK);
             }
@@ -1157,26 +1141,32 @@ bool FloodTool::root_handler(GdkEvent* event) {
 
     case GDK_BUTTON_RELEASE:
         if (event->button.button == 1) {
-            Inkscape::Rubberband *r = Inkscape::Rubberband::get(desktop);
+            Inkscape::Rubberband *r = Inkscape::Rubberband::get(_desktop);
 
             if (r->is_started()) {
-                // set "busy" cursor  THIS LEADS TO CRASHES. USER CAN CHANGE TOOLS AS IT CALLS GTK MAIN LOOP
-                desktop->setWaitingCursor();
-
                 dragging = false;
-
                 bool is_point_fill = this->within_tolerance;
                 bool is_touch_fill = event->button.state & GDK_MOD1_MASK;
-                    
-                sp_flood_do_flood_fill(this, event, event->button.state & GDK_SHIFT_MASK, is_point_fill, is_touch_fill);
-                    
-                desktop->clearWaitingCursor();
 
-                ret = TRUE;
+                // It's possible for the user to sneakily change the tool while the
+                // Gtk main loop has control, so we save the current desktop address:
+                SPDesktop* current_desktop = _desktop;
 
+                current_desktop->setWaitingCursor();
+                sp_flood_do_flood_fill(current_desktop, event,
+                                       event->button.state & GDK_SHIFT_MASK,
+                                       is_point_fill, is_touch_fill);
+                current_desktop->clearWaitingCursor();
                 r->stop();
 
-                this->defaultMessageContext()->clear();
+                // We check whether our object was deleted by SPDesktop::setEventContext()
+                // TODO: fix SPDesktop so that it doesn't kill us before we're done
+                ToolBase *current_context = current_desktop->getEventContext();
+
+                if (current_context == (ToolBase*)this) { // We're still alive
+                    this->defaultMessageContext()->clear();
+                } // else just return without dereferencing `this`.
+                ret = true;
             }
         }
         break;
@@ -1200,7 +1190,7 @@ bool FloodTool::root_handler(GdkEvent* event) {
     }
 
     if (!ret) {
-    	ret = ToolBase::root_handler(event);
+        ret = ToolBase::root_handler(event);
     }
 
     return ret;
@@ -1212,9 +1202,8 @@ void FloodTool::finishItem() {
     if (this->item != nullptr) {
         this->item->updateRepr();
 
-        desktop->getSelection()->set(this->item);
-
-        DocumentUndo::done(desktop->getDocument(), SP_VERB_CONTEXT_PAINTBUCKET, _("Fill bounded area"));
+        _desktop->getSelection()->set(this->item);
+        DocumentUndo::done(_desktop->getDocument(), _("Fill bounded area"), INKSCAPE_ICON("color-fill"));
 
         this->item = nullptr;
     }

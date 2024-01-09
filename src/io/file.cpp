@@ -8,9 +8,10 @@
  *
  */
 
-#include "file.h"
+#include "io/file.h"
 
 #include <iostream>
+#include <unistd.h>
 #include <giomm.h>
 
 #include "document.h"
@@ -54,7 +55,7 @@ ink_file_new(const std::string &Template)
             delete nodeToRemove;
         }
     } else {
-        std::cout << "ink_file_new: Did not create new document!" << std::endl;
+        std::cerr << "ink_file_new: Did not create new document!" << std::endl;
     }
 
     return doc;
@@ -135,6 +136,49 @@ ink_file_open(const Glib::RefPtr<Gio::File>& file, bool *cancelled_param)
     }
     return doc;
 }
+
+namespace Inkscape {
+namespace IO {
+
+/**
+ * Create a temporary filename, which is closed and deleted when deconstructed.
+ */
+TempFilename::TempFilename(const std::string &pattern)
+    : _filename("")
+    , _tempfd(0)
+{
+    try {
+        _tempfd = Glib::file_open_tmp(_filename, pattern.c_str());
+    } catch (...) {
+        /// \todo Popup dialog here
+        return;
+    }
+}
+  
+TempFilename::~TempFilename()
+{
+    close(_tempfd);
+    unlink(_filename.c_str());
+}
+
+/**
+ * Takes an absolute file path and returns a second file at the same
+ * directory location, if and only if the filename exists and is a file.
+ *
+ * Returns the empty string if the new file is not found.
+ */
+Glib::ustring find_original_file(Glib::ustring filepath, Glib::ustring name)
+{
+    auto path = Glib::path_get_dirname(filepath);
+    auto filename = Glib::build_filename(path, name);
+
+    if (Glib::file_test(filename, Glib::FILE_TEST_IS_REGULAR)) {
+        return filename;
+    }
+    return ""; 
+}
+
+}}
 
 /*
   Local Variables:

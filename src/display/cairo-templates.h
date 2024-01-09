@@ -21,14 +21,13 @@
 
 #ifdef HAVE_OPENMP
 #include <omp.h>
-#include "preferences.h"
 // single-threaded operation if the number of pixels is below this threshold
 static const int OPENMP_THRESHOLD = 2048;
 #endif
 
+#include <cmath>
 #include <algorithm>
 #include <cairo.h>
-#include <cmath>
 #include "display/nr-3dutils.h"
 #include "display/cairo-utils.h"
 
@@ -76,9 +75,7 @@ void ink_cairo_surface_blend(cairo_surface_t *in1, cairo_surface_t *in2, cairo_s
     // OpenMP probably doesn't help much here.
     // It would be better to render more than 1 tile at a time.
     #if HAVE_OPENMP
-    Inkscape::Preferences *prefs = Inkscape::Preferences::get();
-    int numOfThreads = prefs->getIntLimited("/options/threading/numthreads", omp_get_num_procs(), 1, 256);
-    if (numOfThreads){} // inform compiler we are using it.
+    int numOfThreads = get_num_filter_threads();
     #endif
 
     // The number of code paths here is evil.
@@ -204,9 +201,7 @@ void ink_cairo_surface_filter(cairo_surface_t *in, cairo_surface_t *out, Filter 
     guint32 *const out_data = reinterpret_cast<guint32*>(cairo_image_surface_get_data(out));
 
     #if HAVE_OPENMP
-    Inkscape::Preferences *prefs = Inkscape::Preferences::get();
-    int numOfThreads = prefs->getIntLimited("/options/threading/numthreads", omp_get_num_procs(), 1, 256);
-    if (numOfThreads){} // inform compiler we are using it.
+    int numOfThreads = get_num_filter_threads();
     #endif
 
     // this is provided just in case, to avoid problems with strict aliasing rules
@@ -353,9 +348,7 @@ void ink_cairo_surface_synthesize(cairo_surface_t *out, cairo_rectangle_t const 
 
     #if HAVE_OPENMP
     int limit = w * h;
-    Inkscape::Preferences *prefs = Inkscape::Preferences::get();
-    int numOfThreads = prefs->getIntLimited("/options/threading/numthreads", omp_get_num_procs(), 1, 256);
-    if (numOfThreads){} // inform compiler we are using it.
+    int numOfThreads = get_num_filter_threads();
     #endif
 
     if (bppout == 4) {
@@ -640,62 +633,6 @@ struct SurfaceSynth {
     int _w, _h, _stride;
     bool _alpha;
 };
-
-/*
-// simple pixel accessor for image surface that handles different edge wrapping modes
-class PixelAccessor {
-public:
-    typedef PixelAccessor self;
-    enum EdgeMode {
-        EDGE_PAD,
-        EDGE_WRAP,
-        EDGE_ZERO
-    };
-
-    PixelAccessor(cairo_surface_t *s, EdgeMode e)
-        : _surface(s)
-        , _px(cairo_image_surface_get_data(s))
-        , _x(0), _y(0)
-        , _w(cairo_image_surface_get_width(s))
-        , _h(cairo_image_surface_get_height(s))
-        , _stride(cairo_image_surface_get_stride(s))
-        , _edge_mode(e)
-        , _alpha(cairo_image_surface_get_format(s) == CAIRO_FORMAT_A8)
-    {}
-
-    guint32 pixelAt(int x, int y) {
-        // This is a lot of ifs for a single pixel access. However, branch prediction
-        // should help us a lot, as the result of ifs is always the same for a single image.
-        int real_x = x, real_y = y;
-        switch (_edge_mode) {
-        case EDGE_PAD:
-            real_x = CLAMP(x, 0, _w-1);
-            real_y = CLAMP(y, 0, _h-1);
-            break;
-        case EDGE_WRAP:
-            real_x %= _w;
-            real_y %= _h;
-            break;
-        case EDGE_ZERO:
-        default:
-            if (x < 0 || x >= _w || y < 0 || y >= _h)
-                return 0;
-            break;
-        }
-        if (_alpha) {
-            return *(_px + real_y*_stride + real_x) << 24;
-        } else {
-            guint32 *px = reinterpret_cast<guint32*>(_px +real_y*_stride + real_x*4);
-            return *px;
-        }
-    }
-private:
-    cairo_surface_t *_surface;
-    guint8 *_px;
-    int _x, _y, _w, _h, _stride;
-    EdgeMode _edge_mode;
-    bool _alpha;
-};*/
 
 // Some helpers for pixel manipulation
 G_GNUC_CONST inline gint32

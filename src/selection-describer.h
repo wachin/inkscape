@@ -28,8 +28,8 @@ public:
     SelectionDescriber(Inkscape::Selection *selection, std::shared_ptr<MessageStack> stack, char *when_selected, char *when_nothing);
     ~SelectionDescriber();
 
+    void updateMessage(Inkscape::Selection *selection);
 private:
-    void _updateMessageFromSelection(Inkscape::Selection *selection);
     sigc::connection *_selection_changed_connection;
 
     MessageContext _context;

@@ -10,6 +10,8 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
+#include "gradient-editor.h"
+
 #include <gtkmm/builder.h>
 #include <gtkmm/grid.h>
 #include <gtkmm/togglebutton.h>
@@ -20,21 +22,25 @@
 #include <glibmm/i18n.h>
 #include <cairo.h>
 
-#include "display/cairo-utils.h"
-#include "gradient-editor.h"
-#include "gradient-selector.h"
-#include "io/resource.h"
-#include "color-notebook.h"
-#include "ui/icon-names.h"
-#include "ui/icon-loader.h"
-#include "color-preview.h"
-#include "gradient-chemistry.h"
 #include "document-undo.h"
-#include "verbs.h"
-#include "object/sp-linear-gradient.h"
-#include "object/sp-gradient-vector.h"
-#include "svg/css-ostringstream.h"
+#include "gradient-chemistry.h"
+#include "gradient-selector.h"
 #include "preferences.h"
+
+#include "display/cairo-utils.h"
+
+#include "io/resource.h"
+
+#include "object/sp-gradient-vector.h"
+#include "object/sp-linear-gradient.h"
+
+#include "svg/css-ostringstream.h"
+
+#include "ui/icon-loader.h"
+#include "ui/icon-names.h"
+#include "ui/widget/color-notebook.h"
+#include "ui/widget/color-preview.h"
+
 
 namespace Inkscape {
 namespace UI {
@@ -193,8 +199,8 @@ GradientEditor::GradientEditor(const char* prefs) :
     auto& gradBox = get_widget<Gtk::Box>(_builder, "gradientBox");
     const int dot_size = 8;
     _gradient_image.show();
-    _gradient_image.set_margin_left(dot_size / 2);
-    _gradient_image.set_margin_right(dot_size / 2);
+    _gradient_image.set_margin_start(dot_size / 2);
+    _gradient_image.set_margin_end(dot_size / 2);
     // gradient stop selected in a gradient widget; sync list selection
     _gradient_image.signal_stop_selected().connect([=](size_t index) {
         select_stop(index);
@@ -213,7 +219,8 @@ GradientEditor::GradientEditor(const char* prefs) :
     gradBox.pack_start(_gradient_image, true, true, 0);
 
     // add color selector
-    Gtk::Widget* color_selector = Gtk::manage(new ColorNotebook(_selected_color));
+    auto color_selector = Gtk::manage(new ColorNotebook(_selected_color));
+    color_selector->set_label(_("Stop color"));
     color_selector->show();
     _colors_box.pack_start(*color_selector, true, true, 0);
 
@@ -322,7 +329,7 @@ GradientEditor::GradientEditor(const char* prefs) :
     update_stops_layout();
 }
 
-GradientEditor::~GradientEditor() {
+GradientEditor::~GradientEditor() noexcept {
 }
 
 void GradientEditor::set_stop_color(SPColor color, float opacity) {
@@ -458,7 +465,7 @@ void GradientEditor::reverse_gradient() {
 
         if (vector) {
             sp_gradient_reverse_vector(vector);
-            DocumentUndo::done(_document, SP_VERB_CONTEXT_GRADIENT, _("Reverse gradient"));
+            DocumentUndo::done(_document, _("Reverse gradient"), INKSCAPE_ICON("color-gradient"));
         }
     }
 }
@@ -473,7 +480,7 @@ void GradientEditor::set_repeat_mode(SPGradientSpread mode) {
         _gradient->setSpread(mode);
         _gradient->updateRepr();
 
-        DocumentUndo::done(_document, SP_VERB_CONTEXT_GRADIENT, _("Set gradient repeat"));
+        DocumentUndo::done(_document, _("Set gradient repeat"), INKSCAPE_ICON("color-gradient"));
 
         set_repeat_icon(mode);
     }
@@ -566,8 +573,8 @@ void GradientEditor::set_gradient(SPGradient* gradient) {
 
     size_t index = 0;
     for (auto& child : vector->children) {
-        if (SP_IS_STOP(&child)) {
-            auto stop = SP_STOP(&child);
+        if (is<SPStop>(&child)) {
+            auto stop = cast<SPStop>(&child);
             auto it = _stop_list_store->append();
             it->set_value(_stopObj, stop);
             it->set_value(_stopIdx, index);
@@ -604,8 +611,7 @@ void GradientEditor::set_stop_offset(size_t index, double offset) {
             repr->setAttributeCssDouble("offset", stop->offset);
         }
 
-        DocumentUndo::maybeDone(stop->document, "gradient:stop:offset", SP_VERB_CONTEXT_GRADIENT,
-            _("Change gradient stop offset"));
+        DocumentUndo::maybeDone(stop->document, "gradient:stop:offset", _("Change gradient stop offset"), INKSCAPE_ICON("color-gradient"));
     }
 }
 

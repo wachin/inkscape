@@ -25,10 +25,10 @@ ColorEntry::ColorEntry(SelectedColor &color)
     , _prevpos(0)
     , _lastcolor(0)
 {
-    _color_changed_connection = color.signal_changed.connect(sigc::mem_fun(this, &ColorEntry::_onColorChanged));
-    _color_dragged_connection = color.signal_dragged.connect(sigc::mem_fun(this, &ColorEntry::_onColorChanged));
-    signal_activate().connect(sigc::mem_fun(this, &ColorEntry::_onColorChanged));
-    get_buffer()->signal_inserted_text().connect(sigc::mem_fun(this, &ColorEntry::_inputCheck));
+    _color_changed_connection = color.signal_changed.connect(sigc::mem_fun(*this, &ColorEntry::_onColorChanged));
+    _color_dragged_connection = color.signal_dragged.connect(sigc::mem_fun(*this, &ColorEntry::_onColorChanged));
+    signal_activate().connect(sigc::mem_fun(*this, &ColorEntry::_onColorChanged));
+    get_buffer()->signal_inserted_text().connect(sigc::mem_fun(*this, &ColorEntry::_inputCheck));
     _onColorChanged();
 
     // add extra character for pasting a hash, '#11223344'

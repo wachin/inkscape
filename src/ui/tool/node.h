@@ -28,12 +28,6 @@ class CanvasItemGroup;
 class CanvasItemCurve;
 
 namespace UI {
-template <typename> class NodeIterator;
-}
-}
-
-namespace Inkscape {
-namespace UI {
 
 class PathManipulator;
 class MultiPathManipulator;
@@ -45,20 +39,6 @@ class SubpathList;
 template <typename> class NodeIterator;
 
 std::ostream &operator<<(std::ostream &, NodeType);
-
-/*
-template <typename T>
-struct ListMember {
-    T *next;
-    T *prev;
-};
-struct SubpathMember : public ListMember<NodeListMember> {
-    Subpath *list;
-};
-struct SubpathListMember : public ListMember<SubpathListMember> {
-    SubpathList *list;
-};
-*/
 
 struct ListNode {
     ListNode *ln_next;
@@ -115,9 +95,10 @@ private:
 
     inline PathManipulator &_pm();
     inline PathManipulator &_pm() const;
+    void _update_bspline_handles();
     Node *_parent; // the handle's lifetime does not extend beyond that of the parent node,
     // so a naked pointer is OK and allows setting it during Node's construction
-    CanvasItemCurve *_handle_line;
+    CanvasItemPtr<CanvasItemCurve> _handle_line;
     bool _degenerate; // True if the handle is retracted, i.e. has zero length. This is used often internally so it makes sense to cache this
 
     /**
@@ -148,6 +129,7 @@ public:
 
     void move(Geom::Point const &p) override;
     void transform(Geom::Affine const &m) override;
+    void fixNeighbors() override;
     Geom::Rect bounds() const override;
 
     NodeType type() const { return _type; }
@@ -233,7 +215,6 @@ protected:
 
 private:
 
-    void _fixNeighbors(Geom::Point const &old_pos, Geom::Point const &new_pos);
     void _updateAutoHandles();
 
     /**
@@ -262,6 +243,10 @@ private:
     NodeType _type; ///< Type of node - cusp, smooth...
     bool _handles_shown;
     static ColorSet node_colors;
+
+    // This is used by fixNeighbors to repair smooth nodes after all move
+    // operations have been completed. If this is empty, no fixing is needed.
+    std::optional<Geom::Point> _unfixed_pos;
 
     friend class Handle;
     friend class NodeList;

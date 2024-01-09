@@ -30,10 +30,10 @@ class ColorICCSelector
   public:
     static const gchar *MODE_NAME;
 
-    ColorICCSelector(SelectedColor &color);
+    ColorICCSelector(SelectedColor &color, bool no_alpha);
     ~ColorICCSelector() override;
 
-    virtual void init();
+    void init(bool no_alpha);
 
   protected:
     void on_show() override;
@@ -55,7 +55,7 @@ class ColorICCSelector
 
 class ColorICCSelectorFactory : public ColorSelectorFactory {
   public:
-    Gtk::Widget *createWidget(SelectedColor &color) const override;
+    Gtk::Widget *createWidget(SelectedColor &color, bool no_alpha) const override;
     Glib::ustring modeName() const override;
 };
 }

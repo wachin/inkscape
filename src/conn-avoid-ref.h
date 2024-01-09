@@ -55,7 +55,7 @@ private:
     sigc::connection _transformed_connection;
 };
 
-extern std::vector<SPItem *> get_avoided_items(std::vector<SPItem *> &list, SPObject *from,
+extern std::vector<SPItem *> get_avoided_items(SPObject *from,
         SPDesktop *desktop, bool initialised = true);
 extern void avoid_item_move(Geom::Affine const *mp, SPItem *moved_item);
 extern void init_avoided_shape_geometry(SPDesktop *desktop);

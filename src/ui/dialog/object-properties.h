@@ -67,8 +67,6 @@ public:
     ObjectProperties();
     ~ObjectProperties() override {};
 
-    static ObjectProperties &getInstance() { return *new ObjectProperties(); }
-
     /// Updates entries and other child widgets on selection change, object modification, etc.
     void update_entries();
     void selectionChanged(Selection *selection) override;
@@ -124,6 +122,8 @@ private:
 
     /// Callback for checkbox Preserve Aspect Ratio.
     void _aspectRatioToggled();
+
+    void desktopReplaced() override;
 };
 }
 }

@@ -21,15 +21,15 @@
 namespace Inkscape {
 namespace Filters {
 
-class FilterComposite : public FilterPrimitive {
+class FilterComposite : public FilterPrimitive
+{
 public:
     FilterComposite();
-    static FilterPrimitive *create();
     ~FilterComposite() override;
 
-    void render_cairo(FilterSlot &) override;
-    bool can_handle_affine(Geom::Affine const &) override;
-    double complexity(Geom::Affine const &ctm) override;
+    void render_cairo(FilterSlot &) const override;
+    bool can_handle_affine(Geom::Affine const &) const override;
+    double complexity(Geom::Affine const &ctm) const override;
 
     void set_input(int input) override;
     void set_input(int input, int slot) override;
@@ -37,7 +37,7 @@ public:
     void set_operator(FeCompositeOperator op);
     void set_arithmetic(double k1, double k2, double k3, double k4);
 
-    Glib::ustring name() override { return Glib::ustring("Composite"); }
+    Glib::ustring name() const override { return Glib::ustring("Composite"); }
 
 private:
     FeCompositeOperator op;
@@ -45,10 +45,10 @@ private:
     int _input2;
 };
 
-} /* namespace Filters */
-} /* namespace Inkscape */
+} // namespace Filters
+} // namespace Inkscape
 
-#endif /* __NR_FILTER_COMPOSITE_H__ */
+#endif // SEEN_NR_FILTER_COMPOSITE_H
 /*
   Local Variables:
   mode:c++

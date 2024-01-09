@@ -18,6 +18,7 @@
 #include <gtkmm/checkbutton.h>
 #include <gtkmm/combobox.h>
 #include <gtkmm/separator.h>
+#include <gtkmm/expander.h>
 
 #include "combo-enums.h"
 #include "spin-scale.h"
@@ -41,10 +42,10 @@ public:
 
   SimpleFilterModifier(int flags);
 
-  sigc::signal<void> &signal_blend_changed();
-  sigc::signal<void> &signal_blur_changed();
-  sigc::signal<void> &signal_opacity_changed();
-  sigc::signal<void> &signal_isolation_changed();
+  sigc::signal<void ()> &signal_blend_changed();
+  sigc::signal<void ()> &signal_blur_changed();
+  sigc::signal<void ()> &signal_opacity_changed();
+  sigc::signal<void ()> &signal_isolation_changed();
 
   SPIsolation get_isolation_mode();
   void set_isolation_mode(const SPIsolation, bool notify);
@@ -62,6 +63,7 @@ private:
     int _flags;
     bool _notify;
 
+    Gtk::Expander _extras;
     Gtk::Box _hb_blend;
     Gtk::Label _lb_blend;
     Gtk::Label _lb_isolation;
@@ -70,11 +72,11 @@ private:
     SpinScale _opacity;
     Gtk::CheckButton _isolation;
 
-    sigc::signal<void> _signal_null;
-    sigc::signal<void> _signal_blend_changed;
-    sigc::signal<void> _signal_blur_changed;
-    sigc::signal<void> _signal_opacity_changed;
-    sigc::signal<void> _signal_isolation_changed;
+    sigc::signal<void ()> _signal_null;
+    sigc::signal<void ()> _signal_blend_changed;
+    sigc::signal<void ()> _signal_blur_changed;
+    sigc::signal<void ()> _signal_opacity_changed;
+    sigc::signal<void ()> _signal_isolation_changed;
 };
 
 }

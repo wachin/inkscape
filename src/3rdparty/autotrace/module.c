@@ -28,24 +28,6 @@
 
 #include "input.h"
 
-#ifdef HAVE_LIBPNG
-#endif /* HAVE_LIBPNG */
-#if HAVE_MAGICK
-#else
-int install_input_magick_readers(void)
-{
-  return 0;
-}
-#endif /* HAVE_MAGICK */
-
-#if HAVE_LIBPSTOEDIT
-#else
-int install_output_pstoedit_writers(void)
-{
-  return 0;
-}
-#endif /* HAVE_LIBPSTOEDIT */
-
 static int install_input_readers(void);
 static int install_output_writers(void);
 
@@ -62,8 +44,6 @@ int at_module_init(void)
 static int install_input_readers(void)
 {
   return 0;
-#ifdef HAVE_LIBPNG
-#endif
 }
 
 static int install_output_writers(void)

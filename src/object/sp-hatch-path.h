@@ -16,8 +16,9 @@
 #ifndef SEEN_SP_HATCH_PATH_H
 #define SEEN_SP_HATCH_PATH_H
 
-#include <list>
+#include <vector>
 #include <cstddef>
+#include <optional>
 #include <glibmm/ustring.h>
 #include <sigc++/connection.h>
 #include <2geom/generic-interval.h>
@@ -25,10 +26,8 @@
 
 #include "svg/svg-length.h"
 #include "object/sp-object.h"
-
-class SPCurve;
-
-#include <memory>
+#include "display/curve.h"
+#include "display/drawing-item-ptr.h"
 
 namespace Inkscape {
 
@@ -36,12 +35,14 @@ class Drawing;
 class DrawingShape;
 class DrawingItem;
 
-}
+} // namespace Inkscape
 
-class SPHatchPath : public SPObject {
+class SPHatchPath final : public SPObject
+{
 public:
     SPHatchPath();
     ~SPHatchPath() override;
+    int tag() const override { return tag_of<decltype(*this)>; }
 
     SVGLength offset;
 
@@ -53,7 +54,7 @@ public:
     void setStripExtents(unsigned int key, Geom::OptInterval const &extents);
     Geom::Interval bounds() const;
 
-    std::unique_ptr<SPCurve> calculateRenderCurve(unsigned key) const;
+    SPCurve calculateRenderCurve(unsigned key) const;
 
 protected:
     void build(SPDocument* doc, Inkscape::XML::Node* repr) override;
@@ -62,30 +63,23 @@ protected:
     void update(SPCtx* ctx, unsigned int flags) override;
 
 private:
-    class View {
-    public:
-        View(Inkscape::DrawingShape *arenaitem, int key);
-        //Do not delete arenaitem in destructor.
-
-        ~View();
-
-        Inkscape::DrawingShape *arenaitem;
+    struct View
+    {
+        DrawingItemPtr<Inkscape::DrawingShape> drawingitem;
         Geom::OptInterval extents;
-        unsigned int key;
+        unsigned key;
+        View(DrawingItemPtr<Inkscape::DrawingShape> drawingitem, Geom::OptInterval const &extents, unsigned key);
     };
-
-    typedef std::list<SPHatchPath::View>::iterator ViewIterator;
-    typedef std::list<SPHatchPath::View>::const_iterator ConstViewIterator;
-    std::list<View> _display;
+    std::vector<View> views;
 
     gdouble _repeatLength() const;
     void _updateView(View &view);
-    std::unique_ptr<SPCurve> _calculateRenderCurve(View const &view) const;
+    SPCurve _calculateRenderCurve(View const &view) const;
 
     void _readHatchPathVector(char const *str, Geom::PathVector &pathv, bool &continous_join);
 
-    std::unique_ptr<SPCurve> _curve;
-    bool _continuous;
+    std::optional<SPCurve> _curve;
+    bool _continuous = false;
 };
 
 #endif // SEEN_SP_HATCH_PATH_H

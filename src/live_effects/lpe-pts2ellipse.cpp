@@ -95,8 +95,7 @@ LPEPts2Ellipse::LPEPts2Ellipse(LivePathEffectObject *lpeobject)
     gsl_p = gsl_permutation_alloc(8);
 }
 
-LPEPts2Ellipse::~LPEPts2Ellipse()
-{
+LPEPts2Ellipse::~LPEPts2Ellipse() {
     gsl_permutation_free(gsl_p);
     gsl_vector_free(gsl_x);
 }

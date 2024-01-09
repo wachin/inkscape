@@ -18,15 +18,15 @@
 #include "sp-polygon.h"
 #include "axis-manip.h"
 
-
 class SPBox3D;
 class Persp3D;
 
 // FIXME: Would it be better to inherit from SPPath instead?
-class Box3DSide : public SPPolygon {
+class Box3DSide final : public SPPolygon {
 public:
 	Box3DSide();
 	~Box3DSide() override;
+    int tag() const override { return tag_of<decltype(*this)>; }
 
     Box3D::Axis dir1;
     Box3D::Axis dir2;

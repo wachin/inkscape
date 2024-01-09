@@ -35,8 +35,7 @@ LPECircleWithRadius::LPECircleWithRadius(LivePathEffectObject *lpeobject) :
     //registerParameter( dynamic_cast<Parameter *>(&radius) );
 }
 
-LPECircleWithRadius::~LPECircleWithRadius()
-= default;
+LPECircleWithRadius::~LPECircleWithRadius() = default;
 
 Geom::PathVector
 LPECircleWithRadius::doEffect_path (Geom::PathVector const & path_in)

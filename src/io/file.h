@@ -26,9 +26,27 @@ class RefPtr;
 
 class SPDocument;
 
-SPDocument* ink_file_new(const std::string &Template = nullptr);
+SPDocument* ink_file_new(const std::string &Template = "");
 SPDocument* ink_file_open(const Glib::ustring &data);
 SPDocument* ink_file_open(const Glib::RefPtr<Gio::File>& file, bool *cancelled = nullptr);
+
+namespace Inkscape {
+namespace IO {
+
+class TempFilename {
+    public:
+        TempFilename(const std::string &pattern);
+        ~TempFilename();
+
+        std::string get_filename() const { return _filename; }
+    private:
+        std::string _filename;
+        int _tempfd;
+};
+
+Glib::ustring find_original_file(Glib::ustring filepath, Glib::ustring name);
+
+}}
 
 // To do:
 // ink_file_save()

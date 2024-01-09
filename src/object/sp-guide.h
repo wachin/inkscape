@@ -17,6 +17,7 @@
 #include <2geom/point.h>
 #include <vector>
 
+#include "display/control/canvas-item-ptr.h"
 #include "sp-object.h"
 
 typedef unsigned int guint32;
@@ -38,10 +39,11 @@ namespace UI::Widget {
 
 
 /* Represents the constraint on p that dot(g.direction, p) == g.position. */
-class SPGuide : public SPObject {
+class SPGuide final : public SPObject {
 public:
     SPGuide();
     ~SPGuide() override = default;
+    int tag() const override { return tag_of<decltype(*this)>; }
 
     void set_color(const unsigned r, const unsigned g, const unsigned b, bool const commit);
     void setColor(guint32 c);
@@ -68,6 +70,7 @@ public:
     void hideSPGuide(Inkscape::UI::Widget::Canvas *canvas);
     void showSPGuide(); // argument-free versions
     void hideSPGuide();
+    bool remove(bool force=false);
 
     void sensitize(Inkscape::UI::Widget::Canvas *canvas, bool sensitive);
 
@@ -84,7 +87,7 @@ protected:
     void set(SPAttr key, const char* value) override;
 
     char* label;
-    std::vector<Inkscape::CanvasItemGuideLine *> views; // See display/control/guideline.h.
+    std::vector<CanvasItemPtr<Inkscape::CanvasItemGuideLine>> views; // See display/control/guideline.h.
     bool locked;
     Geom::Point normal_to_line;
     Geom::Point point_on_line;
@@ -95,13 +98,8 @@ protected:
 
 // These functions rightfully belong to SPDesktop. What gives?!
 void sp_guide_pt_pairs_to_guides(SPDocument *doc, std::list<std::pair<Geom::Point, Geom::Point> > &pts);
-void sp_guide_create_guides_around_page(SPDesktop *dt);
-void sp_guide_delete_all_guides(SPDesktop *dt);
-
-void sp_guide_remove(SPGuide *guide);
-
-MAKE_SP_OBJECT_DOWNCAST_FUNCTIONS(SP_GUIDE, SPGuide)
-MAKE_SP_OBJECT_TYPECHECK_FUNCTIONS(SP_IS_GUIDE, SPGuide)
+void sp_guide_create_guides_around_page(SPDocument *doc);
+void sp_guide_delete_all_guides(SPDocument *doc);
 
 #endif // SEEN_SP_GUIDE_H
 

@@ -15,11 +15,10 @@
  */
 /* ^^^ Change the copyright to be you and your e-mail address ^^^ */
 
-#include "filter.h"
-
+#include "extension/extension.h"
 #include "extension/internal/clear-n_.h"
 #include "extension/system.h"
-#include "extension/extension.h"
+#include "filter.h"
 
 namespace Inkscape {
 namespace Extension {
@@ -28,7 +27,7 @@ namespace Filter {
 
 /**
     \brief    Custom predefined Drop shadow filter.
-    
+
     Colorizable Drop shadow.
 
     Filter's parameters:
@@ -44,15 +43,23 @@ namespace Filter {
     * Color (guint, default 0,0,0,127) -> flood (flood-opacity, flood-color)
     * Use object's color (boolean, default false) -> composite1 (in1, in2)
 */
-class ColorizableDropShadow : public Inkscape::Extension::Internal::Filter::Filter {
+class ColorizableDropShadow : public Inkscape::Extension::Internal::Filter::Filter
+{
 protected:
-    gchar const * get_filter_text (Inkscape::Extension::Extension * ext) override;
+    gchar const *get_filter_text(Inkscape::Extension::Extension *ext) override;
 
 public:
-    ColorizableDropShadow ( ) : Filter() { };
-    ~ColorizableDropShadow ( ) override { if (_filter != nullptr) g_free((void *)_filter); return; }
+    ColorizableDropShadow()
+        : Filter(){};
+    ~ColorizableDropShadow() override
+    {
+        if (_filter != nullptr)
+            g_free((void *)_filter);
+        return;
+    }
 
-    static void init () {
+    static void init()
+    {
         // clang-format off
         Inkscape::Extension::build_from_mem(
             "<inkscape-extension xmlns=\"" INKSCAPE_EXTENSION_URI "\">\n"
@@ -88,98 +95,94 @@ public:
             "</inkscape-extension>\n", new ColorizableDropShadow());
         // clang-format on
     };
-
 };
 
-gchar const *
-ColorizableDropShadow::get_filter_text (Inkscape::Extension::Extension * ext)
+gchar const *ColorizableDropShadow::get_filter_text(Inkscape::Extension::Extension *ext)
 {
-    if (_filter != nullptr) g_free((void *)_filter);
+    if (_filter != nullptr)
+        g_free((void *)_filter);
 
-    std::ostringstream blur;
-    std::ostringstream a;
-    std::ostringstream r;
-    std::ostringstream g;
-    std::ostringstream b;
-    std::ostringstream x;
-    std::ostringstream y;
-    std::ostringstream comp1in1;
-    std::ostringstream comp1in2;
-    std::ostringstream comp1op;
-    std::ostringstream comp2in1;
-    std::ostringstream comp2in2;
-    std::ostringstream comp2op;
-    
-    const gchar *type = ext->get_param_optiongroup("type");
+    // Style parameters
+
+    float blur_std = ext->get_param_float("blur");
+
     guint32 color = ext->get_param_color("color");
+    float flood_a = (color & 0xff) / 255.0F;
+    int flood_r = ((color >> 24) & 0xff);
+    int flood_g = ((color >> 16) & 0xff);
+    int flood_b = ((color >> 8) & 0xff);
 
-    blur << ext->get_param_float("blur");
-    x << ext->get_param_float("xoffset");
-    y << ext->get_param_float("yoffset");
-    a << (color & 0xff) / 255.0F;
-    r << ((color >> 24) & 0xff);
-    g << ((color >> 16) & 0xff);
-    b << ((color >>  8) & 0xff);
+    float offset_x = ext->get_param_float("xoffset");
+    float offset_y = ext->get_param_float("yoffset");
 
-    // Select object or user-defined color
-    if ((g_ascii_strcasecmp("innercut", type) == 0)) {
-        if (ext->get_param_bool("objcolor")) {
-            comp2in1 << "SourceGraphic";
-            comp2in2 << "offset";
-        } else {
-            comp2in1 << "offset";
-            comp2in2 << "SourceGraphic";
+    // Handle mode parameter
+
+    const char *comp1op;
+    const char *comp1in1;
+    const char *comp1in2;
+    const char *comp2in1;
+    const char *comp2in2;
+    const char *comp2op;
+
+    bool objcolor = ext->get_param_bool("objcolor");
+    const gchar *mode = ext->get_param_optiongroup("type");
+
+    comp1in1 = "flood";
+    comp1in2 = "offset";
+    if (g_ascii_strcasecmp("outer", mode) == 0) {
+        comp1op = "in";
+        comp2op = "over";
+        comp2in1 = "SourceGraphic";
+        comp2in2 = "comp1";
+    } else if (g_ascii_strcasecmp("inner", mode) == 0) {
+        comp1op = "out";
+        comp2op = "atop";
+        comp2in1 = "comp1";
+        comp2in2 = "SourceGraphic";
+    } else if (g_ascii_strcasecmp("outercut", mode) == 0) {
+        comp1op = "in";
+        comp2op = "out";
+        comp2in1 = "comp1";
+        comp2in2 = "SourceGraphic";
+    } else if (g_ascii_strcasecmp("innercut", mode) == 0) {
+        comp1op = "out";
+        comp2op = "in";
+        comp2in1 = "comp1";
+        comp2in2 = "SourceGraphic";
+        if (objcolor) {
+            std::swap(comp2in1, comp2in2);
+            objcolor = false; // don't swap comp1 inputs later
         }
-    } else {
-        if (ext->get_param_bool("objcolor")) {
-            comp1in1 << "SourceGraphic";
-            comp1in2 << "flood";
-        } else {
-            comp1in1 << "flood";
-            comp1in2 << "SourceGraphic";
-        }
+    } else { // shadow only
+        comp1op = "in";
+        comp2op = "atop";
+        comp2in1 = "comp1";
+        comp2in2 = "comp1";
     }
 
-    // Shadow mode
-    if ((g_ascii_strcasecmp("outer", type) == 0)) {
-        comp1op << "in";
-        comp2op << "over";
-        comp2in1 << "SourceGraphic";
-        comp2in2 << "offset";
-    } else if ((g_ascii_strcasecmp("inner", type) == 0)) {
-        comp1op << "out";
-        comp2op << "atop";
-        comp2in1 << "offset";
-        comp2in2 << "SourceGraphic";
-    } else if ((g_ascii_strcasecmp("outercut", type) == 0)) {
-        comp1op << "in";
-        comp2op << "out";
-        comp2in1 << "offset";
-        comp2in2 << "SourceGraphic";
-    } else if ((g_ascii_strcasecmp("innercut", type) == 0)){
-        comp1op << "out";
-        comp1in1 << "flood";
-        comp1in2 << "SourceGraphic";
-        comp2op << "in";
-    } else { //shadow
-        comp1op << "in";
-        comp2op << "atop";
-        comp2in1 << "offset";
-        comp2in2 << "offset";
+    if (objcolor) {
+        std::swap(comp1in1, comp1in2);
     }
 
     // clang-format off
+    auto old = std::locale::global(std::locale::classic());
     _filter = g_strdup_printf(
         "<filter xmlns:inkscape=\"http://www.inkscape.org/namespaces/inkscape\" style=\"color-interpolation-filters:sRGB;\" inkscape:label=\"Drop Shadow\">\n"
-          "<feFlood flood-opacity=\"%s\" flood-color=\"rgb(%s,%s,%s)\" result=\"flood\" />\n"
-          "<feComposite in=\"%s\" in2=\"%s\" operator=\"%s\" result=\"composite1\" />\n"
-          "<feGaussianBlur in=\"composite1\" stdDeviation=\"%s\" result=\"blur\" />\n"
-          "<feOffset dx=\"%s\" dy=\"%s\" result=\"offset\" />\n"
-          "<feComposite in=\"%s\" in2=\"%s\" operator=\"%s\" result=\"composite2\" />\n"
-        "</filter>\n", a.str().c_str(), r.str().c_str(), g.str().c_str(), b.str().c_str(),
-                       comp1in1.str().c_str(), comp1in2.str().c_str(), comp1op.str().c_str(),
-                       blur.str().c_str(), x.str().c_str(), y.str().c_str(),
-                       comp2in1.str().c_str(), comp2in2.str().c_str(), comp2op.str().c_str());
+            "<feFlood result=\"flood\" in=\"SourceGraphic\" flood-opacity=\"%f\" flood-color=\"rgb(%d,%d,%d)\"/>\n"
+            "<feGaussianBlur result=\"blur\" in=\"SourceGraphic\" stdDeviation=\"%f\"/>\n"
+            "<feOffset result=\"offset\" in=\"blur\" dx=\"%f\" dy=\"%f\"/>\n"
+            "<feComposite result=\"comp1\" operator=\"%s\" in=\"%s\" in2=\"%s\"/>\n"
+            "<feComposite result=\"comp2\" operator=\"%s\" in=\"%s\" in2=\"%s\"/>\n"
+        "</filter>\n",
+
+        flood_a, flood_r, flood_g, flood_b,
+        blur_std,
+        offset_x, offset_y,
+
+        comp1op, comp1in1, comp1in2,
+        comp2op, comp2in1, comp2in2
+    );
+    std::locale::global(old);
     // clang-format on
 
     return _filter;

@@ -11,7 +11,7 @@
  */
 
 #include "live_effects/effect.h"
-#include "live_effects/parameter/originalpath.h"
+#include "live_effects/parameter/originalsatellite.h"
 
 namespace Inkscape {
 namespace LivePathEffect {
@@ -20,11 +20,13 @@ class LPEBoundingBox : public Effect {
 public:
     LPEBoundingBox(LivePathEffectObject *lpeobject);
     ~LPEBoundingBox() override;
-
+    void doBeforeEffect (SPLPEItem const* lpeitem) override;
+    bool doOnOpen(SPLPEItem const *lpeitem) override;
     void doEffect (SPCurve * curve) override;
+    void doOnApply(SPLPEItem const *lpeitem) override;
 
 private:
-    OriginalPathParam  linked_path;
+    OriginalSatelliteParam  linked_path;
     BoolParam visual_bounds;
 
 private:

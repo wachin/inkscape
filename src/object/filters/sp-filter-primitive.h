@@ -15,57 +15,73 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
+#include <optional>
+#include <memory>
+#include <string>
 #include "2geom/rect.h"
-#include "../sp-object.h"
-#include "../sp-dimensions.h"
-
-#define SP_FILTER_PRIMITIVE(obj) (dynamic_cast<SPFilterPrimitive*>((SPObject*)obj))
-#define SP_IS_FILTER_PRIMITIVE(obj) (dynamic_cast<const SPFilterPrimitive*>((SPObject*)obj) != NULL)
+#include "object/sp-object.h"
+#include "object/sp-dimensions.h"
+#include "display/nr-filter-types.h"
 
 namespace Inkscape {
+class Drawing;
+class DrawingItem;
 namespace Filters {
 class Filter;
 class FilterPrimitive;
-} }
+} // namespace Filters
+} // namespace Inkscape
 
-class SPFilterPrimitive : public SPObject, public SPDimensions {
+class SlotResolver;
+
+class SPFilterPrimitive
+    : public SPObject
+    , public SPDimensions
+{
 public:
 	SPFilterPrimitive();
 	~SPFilterPrimitive() override;
+    int tag() const override { return tag_of<decltype(*this)>; }
 
-    int image_in, image_out;
+    int get_in() const { return in_slot; }
+    int get_out() const { return out_slot; }
+
+    virtual void show(Inkscape::DrawingItem *item) {}
+    virtual void hide(Inkscape::DrawingItem *item) {}
+
+    virtual std::unique_ptr<Inkscape::Filters::FilterPrimitive> build_renderer(Inkscape::DrawingItem *item) const = 0;
+
+    /* Calculate the filter's effect on the region */
+    virtual Geom::Rect calculate_region(Geom::Rect const &region) const;
+
+    /* Return true if the object should be allowed to use this filter */
+    virtual bool valid_for(SPObject const *obj) const
+    {
+        // This is used by feImage to stop infinite loops.
+        return true;
+    };
+
+    void invalidate_parent_slots();
+    virtual void resolve_slots(SlotResolver &);
 
 protected:
-	void build(SPDocument* doc, Inkscape::XML::Node* repr) override;
-	void release() override;
+    void build(SPDocument *doc, Inkscape::XML::Node *repr) override;
+    void release() override;
+    void set(SPAttr key, char const *value) override;
+    void update(SPCtx *ctx, unsigned flags) override;
+    Inkscape::XML::Node *write(Inkscape::XML::Document *doc, Inkscape::XML::Node *repr, unsigned flags) override;
 
-	void set(SPAttr key, char const* value) override;
+    // Common initialization for filter primitives.
+    void build_renderer_common(Inkscape::Filters::FilterPrimitive *primitive) const;
 
-	void update(SPCtx* ctx, unsigned int flags) override;
-
-	Inkscape::XML::Node* write(Inkscape::XML::Document* doc, Inkscape::XML::Node* repr, unsigned int flags) override;
-
-public:
-	virtual void build_renderer(Inkscape::Filters::Filter* filter) = 0;
-
-        /* Calculate the filter's effect on the region */
-        virtual Geom::Rect calculate_region(Geom::Rect region);
-
-        /* Return true if the object should be allowed to use this filter */
-        virtual bool valid_for(SPObject const *obj) const {
-            // This is used by feImage to stop infinate loops.
-            return true;
-        };
-
-	/* Common initialization for filter primitives */
-	void renderer_common(Inkscape::Filters::FilterPrimitive *nr_prim);
-
-	int name_previous_out();
-	int read_in(char const *name);
-	int read_result(char const *name);
+private:
+    std::optional<std::string> in_name, out_name;
+    int in_slot = Inkscape::Filters::NR_FILTER_SLOT_NOT_SET;
+    int out_slot = Inkscape::Filters::NR_FILTER_SLOT_NOT_SET;
 };
 
-#endif
+#endif // SEEN_SP_FILTER_PRIMITIVE_H
+
 /*
   Local Variables:
   mode:c++

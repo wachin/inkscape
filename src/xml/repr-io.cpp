@@ -73,9 +73,6 @@ public:
           encoding(nullptr),
           fp(nullptr),
           firstFewLen(0),
-          LoadEntities(false),
-          cachedData(),
-          cachedPos(0),
           instr(nullptr),
           gzin(nullptr)
     {
@@ -93,7 +90,7 @@ public:
         }
     }
 
-    int setFile( char const * filename, bool load_entities );
+    int setFile( char const * filename );
 
     xmlDocPtr readXml();
 
@@ -109,14 +106,11 @@ private:
     FILE* fp;
     unsigned char firstFew[4];
     int firstFewLen;
-    bool LoadEntities; // Checks for SYSTEM Entities (requires cached data)
-    std::string cachedData;
-    unsigned int cachedPos;
     Inkscape::IO::FileInputStream* instr;
     Inkscape::IO::GzipInputStream* gzin;
 };
 
-int XmlSource::setFile(char const *filename, bool load_entities=false)
+int XmlSource::setFile(char const *filename)
 {
     int retVal = -1;
 
@@ -173,40 +167,6 @@ int XmlSource::setFile(char const *filename, bool load_entities=false)
             retVal = 0; // no error
         }
     }
-    if(load_entities) {
-        this->cachedData = std::string("");
-        this->cachedPos = 0;
-
-        // First get data from file in typical way (cache it all)
-        char *buffer = new char [4096];
-        while(true) {
-            int len = this->read(buffer, 4096);
-            if(len <= 0) break;
-            buffer[len] = 0;
-            this->cachedData += buffer;
-        }
-        delete[] buffer;
-
-        // Check for SYSTEM or PUBLIC entities and remove them from the cache
-        GMatchInfo *info;
-        gint start, end;
-
-        GRegex *regex = g_regex_new(
-            "<!ENTITY\\s+[^>\\s]+\\s+(SYSTEM|PUBLIC\\s+\"[^>\"]+\")\\s+\"[^>\"]+\"\\s*>",
-            G_REGEX_CASELESS, G_REGEX_MATCH_NEWLINE_ANY, nullptr);
-
-        g_regex_match (regex, this->cachedData.c_str(), G_REGEX_MATCH_NEWLINE_ANY, &info);
-
-        while (g_match_info_matches (info)) {
-            if (g_match_info_fetch_pos (info, 1, &start, &end))
-                this->cachedData.erase(start, end - start);
-            g_match_info_next (info, nullptr);
-        }
-        g_match_info_free(info);
-        g_regex_unref(regex);
-    }
-    // Do this after loading cache, so reads don't return cache to fill cache.
-    this->LoadEntities = load_entities;
     return retVal;
 }
 
@@ -218,17 +178,7 @@ xmlDocPtr XmlSource::readXml()
     bool allowNetAccess = prefs->getBool("/options/externalresources/xml/allow_net_access", false);
     if (!allowNetAccess) parse_options |= XML_PARSE_NONET;
 
-    // Allow NOENT only if we're filtering out SYSTEM and PUBLIC entities
-    if (LoadEntities)     parse_options |= XML_PARSE_NOENT;
-
-    auto doc = xmlReadIO( readCb, closeCb, this,
-                      filename, getEncoding(), parse_options);
-
-    if (doc && doc->properties && xmlXIncludeProcessFlags(doc, XML_PARSE_NOXINCNODE) < 0) {
-        g_warning("XInclude processing failed for %s", filename);
-    }
-
-    return doc;
+    return xmlReadIO(readCb, closeCb, this, filename, getEncoding(), parse_options);
 }
 
 int XmlSource::readCb( void * context, char * buffer, int len )
@@ -256,15 +206,7 @@ int XmlSource::read( char *buffer, int len )
     int retVal = 0;
     size_t got = 0;
 
-    if ( LoadEntities ) {
-        if (cachedPos >= cachedData.length()) {
-            return -1;
-        } else {
-            retVal = cachedData.copy(buffer, len, cachedPos);
-            cachedPos += retVal;
-            return retVal; // Do NOT continue.
-        }
-    } else if ( firstFewLen > 0 ) {
+    if ( firstFewLen > 0 ) {
         int some = (len < firstFewLen) ? len : firstFewLen;
         memcpy( buffer, firstFew, some );
         if ( len < firstFewLen ) {
@@ -321,8 +263,15 @@ int XmlSource::close()
 /**
  * Reads XML from a file, and returns the Document.
  * The default namespace can also be specified, if desired.
+ * XIncude is dangerous to support during use-cases like automated file format conversion, so it is off by default.
+ *
+ * \param filename The actual file to read from.
+ *
+ * \param default_ns Default namespace for the document, can be nullptr.
+ *
+ * \param xinclude Process XInclude directives, which is off by default for security.
  */
-Document *sp_repr_read_file (const gchar * filename, const gchar *default_ns)
+Document *sp_repr_read_file (const gchar * filename, const gchar *default_ns, bool xinclude)
 {
     xmlDocPtr doc = nullptr;
     Document * rdoc = nullptr;
@@ -352,15 +301,10 @@ Document *sp_repr_read_file (const gchar * filename, const gchar *default_ns)
 
     if (src.setFile(filename) == 0) {
         doc = src.readXml();
-        rdoc = sp_repr_do_read(doc, default_ns);
-        // For some reason, failed ns loading results in this
-        // We try a system check version of load with NOENT for adobe
-        if (rdoc && strcmp(rdoc->root()->name(), "ns:svg") == 0) {
-            xmlFreeDoc(doc);
-            src.setFile(filename, true);
-            doc = src.readXml();
-            rdoc = sp_repr_do_read(doc, default_ns);
+        if (xinclude && doc && doc->properties && xmlXIncludeProcessFlags(doc, XML_PARSE_NOXINCNODE) < 0) {
+            g_warning("XInclude processing failed for %s", filename);
         }
+        rdoc = sp_repr_do_read(doc, default_ns);
     }
 
     if (doc) {
@@ -459,6 +403,31 @@ void promote_to_namespace(Node *repr, const gchar *prefix) {
     }
 }
 
+/**
+ * When an xml document can be parsed, but it's name spaces are not recognised
+ * we can repair the document and force the use of the svg namespace.
+ *
+ * This can help us make use of some older svg files which use xml ENTITIES
+ * which is a feature that should never be allowed to be used for security.
+ */
+void repair_namespace(Node *repr, const gchar *prefix) {
+    if ( repr->type() == Inkscape::XML::NodeType::ELEMENT_NODE ) {
+        gchar *svg_name = nullptr;
+        if (strncmp(repr->name(), "ns:", 3) == 0) {
+            svg_name = g_strconcat(prefix, ":", repr->name() + 3, nullptr);
+        } else if (strncmp(repr->name(), "svg0:", 5) == 0) {
+            svg_name = g_strconcat(prefix, ":", repr->name() + 5, nullptr);
+        }
+        if (svg_name) {
+            repr->setCodeUnsafe(g_quark_from_string(svg_name));
+            g_free(svg_name);
+        }
+        for ( Node *child = repr->firstChild() ; child ; child = child->next() ) {
+            repair_namespace(child, prefix);
+        }
+    }
+}
+
 }
 
 /**
@@ -501,7 +470,10 @@ Document *sp_repr_do_read (xmlDocPtr doc, const gchar *default_ns)
     if (root != nullptr) {
         /* promote elements of some XML documents that don't use namespaces
          * into their default namespace */
-        if ( default_ns && !strchr(root->name(), ':') ) {
+        if (!strcmp(root->name(), "ns:svg") || !strcmp(root->name(), "svg0:svg")) {
+            g_warning("Detected broken namespace \"%s\" in the SVG file, attempting to work around it", root->name());
+            repair_namespace(root, "svg");
+        } else if ( default_ns && !strchr(root->name(), ':') ) {
             if ( !strcmp(default_ns, SP_SVG_NS_URI) ) {
                 promote_to_namespace(root, "svg");
             }
@@ -756,7 +728,7 @@ bool sp_repr_save_file(Document *doc, gchar const *const filename, gchar const *
 
 
 /* (No doubt this function already exists elsewhere.) */
-static void repr_quote_write (Writer &out, const gchar * val)
+static void repr_quote_write (Writer &out, const gchar * val, bool attr)
 {
     if (val) {
         for (; *val != '\0'; val++) {
@@ -765,6 +737,7 @@ static void repr_quote_write (Writer &out, const gchar * val)
                 case '&': out.writeString( "&amp;" ); break;
                 case '<': out.writeString( "&lt;" ); break;
                 case '>': out.writeString( "&gt;" ); break;
+                case '\n': out.writeString( attr ? "&#10;" : "\n" ); break;
                 default: out.writeChar( *val ); break;
             }
         }
@@ -928,7 +901,7 @@ void sp_repr_write_stream( Node *repr, Writer &out, gint indent_level,
                 // Preserve CDATA sections, not converting '&' to &amp;, etc.
                 out.printf( "<![CDATA[%s]]>", repr->content() );
             } else {
-                repr_quote_write( out, repr->content() );
+                repr_quote_write( out, repr->content(), false );
             }
             break;
         }
@@ -1022,7 +995,7 @@ void sp_repr_write_stream_element( Node * repr, Writer & out,
             }
         }
         out.printf(" %s=\"", g_quark_to_string(iter.key));
-        repr_quote_write(out, iter.value);
+        repr_quote_write(out, iter.value, true);
         out.writeChar('"');
     }
 

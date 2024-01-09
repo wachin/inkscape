@@ -33,16 +33,15 @@ public:
 
     /** Returns \c _value. */
     int get() const { return _value; }
-
     int set(int in);
 
     int max () { return _max; }
-
     int min () { return _min; }
 
-    Gtk::Widget *get_widget(sigc::signal<void> *changeSignal) override;
+    Gtk::Widget *get_widget(sigc::signal<void ()> *changeSignal) override;
 
     std::string value_to_string() const override;
+    void string_to_value(const std::string &in) override;
 
 private:
     /** Internal value. */

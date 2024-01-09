@@ -26,42 +26,31 @@
 
 #include "svg-preview.h"
 
-#include "document.h"
 #include "ui/view/svg-view-widget.h"
 
 namespace Inkscape {
 namespace UI {
 namespace Dialog {
 
-/*#########################################################################
-### SVG Preview Widget
-#########################################################################*/
-
 bool SVGPreview::setDocument(SPDocument *doc)
 {
     if (viewer) {
         viewer->setDocument(doc);
     } else {
-        viewer = Gtk::manage(new Inkscape::UI::View::SVGViewWidget(doc));
+        viewer = std::make_unique<Inkscape::UI::View::SVGViewWidget>(doc);
         pack_start(*viewer, true, true);
     }
 
-    if (document) {
-        delete document;
-    }
-    document = doc;
+    document.reset(doc);
 
     show_all();
 
     return true;
 }
 
-
-bool SVGPreview::setFileName(Glib::ustring &theFileName)
+bool SVGPreview::setFileName(Glib::ustring const &theFileName)
 {
-    Glib::ustring fileName = theFileName;
-
-    fileName = Glib::filename_to_utf8(fileName);
+    auto fileName = Glib::filename_to_utf8(theFileName);
 
     /**
      * I don't know why passing false to keepalive is bad.  But it
@@ -77,8 +66,6 @@ bool SVGPreview::setFileName(Glib::ustring &theFileName)
 
     return true;
 }
-
-
 
 bool SVGPreview::setFromMem(char const *xmlBuffer)
 {
@@ -97,16 +84,14 @@ bool SVGPreview::setFromMem(char const *xmlBuffer)
     return true;
 }
 
-
-
-void SVGPreview::showImage(Glib::ustring &theFileName)
+void SVGPreview::showImage(Glib::ustring const &theFileName)
 {
     Glib::ustring fileName = theFileName;
 
     // Let's get real width and height from SVG file. These are template
     // files so we assume they are well formed.
 
-    // std::cout << "SVGPreview::showImage: " << theFileName << std::endl;
+    // std::cout << "SVGPreview::showImage: " << theFileName.raw() << std::endl;
     std::string width;
     std::string height;
 
@@ -148,9 +133,9 @@ void SVGPreview::showImage(Glib::ustring &theFileName)
     
     Glib::ustring svg = ".svg";
     if (hasSuffix(fileName, svg)) {
-        std::ifstream input(theFileName.c_str());
+        std::ifstream input(theFileName);
         if( !input ) {
-            std::cerr << "SVGPreview::showImage: Failed to open file: " << theFileName << std::endl;
+            std::cerr << "SVGPreview::showImage: Failed to open file: " << theFileName.raw() << std::endl;
         } else {
 
             Glib::ustring token;
@@ -175,15 +160,10 @@ void SVGPreview::showImage(Glib::ustring &theFileName)
             }
         }
     }
-    
-    // TODO: replace int to string conversion with std::to_string when fully C++11 compliant
+
     if (height.empty() || width.empty()) {
-        std::ostringstream s_width;
-        std::ostringstream s_height;
-        s_width << imgWidth;
-        s_height << imgHeight;
-        width = s_width.str();
-        height = s_height.str();
+        width = std::to_string(imgWidth);
+        height = std::to_string(imgHeight);
     }
 
     // Find the minimum scale to fit the image inside the preview area
@@ -236,8 +216,6 @@ void SVGPreview::showImage(Glib::ustring &theFileName)
     setFromMem(xmlBuffer);
     g_free(xmlBuffer);
 }
-
-
 
 void SVGPreview::showNoPreview()
 {
@@ -313,7 +291,6 @@ void SVGPreview::showNoPreview()
     showingNoPreview = true;
 }
 
-
 /**
  * Inform the user that the svg file is too large to be displayed.
  * This does not check for sizes of embedded images (yet)
@@ -379,7 +356,6 @@ void SVGPreview::showTooLarge(long fileLength)
 </svg>
 )C";
 
-
     // Fill in the template
     double floatFileLength = ((double)fileLength) / 1048576.0;
     // printf("%ld %f\n", fileLength, floatFileLength);
@@ -394,9 +370,8 @@ void SVGPreview::showTooLarge(long fileLength)
     g_free(xmlBuffer);
 }
 
-bool SVGPreview::set(Glib::ustring &fileName, int dialogType)
+bool SVGPreview::set(Glib::ustring const &fileName, int dialogType)
 {
-
     if (!Glib::file_test(fileName, Glib::FILE_TEST_EXISTS)) {
         showNoPreview();
         return false;
@@ -442,11 +417,8 @@ bool SVGPreview::set(Glib::ustring &fileName, int dialogType)
     }
 }
 
-
 SVGPreview::SVGPreview()
     : Gtk::Box(Gtk::ORIENTATION_VERTICAL)
-    , document(nullptr)
-    , viewer(nullptr)
     , showingNoPreview(false)
 {
     set_size_request(200, 300);
@@ -454,10 +426,9 @@ SVGPreview::SVGPreview()
 
 SVGPreview::~SVGPreview()
 {
-    if (viewer) {
-        viewer->setDocument(nullptr);
-    }  
-    delete document; 
+    // Ensure correct destruction order: viewer before document.
+    viewer.reset();
+    document.reset();
 }
 
 } // namespace Dialog

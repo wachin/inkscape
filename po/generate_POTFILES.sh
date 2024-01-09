@@ -10,11 +10,12 @@ cd "$mydir"
 export LC_ALL=C
 
 (
- echo "../share/filters/filters.svg.h"
- echo "../share/palettes/palettes.h"
- echo "../share/paint/patterns.svg.h"
- echo "../share/symbols/symbols.h"
- echo "../share/templates/templates.h"
+ echo "\${_build_dir}/share/filters/filters.svg.h"
+ echo "\${_build_dir}/share/markers/markers.svg.h"
+ echo "\${_build_dir}/share/palettes/palettes.h"
+ echo "\${_build_dir}/share/paint/patterns.svg.h"
+ echo "\${_build_dir}/share/symbols/symbols.h"
+ echo "\${_build_dir}/share/templates/templates.h"
 
  find ../src \( -name '*.cpp' -o -name '*.[ch]' \) -type f -print0 | xargs -0 egrep -l '(\<[QNC]?_|gettext) *\(' | sort
 

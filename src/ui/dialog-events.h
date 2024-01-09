@@ -15,54 +15,19 @@
 
 #include <gtk/gtk.h>
  
-/*
- * event callback can only accept one argument, but we need two,
- * hence this struct.
- * each dialog has a local static copy:
- *   win is the dialog window 
- *   stop is the transientize semaphore: when 0, retransientizing this dialog 
- *   is allowed
- */
-
 namespace Gtk {
 class Window;
 class Entry;
 }
 
-class SPDesktop;
- 
-struct win_data { 
-    GtkWidget *win;
-    guint stop;
-};
-
-
-gboolean sp_dialog_event_handler ( GtkWindow *win, 
-                                   GdkEvent *event, 
-                                   gpointer data );
-
 void sp_dialog_defocus_cpp         (Gtk::Window *win);
-void sp_dialog_defocus_callback_cpp(Gtk::Entry *e);
 void sp_dialog_defocus_on_enter_cpp(Gtk::Entry *e);
 
-void sp_dialog_defocus           ( GtkWindow *win );
-void sp_dialog_defocus_callback  ( GtkWindow *win, gpointer data );
-void sp_dialog_defocus_on_enter  ( GtkWidget *w );
-void sp_transientize             ( GtkWidget *win );
+void sp_dialog_defocus         (GtkWindow *win);
+void sp_dialog_defocus_on_enter(GtkWidget *w);
+void sp_transientize           (GtkWidget *win);
 
-void on_transientize             ( SPDesktop *desktop, 
-                                   win_data *wd );
-
-void sp_transientize_callback    ( SPDesktop *desktop, 
-                                   win_data *wd );
-
-void on_dialog_hide (GtkWidget *w);
-void on_dialog_unhide (GtkWidget *w);
-
-//gboolean sp_dialog_hide (GObject *object, gpointer data);
-//gboolean sp_dialog_unhide (GObject *object, gpointer data);
-
-#endif
+#endif // SEEN_DIALOG_EVENTS_H
 
 /*
   Local Variables:

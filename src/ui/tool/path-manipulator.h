@@ -20,6 +20,7 @@
 #include "ui/tool/node.h"
 #include "ui/tool/manipulator.h"
 #include "live_effects/lpe-bspline.h"
+#include "display/curve.h"
 
 struct SPCanvasItem;
 class SPCurve;
@@ -46,6 +47,13 @@ struct PathSharedData {
     NodeSharedData node_data;
     Inkscape::CanvasItemGroup *outline_group;
     Inkscape::CanvasItemGroup *dragpoint_group;
+};
+
+enum class NodeDeleteMode {
+    automatic,    // try to preserve shape if deleted nodes do not form sharp corners
+    inverse_auto, // opposite of what automatic mode would do
+    curve_fit,    // preserve shape
+    line_segment  // do not preserve shape; delete nodes and connect subpaths with a line segment
 };
 
 /**
@@ -80,7 +88,7 @@ public:
     void weldNodes(NodeList::iterator preserve_pos = NodeList::iterator());
     void weldSegments();
     void breakNodes();
-    void deleteNodes(bool keep_shape = true);
+    void deleteNodes(NodeDeleteMode mode);
     void deleteSegments();
     void reverseSubpaths(bool selected_only);
     void setSegmentType(SegmentType);
@@ -120,7 +128,7 @@ private:
     Geom::Point _bsplineHandleReposition(Handle *h, bool check_other = true);
     Geom::Point _bsplineHandleReposition(Handle *h, double pos);
     void _createGeometryFromControlPoints(bool alert_LPE = false);
-    unsigned _deleteStretch(NodeList::iterator first, NodeList::iterator last, bool keep_shape);
+    unsigned _deleteStretch(NodeList::iterator first, NodeList::iterator last, NodeDeleteMode mode);
     std::string _createTypeString();
     void _updateOutline();
     //void _setOutline(Geom::PathVector const &);
@@ -128,6 +136,7 @@ private:
     void _setGeometry();
     Glib::ustring _nodetypesKey();
     Inkscape::XML::Node *_getXMLNode();
+    Geom::Affine _getTransform() const;
 
     void _selectionChangedM(std::vector<SelectableControlPoint *> pvec, bool selected);
     void _selectionChanged(SelectableControlPoint * p, bool selected);
@@ -148,8 +157,8 @@ private:
     SubpathList _subpaths;
     MultiPathManipulator &_multi_path_manipulator;
     SPObject *_path; ///< can be an SPPath or an Inkscape::LivePathEffect::Effect  !!!
-    std::unique_ptr<SPCurve> _spcurve; // in item coordinates
-    Inkscape::CanvasItemBpath *_outline = nullptr;
+    SPCurve _spcurve; // in item coordinates
+    CanvasItemPtr<Inkscape::CanvasItemBpath> _outline;
     CurveDragPoint *_dragpoint; // an invisible control point hovering over curve
     PathManipulatorObserver *_observer;
     Geom::Affine _d2i_transform; ///< desktop-to-item transform

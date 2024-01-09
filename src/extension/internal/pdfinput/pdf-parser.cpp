@@ -20,34 +20,39 @@
 #pragma implementation
 #endif
 
-#include <cstdlib>
-#include <cstdio>
-#include <cstddef>
-#include <cstring>
 #include <cmath>
+#include <cstddef>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 
-#include "svg-builder.h"
-#include "Gfx.h"
-#include "pdf-parser.h"
-#include "util/units.h"
-
-#include "glib/poppler-features.h"
-#include "goo/gmem.h"
-#include "goo/GooString.h"
-#include "GlobalParams.h"
-#include "CharTypes.h"
-#include "Object.h"
+#include "2geom/transforms.h"
+#include "Annot.h"
 #include "Array.h"
+#include "CharTypes.h"
 #include "Dict.h"
-#include "Stream.h"
-#include "Lexer.h"
-#include "Parser.h"
+#include "Error.h"
+#include "Gfx.h"
 #include "GfxFont.h"
 #include "GfxState.h"
+#include "GlobalParams.h"
+#include "Lexer.h"
+#include "Object.h"
 #include "OutputDev.h"
+#include "PDFDoc.h"
 #include "Page.h"
-#include "Annot.h"
-#include "Error.h"
+#include "Parser.h"
+#include "Stream.h"
+#include "glib/poppler-features.h"
+#include "goo/GooString.h"
+#include "goo/gmem.h"
+#include "pdf-parser.h"
+#include "pdf-utils.h"
+#include "poppler-cairo-font-engine.h"
+#include "poppler-transition-api.h"
+#include "poppler-utils.h"
+#include "svg-builder.h"
+#include "util/units.h"
 
 // the MSVC math.h doesn't define this
 #ifndef M_PI
@@ -254,124 +259,82 @@ GfxPatch blankPatch()
 } // namespace
 
 //------------------------------------------------------------------------
-// ClipHistoryEntry
-//------------------------------------------------------------------------
-
-class ClipHistoryEntry {
-public:
-
-    ClipHistoryEntry(GfxPath *clipPath = nullptr, GfxClipType clipType = clipNormal);
-    virtual ~ClipHistoryEntry();
-
-    // Manipulate clip path stack
-    ClipHistoryEntry *save();
-    ClipHistoryEntry *restore();
-    GBool hasSaves() { return saved != nullptr; }
-    void setClip(_POPPLER_CONST_83 GfxPath *newClipPath, GfxClipType newClipType = clipNormal);
-    GfxPath *getClipPath() { return clipPath; }
-    GfxClipType getClipType() { return clipType; }
-
-private:
-
-    ClipHistoryEntry *saved;    // next clip path on stack
-        
-    GfxPath *clipPath;        // used as the path to be filled for an 'sh' operator
-    GfxClipType clipType;
-
-    ClipHistoryEntry(ClipHistoryEntry *other);
-};
-
-//------------------------------------------------------------------------
 // PdfParser
 //------------------------------------------------------------------------
 
-PdfParser::PdfParser(XRef *xrefA,
-		     Inkscape::Extension::Internal::SvgBuilder *builderA,
-                     int /*pageNum*/,
-		     int rotate,
-		     Dict *resDict,
-                     _POPPLER_CONST PDFRectangle *box,
-                     _POPPLER_CONST PDFRectangle *cropBox) :
-    xref(xrefA),
-    builder(builderA),
-    subPage(gFalse),
-    printCommands(false),
-    res(new GfxResources(xref, resDict, nullptr)), // start the resource stack
-    state(new GfxState(72.0, 72.0, box, rotate, gTrue)),
-    fontChanged(gFalse),
-    clip(clipNone),
-    ignoreUndef(0),
-    baseMatrix(),
-    formDepth(0),
-    parser(nullptr),
-    colorDeltas(),
-    maxDepths(),
-    clipHistory(new ClipHistoryEntry()),
-    operatorHistory(nullptr)
+PdfParser::PdfParser(std::shared_ptr<PDFDoc> pdf_doc, Inkscape::Extension::Internal::SvgBuilder *builderA, Page *page,
+                     _POPPLER_CONST PDFRectangle *cropBox)
+    : _pdf_doc(pdf_doc)
+    , xref(pdf_doc->getXRef())
+    , builder(builderA)
+    , subPage(false)
+    , printCommands(false)
+    , res(new GfxResources(xref, page->getResourceDict(), nullptr))
+    , // start the resource stack
+    state(new GfxState(96.0, 96.0, page->getCropBox(), page->getRotate(), true))
+    , fontChanged(gFalse)
+    , clip(clipNone)
+    , ignoreUndef(0)
+    , formDepth(0)
+    , parser(nullptr)
+    , colorDeltas()
+    , maxDepths()
+    , operatorHistory(nullptr)
 {
-  setDefaultApproximationPrecision();
-  builder->setDocumentSize(Inkscape::Util::Quantity::convert(state->getPageWidth(), "pt", "px"),
-                           Inkscape::Util::Quantity::convert(state->getPageHeight(), "pt", "px"));
+    setDefaultApproximationPrecision();
+    loadOptionalContentLayers(page->getResourceDict());
+    loadColorProfile();
+    baseMatrix = stateToAffine(state);
 
-  const double *ctm = state->getCTM();
-  double scaledCTM[6];
-  for (int i = 0; i < 6; ++i) {
-    baseMatrix[i] = ctm[i];
-    scaledCTM[i] = Inkscape::Util::Quantity::convert(ctm[i], "pt", "px");
-  }
-  saveState();
-  builder->setTransform((double*)&scaledCTM);
-  formDepth = 0;
-
-  // set crop box
-  if (cropBox) {
-    if (printCommands)
-        printf("cropBox: %f %f %f %f\n", cropBox->x1, cropBox->y1, cropBox->x2, cropBox->y2);
-    // do not clip if it's not needed
-    if (cropBox->x1 != 0.0 || cropBox->y1 != 0.0 ||
-        cropBox->x2 != state->getPageWidth() || cropBox->y2 != state->getPageHeight()) {
-        
-        state->moveTo(cropBox->x1, cropBox->y1);
-        state->lineTo(cropBox->x2, cropBox->y1);
-        state->lineTo(cropBox->x2, cropBox->y2);
-        state->lineTo(cropBox->x1, cropBox->y2);
-        state->closePath();
-        state->clip();
-        clipHistory->setClip(state->getPath(), clipNormal);
-        builder->setClipPath(state);
-        state->clearPath();
+    if (page) {
+        // Increment the page building here and set page label
+        Catalog *catalog = pdf_doc->getCatalog();
+        GooString *label = new GooString("");
+        catalog->indexToLabel(page->getNum() - 1, label);
+        builder->pushPage(getString(label), state);
     }
-  }
-  pushOperator("startPage");
+
+    // Must come after pushPage!
+    builder->setDocumentSize(state->getPageWidth(), state->getPageHeight());
+
+    // Set margins, bleeds and page-cropping
+    auto page_box = getRect(page->getCropBox());
+    auto scale = Geom::Scale(state->getPageWidth() / page_box.width(),
+                             state->getPageHeight() / page_box.height());
+    builder->setMargins(getRect(page->getTrimBox()) * scale,
+                        getRect(page->getArtBox()) * scale,
+                        getRect(page->getBleedBox()) * scale);
+    if (cropBox && getRect(cropBox) != page_box) {
+        builder->cropPage(getRect(cropBox) * scale);
+    }
+
+    saveState();
+    formDepth = 0;
+
+    pushOperator("startPage");
 }
 
-PdfParser::PdfParser(XRef *xrefA,
-		     Inkscape::Extension::Internal::SvgBuilder *builderA,
-                     Dict *resDict,
-		     _POPPLER_CONST PDFRectangle *box) :
-    xref(xrefA),
-    builder(builderA),
-    subPage(gTrue),
-    printCommands(false),
-    res(new GfxResources(xref, resDict, nullptr)), // start the resource stack
-    state(new GfxState(72, 72, box, 0, gFalse)),
-    fontChanged(gFalse),
-    clip(clipNone),
-    ignoreUndef(0),
-    baseMatrix(),
-    formDepth(0),
-    parser(nullptr),
-    colorDeltas(),
-    maxDepths(),
-    clipHistory(new ClipHistoryEntry()),
-    operatorHistory(nullptr)
+PdfParser::PdfParser(XRef *xrefA, Inkscape::Extension::Internal::SvgBuilder *builderA, Dict *resDict,
+                     _POPPLER_CONST PDFRectangle *box)
+    : xref(xrefA)
+    , builder(builderA)
+    , subPage(true)
+    , printCommands(false)
+    , res(new GfxResources(xref, resDict, nullptr))
+    , // start the resource stack
+    state(new GfxState(72, 72, box, 0, false))
+    , fontChanged(gFalse)
+    , clip(clipNone)
+    , ignoreUndef(0)
+    , formDepth(0)
+    , parser(nullptr)
+    , colorDeltas()
+    , maxDepths()
+    , operatorHistory(nullptr)
 {
-  setDefaultApproximationPrecision();
-  
-  for (int i = 0; i < 6; ++i) {
-    baseMatrix[i] = state->getCTM()[i];
-  }
-  formDepth = 0;
+    setDefaultApproximationPrecision();
+    baseMatrix = stateToAffine(state);
+    formDepth = 0;
 }
 
 PdfParser::~PdfParser() {
@@ -396,11 +359,6 @@ PdfParser::~PdfParser() {
   if (state) {
     delete state;
     state = nullptr;
-  }
-
-  if (clipHistory) {
-    delete clipHistory;
-    clipHistory = nullptr;
   }
 }
 
@@ -549,7 +507,7 @@ void PdfParser::execOp(Object *cmd, Object args[], int numArgs) {
 
   // find operator
   name = cmd->getCmd();
-  if (!(op = findOp(name))) {
+    if (!(op = findOp(name))) {
     if (ignoreUndef == 0)
       error(errSyntaxError, getPos(), "Unknown operator '{0:s}'", name);
     return;
@@ -606,8 +564,9 @@ PdfOperator* PdfParser::findOp(const char *name) {
     else
       a = b = m;
   }
-  if (cmp != 0)
-    return nullptr;
+  if (cmp != 0) {
+      return nullptr;
+  }
   return &opTab[a];
 }
 
@@ -645,45 +604,22 @@ void PdfParser::opRestore(Object /*args*/[], int /*numArgs*/)
 }
 
 // TODO not good that numArgs is ignored but args[] is used:
+/**
+ * Concatenate transformation matrix to the current state
+ */
 void PdfParser::opConcat(Object args[], int /*numArgs*/)
 {
   state->concatCTM(args[0].getNum(), args[1].getNum(),
 		   args[2].getNum(), args[3].getNum(),
 		   args[4].getNum(), args[5].getNum());
-  const char *prevOp = getPreviousOperator();
-  double a0 = args[0].getNum();
-  double a1 = args[1].getNum();
-  double a2 = args[2].getNum();
-  double a3 = args[3].getNum();
-  double a4 = args[4].getNum();
-  double a5 = args[5].getNum();
-  if (!strcmp(prevOp, "q")) {
-      builder->setTransform(a0, a1, a2, a3, a4, a5);
-  } else if (!strcmp(prevOp, "cm") || !strcmp(prevOp, "startPage")) {
-      // multiply it with the previous transform
-      double otherMatrix[6];
-      if (!builder->getTransform(otherMatrix)) { // invalid transform
-          // construct identity matrix
-          otherMatrix[0] = otherMatrix[3] = 1.0;
-          otherMatrix[1] = otherMatrix[2] = otherMatrix[4] = otherMatrix[5] = 0.0;
-      }
-      double c0 = a0*otherMatrix[0] + a1*otherMatrix[2];
-      double c1 = a0*otherMatrix[1] + a1*otherMatrix[3];
-      double c2 = a2*otherMatrix[0] + a3*otherMatrix[2];
-      double c3 = a2*otherMatrix[1] + a3*otherMatrix[3];
-      double c4 = a4*otherMatrix[0] + a5*otherMatrix[2] + otherMatrix[4];
-      double c5 = a4*otherMatrix[1] + a5*otherMatrix[3] + otherMatrix[5];
-      builder->setTransform(c0, c1, c2, c3, c4, c5);
-  } else {
-      builder->pushGroup();
-      builder->setTransform(a0, a1, a2, a3, a4, a5);
-  }
   fontChanged = gTrue;
 }
 
 // TODO not good that numArgs is ignored but args[] is used:
 void PdfParser::opSetDash(Object args[], int /*numArgs*/)
 {
+  builder->beforeStateChange(state);
+
   double *dash = nullptr;
 
   Array *a = args[0].getArray();
@@ -696,7 +632,11 @@ void PdfParser::opSetDash(Object args[], int /*numArgs*/)
       _POPPLER_FREE(obj);
     }
   }
+#if POPPLER_CHECK_VERSION(22, 9, 0)
+  state->setLineDash(std::vector<double> (dash, dash + length), args[1].getNum());
+#else
   state->setLineDash(dash, length, args[1].getNum());
+#endif
   builder->updateStyle(state);
 }
 
@@ -709,6 +649,7 @@ void PdfParser::opSetFlat(Object args[], int /*numArgs*/)
 // TODO not good that numArgs is ignored but args[] is used:
 void PdfParser::opSetLineJoin(Object args[], int /*numArgs*/)
 {
+  builder->beforeStateChange(state);
   state->setLineJoin(args[0].getInt());
   builder->updateStyle(state);
 }
@@ -716,6 +657,7 @@ void PdfParser::opSetLineJoin(Object args[], int /*numArgs*/)
 // TODO not good that numArgs is ignored but args[] is used:
 void PdfParser::opSetLineCap(Object args[], int /*numArgs*/)
 {
+  builder->beforeStateChange(state);
   state->setLineCap(args[0].getInt());
   builder->updateStyle(state);
 }
@@ -723,6 +665,7 @@ void PdfParser::opSetLineCap(Object args[], int /*numArgs*/)
 // TODO not good that numArgs is ignored but args[] is used:
 void PdfParser::opSetMiterLimit(Object args[], int /*numArgs*/)
 {
+  builder->beforeStateChange(state);
   state->setMiterLimit(args[0].getNum());
   builder->updateStyle(state);
 }
@@ -730,6 +673,7 @@ void PdfParser::opSetMiterLimit(Object args[], int /*numArgs*/)
 // TODO not good that numArgs is ignored but args[] is used:
 void PdfParser::opSetLineWidth(Object args[], int /*numArgs*/)
 {
+  builder->beforeStateChange(state);
   state->setLineWidth(args[0].getNum());
   builder->updateStyle(state);
 }
@@ -833,7 +777,7 @@ void PdfParser::opSetExtGState(Object args[], int /*numArgs*/)
   // soft mask
   if (!_POPPLER_CALL_ARGS_DEREF(obj2, obj1.dictLookup, "SMask").isNull()) {
     if (obj2.isName(const_cast<char*>("None"))) {
-      builder->clearSoftMask(state);
+        // Do nothing.
     } else if (obj2.isDict()) {
       if (_POPPLER_CALL_ARGS_DEREF(obj3, obj2.dictLookup, "S").isName("Alpha")) {
 	alpha = gTrue;
@@ -999,41 +943,47 @@ void PdfParser::opSetRenderingIntent(Object /*args*/[], int /*numArgs*/)
  */
 GfxColorSpace *PdfParser::lookupColorSpaceCopy(Object &arg)
 {
-  assert(!arg.isNull());
+    assert(!arg.isNull());
+    GfxColorSpace *colorSpace = nullptr;
 
-  char const *name = arg.isName() ? arg.getName() : nullptr;
-  GfxColorSpace *colorSpace = nullptr;
+    if (char const *name = arg.isName() ? arg.getName() : nullptr) {
+        auto cache_name = std::to_string(formDepth) + "-" + std::string(name);
+        if (colorSpace = colorSpacesCache[cache_name].get()) {
+            return colorSpace->copy();
+        }
 
-  if (name && (colorSpace = colorSpacesCache[name].get())) {
-    return colorSpace->copy();
-  }
+        Object obj = res->lookupColorSpace(name);
+        if (obj.isNull()) {
+            colorSpace = GfxColorSpace::parse(res, &arg, nullptr, state);
+        } else {
+            colorSpace = GfxColorSpace::parse(res, &obj, nullptr, state);
+        }
 
-  Object *argPtr = &arg;
-  Object obj;
-
-  if (name) {
-    _POPPLER_CALL_ARGS(obj, res->lookupColorSpace, name);
-    if (!obj.isNull()) {
-      argPtr = &obj;
+        if (colorSpace && colorSpace->getMode() != csPattern) {
+            colorSpacesCache[cache_name].reset(colorSpace->copy());
+        }
+    } else {
+        // We were passed in an object directly.
+        colorSpace = GfxColorSpace::parse(res, &arg, nullptr, state);
     }
-  }
+    return colorSpace;
+}
 
-  colorSpace = GfxColorSpace::parse(res, argPtr, nullptr, state);
-
-  _POPPLER_FREE(obj);
-
-  if (name && colorSpace) {
-    colorSpacesCache[name].reset(colorSpace->copy());
-  }
-
-  return colorSpace;
+/**
+ * Look up pattern/gradients from the GfxResource dictionary
+ */
+GfxPattern *PdfParser::lookupPattern(Object *obj, GfxState *state)
+{
+    if (!obj->isName())
+        return nullptr;
+    return res->lookupPattern(obj->getName(), nullptr, state);
 }
 
 // TODO not good that numArgs is ignored but args[] is used:
 void PdfParser::opSetFillGray(Object args[], int /*numArgs*/)
 {
   GfxColor color;
-
+  builder->beforeStateChange(state);
   state->setFillPattern(nullptr);
   state->setFillColorSpace(new GfxDeviceGrayColorSpace());
   color.c[0] = dblToCol(args[0].getNum());
@@ -1045,7 +995,7 @@ void PdfParser::opSetFillGray(Object args[], int /*numArgs*/)
 void PdfParser::opSetStrokeGray(Object args[], int /*numArgs*/)
 {
   GfxColor color;
-
+  builder->beforeStateChange(state);
   state->setStrokePattern(nullptr);
   state->setStrokeColorSpace(new GfxDeviceGrayColorSpace());
   color.c[0] = dblToCol(args[0].getNum());
@@ -1058,7 +1008,7 @@ void PdfParser::opSetFillCMYKColor(Object args[], int /*numArgs*/)
 {
   GfxColor color;
   int i;
-
+  builder->beforeStateChange(state);
   state->setFillPattern(nullptr);
   state->setFillColorSpace(new GfxDeviceCMYKColorSpace());
   for (i = 0; i < 4; ++i) {
@@ -1072,7 +1022,7 @@ void PdfParser::opSetFillCMYKColor(Object args[], int /*numArgs*/)
 void PdfParser::opSetStrokeCMYKColor(Object args[], int /*numArgs*/)
 {
   GfxColor color;
-
+  builder->beforeStateChange(state);
   state->setStrokePattern(nullptr);
   state->setStrokeColorSpace(new GfxDeviceCMYKColorSpace());
   for (int i = 0; i < 4; ++i) {
@@ -1086,7 +1036,7 @@ void PdfParser::opSetStrokeCMYKColor(Object args[], int /*numArgs*/)
 void PdfParser::opSetFillRGBColor(Object args[], int /*numArgs*/)
 {
   GfxColor color;
-
+  builder->beforeStateChange(state);
   state->setFillPattern(nullptr);
   state->setFillColorSpace(new GfxDeviceRGBColorSpace());
   for (int i = 0; i < 3; ++i) {
@@ -1099,7 +1049,7 @@ void PdfParser::opSetFillRGBColor(Object args[], int /*numArgs*/)
 // TODO not good that numArgs is ignored but args[] is used:
 void PdfParser::opSetStrokeRGBColor(Object args[], int /*numArgs*/) {
   GfxColor color;
-
+  builder->beforeStateChange(state);
   state->setStrokePattern(nullptr);
   state->setStrokeColorSpace(new GfxDeviceRGBColorSpace());
   for (int i = 0; i < 3; ++i) {
@@ -1114,11 +1064,11 @@ void PdfParser::opSetFillColorSpace(Object args[], int numArgs)
 {
   assert(numArgs >= 1);
   GfxColorSpace *colorSpace = lookupColorSpaceCopy(args[0]);
-
+  builder->beforeStateChange(state);
   state->setFillPattern(nullptr);
 
   if (colorSpace) {
-  GfxColor color;
+    GfxColor color;
     state->setFillColorSpace(colorSpace);
     colorSpace->getDefaultColor(&color);
     state->setFillColor(&color);
@@ -1132,6 +1082,8 @@ void PdfParser::opSetFillColorSpace(Object args[], int numArgs)
 void PdfParser::opSetStrokeColorSpace(Object args[], int numArgs)
 {
   assert(numArgs >= 1);
+  builder->beforeStateChange(state);
+
   GfxColorSpace *colorSpace = lookupColorSpaceCopy(args[0]);
 
   state->setStrokePattern(nullptr);
@@ -1155,6 +1107,7 @@ void PdfParser::opSetFillColor(Object args[], int numArgs) {
     error(errSyntaxError, getPos(), "Incorrect number of arguments in 'sc' command");
     return;
   }
+  builder->beforeStateChange(state);
   state->setFillPattern(nullptr);
   for (i = 0; i < numArgs; ++i) {
     color.c[i] = dblToCol(args[i].getNum());
@@ -1171,6 +1124,7 @@ void PdfParser::opSetStrokeColor(Object args[], int numArgs) {
     error(errSyntaxError, getPos(), "Incorrect number of arguments in 'SC' command");
     return;
   }
+  builder->beforeStateChange(state);
   state->setStrokePattern(nullptr);
   for (i = 0; i < numArgs; ++i) {
     color.c[i] = dblToCol(args[i].getNum());
@@ -1182,7 +1136,7 @@ void PdfParser::opSetStrokeColor(Object args[], int numArgs) {
 void PdfParser::opSetFillColorN(Object args[], int numArgs) {
   GfxColor color;
   int i;
-
+  builder->beforeStateChange(state);
   if (state->getFillColorSpace()->getMode() == csPattern) {
     if (numArgs > 1) {
       if (!((GfxPatternColorSpace *)state->getFillColorSpace())->getUnder() ||
@@ -1199,11 +1153,9 @@ void PdfParser::opSetFillColorN(Object args[], int numArgs) {
       state->setFillColor(&color);
       builder->updateStyle(state);
     }
-    GfxPattern *pattern;
-    if (args[numArgs-1].isName() &&
-	(pattern = res->lookupPattern(args[numArgs-1].getName(), nullptr, state))) {
-      state->setFillPattern(pattern);
-      builder->updateStyle(state);
+    if (auto pattern = lookupPattern(&(args[numArgs - 1]), state)) {
+        state->setFillPattern(pattern);
+        builder->updateStyle(state);
     }
 
   } else {
@@ -1225,6 +1177,7 @@ void PdfParser::opSetFillColorN(Object args[], int numArgs) {
 void PdfParser::opSetStrokeColorN(Object args[], int numArgs) {
   GfxColor color;
   int i;
+  builder->beforeStateChange(state);
 
   if (state->getStrokeColorSpace()->getMode() == csPattern) {
     if (numArgs > 1) {
@@ -1243,11 +1196,9 @@ void PdfParser::opSetStrokeColorN(Object args[], int numArgs) {
       state->setStrokeColor(&color);
       builder->updateStyle(state);
     }
-    GfxPattern *pattern;
-    if (args[numArgs-1].isName() &&
-	(pattern = res->lookupPattern(args[numArgs-1].getName(), nullptr, state))) {
-      state->setStrokePattern(pattern);
-      builder->updateStyle(state);
+    if (auto pattern = lookupPattern(&(args[numArgs - 1]), state)) {
+        state->setStrokePattern(pattern);
+        builder->updateStyle(state);
     }
 
   } else {
@@ -1546,10 +1497,6 @@ void PdfParser::doShadingPatternFillFallback(GfxShadingPattern *sPat,
                                              GBool stroke, GBool eoFill) {
   GfxShading *shading;
   GfxPath *savedPath;
-  const double *ctm, *btm, *ptm;
-  double m[6], ictm[6], m1[6];
-  double xMin, yMin, xMax, yMax;
-  double det;
 
   shading = sPat->getShading();
 
@@ -1558,7 +1505,8 @@ void PdfParser::doShadingPatternFillFallback(GfxShadingPattern *sPat,
   saveState();
 
   // clip to bbox
-  if (false ){//shading->getHasBBox()) {
+  /*if (false ){//shading->getHasBBox()) {
+    double xMin, yMin, xMax, yMax;
     shading->getBBox(&xMin, &yMin, &xMax, &yMax);
     state->moveTo(xMin, yMin);
     state->lineTo(xMax, yMin);
@@ -1566,21 +1514,20 @@ void PdfParser::doShadingPatternFillFallback(GfxShadingPattern *sPat,
     state->lineTo(xMin, yMax);
     state->closePath();
     state->clip();
-    //builder->clip(state);
     state->setPath(savedPath->copy());
-  }
+  }*/
 
   // clip to current path
   if (stroke) {
     state->clipToStrokePath();
-    //out->clipToStrokePath(state);
   } else {
     state->clip();
-    if (eoFill) {
+    // XXX WARNING WE HAVE REMOVED THE SET CLIP
+    /*if (eoFill) {
       builder->setClipPath(state, true);
     } else {
       builder->setClipPath(state);
-    }
+    }*/
   }
 
   // set the color space
@@ -1594,35 +1541,11 @@ void PdfParser::doShadingPatternFillFallback(GfxShadingPattern *sPat,
   state->clearPath();
 
   // construct a (pattern space) -> (current space) transform matrix
-  ctm = state->getCTM();
-  btm = baseMatrix;
-  ptm = sPat->getMatrix();
-  // iCTM = invert CTM
-  det = 1 / (ctm[0] * ctm[3] - ctm[1] * ctm[2]);
-  ictm[0] = ctm[3] * det;
-  ictm[1] = -ctm[1] * det;
-  ictm[2] = -ctm[2] * det;
-  ictm[3] = ctm[0] * det;
-  ictm[4] = (ctm[2] * ctm[5] - ctm[3] * ctm[4]) * det;
-  ictm[5] = (ctm[1] * ctm[4] - ctm[0] * ctm[5]) * det;
-  // m1 = PTM * BTM = PTM * base transform matrix
-  m1[0] = ptm[0] * btm[0] + ptm[1] * btm[2];
-  m1[1] = ptm[0] * btm[1] + ptm[1] * btm[3];
-  m1[2] = ptm[2] * btm[0] + ptm[3] * btm[2];
-  m1[3] = ptm[2] * btm[1] + ptm[3] * btm[3];
-  m1[4] = ptm[4] * btm[0] + ptm[5] * btm[2] + btm[4];
-  m1[5] = ptm[4] * btm[1] + ptm[5] * btm[3] + btm[5];
-  // m = m1 * iCTM = (PTM * BTM) * (iCTM)
-  m[0] = m1[0] * ictm[0] + m1[1] * ictm[2];
-  m[1] = m1[0] * ictm[1] + m1[1] * ictm[3];
-  m[2] = m1[2] * ictm[0] + m1[3] * ictm[2];
-  m[3] = m1[2] * ictm[1] + m1[3] * ictm[3];
-  m[4] = m1[4] * ictm[0] + m1[5] * ictm[2] + ictm[4];
-  m[5] = m1[4] * ictm[1] + m1[5] * ictm[3] + ictm[5];
+  auto ptr = ctmToAffine(sPat->getMatrix());
+  auto m = (ptr * baseMatrix) * stateToAffine(state).inverse();
 
-  // set the new matrix
+  // Set the new matrix
   state->concatCTM(m[0], m[1], m[2], m[3], m[4], m[5]);
-  builder->setTransform(m[0], m[1], m[2], m[3], m[4], m[5]);
 
   // do shading type-specific operations
   switch (shading->getType()) {
@@ -1653,11 +1576,7 @@ void PdfParser::opShFill(Object args[], int /*numArgs*/)
 {
   GfxShading *shading = nullptr;
   GfxPath *savedPath = nullptr;
-  double xMin, yMin, xMax, yMax;
-  double xTemp, yTemp;
-  double gradientTransform[6];
-  double *matrix = nullptr;
-  GBool savedState = gFalse;
+  bool savedState = false;
 
   if (!(shading = res->lookupShading(args[0].getName(), nullptr, state))) {
     return;
@@ -1667,65 +1586,22 @@ void PdfParser::opShFill(Object args[], int /*numArgs*/)
   if (shading->getType() != 2 && shading->getType() != 3) {
     savedPath = state->getPath()->copy();
     saveState();
-    savedState = gTrue;
-  } else {  // get gradient transform if possible
-      // check proper operator sequence
-      // first there should be one W(*) and then one 'cm' somewhere before 'sh'
-      GBool seenClip, seenConcat;
-      seenClip = (clipHistory->getClipPath() != nullptr);
-      seenConcat = gFalse;
-      int i = 1;
-      while (i <= maxOperatorHistoryDepth) {
-        const char *opName = getPreviousOperator(i);
-        if (!strcmp(opName, "cm")) {
-          if (seenConcat) {   // more than one 'cm'
-            break;
-          } else {
-            seenConcat = gTrue;
-          }
-        }
-        i++;
-      }
-
-      if (seenConcat && seenClip) {
-        if (builder->getTransform(gradientTransform)) {
-          matrix = (double*)&gradientTransform;
-          builder->setTransform(1.0, 0.0, 0.0, 1.0, 0.0, 0.0);  // remove transform
-        }
-      }
+    savedState = true;
   }
 
   // clip to bbox
-  if (shading->getHasBBox()) {
+  /*if (shading->getHasBBox()) {
+    double xMin, yMin, xMax, yMax;
     shading->getBBox(&xMin, &yMin, &xMax, &yMax);
-    if (matrix != nullptr) {
-        xTemp = matrix[0]*xMin + matrix[2]*yMin + matrix[4];
-        yTemp = matrix[1]*xMin + matrix[3]*yMin + matrix[5];
-        state->moveTo(xTemp, yTemp);
-        xTemp = matrix[0]*xMax + matrix[2]*yMin + matrix[4];
-        yTemp = matrix[1]*xMax + matrix[3]*yMin + matrix[5];
-        state->lineTo(xTemp, yTemp);
-        xTemp = matrix[0]*xMax + matrix[2]*yMax + matrix[4];
-        yTemp = matrix[1]*xMax + matrix[3]*yMax + matrix[5];
-        state->lineTo(xTemp, yTemp);
-        xTemp = matrix[0]*xMin + matrix[2]*yMax + matrix[4];
-        yTemp = matrix[1]*xMin + matrix[3]*yMax + matrix[5];
-        state->lineTo(xTemp, yTemp);
-    }
-    else {
-        state->moveTo(xMin, yMin);
-        state->lineTo(xMax, yMin);
-        state->lineTo(xMax, yMax);
-        state->lineTo(xMin, yMax);
-    }
+    state->moveTo(xMin, yMin);
+    state->lineTo(xMax, yMin);
+    state->lineTo(xMax, yMax);
+    state->lineTo(xMin, yMax);
     state->closePath();
     state->clip();
-    if (savedState)
-      builder->setClipPath(state);
-    else
-      builder->clip(state);
+    builder->setClip(state);
     state->clearPath();
-  }
+  }*/
 
   // set the color space
   if (savedState)
@@ -1733,22 +1609,19 @@ void PdfParser::opShFill(Object args[], int /*numArgs*/)
 
   // do shading type-specific operations
   switch (shading->getType()) {
-  case 1:
+  case 1: // Function-based shading
     doFunctionShFill(static_cast<GfxFunctionShading *>(shading));
     break;
-  case 2:
-  case 3:
-    if (clipHistory->getClipPath()) {
-      builder->addShadedFill(shading, matrix, clipHistory->getClipPath(),
-                             clipHistory->getClipType() == clipEO ? true : false);
-    }
-    break;
-  case 4:
-  case 5:
+  case 2: // Axial shading
+  case 3: // Radial shading
+      builder->addClippedFill(shading, stateToAffine(state));
+      break;
+  case 4: // Free-form Gouraud-shaded triangle mesh
+  case 5: // Lattice-form Gouraud-shaded triangle mesh
     doGouraudTriangleShFill(static_cast<GfxGouraudTriangleShading *>(shading));
     break;
-  case 6:
-  case 7:
+  case 6: // Coons patch mesh
+  case 7: // Tensor-product patch mesh
     doPatchMeshShFill(static_cast<GfxPatchMeshShading *>(shading));
     break;
   }
@@ -2099,18 +1972,12 @@ void PdfParser::fillPatch(_POPPLER_CONST GfxPatch *patch, int nComps, int depth)
 }
 
 void PdfParser::doEndPath() {
-  if (state->isCurPt() && clip != clipNone) {
-    state->clip();
-    if (clip == clipNormal) {
-      clipHistory->setClip(state->getPath(), clipNormal);
-      builder->clip(state);
-    } else {
-      clipHistory->setClip(state->getPath(), clipEO);
-      builder->clip(state, true);
+    if (state->isCurPt() && clip != clipNone) {
+        state->clip();
+        builder->setClip(state, clip);
+        clip = clipNone;
     }
-  }
-  clip = clipNone;
-  state->clearPath();
+    state->clearPath();
 }
 
 //------------------------------------------------------------------------
@@ -2158,7 +2025,7 @@ void PdfParser::opSetCharSpacing(Object args[], int /*numArgs*/)
 // TODO not good that numArgs is ignored but args[] is used:
 void PdfParser::opSetFont(Object args[], int /*numArgs*/)
 {
-  GfxFont *font = res->lookupFont(args[0].getName());
+  auto font = res->lookupFont(args[0].getName());
 
   if (!font) {
     // unsetting the font (drawing no text) is better than using the
@@ -2169,13 +2036,19 @@ void PdfParser::opSetFont(Object args[], int /*numArgs*/)
   }
   if (printCommands) {
     printf("  font: tag=%s name='%s' %g\n",
+#if POPPLER_CHECK_VERSION(21,11,0)
+	   font->getTag().c_str(),
+#else
 	   font->getTag()->getCString(),
+#endif
 	   font->getName() ? font->getName()->getCString() : "???",
 	   args[1].getNum());
     fflush(stdout);
   }
 
+#if !POPPLER_CHECK_VERSION(22, 4, 0)
   font->incRefCnt();
+#endif
   state->setFont(font, args[1].getNum());
   fontChanged = gTrue;
 }
@@ -2189,6 +2062,7 @@ void PdfParser::opSetTextLeading(Object args[], int /*numArgs*/)
 // TODO not good that numArgs is ignored but args[] is used:
 void PdfParser::opSetTextRender(Object args[], int /*numArgs*/)
 {
+  builder->beforeStateChange(state);
   state->setRender(args[0].getInt());
   builder->updateStyle(state);
 }
@@ -2209,7 +2083,7 @@ void PdfParser::opSetWordSpacing(Object args[], int /*numArgs*/)
 void PdfParser::opSetHorizScaling(Object args[], int /*numArgs*/)
 {
   state->setHorizScaling(args[0].getNum());
-  builder->updateTextMatrix(state);
+  builder->updateTextMatrix(state, !subPage);
   fontChanged = gTrue;
 }
 
@@ -2248,7 +2122,7 @@ void PdfParser::opSetTextMatrix(Object args[], int /*numArgs*/)
 		    args[2].getNum(), args[3].getNum(),
 		    args[4].getNum(), args[5].getNum());
   state->textMoveTo(0, 0);
-  builder->updateTextMatrix(state);
+  builder->updateTextMatrix(state, !subPage);
   builder->updateTextPosition(0.0, 0.0);
   fontChanged = gTrue;
 }
@@ -2267,6 +2141,30 @@ void PdfParser::opTextNextLine(Object /*args*/[], int /*numArgs*/)
 // text string operators
 //------------------------------------------------------------------------
 
+void PdfParser::doUpdateFont()
+{
+    if (fontChanged) {
+        auto font = getFontEngine()->getFont(state->getFont(), _pdf_doc.get(), true, xref);
+        builder->updateFont(state, font, !subPage);
+        fontChanged = false;
+    }
+}
+
+std::shared_ptr<CairoFontEngine> PdfParser::getFontEngine()
+{
+    // poppler/CairoOutputDev.cc claims the FT Library needs to be kept around
+    // for a while. It's unclear if this is sure for our case.
+    static FT_Library ft_lib;
+    static std::once_flag ft_lib_once_flag;
+    std::call_once(ft_lib_once_flag, FT_Init_FreeType, &ft_lib);
+    if (!_font_engine) {
+        // This will make a new font engine per form1, in the future we could
+        // share this between PdfParser instances for the same PDF file.
+        _font_engine = std::make_shared<CairoFontEngine>(ft_lib);
+    }
+    return _font_engine;
+}
+
 // TODO not good that numArgs is ignored but args[] is used:
 void PdfParser::opShowText(Object args[], int /*numArgs*/)
 {
@@ -2274,10 +2172,7 @@ void PdfParser::opShowText(Object args[], int /*numArgs*/)
     error(errSyntaxError, getPos(), "No font in show");
     return;
   }
-  if (fontChanged) {
-    builder->updateFont(state);
-    fontChanged = gFalse;
-  }
+  doUpdateFont();
   doShowText(args[0].getString());
 }
 
@@ -2291,10 +2186,7 @@ void PdfParser::opMoveShowText(Object args[], int /*numArgs*/)
     error(errSyntaxError, getPos(), "No font in move/show");
     return;
   }
-  if (fontChanged) {
-    builder->updateFont(state);
-    fontChanged = gFalse;
-  }
+  doUpdateFont();
   tx = state->getLineX();
   ty = state->getLineY() - state->getLeading();
   state->textMoveTo(tx, ty);
@@ -2312,10 +2204,7 @@ void PdfParser::opMoveSetShowText(Object args[], int /*numArgs*/)
     error(errSyntaxError, getPos(), "No font in move/set/show");
     return;
   }
-  if (fontChanged) {
-    builder->updateFont(state);
-    fontChanged = gFalse;
-  }
+  doUpdateFont();
   state->setWordSpace(args[0].getNum());
   state->setCharSpace(args[1].getNum());
   tx = state->getLineX();
@@ -2336,10 +2225,7 @@ void PdfParser::opShowSpaceText(Object args[], int /*numArgs*/)
     error(errSyntaxError, getPos(), "No font in show/space");
     return;
   }
-  if (fontChanged) {
-    builder->updateFont(state);
-    fontChanged = gFalse;
-  }
+  doUpdateFont();
   wMode = state->getFont()->getWMode();
   a = args[0].getArray();
   for (int i = 0; i < a->getLength(); ++i) {
@@ -2369,141 +2255,64 @@ void PdfParser::doShowText(const GooString *s) {
 #else
 void PdfParser::doShowText(GooString *s) {
 #endif
-  GfxFont *font;
-  int wMode;
-  double riseX, riseY;
-  CharCode code;
-  Unicode _POPPLER_CONST_82 *u = nullptr;
-  double x, y, dx, dy, tdx, tdy;
-  double originX, originY, tOriginX, tOriginY;
-  double oldCTM[6], newCTM[6];
-  const double *mat;
-  Object charProc;
-  Dict *resDict;
-  Parser *oldParser;
+    int wMode;
+    double riseX, riseY;
+    CharCode code;
+    Unicode _POPPLER_CONST_82 *u = nullptr;
+    double dx, dy, tdx, tdy;
+    double originX, originY, tOriginX, tOriginY;
+    Object charProc;
 #if POPPLER_CHECK_VERSION(0,64,0)
-  const char *p;
+    const char *p;
 #else
-  char *p;
+    char *p;
 #endif
-  int len, n, uLen;
 
-  font = state->getFont();
-  wMode = font->getWMode();
+    int len, n, uLen;
 
-  builder->beginString(state);
+    auto font = state->getFont();
+    wMode = font->getWMode();
 
-  // handle a Type 3 char
-  if (font->getType() == fontType3 && false) {//out->interpretType3Chars()) {
-    mat = state->getCTM();
-    for (int i = 0; i < 6; ++i) {
-      oldCTM[i] = mat[i];
+    builder->beginString(state, s->getLength());
+
+    // handle a Type 3 char
+    if (font->getType() == fontType3) {
+        g_warning("PDF fontType3 information ignored.");
     }
-    mat = state->getTextMat();
-    newCTM[0] = mat[0] * oldCTM[0] + mat[1] * oldCTM[2];
-    newCTM[1] = mat[0] * oldCTM[1] + mat[1] * oldCTM[3];
-    newCTM[2] = mat[2] * oldCTM[0] + mat[3] * oldCTM[2];
-    newCTM[3] = mat[2] * oldCTM[1] + mat[3] * oldCTM[3];
-    mat = font->getFontMatrix();
-    newCTM[0] = mat[0] * newCTM[0] + mat[1] * newCTM[2];
-    newCTM[1] = mat[0] * newCTM[1] + mat[1] * newCTM[3];
-    newCTM[2] = mat[2] * newCTM[0] + mat[3] * newCTM[2];
-    newCTM[3] = mat[2] * newCTM[1] + mat[3] * newCTM[3];
-    newCTM[0] *= state->getFontSize();
-    newCTM[1] *= state->getFontSize();
-    newCTM[2] *= state->getFontSize();
-    newCTM[3] *= state->getFontSize();
-    newCTM[0] *= state->getHorizScaling();
-    newCTM[2] *= state->getHorizScaling();
-    state->textTransformDelta(0, state->getRise(), &riseX, &riseY);
-    double curX = state->getCurX();
-    double curY = state->getCurY();
-    double lineX = state->getLineX();
-    double lineY = state->getLineY();
-    oldParser = parser;
-    p = s->getCString();
-    len = s->getLength();
-    while (len > 0) {
-      n = font->getNextChar(p, len, &code,
-			    &u, &uLen,  /* TODO: This looks like a memory leak for u. */
-			    &dx, &dy, &originX, &originY);
-      dx = dx * state->getFontSize() + state->getCharSpace();
-      if (n == 1 && *p == ' ') {
-	dx += state->getWordSpace();
-      }
-      dx *= state->getHorizScaling();
-      dy *= state->getFontSize();
-      state->textTransformDelta(dx, dy, &tdx, &tdy);
-      state->transform(curX + riseX, curY + riseY, &x, &y);
-      saveState();
-      state->setCTM(newCTM[0], newCTM[1], newCTM[2], newCTM[3], x, y);
-      //~ the CTM concat values here are wrong (but never used)
-      //out->updateCTM(state, 1, 0, 0, 1, 0, 0);
-      if (false){ /*!out->beginType3Char(state, curX + riseX, curY + riseY, tdx, tdy,
-			       code, u, uLen)) {*/
-        _POPPLER_CALL_ARGS(charProc, ((Gfx8BitFont *)font)->getCharProc, code);
-	if ((resDict = ((Gfx8BitFont *)font)->getResources())) {
-	  pushResources(resDict);
-	}
-	if (charProc.isStream()) {
-	  //parse(&charProc, gFalse); // TODO: parse into SVG font
-	} else {
-	  error(errSyntaxError, getPos(), "Missing or bad Type3 CharProc entry");
-	}
-	//out->endType3Char(state);
-	if (resDict) {
-	  popResources();
-	}
-	_POPPLER_FREE(charProc);
-      }
-      restoreState();
-      // GfxState::restore() does *not* restore the current position,
-      // so we deal with it here using (curX, curY) and (lineX, lineY)
-      curX += tdx;
-      curY += tdy;
-      state->moveTo(curX, curY);
-      state->textSetPos(lineX, lineY);
-      p += n;
-      len -= n;
-    }
-    parser = oldParser;
 
-  } else {
     state->textTransformDelta(0, state->getRise(), &riseX, &riseY);
     p = s->getCString();
     len = s->getLength();
     while (len > 0) {
-      n = font->getNextChar(p, len, &code,
-			    &u, &uLen,  /* TODO: This looks like a memory leak for u. */
-			    &dx, &dy, &originX, &originY);
-      
-      if (wMode) {
-	dx *= state->getFontSize();
-	dy = dy * state->getFontSize() + state->getCharSpace();
-	if (n == 1 && *p == ' ') {
-	  dy += state->getWordSpace();
-	}
-      } else {
-	dx = dx * state->getFontSize() + state->getCharSpace();
-	if (n == 1 && *p == ' ') {
-	  dx += state->getWordSpace();
-	}
-	dx *= state->getHorizScaling();
-	dy *= state->getFontSize();
-      }
-      state->textTransformDelta(dx, dy, &tdx, &tdy);
-      originX *= state->getFontSize();
-      originY *= state->getFontSize();
-      state->textTransformDelta(originX, originY, &tOriginX, &tOriginY);
-      builder->addChar(state, state->getCurX() + riseX, state->getCurY() + riseY,
-                       dx, dy, tOriginX, tOriginY, code, n, u, uLen);
-      state->shift(tdx, tdy);
-      p += n;
-      len -= n;
-    }
-  }
+        /* TODO: This looks like a memory leak for u. */
+        n = font->getNextChar(p, len, &code, &u, &uLen, &dx, &dy, &originX, &originY);
 
-  builder->endString(state);
+        if (wMode) {
+            dx *= state->getFontSize();
+            dy = dy * state->getFontSize() + state->getCharSpace();
+            if (n == 1 && *p == ' ') {
+                dy += state->getWordSpace();
+            }
+        } else {
+            dx = dx * state->getFontSize() + state->getCharSpace();
+            if (n == 1 && *p == ' ') {
+                dx += state->getWordSpace();
+            }
+            dx *= state->getHorizScaling();
+            dy *= state->getFontSize();
+        }
+        state->textTransformDelta(dx, dy, &tdx, &tdy);
+        originX *= state->getFontSize();
+        originY *= state->getFontSize();
+        state->textTransformDelta(originX, originY, &tOriginX, &tOriginY);
+        // In Gfx.cc this is drawChar(...)
+        builder->addChar(state, state->getCurX() + riseX, state->getCurY() + riseY, dx, dy, tOriginX, tOriginY, code, n,
+                         u, uLen);
+        state->shift(tdx, tdy);
+        p += n;
+        len -= n;
+    }
+    builder->endString(state);
 }
 
 
@@ -2986,98 +2795,74 @@ void PdfParser::doForm(Object *str) {
   _POPPLER_FREE(resObj);
 }
 
-void PdfParser::doForm1(Object *str, Dict *resDict, double *matrix, double *bbox,
-		  GBool transpGroup, GBool softMask,
-		  GfxColorSpace *blendingColorSpace,
-		  GBool isolated, GBool knockout,
-		  GBool alpha, Function *transferFunc,
-		  GfxColor *backdropColor) {
-  Parser *oldParser;
-  double oldBaseMatrix[6];
-  int i;
+void PdfParser::doForm1(Object *str, Dict *resDict, double *matrix, double *bbox, GBool transpGroup, GBool softMask,
+                        GfxColorSpace *blendingColorSpace, GBool isolated, GBool knockout, GBool alpha,
+                        Function *transferFunc, GfxColor *backdropColor)
+{
+    Parser *oldParser;
 
-  // push new resources on stack
-  pushResources(resDict);
+    // push new resources on stack
+    pushResources(resDict);
 
-  // save current graphics state
-  saveState();
+    // Add a new container group before saving the state
+    builder->startGroup(state, bbox, blendingColorSpace, isolated, knockout, softMask);
 
-  // kill any pre-existing path
-  state->clearPath();
+    // save current graphics state
+    saveState();
 
-  if (softMask || transpGroup) {
-    builder->clearSoftMask(state);
-    builder->pushTransparencyGroup(state, bbox, blendingColorSpace,
-                                   isolated, knockout, softMask);
-  }
+    // kill any pre-existing path
+    state->clearPath();
 
-  // save current parser
-  oldParser = parser;
+    // save current parser
+    oldParser = parser;
 
-  // set form transformation matrix
-  state->concatCTM(matrix[0], matrix[1], matrix[2],
-		   matrix[3], matrix[4], matrix[5]);
-  builder->setTransform(matrix[0], matrix[1], matrix[2],
-                        matrix[3], matrix[4], matrix[5]);
+    // set form transformation matrix
+    state->concatCTM(matrix[0], matrix[1], matrix[2], matrix[3], matrix[4], matrix[5]);
 
-  // set form bounding box
-  state->moveTo(bbox[0], bbox[1]);
-  state->lineTo(bbox[2], bbox[1]);
-  state->lineTo(bbox[2], bbox[3]);
-  state->lineTo(bbox[0], bbox[3]);
-  state->closePath();
-  state->clip();
-  clipHistory->setClip(state->getPath());
-  builder->clip(state);
-  state->clearPath();
+    // set form bounding box
+    state->moveTo(bbox[0], bbox[1]);
+    state->lineTo(bbox[2], bbox[1]);
+    state->lineTo(bbox[2], bbox[3]);
+    state->lineTo(bbox[0], bbox[3]);
+    state->closePath();
+    state->clip();
+    builder->setClip(state, clipNormal, true);
+    state->clearPath();
 
-  if (softMask || transpGroup) {
-    if (state->getBlendMode() != gfxBlendNormal) {
-      state->setBlendMode(gfxBlendNormal);
+    if (softMask || transpGroup) {
+        if (state->getBlendMode() != gfxBlendNormal) {
+            state->setBlendMode(gfxBlendNormal);
+        }
+        if (state->getFillOpacity() != 1) {
+            builder->setGroupOpacity(state->getFillOpacity());
+            state->setFillOpacity(1);
+        }
+        if (state->getStrokeOpacity() != 1) {
+            state->setStrokeOpacity(1);
+        }
     }
-    if (state->getFillOpacity() != 1) {
-      builder->setGroupOpacity(state->getFillOpacity());
-      state->setFillOpacity(1);
-    }
-    if (state->getStrokeOpacity() != 1) {
-      state->setStrokeOpacity(1);
-    }
-  }
 
-  // set new base matrix
-  for (i = 0; i < 6; ++i) {
-    oldBaseMatrix[i] = baseMatrix[i];
-    baseMatrix[i] = state->getCTM()[i];
-  }
+    // set new base matrix
+    auto oldBaseMatrix = baseMatrix;
+    baseMatrix = stateToAffine(state);
 
-  // draw the form
-  parse(str, gFalse);
+    // draw the form
+    parse(str, gFalse);
 
-  // restore base matrix
-  for (i = 0; i < 6; ++i) {
-    baseMatrix[i] = oldBaseMatrix[i];
-  }
+    // restore base matrix
+    baseMatrix = oldBaseMatrix;
 
-  // restore parser
-  parser = oldParser;
+    // restore parser
+    parser = oldParser;
 
-  if (softMask || transpGroup) {
-      builder->popTransparencyGroup(state);
-  }
+    // restore graphics state
+    restoreState();
 
-  // restore graphics state
-  restoreState();
+    // pop resource stack
+    popResources();
 
-  // pop resource stack
-  popResources();
-
-  if (softMask) {
-    builder->setSoftMask(state, bbox, alpha, transferFunc, backdropColor);
-  } else if (transpGroup) {
-    builder->paintTransparencyGroup(state, bbox);
-  }
-
-  return;
+    // complete any masking
+    builder->finishGroup(state, softMask);
 }
 
 //------------------------------------------------------------------------
@@ -3195,24 +2980,27 @@ void PdfParser::opEndIgnoreUndef(Object /*args*/[], int /*numArgs*/)
 //------------------------------------------------------------------------
 
 void PdfParser::opBeginMarkedContent(Object args[], int numArgs) {
-  if (printCommands) {
-    printf("  marked content: %s ", args[0].getName());
-    if (numArgs == 2)
-      args[2].print(stdout);
-    printf("\n");
-    fflush(stdout);
-  }
-
-  if(numArgs == 2) {
-    //out->beginMarkedContent(args[0].getName(),args[1].getDict());
-  } else {
-    //out->beginMarkedContent(args[0].getName());
-  }
+    if (formDepth != 0)
+        return;
+    if (printCommands) {
+        printf("  marked content: %s ", args[0].getName());
+        if (numArgs == 2)
+            args[2].print(stdout);
+        printf("\n");
+        fflush(stdout);
+    }
+    if (numArgs == 2 && args[1].isName()) {
+        // Optional content (OC) to add objects to layer.
+        builder->beginMarkedContent(args[0].getName(), args[1].getName());
+    } else {
+        builder->beginMarkedContent();
+    }
 }
 
 void PdfParser::opEndMarkedContent(Object /*args*/[], int /*numArgs*/)
 {
-  //out->endMarkedContent();
+    if (formDepth == 0)
+        builder->endMarkedContent();
 }
 
 void PdfParser::opMarkPoint(Object args[], int numArgs) {
@@ -3237,29 +3025,26 @@ void PdfParser::opMarkPoint(Object args[], int numArgs) {
 //------------------------------------------------------------------------
 
 void PdfParser::saveState() {
-  bool is_radial = false;
+    bool is_radial = false;
+    GfxPattern *pattern = state->getFillPattern();
 
-  GfxPattern *pattern = state->getFillPattern();
-  if (pattern != nullptr)
-    if (pattern->getType() == 2 ) {
+    if (pattern && pattern->getType() == 2) {
         GfxShadingPattern *shading_pattern = static_cast<GfxShadingPattern *>(pattern);
         GfxShading *shading = shading_pattern->getShading();
         if (shading->getType() == 3)
-          is_radial = true;
+            is_radial = true;
     }
 
-  builder->saveState();
-  if (is_radial)
-    state->save();          // nasty hack to prevent GfxRadialShading from getting corrupted during copy operation
-  else
-    state = state->save();  // see LP Bug 919176 comment 8
-  clipHistory = clipHistory->save();
+    if (is_radial)
+        state->save(); // nasty hack to prevent GfxRadialShading from getting corrupted during copy operation
+    else
+        state = state->save(); // see LP Bug 919176 comment 8
+    builder->saveState(state);
 }
 
 void PdfParser::restoreState() {
-  clipHistory = clipHistory->restore();
-  state = state->restore();
-  builder->restoreState();
+    builder->restoreState(state);
+    state = state->restore();
 }
 
 void PdfParser::pushResources(Dict *resDict) {
@@ -3290,69 +3075,72 @@ void PdfParser::setApproximationPrecision(int shadingType, double colorDelta,
   maxDepths[shadingType-1] = maxDepth;
 }
 
-//------------------------------------------------------------------------
-// ClipHistoryEntry
-//------------------------------------------------------------------------
-
-ClipHistoryEntry::ClipHistoryEntry(GfxPath *clipPathA, GfxClipType clipTypeA) :
-  saved(nullptr),
-  clipPath((clipPathA) ? clipPathA->copy() : nullptr),
-  clipType(clipTypeA)
+/**
+ * Optional content groups are often used in ai files, but
+ * not always and can be useful ways of collecting objects.
+ */
+void PdfParser::loadOptionalContentLayers(Dict *resources)
 {
+    if (!resources) 
+        return;
+
+    auto props = resources->lookup("Properties");
+    if (!props.isDict())
+        return;
+
+    auto cat = _pdf_doc->getCatalog();
+    auto ocgs = cat->getOptContentConfig();
+    auto dict = props.getDict();
+
+    for (auto j = 0; j < dict->getLength(); j++) {
+        auto val = dict->getVal(j);
+        if (!val.isDict())
+            continue;
+        auto dict2 = val.getDict();
+        if (dict2->lookup("Type").isName("OCG") && ocgs) {
+            std::string label = getDictString(dict2, "Name");
+            auto visible = true;
+            // Normally we'd use poppler optContentIsVisible, but these dict
+            // objects don't retain their references so can't be used directly.
+            for (auto &[ref, ocg] : ocgs->getOCGs()) {
+                if (ocg->getName()->cmp(label) == 0)
+                    visible = ocg->getState() == OptionalContentGroup::On;
+            }
+            builder->addOptionalGroup(dict->getKey(j), label, visible);
+        }
+    }
 }
 
-ClipHistoryEntry::~ClipHistoryEntry()
+/**
+ * Load the internal ICC profile from the PDF file.
+ */
+void PdfParser::loadColorProfile()
 {
-    if (clipPath) {
-        delete clipPath;
-	clipPath = nullptr;
-    }
-}
+    Object catDict = xref->getCatalog();
+    if (!catDict.isDict())
+        return;
 
-void ClipHistoryEntry::setClip(_POPPLER_CONST_83 GfxPath *clipPathA, GfxClipType clipTypeA) {
-    // Free previous clip path
-    if (clipPath) {
-        delete clipPath;
-    }
-    if (clipPathA) {
-        clipPath = clipPathA->copy();
-        clipType = clipTypeA;
-    } else {
-        clipPath = nullptr;
-	clipType = clipNormal;
-    }
-}
+    Object outputIntents = catDict.dictLookup("OutputIntents");
+    if (!outputIntents.isArray() || outputIntents.arrayGetLength() != 1)
+        return;
 
-ClipHistoryEntry *ClipHistoryEntry::save() {
-    ClipHistoryEntry *newEntry = new ClipHistoryEntry(this);
-    newEntry->saved = this;
+    Object firstElement = outputIntents.arrayGet(0);
+    if (!firstElement.isDict())
+        return;
 
-    return newEntry;
-}
+    Object profile = firstElement.dictLookup("DestOutputProfile");
+    if (!profile.isStream())
+        return;
 
-ClipHistoryEntry *ClipHistoryEntry::restore() {
-    ClipHistoryEntry *oldEntry;
-
-    if (saved) {
-        oldEntry = saved;
-        saved = nullptr;
-        delete this; // TODO really should avoid deleting from inside.
-    } else {
-        oldEntry = this;
-    }
-
-    return oldEntry;
-}
-
-ClipHistoryEntry::ClipHistoryEntry(ClipHistoryEntry *other) {
-    if (other->clipPath) {
-        this->clipPath = other->clipPath->copy();
-        this->clipType = other->clipType;
-    } else {
-        this->clipPath = nullptr;
-	this->clipType = clipNormal;
-    }
-    saved = nullptr;
+    Stream *iccStream = profile.getStream();
+#if POPPLER_CHECK_VERSION(22, 4, 0)
+    std::vector<unsigned char> profBuf = iccStream->toUnsignedChars(65536, 65536);
+    builder->addColorProfile(profBuf.data(), profBuf.size());
+#else
+    int length = 0;
+    unsigned char *profBuf = iccStream->toUnsignedChars(&length, 65536, 65536);
+    builder->addColorProfile(profBuf, length);
+#endif
 }
 
 #endif /* HAVE_POPPLER */

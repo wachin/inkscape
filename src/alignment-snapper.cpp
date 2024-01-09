@@ -27,6 +27,7 @@
 #include "object/sp-item-group.h"
 #include "object/sp-mask.h"
 #include "object/sp-namedview.h"
+#include "object/sp-page.h"
 #include "object/sp-path.h"
 #include "object/sp-root.h"
 #include "object/sp-shape.h"
@@ -38,6 +39,7 @@
 #include "style.h"
 #include "svg/svg.h"
 #include "text-editing.h"
+#include "page-manager.h"
 
 Inkscape::AlignmentSnapper::AlignmentSnapper(SnapManager *sm, Geom::Coord const d)
     : Snapper(sm, d)
@@ -64,22 +66,44 @@ void Inkscape::AlignmentSnapper::_collectBBoxPoints(bool const &first_point) con
         SPItem::VISUAL_BBOX : SPItem::GEOMETRIC_BBOX;
 
     // collect page corners and center
-    if (_snapmanager->snapprefs.isTargetSnappable(SNAPTARGET_PAGE_CORNER)) {
-        Geom::Coord w = (_snapmanager->getDocument())->getWidth().value("px");
-        Geom::Coord h = (_snapmanager->getDocument())->getHeight().value("px");
-        _points_to_snap_to->push_back(SnapCandidatePoint(Geom::Point(0,0), SNAPSOURCE_ALIGNMENT_PAGE_CORNER, SNAPTARGET_ALIGNMENT_PAGE_CORNER));
-        _points_to_snap_to->push_back(SnapCandidatePoint(Geom::Point(0,h), SNAPSOURCE_ALIGNMENT_PAGE_CORNER, SNAPTARGET_ALIGNMENT_PAGE_CORNER));
-        _points_to_snap_to->push_back(SnapCandidatePoint(Geom::Point(w,h), SNAPSOURCE_ALIGNMENT_PAGE_CORNER, SNAPTARGET_ALIGNMENT_PAGE_CORNER));
-        _points_to_snap_to->push_back(SnapCandidatePoint(Geom::Point(w,0), SNAPSOURCE_ALIGNMENT_PAGE_CORNER, SNAPTARGET_ALIGNMENT_PAGE_CORNER));
-        _points_to_snap_to->push_back(SnapCandidatePoint(Geom::Point(w/2.0f,h/2.0f), SNAPSOURCE_ALIGNMENT_PAGE_CENTER, SNAPTARGET_ALIGNMENT_PAGE_CENTER));
+    if (auto document = _snapmanager->getDocument()) {
+        auto ignore_page = _snapmanager->getPageToIgnore();
+        for (auto page : document->getPageManager().getPages()) {
+            if (ignore_page == page)
+                continue;
+            if (_snapmanager->snapprefs.isTargetSnappable(SNAPTARGET_PAGE_EDGE_CORNER)) {
+                getBBoxPoints(page->getDesktopRect(), _points_to_snap_to.get(), true,
+                    SNAPSOURCE_ALIGNMENT_PAGE_CORNER, SNAPTARGET_ALIGNMENT_PAGE_EDGE_CORNER,
+                    SNAPSOURCE_UNDEFINED, SNAPTARGET_UNDEFINED, // No edges
+                    SNAPSOURCE_ALIGNMENT_PAGE_CENTER, SNAPTARGET_ALIGNMENT_PAGE_EDGE_CENTER);
+            }
+            if (_snapmanager->snapprefs.isTargetSnappable(SNAPTARGET_PAGE_MARGIN_CORNER)) {
+                getBBoxPoints(page->getDesktopMargin(), _points_to_snap_to.get(), true,
+                    SNAPSOURCE_UNDEFINED, SNAPTARGET_ALIGNMENT_PAGE_MARGIN_CORNER,
+                    SNAPSOURCE_UNDEFINED, SNAPTARGET_UNDEFINED, // No edges
+                    SNAPSOURCE_UNDEFINED, SNAPTARGET_ALIGNMENT_PAGE_MARGIN_CENTER);
+                getBBoxPoints(page->getDesktopBleed(), _points_to_snap_to.get(), true,
+                    SNAPSOURCE_UNDEFINED, SNAPTARGET_ALIGNMENT_PAGE_BLEED_CORNER,
+                    SNAPSOURCE_UNDEFINED, SNAPTARGET_UNDEFINED, // No edges
+                    SNAPSOURCE_UNDEFINED, SNAPTARGET_UNDEFINED);
+            }
+        }
+        if (_snapmanager->snapprefs.isTargetSnappable(SNAPTARGET_PAGE_EDGE_CORNER)) {
+            getBBoxPoints(document->preferredBounds(), _points_to_snap_to.get(), true,
+                SNAPSOURCE_ALIGNMENT_PAGE_CORNER, SNAPTARGET_ALIGNMENT_PAGE_EDGE_CORNER,
+                SNAPSOURCE_UNDEFINED, SNAPTARGET_UNDEFINED, // No edges
+                SNAPSOURCE_ALIGNMENT_PAGE_CENTER, SNAPTARGET_ALIGNMENT_PAGE_EDGE_CENTER);
+        }
     }
 
+
+
     // collect bounding boxes of other objects
-    for (const auto & candidate : *(_snapmanager->align_snapper_candidates)) {
+    for (const auto & candidate : *(_snapmanager->_align_snapper_candidates)) {
         SPItem *root_item = candidate.item; 
 
         // get the root item in case we have a duplicate at hand
-        SPUse *use = dynamic_cast<SPUse *>(candidate.item);
+        auto use = cast<SPUse>(candidate.item);
         if (use) {
             root_item = use->root();
         }
@@ -88,7 +112,10 @@ void Inkscape::AlignmentSnapper::_collectBBoxPoints(bool const &first_point) con
         // if candidate is not a clip or a mask object then extract its BBox points
         if (!candidate.clip_or_mask) {
             Geom::OptRect b = root_item->desktopBounds(bbox_type);
-            getBBoxPoints(b, _points_to_snap_to.get(), true, true, false, true, true);
+            getBBoxPoints(b, _points_to_snap_to.get(), true,
+                SNAPSOURCE_ALIGNMENT_BBOX_CORNER, SNAPTARGET_ALIGNMENT_BBOX_CORNER,
+                SNAPSOURCE_UNDEFINED, SNAPTARGET_UNDEFINED, // No edges
+                SNAPSOURCE_ALIGNMENT_BBOX_MIDPOINT, SNAPTARGET_ALIGNMENT_BBOX_MIDPOINT);
         }
     }
 
@@ -123,11 +150,10 @@ void Inkscape::AlignmentSnapper::_snapBBoxPoints(IntermSnapResults &isr,
     bool success_x = false;
     bool success_y = false;
     bool intersection = false;
-    //bool strict_snapping = _snapmanager->snapprefs.getStrictSnapping();
+    bool strict_snapping = _snapmanager->snapprefs.getStrictSnapping();
 
     for (const auto & k : *_points_to_snap_to) {
-        // TODO:  add strict snapping checks from ObjectSnapper::_allowSourceToSnapToTarget(...)
-        if (true) {
+        if (_allowSourceToSnapToTarget(p.getSourceType(), k.getTargetType(), strict_snapping)) {
             Geom::Point target_pt = k.getPoint();
             // (unconstrained) distance from HORIZONTAL guide 
             Geom::Point point_on_x(p.getPoint().x(), target_pt.y());
@@ -213,18 +239,34 @@ void Inkscape::AlignmentSnapper::_snapBBoxPoints(IntermSnapResults &isr,
 
 }
 
+bool Inkscape::AlignmentSnapper::_allowSourceToSnapToTarget(SnapSourceType source, SnapTargetType target, bool strict_snapping) const
+{
+    if (strict_snapping && (source == SNAPSOURCE_PAGE_CENTER || source == SNAPSOURCE_PAGE_CORNER)) {
+        // Restrict page alignment snapping to just other pages (no objects please!)
+        return target == SNAPTARGET_PAGE_EDGE_CENTER || target == SNAPTARGET_PAGE_EDGE_CORNER 
+            || target == SNAPTARGET_ALIGNMENT_PAGE_EDGE_CENTER || target == SNAPTARGET_ALIGNMENT_PAGE_EDGE_CORNER;
+    }   
+    return true;
+}
+
+
 void Inkscape::AlignmentSnapper::freeSnap(IntermSnapResults &isr,
                                           Inkscape::SnapCandidatePoint const &p,
                                           Geom::OptRect const &bbox_to_snap,
-                                          std::vector<SPItem const *> const *it,
+                                          std::vector<SPObject const *> const *it,
                                           std::vector<SnapCandidatePoint> *unselected_nodes) const
 {
+    // toggle checks
+    if (!_snap_enabled || !_snapmanager->snapprefs.isTargetSnappable(SNAPTARGET_ALIGNMENT_CATEGORY))
+        return;
+
     bool p_is_bbox = p.getSourceType() & SNAPSOURCE_BBOX_CATEGORY;
     bool p_is_node = p.getSourceType() & SNAPSOURCE_NODE_HANDLE;
     
-    // toggle checks 
-    if (!_snap_enabled || !_snapmanager->snapprefs.isTargetSnappable(SNAPTARGET_ALIGNMENT_CATEGORY))
-        return;
+    if (p.getSourceNum() <= 0) {
+        Geom::Rect const local_bbox_to_snap = bbox_to_snap ? *bbox_to_snap : Geom::Rect(p.getPoint(), p.getPoint());
+        _snapmanager->_findCandidates(_snapmanager->getDocument()->getRoot(), it, local_bbox_to_snap, false, Geom::identity());
+    }
 
     unsigned n = (unselected_nodes == nullptr) ? 0 : unselected_nodes->size();
 
@@ -239,18 +281,23 @@ void Inkscape::AlignmentSnapper::constrainedSnap(IntermSnapResults &isr,
               Inkscape::SnapCandidatePoint const &p,
               Geom::OptRect const &bbox_to_snap,
               SnapConstraint const &c,
-              std::vector<SPItem const *> const *it,
+              std::vector<SPObject const *> const *it,
               std::vector<SnapCandidatePoint> *unselected_nodes) const
 {
-    bool p_is_bbox = p.getSourceType() & SNAPSOURCE_BBOX_CATEGORY;
-    bool p_is_node = p.getSourceType() & SNAPSOURCE_NODE_HANDLE;
-    
     // project the mouse pointer onto the constraint. Only the projected point will be considered for snapping
     Geom::Point pp = c.projection(p.getPoint());
     
     // toggle checks 
     if (!_snap_enabled || !_snapmanager->snapprefs.isTargetSnappable(SNAPTARGET_ALIGNMENT_CATEGORY))
         return;
+
+    bool p_is_bbox = p.getSourceType() & SNAPSOURCE_BBOX_CATEGORY;
+    bool p_is_node = p.getSourceType() & SNAPSOURCE_NODE_HANDLE;
+
+    if (p.getSourceNum() <= 0) {
+        Geom::Rect const local_bbox_to_snap = bbox_to_snap ? *bbox_to_snap : Geom::Rect(p.getPoint(), p.getPoint());
+        _snapmanager->_findCandidates(_snapmanager->getDocument()->getRoot(), it, local_bbox_to_snap, false, Geom::identity());
+    }
 
     unsigned n = (unselected_nodes == nullptr) ? 0 : unselected_nodes->size();
 

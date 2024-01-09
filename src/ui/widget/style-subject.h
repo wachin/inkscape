@@ -1,7 +1,12 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 /**
  * @file
- * Abstraction for different style widget operands.
+ * Abstraction for different style widget operands. Used by ObjectCompositeSettings in Layers and
+ * Fill and Stroke dialogs. Dialog is responsible for keeping desktop pointer valid.
+ *
+ * This class is due to the need to differentiate between layers and objects but a layer is just a
+ * a group object with an extra tag. There should be no need to differentiate between the two.
+ * To do: remove this class and intergrate the functionality into ObjectCompositeSettings.
  */
 /*
  * Copyright (C) 2007 MenTaLguY <mental@rydia.net>
@@ -51,7 +56,7 @@ public:
     virtual void setCSS(SPCSSAttr *css) = 0;
     virtual std::vector<SPObject*> list(){return std::vector<SPObject*>();};
 
-    sigc::connection connectChanged(sigc::signal<void>::slot_type slot) {
+    sigc::connection connectChanged(sigc::signal<void ()>::slot_type slot) {
         return _changed_signal.connect(slot);
     }
 
@@ -66,8 +71,8 @@ protected:
     }
 
 private:
-    sigc::signal<void> _changed_signal;
-    SPDesktop *_desktop;
+    sigc::signal<void ()> _changed_signal;
+    SPDesktop *_desktop = nullptr;
 };
 
 class StyleSubject::Selection : public StyleSubject {
@@ -89,30 +94,6 @@ private:
     sigc::connection _sel_changed;
     sigc::connection _subsel_changed;
     sigc::connection _sel_modified;
-};
-
-class StyleSubject::CurrentLayer : public StyleSubject {
-public:
-    CurrentLayer();
-    ~CurrentLayer() override;
-
-    Geom::OptRect getBounds(SPItem::BBoxType type) override;
-    int queryStyle(SPStyle *query, int property) override;
-    void setCSS(SPCSSAttr *css) override;
-    std::vector<SPObject*> list() override;
-
-protected:
-    void _afterDesktopSwitch(SPDesktop *desktop) override;
-
-private:
-    SPObject *_getLayer() const;
-    void _setLayer(SPObject *layer);
-    SPObject *_getLayerSList() const;
-
-    sigc::connection _layer_switched;
-    sigc::connection _layer_release;
-    sigc::connection _layer_modified;
-    mutable SPObject* _element;
 };
 
 }

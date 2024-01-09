@@ -24,7 +24,6 @@
 #define SAMPLE_STEP      (1.0/4.0) ///< step per 2PI
 #define SAMPLE_SIZE      8         ///< sample size per one bezier
 
-
 /**
  * A spiral Shape.
  *
@@ -37,10 +36,11 @@
  *
  * \todo Should I remove these attributes?
  */
-class SPSpiral : public SPShape {
+class SPSpiral final : public SPShape {
 public:
 	SPSpiral();
 	~SPSpiral() override;
+    int tag() const override { return tag_of<decltype(*this)>; }
 
 	float cx, cy;
 	float exp;  ///< Spiral expansion factor
@@ -75,8 +75,5 @@ private:
 	Geom::Point getTangent(double t) const;
 	void fitAndDraw(SPCurve* c, double dstep, Geom::Point darray[], Geom::Point const& hat1, Geom::Point& hat2, double* t) const;
 };
-
-MAKE_SP_OBJECT_DOWNCAST_FUNCTIONS(SP_SPIRAL, SPSpiral)
-MAKE_SP_OBJECT_TYPECHECK_FUNCTIONS(SP_IS_SPIRAL, SPSpiral)
 
 #endif // SEEN_SP_SPIRAL_H

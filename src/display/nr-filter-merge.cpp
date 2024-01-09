@@ -19,37 +19,24 @@
 namespace Inkscape {
 namespace Filters {
 
-FilterMerge::FilterMerge() :
-    _input_image(1, NR_FILTER_SLOT_NOT_SET)
-{}
+FilterMerge::FilterMerge()
+    : _input_image({NR_FILTER_SLOT_NOT_SET}) {}
 
-FilterPrimitive * FilterMerge::create() {
-    return new FilterMerge();
-}
-
-FilterMerge::~FilterMerge()
-= default;
-
-void FilterMerge::render_cairo(FilterSlot &slot)
+void FilterMerge::render_cairo(FilterSlot &slot) const
 {
     if (_input_image.empty()) return;
 
-    SPColorInterpolation ci_fp  = SP_CSS_COLOR_INTERPOLATION_AUTO;
-    if( _style ) {
-        ci_fp = (SPColorInterpolation)_style->color_interpolation_filters.computed;
-    }
-
-    Geom::Rect vp = filter_primitive_area( slot.get_units() );
+    Geom::Rect vp = filter_primitive_area(slot.get_units());
     slot.set_primitive_area(_output, vp); // Needed for tiling
 
     // output is RGBA if at least one input is RGBA
     bool rgba32 = false;
     cairo_surface_t *out = nullptr;
-    for (int & i : _input_image) {
+    for (auto &i : _input_image) {
         cairo_surface_t *in = slot.getcairo(i);
         if (cairo_surface_get_content(in) == CAIRO_CONTENT_COLOR_ALPHA) {
             out = ink_cairo_surface_create_identical(in);
-            set_cairo_surface_ci( out, ci_fp );
+            set_cairo_surface_ci(out, color_interpolation);
             rgba32 = true;
             break;
         }
@@ -60,10 +47,10 @@ void FilterMerge::render_cairo(FilterSlot &slot)
     }
     cairo_t *out_ct = cairo_create(out);
 
-    for (int & i : _input_image) {
+    for (auto &i : _input_image) {
         cairo_surface_t *in = slot.getcairo(i);
 
-        set_cairo_surface_ci( in, ci_fp );
+        set_cairo_surface_ci(in, color_interpolation);
         cairo_set_source_surface(out_ct, in, 0, 0);
         cairo_paint(out_ct);
     }
@@ -73,18 +60,18 @@ void FilterMerge::render_cairo(FilterSlot &slot)
     cairo_surface_destroy(out);
 }
 
-bool FilterMerge::can_handle_affine(Geom::Affine const &)
+bool FilterMerge::can_handle_affine(Geom::Affine const &) const
 {
     // Merge is a per-pixel primitive and is immutable under transformations
     return true;
 }
 
-double FilterMerge::complexity(Geom::Affine const &)
+double FilterMerge::complexity(Geom::Affine const &) const
 {
     return 1.02;
 }
 
-bool FilterMerge::uses_background()
+bool FilterMerge::uses_background() const
 {
     for (int input : _input_image) {
         if (input == NR_FILTER_BACKGROUNDIMAGE || input == NR_FILTER_BACKGROUNDALPHA) {
@@ -94,25 +81,27 @@ bool FilterMerge::uses_background()
     return false;
 }
 
-void FilterMerge::set_input(int slot) {
+void FilterMerge::set_input(int slot)
+{
     _input_image[0] = slot;
 }
 
-void FilterMerge::set_input(int input, int slot) {
+void FilterMerge::set_input(int input, int slot)
+{
     if (input < 0) return;
 
-    if (static_cast<int>(_input_image.size()) > input) {
+    if (_input_image.size() > input) {
         _input_image[input] = slot;
     } else {
-        for (int i = static_cast<int>(_input_image.size()) ; i < input ; i++) {
-            _input_image.push_back(NR_FILTER_SLOT_NOT_SET);
+        for (int i = _input_image.size(); i < input ; i++) {
+            _input_image.emplace_back(NR_FILTER_SLOT_NOT_SET);
         }
         _input_image.push_back(slot);
     }
 }
 
-} /* namespace Filters */
-} /* namespace Inkscape */
+} // namespace Filters
+} // namespace Inkscape
 
 /*
   Local Variables:

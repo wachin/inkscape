@@ -20,6 +20,25 @@ namespace Inkscape {
 namespace UI {
 namespace Widget {
 
+MathSpinButton::MathSpinButton(BaseObjectType *cobject, const Glib::RefPtr<Gtk::Builder> &refGlade)
+    : Gtk::SpinButton(cobject)
+{
+    drag_dest_unset();
+}
+
+int MathSpinButton::on_input(double *newvalue)
+{
+    try {
+        auto eval = Inkscape::Util::ExpressionEvaluator(get_text().c_str(), nullptr);
+        auto result = eval.evaluate();
+        *newvalue = result.value;
+    } catch (Inkscape::Util::EvaluatorException &e) {
+        g_message ("%s", e.what());
+        return false;
+    }
+    return true;
+}
+
 int SpinButton::on_input(double* newvalue)
 {
     if (_dont_evaluate) return false;
@@ -66,7 +85,6 @@ bool SpinButton::on_key_press_event(GdkEventKey* event)
     case GDK_KEY_Escape: // defocus
         undo();
         defocus();
-        return true; // I consumed the event
         break;
     case GDK_KEY_Return: // defocus
     case GDK_KEY_KP_Enter:

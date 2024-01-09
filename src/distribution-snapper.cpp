@@ -227,11 +227,11 @@ void Inkscape::DistributionSnapper::_collectBBoxes(Geom::OptRect const &bbox_to_
     bbox_type = !prefs_bbox ? SPItem::VISUAL_BBOX : SPItem::GEOMETRIC_BBOX;
 
     // collect bounding boxes of other objects
-    for (const auto &candidate : *(_snapmanager->align_snapper_candidates)) {
+    for (const auto &candidate : *(_snapmanager->_align_snapper_candidates)) {
         SPItem *root_item = candidate.item;
 
         // get the root item in case we have a duplicate at hand
-        SPUse *use = dynamic_cast<SPUse *>(candidate.item);
+        auto use = cast<SPUse>(candidate.item);
         if (use) {
             root_item = use->root();
         }
@@ -562,7 +562,7 @@ void Inkscape::DistributionSnapper::_correctSelectionBBox(Geom::Point &target,
                                                           Geom::Point const &p,
                                                           Geom::Rect const &bbox_to_snap) const
 {
-    if (_snapmanager->_desktop->selection->size() > 1) {
+    if (_snapmanager->_desktop->getSelection()->size() > 1) {
         auto correction = bbox_to_snap.midpoint() - p;
         target -= correction;
     }
@@ -571,7 +571,7 @@ void Inkscape::DistributionSnapper::_correctSelectionBBox(Geom::Point &target,
 void Inkscape::DistributionSnapper::freeSnap(IntermSnapResults &isr,
                                              Inkscape::SnapCandidatePoint const &p,
                                              Geom::OptRect const &bbox_to_snap,
-                                             std::vector<SPItem const *> const *it,
+                                             std::vector<SPObject const *> const *it,
                                              std::vector<SnapCandidatePoint> *unselected_nodes) const
 {
     if (bbox_to_snap.empty())
@@ -585,6 +585,11 @@ void Inkscape::DistributionSnapper::freeSnap(IntermSnapResults &isr,
     if (!_snap_enabled || !_snapmanager->snapprefs.isTargetSnappable(SNAPTARGET_DISTRIBUTION_CATEGORY))
         return;
 
+    if (p.getSourceNum() <= 0) {
+        Geom::Rect const local_bbox_to_snap = bbox_to_snap ? *bbox_to_snap : Geom::Rect(p.getPoint(), p.getPoint());
+        _snapmanager->_findCandidates(_snapmanager->getDocument()->getRoot(), it, local_bbox_to_snap, false, Geom::identity());
+    }
+
     _snapEquidistantPoints(isr, p, bbox_to_snap, unselected_nodes);
 }
 
@@ -592,18 +597,23 @@ void Inkscape::DistributionSnapper::constrainedSnap(IntermSnapResults &isr,
                                                     Inkscape::SnapCandidatePoint const &p,
                                                     Geom::OptRect const &bbox_to_snap,
                                                     SnapConstraint const &c,
-                                                    std::vector<SPItem const *> const *it,
+                                                    std::vector<SPObject const *> const *it,
                                                     std::vector<SnapCandidatePoint> *unselected_nodes) const
 {
     if (bbox_to_snap.empty())
         return;
 
-    // project the mouse pointer onto the constraint. Only the projected point will be considered for snapping
-    Geom::Point pp = c.projection(p.getPoint());
-
     // toggle checks
     if (!_snap_enabled || !_snapmanager->snapprefs.isTargetSnappable(SNAPTARGET_DISTRIBUTION_CATEGORY))
         return;
+
+    // project the mouse pointer onto the constraint. Only the projected point will be considered for snapping
+    Geom::Point pp = c.projection(p.getPoint());
+
+    if (p.getSourceNum() <= 0) {
+        Geom::Rect const local_bbox_to_snap = bbox_to_snap ? *bbox_to_snap : Geom::Rect(p.getPoint(), p.getPoint());
+        _snapmanager->_findCandidates(_snapmanager->getDocument()->getRoot(), it, local_bbox_to_snap, false, Geom::identity());
+    }
 
     _snapEquidistantPoints(isr, p, bbox_to_snap, unselected_nodes, c, pp);
 }

@@ -22,12 +22,13 @@
 #include "document-undo.h"
 #include "document.h"
 #include "message-context.h"
-#include "verbs.h"
 
 #include "include/gtkmm_version.h"
 
 #include "object/sp-guide.h"
 #include "object/sp-namedview.h"
+
+#include "page-manager.h"
 
 #include "ui/dialog-events.h"
 #include "ui/tools/tool-base.h"
@@ -83,16 +84,24 @@ void GuidelinePropertiesDialog::_modeChanged()
         // absolute
         _spin_angle.setValueKeepUnit(_oldangle, DEG);
 
-        _spin_button_x.setValueKeepUnit(_oldpos[Geom::X], "px");
-        _spin_button_y.setValueKeepUnit(_oldpos[Geom::Y], "px");
+        auto pos = _oldpos;
+
+        // Adjust position by the page position
+        auto prefs = Inkscape::Preferences::get();
+        if (prefs->getBool("/options/origincorrection/page", true)) {
+            auto &pm = _guide->document->getPageManager();
+            pos *= pm.getSelectedPageAffine().inverse();
+        }
+
+        _spin_button_x.setValueKeepUnit(pos[Geom::X], "px");
+        _spin_button_y.setValueKeepUnit(pos[Geom::Y], "px");
     }
 }
 
 void GuidelinePropertiesDialog::_onOK()
 {
     this->_onOKimpl();
-    DocumentUndo::done(_guide->document, SP_VERB_NONE,
-                       _("Set guide properties"));
+    DocumentUndo::done(_guide->document, _("Set guide properties"), "");
 
 }
 
@@ -118,8 +127,15 @@ void GuidelinePropertiesDialog::_onOKimpl()
     double const points_x = _spin_button_x.getValue("px");
     double const points_y = _spin_button_y.getValue("px");
     Geom::Point newpos(points_x, points_y);
-    if (!_mode)
+
+    // Adjust position by either the relative position, or the page offset
+    auto prefs = Inkscape::Preferences::get();
+    if (!_mode) {
         newpos += _oldpos;
+    } else if (prefs->getBool("/options/origincorrection/page", true)) {
+        auto &pm = _guide->document->getPageManager();
+        newpos *= pm.getSelectedPageAffine();
+    }
 
     _guide->moveto(newpos, true);
 
@@ -144,16 +160,15 @@ void GuidelinePropertiesDialog::_onOKimpl()
 void GuidelinePropertiesDialog::_onDelete()
 {
     SPDocument *doc = _guide->document;
-    sp_guide_remove(_guide);
-    DocumentUndo::done(doc, SP_VERB_NONE, 
-                       _("Delete guide"));
+    if (_guide->remove(true))
+        DocumentUndo::done(doc, _("Delete guide"), "");
 }
 
 void GuidelinePropertiesDialog::_onDuplicate()
 {
     _guide = _guide->duplicate();
     this->_onOKimpl();
-    DocumentUndo::done(_guide->document, SP_VERB_NONE, _("Duplicate guide"));
+    DocumentUndo::done(_guide->document, _("Duplicate guide"), "");
 }
 
 void GuidelinePropertiesDialog::_response(gint response)
@@ -284,7 +299,7 @@ void GuidelinePropertiesDialog::_setup() {
     _relative_toggle.signal_toggled().connect(sigc::mem_fun(*this, &GuidelinePropertiesDialog::_modeChanged));
     _relative_toggle.set_active(_relative_toggle_status);
 
-    bool global_guides_lock = _desktop->namedview->lockguides;
+    bool global_guides_lock = _desktop->namedview->getLockGuides();
     if(global_guides_lock){
         _locked_toggle.set_sensitive(false);
     }
@@ -295,9 +310,9 @@ void GuidelinePropertiesDialog::_setup() {
     auto sby = dynamic_cast<UI::Widget::SpinButton *>(_spin_button_y.getWidget());
     auto sba = dynamic_cast<UI::Widget::SpinButton *>(_spin_button_y.getWidget());
 
-    if(sbx) sbx->signal_activate().connect(sigc::mem_fun(this, &GuidelinePropertiesDialog::on_sb_activate));
-    if(sby) sby->signal_activate().connect(sigc::mem_fun(this, &GuidelinePropertiesDialog::on_sb_activate));
-    if(sba) sba->signal_activate().connect(sigc::mem_fun(this, &GuidelinePropertiesDialog::on_sb_activate));
+    if(sbx) sbx->signal_activate().connect(sigc::mem_fun(*this, &GuidelinePropertiesDialog::on_sb_activate));
+    if(sby) sby->signal_activate().connect(sigc::mem_fun(*this, &GuidelinePropertiesDialog::on_sb_activate));
+    if(sba) sba->signal_activate().connect(sigc::mem_fun(*this, &GuidelinePropertiesDialog::on_sb_activate));
 
     // dialog
     set_default_response(Gtk::RESPONSE_OK);
@@ -314,10 +329,7 @@ void GuidelinePropertiesDialog::_setup() {
     }
 
     {
-        // FIXME holy crap!!!
-        Inkscape::XML::Node *repr = _guide->getRepr();
-        const gchar *guide_id = repr->attribute("id");
-        gchar *label = g_strdup_printf(_("Guideline ID: %s"), guide_id);
+        gchar *label = g_strdup_printf(_("Guideline ID: %s"), _guide->getId());
         _label_name.set_label(label);
         g_free(label);
     }

@@ -68,7 +68,7 @@ ParamNotebook::ParamNotebookPage::ParamNotebookPage(Inkscape::XML::Node *xml, In
  *
  * Builds a notebook page (a vbox) and puts parameters on it.
  */
-Gtk::Widget *ParamNotebook::ParamNotebookPage::get_widget(sigc::signal<void> *changeSignal)
+Gtk::Widget *ParamNotebook::ParamNotebookPage::get_widget(sigc::signal<void ()> *changeSignal)
 {
     if (_hidden) {
         return nullptr;
@@ -187,6 +187,10 @@ std::string ParamNotebook::value_to_string() const
     return _value.raw();
 }
 
+void ParamNotebook::string_to_value(const std::string &in)
+{
+    _value = in;
+}
 
 /** A special category of Gtk::Notebook to handle notebook parameters. */
 class NotebookWidget : public Gtk::Notebook {
@@ -203,7 +207,7 @@ public:
         , activated(false)
     {
         // don't have to set the correct page: this is done in ParamNotebook::get_widget hook function
-        this->signal_switch_page().connect(sigc::mem_fun(this, &NotebookWidget::changed_page));
+        this->signal_switch_page().connect(sigc::mem_fun(*this, &NotebookWidget::changed_page));
     }
 
     void changed_page(Gtk::Widget *page, guint pagenum);
@@ -230,7 +234,7 @@ void NotebookWidget::changed_page(Gtk::Widget * /*page*/, guint pagenum)
  *
  * Builds a notebook and puts pages in it.
  */
-Gtk::Widget *ParamNotebook::get_widget(sigc::signal<void> *changeSignal)
+Gtk::Widget *ParamNotebook::get_widget(sigc::signal<void ()> *changeSignal)
 {
     if (_hidden) {
         return nullptr;

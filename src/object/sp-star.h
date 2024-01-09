@@ -17,16 +17,16 @@
 
 #include "sp-polygon.h"
 
-
 enum SPStarPoint {
 	SP_STAR_POINT_KNOT1,
 	SP_STAR_POINT_KNOT2
 };
 
-class SPStar : public SPShape {
+class SPStar final : public SPShape {
 public:
 	SPStar();
 	~SPStar() override;
+    int tag() const override { return tag_of<decltype(*this)>; }
 
 	int sides;
 
@@ -60,9 +60,5 @@ public:
 void sp_star_position_set (SPStar *star, int sides, Geom::Point center, double r1, double r2, double arg1, double arg2, bool isflat, double rounded, double randomized);
 
 Geom::Point sp_star_get_xy (SPStar const *star, SPStarPoint point, int index, bool randomized = false);
-
-
-MAKE_SP_OBJECT_DOWNCAST_FUNCTIONS(SP_STAR, SPStar)
-MAKE_SP_OBJECT_TYPECHECK_FUNCTIONS(SP_IS_STAR, SPStar)
 
 #endif

@@ -28,10 +28,10 @@ namespace Dialog {
 /**
  * DialogBase is the base class for the dialog system.
  *
- * Each dialog has a reference to the application, in order to update it's inner focus
+ * Each dialog has a reference to the application, in order to update its inner focus
  * (be it of the active desktop, document, selection, etc.) in the update() method.
  *
- * DialogsBase derived classes' instances live in DialogNotebook classes and are managed by
+ * DialogBase derived classes' instances live in DialogNotebook classes and are managed by
  * DialogContainer classes. DialogContainer instances can have at most one type of dialog,
  * differentiated by the associated type.
  */
@@ -40,11 +40,10 @@ class DialogBase : public Gtk::Box
     using parent_type = Gtk::Box;
 
 public:
-    DialogBase(gchar const *prefs_path = nullptr, Glib::ustring dialog_type = "");
-    ~DialogBase() override {
-        ensure_size();
-        unsetDesktop();
-    };
+    DialogBase(char const *prefs_path = nullptr, Glib::ustring dialog_type = "");
+    DialogBase(DialogBase const &) = delete;
+    DialogBase &operator=(DialogBase const &) = delete;
+    ~DialogBase() override;
 
     /**
      * The update() method is essential to Gtk state management. DialogBase implementations get updated whenever
@@ -57,25 +56,14 @@ public:
     // Public for future use, say if the desktop is smartly set when docking dialogs.
     void setDesktop(SPDesktop *new_desktop);
 
-    void on_map() override
-    {
-        // Update asks the dialogs if they need their Gtk widgets updated.
-        update();
-        // Set the desktop on_map, although we might want to be smarter about this.
-        setDesktop(dynamic_cast<SPDesktop *>(_app->get_active_view()));
-        parent_type::on_map();
-    }
+    void on_map() override;
+
     /*
      * Often the dialog won't request the right size until the window has
      * been pushed to resize all it's children. We do this on dialog creation
      * and destruction.
      */
-    void ensure_size()
-    {
-        if (desktop) {
-            desktop->getToplevel()->resize_children();
-        }
-    }
+    void ensure_size();
 
     // Getters and setters
     Glib::ustring get_name() { return _name; };
@@ -87,21 +75,25 @@ public:
     void focus_dialog();
     // return focus back to canvas
     void defocus_dialog();
-
+    bool getShowing() { return _showing; }
+    // fix children scrolled windows to send outer scroll when his own reach limits
+    void fix_inner_scroll(Gtk::Widget *child);
     // Too many dialogs have unprotected calls to ask for this data
     SPDesktop *getDesktop() const { return desktop; }
 protected:
     InkscapeApplication *getApp() const { return _app; }
     SPDocument *getDocument() const { return document; }
     Selection *getSelection() const { return selection; }
-
+    friend class DialogNotebook;
+    void setShowing(bool showing);
     Glib::ustring _name;             // Gtk widget name (must be set!)
     Glib::ustring const _prefs_path; // Stores characteristic path for loading/saving the dialog position.
     Glib::ustring const _dialog_type; // Type of dialog (we could just use _pref_path?).
 private:
     bool blink_off(); // timer callback
     bool on_key_press_event(GdkEventKey* key_event) override;
-
+    // return if dialog is on visible tab
+    bool _showing = true;
     void unsetDesktop();
     void desktopDestroyed(SPDesktop* old_desktop);
     void setDocument(SPDocument *new_document);
@@ -118,6 +110,10 @@ private:
     sigc::connection _doc_replaced;
     sigc::connection _select_changed;
     sigc::connection _select_modified;
+
+    int _modified_flags = 0;
+    bool _modified_while_hidden = false;
+    bool _changed_while_hidden = false;
 
     InkscapeApplication *_app; // Used for state management
     SPDesktop *desktop;

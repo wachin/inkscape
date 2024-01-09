@@ -28,7 +28,7 @@ class LPECurveStitch : public Effect {
 public:
     LPECurveStitch(LivePathEffectObject *lpeobject);
     ~LPECurveStitch() override;
-
+    bool doOnOpen(SPLPEItem const *lpeitem) override;
     Geom::PathVector doEffect_path (Geom::PathVector const & path_in) override;
 
     void resetDefaults(SPItem const* item) override;

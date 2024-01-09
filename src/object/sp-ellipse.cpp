@@ -51,6 +51,25 @@ SPGenericEllipse::SPGenericEllipse()
 SPGenericEllipse::~SPGenericEllipse()
 = default;
 
+/*
+ * Ellipse and rect is the only SP object who's repr element tag name changes
+ * during it's lifetime. During undo and redo these changes can cause
+ * the SP object to become unstuck from the repr's true state.
+ */
+void SPGenericEllipse::tag_name_changed(gchar const* oldname, gchar const* newname)
+{
+    const std::string typeString = newname;
+    if (typeString == "svg:circle") {
+        type = SP_GENERIC_ELLIPSE_CIRCLE;
+    } else if (typeString == "svg:ellipse") {
+        type = SP_GENERIC_ELLIPSE_ELLIPSE;
+    } else if (typeString == "svg:path") {
+        type = SP_GENERIC_ELLIPSE_ARC;
+    } else {
+        type = SP_GENERIC_ELLIPSE_UNDEFINED;
+    }
+}
+
 void SPGenericEllipse::build(SPDocument *document, Inkscape::XML::Node *repr)
 {
     // std::cout << "SPGenericEllipse::build: Entrance: " << this->type
@@ -165,6 +184,9 @@ void SPGenericEllipse::set(SPAttr key, gchar const *value)
     case SPAttr::SODIPODI_OPEN:
         // This is for reading in old files.
         if ((!value) || strcmp(value,"true")) {
+            // We rely on this to reset arc_type when changing an arc to
+            // an ellipse/circle, so it is drawn as a closed path.
+            // A clone will not even change it's this->type
             this->arc_type = SP_GENERIC_ELLIPSE_ARC_TYPE_SLICE;
         } else {
             this->arc_type = SP_GENERIC_ELLIPSE_ARC_TYPE_ARC;
@@ -224,7 +246,7 @@ Inkscape::XML::Node *SPGenericEllipse::write(Inkscape::XML::Document *xml_doc, I
     //           << ")" << std::endl;
 
     GenericEllipseType new_type = SP_GENERIC_ELLIPSE_UNDEFINED;
-    if (_isSlice() || hasPathEffect() ) {
+    if (_isSlice() || hasPathEffectOnClipOrMaskRecursive(this) ) {
         new_type = SP_GENERIC_ELLIPSE_ARC;
     } else if ( rx.computed == ry.computed ) {
         new_type = SP_GENERIC_ELLIPSE_CIRCLE;
@@ -418,15 +440,7 @@ const char *SPGenericEllipse::displayName() const
 void SPGenericEllipse::set_shape()
 {
     // std::cout << "SPGenericEllipse::set_shape: Entrance" << std::endl;
-    if (hasBrokenPathEffect()) {
-        g_warning("The ellipse shape has unknown LPE on it! Convert to path to make it editable preserving the appearance; editing it as ellipse will remove the bad LPE");
-
-        if (this->getRepr()->attribute("d")) {
-            // unconditionally read the curve from d, if any, to preserve appearance
-            Geom::PathVector pv = sp_svg_read_pathv(this->getRepr()->attribute("d"));
-            setCurveInsync(std::make_unique<SPCurve>(pv));
-        }
-
+    if (checkBrokenPathEffect()) {
         return;
     }
     if (Geom::are_near(this->rx.computed, 0) || Geom::are_near(this->ry.computed, 0)) {
@@ -462,13 +476,13 @@ void SPGenericEllipse::set_shape()
         pb.lineTo(Geom::Point(0, 0));
     }
 
-    if ((this->arc_type != SP_GENERIC_ELLIPSE_ARC_TYPE_ARC) || (this->type != SP_GENERIC_ELLIPSE_ARC)) {
+    if (this->arc_type != SP_GENERIC_ELLIPSE_ARC_TYPE_ARC) {
         pb.closePath();
     } else {
         pb.flush();
     }
 
-    auto c = std::make_unique<SPCurve>(pb.peek());
+    auto c = SPCurve(pb.peek());
 
     // gchar *str = sp_svg_write_path(curve->get_pathvector());
     // std::cout << "  path: " << str << std::endl;
@@ -476,24 +490,8 @@ void SPGenericEllipse::set_shape()
 
     // Stretching / moving the calculated shape to fit the actual dimensions.
     Geom::Affine aff = Geom::Scale(rx.computed, ry.computed) * Geom::Translate(cx.computed, cy.computed);
-    c->transform(aff);
-    
-    /* Reset the shape's curve to the "original_curve"
-     * This is very important for LPEs to work properly! (the bbox might be recalculated depending on the curve in shape)*/
-    auto const before = this->curveBeforeLPE();
-    if (before && before->get_pathvector() != c->get_pathvector()) {
-        setCurveBeforeLPE(std::move(c));
-        sp_lpe_item_update_patheffect(this, true, false);
-        return;
-    }
-
-    if (hasPathEffectOnClipOrMaskRecursive(this)) {
-        setCurveBeforeLPE(std::move(c));
-        return;
-    }
-
-    // This happends on undo, fix bug:#1791784
-    setCurveInsync(std::move(c));
+    c.transform(aff);
+    prepareShapeForLPE(&c);
 }
 
 Geom::Affine SPGenericEllipse::set_transform(Geom::Affine const &xform)
@@ -543,6 +541,13 @@ Geom::Affine SPGenericEllipse::set_transform(Geom::Affine const &xform)
     this->set_shape();
 
     // Adjust stroke width
+    if (!g_strcmp0(getAttribute("sodipodi:arc-type"), "slice") || 
+        !g_strcmp0(getAttribute("sodipodi:arc-type"), "chord") ||
+        !g_strcmp0(getAttribute("sodipodi:arc-type"), "arc")) 
+    {
+        double const expansion = transform.descrim();
+        adjust_stroke_width_recursive(expansion);
+    }
     this->adjust_stroke(sqrt(fabs(sw * sh)));
 
     // Adjust pattern fill
@@ -550,7 +555,7 @@ Geom::Affine SPGenericEllipse::set_transform(Geom::Affine const &xform)
 
     // Adjust gradient fill
     this->adjust_gradient(xform * ret.inverse());
-    
+
     return ret;
 }
 

@@ -19,7 +19,7 @@
 bool SPTRefReference::_acceptObject(SPObject * const obj) const
 {
     SPObject *owner = getOwner();
-    if (SP_IS_TREF(owner))
+    if (is<SPTRef>(owner))
         return URIReference::_acceptObject(obj);
     else
         return false;
@@ -33,10 +33,9 @@ void SPTRefReference::updateObserver()
     if (referred) {
         if (subtreeObserved) {
             subtreeObserved->removeObserver(*this);
-            delete subtreeObserved;
         }
 
-        subtreeObserved = new Inkscape::XML::Subtree(*referred->getRepr());
+        subtreeObserved = std::make_unique<Inkscape::XML::Subtree>(*referred->getRepr());
         subtreeObserved->addObserver(*this);
     }
 }
@@ -47,8 +46,8 @@ void SPTRefReference::notifyChildAdded(Inkscape::XML::Node &/*node*/, Inkscape::
 {
     SPObject *owner = getOwner();
 
-    if (owner && SP_IS_TREF(owner)) {
-        sp_tref_update_text(SP_TREF(owner));
+    if (owner && is<SPTRef>(owner)) {
+        sp_tref_update_text(cast<SPTRef>(owner));
     }
 }
 
@@ -58,8 +57,8 @@ void SPTRefReference::notifyChildRemoved(Inkscape::XML::Node &/*node*/, Inkscape
 {
     SPObject *owner = getOwner();
 
-    if (owner && SP_IS_TREF(owner)) {
-        sp_tref_update_text(SP_TREF(owner));
+    if (owner && is<SPTRef>(owner)) {
+        sp_tref_update_text(cast<SPTRef>(owner));
     }
 }
 
@@ -69,8 +68,8 @@ void SPTRefReference::notifyChildOrderChanged(Inkscape::XML::Node &/*node*/, Ink
 {
     SPObject *owner = getOwner();
 
-    if (owner && SP_IS_TREF(owner)) {
-        sp_tref_update_text(SP_TREF(owner));
+    if (owner && is<SPTRef>(owner)) {
+        sp_tref_update_text(cast<SPTRef>(owner));
     }
 }
 
@@ -81,8 +80,8 @@ void SPTRefReference::notifyContentChanged(Inkscape::XML::Node &/*node*/,
 {
     SPObject *owner = getOwner();
 
-    if (owner && SP_IS_TREF(owner)) {
-        sp_tref_update_text(SP_TREF(owner));
+    if (owner && is<SPTRef>(owner)) {
+        sp_tref_update_text(cast<SPTRef>(owner));
     }
 }
 

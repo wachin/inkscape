@@ -25,7 +25,6 @@
 #include "svg/css-ostringstream.h"
 
 SPStop::SPStop() : SPObject() {
-    this->path_string = nullptr;
     this->offset = 0.0;
 }
 
@@ -52,7 +51,7 @@ void SPStop::set(SPAttr key, const gchar* value) {
         }
         case SPAttr::STOP_PATH: {
             if (value) {
-                this->path_string = new Glib::ustring( value );
+                this->path_string = Glib::ustring(value);
                 //Geom::PathVector pv = sp_svg_read_pathv(value);
                 //SPCurve *curve = new SPCurve(pv);
                 //if( curve ) {
@@ -110,8 +109,8 @@ SPStop* SPStop::getNextStop() {
     SPStop *result = nullptr;
 
     for (SPObject* obj = getNext(); obj && !result; obj = obj->getNext()) {
-        if (SP_IS_STOP(obj)) {
-            result = SP_STOP(obj);
+        if (is<SPStop>(obj)) {
+            result = cast<SPStop>(obj);
         }
     }
 
@@ -123,8 +122,8 @@ SPStop* SPStop::getPrevStop() {
 
     for (SPObject* obj = getPrev(); obj; obj = obj->getPrev()) {
         // The closest previous SPObject that is an SPStop *should* be ourself.
-        if (SP_IS_STOP(obj)) {
-            SPStop* stop = SP_STOP(obj);
+        if (is<SPStop>(obj)) {
+            auto stop = cast<SPStop>(obj);
             // Sanity check to ensure we have a proper sibling structure.
             if (stop->getNextStop() == this) {
                 result = stop;
@@ -149,6 +148,24 @@ SPColor SPStop::getColor() const
 gfloat SPStop::getOpacity() const
 {
     return SP_SCALE24_TO_FLOAT(style->stop_opacity.value);
+}
+
+/**
+ * Sets the stop color and stop opacity in the style attribute.
+ */
+void SPStop::setColor(SPColor color, double opacity)
+{
+    setColorRepr(getRepr(), color, opacity);
+}
+
+/**
+ * Set the color and opacity directly into the given xml repr.
+ */
+void SPStop::setColorRepr(Inkscape::XML::Node *node, SPColor color, double opacity)
+{
+    Inkscape::CSSOStringStream os;
+    os << "stop-color:" << color.toString() << ";stop-opacity:" << opacity <<";";
+    node->setAttribute("style", os.str());
 }
 
 /**

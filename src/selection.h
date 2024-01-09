@@ -17,18 +17,15 @@
  */
 
 #include <vector>
+#include <list>
 #include <map>
 #include <cstddef>
 #include <sigc++/sigc++.h>
 
-#include "inkgc/gc-managed.h"
-#include "gc-finalized.h"
-#include "gc-anchored.h"
 #include "object/object-set.h"
 
 
 namespace Inkscape {
-class LayerModel;
 namespace XML {
 class Node;
 }
@@ -40,7 +37,7 @@ namespace Inkscape {
  * The set of selected SPObjects for a given document and layer model.
  *
  * This class represents the set of selected SPItems for a given
- * document (referenced in LayerModel).
+ * document.
  *
  * An SPObject and its parent cannot be simultaneously selected;
  * selecting an SPObjects has the side-effect of unselecting any of
@@ -53,10 +50,7 @@ namespace Inkscape {
  * It also implements its own asynchronous notification signals that
  * UI elements can listen to.
  */
-class Selection : public Inkscape::GC::Managed<>,
-                  public Inkscape::GC::Finalized,
-                  public Inkscape::GC::Anchored,
-                  public ObjectSet
+class Selection : public ObjectSet
 {
 friend class ObjectSet;
 public:
@@ -67,21 +61,14 @@ public:
      * @param layers the layer model (for the SPDesktop, if GUI)
      * @param desktop the desktop associated with the layer model, or NULL if in console mode
      */
-    Selection(LayerModel *layers, SPDesktop *desktop);
+    Selection(SPDesktop *desktop);
+    Selection(SPDocument *document);
     ~Selection() override;
 
     /** no copy. */
     Selection(Selection const &) = delete;
     /** no assign. */
     void operator=(Selection const &) = delete;
-
-    /**
-     * Returns the layer model the selection is bound to (works in console or GUI mode)
-     *
-     * @return the layer model the selection is bound to, which is the same as the desktop
-     * layer model for GUI mode
-     */
-    LayerModel *layers() { return _layers; }
 
     /**
      * Returns active layer for selection (currentLayer or its parent).
@@ -130,8 +117,17 @@ public:
     /**
      * Returns true if the given item is selected.
      */
-    bool includes(XML::Node *repr) {
-        return includes(_objectForXMLNode(repr));
+    bool includes(XML::Node *repr, bool anyAncestor = false) {
+        return includes(_objectForXMLNode(repr), anyAncestor);
+    }
+
+    using ObjectSet::includesAncestor;
+    
+    /**
+     * Returns ancestor if the given object has ancestor selected.
+     */
+    SPObject * includesAncestor(XML::Node *repr) {
+        return includesAncestor(_objectForXMLNode(repr));
     }
 
     /** Returns the number of layers in which there are selected objects. */
@@ -147,6 +143,9 @@ public:
      */
     std::vector<Inkscape::SnapCandidatePoint> getSnapPoints(SnapPreferences const *snapprefs) const;
 
+    // Fixme: Hack should not exist, but used by live_effects.
+    void emitModified() { _emitModified(_flags); };
+
     /**
      * Connects a slot to be notified of selection changes.
      *
@@ -157,14 +156,8 @@ public:
      *
      * @return the resulting connection
      */
-    void emitModified(){ _emitModified(this->_flags); };
-    sigc::connection connectChanged(sigc::slot<void, Selection *> const &slot) {
-        return _changed_signal.connect(slot);
-    }
-    sigc::connection connectChangedFirst(sigc::slot<void, Selection *> const &slot)
-    {
-        return _changed_signal.slots().insert(_changed_signal.slots().begin(), slot);
-    }
+    sigc::connection connectChanged(sigc::slot<void (Selection *)> const &slot);
+    sigc::connection connectChangedFirst(sigc::slot<void (Selection *)> const &slot);
 
     /**
      * Set the anchor point of the selection, used for telling it how transforms
@@ -172,14 +165,7 @@ public:
      * @param x, y - Coordinates for the anchor between 0..1 of the bounding box
      * @param set - If set to false, causes the anchor to become unset (default)
      */
-    void setAnchor(double x, double y, bool set = true){
-        if (anchor_x != x || anchor_y != y || set != has_anchor) {
-            anchor_x = x;
-            anchor_y = y;
-            has_anchor = set;
-            this->_emitModified(SP_OBJECT_MODIFIED_FLAG);
-        }
-    }
+    void setAnchor(double x, double y, bool set = true);
     // Allow the selection to specify a facus anchor (helps with transforming against this point)
     bool has_anchor = false;
     double anchor_x;
@@ -197,14 +183,8 @@ public:
      * @return the resulting connection
      *
      */
-    sigc::connection connectModified(sigc::slot<void, Selection *, unsigned int> const &slot)
-    {
-        return _modified_signal.connect(slot);
-    }
-    sigc::connection connectModifiedFirst(sigc::slot<void, Selection *, unsigned int> const &slot)
-    {
-        return _modified_signal.slots().insert(_modified_signal.slots().begin(), slot);
-    }
+    sigc::connection connectModified(sigc::slot<void (Selection *, unsigned)> const &slot);
+    sigc::connection connectModifiedFirst(sigc::slot<void (Selection *, unsigned)> const &slot);
 
     /**
      * Set a backup of current selection and store it also to be command line readable by extension system
@@ -242,7 +222,6 @@ private:
     /** Releases an active layer object that is being removed. */
     void _releaseContext(SPObject *obj);
 
-    LayerModel *_layers;
     SPObject* _selection_context;
     unsigned int _flags;
     unsigned int _idle;
@@ -251,8 +230,8 @@ private:
     std::map<SPObject *, sigc::connection> _modified_connections;
     sigc::connection _context_release_connection;
 
-    sigc::signal<void, Selection *> _changed_signal;
-    sigc::signal<void, Selection *, unsigned int> _modified_signal;
+    std::list<sigc::signal<void (Selection *)>> _changed_signals;
+    std::list<sigc::signal<void (Selection *, unsigned int)>> _modified_signals;
 };
 
 }

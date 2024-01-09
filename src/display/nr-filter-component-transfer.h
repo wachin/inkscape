@@ -21,7 +21,8 @@ namespace Filters {
 
 class FilterSlot;
 
-enum FilterComponentTransferType {
+enum FilterComponentTransferType
+{
     COMPONENTTRANSFER_TYPE_IDENTITY,
     COMPONENTTRANSFER_TYPE_TABLE,
     COMPONENTTRANSFER_TYPE_DISCRETE,
@@ -30,15 +31,15 @@ enum FilterComponentTransferType {
     COMPONENTTRANSFER_TYPE_ERROR
 };
 
-class FilterComponentTransfer : public FilterPrimitive {
+class FilterComponentTransfer : public FilterPrimitive
+{
 public:
     FilterComponentTransfer();
-    static FilterPrimitive *create();
     ~FilterComponentTransfer() override;
 
-    void render_cairo(FilterSlot &slot) override;
-    bool can_handle_affine(Geom::Affine const &) override;
-    double complexity(Geom::Affine const &ctm) override;
+    void render_cairo(FilterSlot &slot) const override;
+    bool can_handle_affine(Geom::Affine const &) const override;
+    double complexity(Geom::Affine const &ctm) const override;
 
     FilterComponentTransferType type[4];
     std::vector<double> tableValues[4];
@@ -48,13 +49,13 @@ public:
     double exponent[4];
     double offset[4];
 
-    Glib::ustring name() override { return Glib::ustring("Component Transfer"); }
+    Glib::ustring name() const override { return Glib::ustring("Component Transfer"); }
 };
 
-} /* namespace Filters */
-} /* namespace Inkscape */
+} // namespace Filters
+} // namespace Inkscape
 
-#endif /* __NR_FILTER_COMPONENT_TRANSFER_H__ */
+#endif // SEEN_NR_FILTER_COMPONENT_TRANSFER_H
 /*
   Local Variables:
   mode:c++

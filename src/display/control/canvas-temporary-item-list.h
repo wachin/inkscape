@@ -13,7 +13,6 @@
 
 #include <list>
 
-struct SPCanvasItem;
 class SPDesktop;
 
 namespace Inkscape {
@@ -25,33 +24,27 @@ namespace Display {
 class TemporaryItem;
 
 /**
- * Provides a class that can contain active TemporaryItem[s] on a desktop.
+ * Provides a class that can contain active TemporaryItems on a desktop.
  */
-class TemporaryItemList  {
+class TemporaryItemList final
+{
 public:
-    TemporaryItemList(SPDesktop *desktop);
-    virtual ~TemporaryItemList();
+    TemporaryItemList() = default;
+    TemporaryItemList(TemporaryItemList const &) = delete;
+    TemporaryItemList &operator=(TemporaryItemList const &) = delete;
+    ~TemporaryItemList();
 
-    TemporaryItem* add_item (SPCanvasItem *item, unsigned int lifetime);
-    TemporaryItem* add_item (CanvasItem *item, unsigned int lifetime);
-    void           delete_item (TemporaryItem * tempitem);
+    TemporaryItem* add_item(CanvasItem *item, int lifetime_msecs);
+    void           delete_item(TemporaryItem *tempitem);
 
 protected:
-    SPDesktop *desktop;   /** Desktop we are on. */
-
-    std::list<TemporaryItem *> itemlist; /** list of temp items */ 
-
-    void _item_timeout (TemporaryItem * tempitem);
-
-private:
-    TemporaryItemList(const TemporaryItemList&) = delete;
-    TemporaryItemList& operator=(const TemporaryItemList&) = delete;
+    std::list<TemporaryItem *> itemlist; ///< List of temp items.
 };
 
-} //namespace Display
-} //namespace Inkscape
+} // namespace Display
+} // namespace Inkscape
 
-#endif
+#endif // INKSCAPE_CANVAS_TEMPORARY_ITEM_LIST_H
 
 /*
   Local Variables:

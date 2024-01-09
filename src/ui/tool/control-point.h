@@ -21,6 +21,7 @@
 // #include "ui/control-types.h"
 #include "display/control/canvas-item-ctrl.h"
 #include "display/control/canvas-item-enums.h"
+#include "display/control/canvas-item-ptr.h"
 
 #include "enums.h" // TEMP TEMP
 
@@ -131,6 +132,13 @@ public:
      * The default implementation simply moves the point according to the transform.
      */
     virtual void transform(Geom::Affine const &m);
+
+    /**
+     * Apply any node repairs, by default no fixing is applied but Nodes will update
+     * smooth nodes to make sure nodes are kept consistent.
+     */
+    virtual void fixNeighbors() {};
+
     /// @}
     
     /// @name Toggle the point's visibility
@@ -176,7 +184,7 @@ public:
      * Emitted when the mouseovered point changes. The parameter is the new mouseovered point.
      * When a point ceases to be mouseovered, the parameter will be NULL.
      */
-    static sigc::signal<void, ControlPoint*> signal_mouseover_change;
+    static sigc::signal<void (ControlPoint*)> signal_mouseover_change;
 
     static Glib::ustring format_tip(char const *format, ...) G_GNUC_PRINTF(1,2);
 
@@ -308,8 +316,6 @@ protected:
 
     void _setAnchor(SPAnchorType anchor);
 
-    void _setPixbuf(Glib::RefPtr<Gdk::Pixbuf>);
-
     /**
      * Determines if the control point is not visible yet still reacting to events.
      *
@@ -333,7 +339,7 @@ protected:
     virtual bool _hasDragTips() const { return false; }
 
 
-    Inkscape::CanvasItemCtrl * _canvas_item_ctrl = nullptr; ///< Visual representation of the control point.
+    CanvasItemPtr<Inkscape::CanvasItemCtrl> _canvas_item_ctrl; ///< Visual representation of the control point.
 
     ColorSet const &_cset; ///< Colors used to represent the point
 

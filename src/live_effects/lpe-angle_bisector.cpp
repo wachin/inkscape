@@ -51,8 +51,7 @@ LPEAngleBisector::LPEAngleBisector(LivePathEffectObject *lpeobject) :
     registerParameter( dynamic_cast<Parameter *>(&length_right) );
 }
 
-LPEAngleBisector::~LPEAngleBisector()
-= default;
+LPEAngleBisector::~LPEAngleBisector() = default;
 
 Geom::PathVector
 LPEAngleBisector::doEffect_path (Geom::PathVector const & path_in)
@@ -104,7 +103,7 @@ KnotHolderEntityLeftEnd::knot_set(Geom::Point const &p, Geom::Point const &/*ori
     double lambda = Geom::nearest_time(s, lpe->ptA, lpe->dir);
     lpe->length_left.param_set_value(-lambda);
 
-    sp_lpe_item_update_patheffect (SP_LPE_ITEM(item), false, true);
+    sp_lpe_item_update_patheffect (cast<SPLPEItem>(item), false, true);
 }
 
 void
@@ -117,7 +116,7 @@ KnotHolderEntityRightEnd::knot_set(Geom::Point const &p, Geom::Point const &/*or
     double lambda = Geom::nearest_time(s, lpe->ptA, lpe->dir);
     lpe->length_right.param_set_value(lambda);
 
-    sp_lpe_item_update_patheffect (SP_LPE_ITEM(item), false, true);
+    sp_lpe_item_update_patheffect (cast<SPLPEItem>(item), false, true);
 }
 
 Geom::Point

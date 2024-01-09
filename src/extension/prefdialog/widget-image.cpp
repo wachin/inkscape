@@ -18,6 +18,8 @@
 
 #include "xml/node.h"
 #include "extension/extension.h"
+#include "ui/icon-loader.h"
+#include "ui/icon-names.h"
 
 namespace Inkscape {
 namespace Extension {
@@ -49,8 +51,11 @@ WidgetImage::WidgetImage(Inkscape::XML::Node *xml, Inkscape::Extension::Extensio
     if (Glib::file_test(image_path, Glib::FILE_TEST_IS_REGULAR)) {
         _image_path = image_path;
     } else {
-        g_warning("Image file ('%s') not found for image widget in extension '%s'.",
-                  image_path.c_str(), _extension->get_id());
+        _icon_name = INKSCAPE_ICON(image_path);
+        if (_icon_name.empty()) {
+            g_warning("Image file ('%s') not found for image widget in extension '%s'.",
+                      image_path.c_str(), _extension->get_id());
+        }
     }
 
     // parse width/height attributes
@@ -63,19 +68,26 @@ WidgetImage::WidgetImage(Inkscape::XML::Node *xml, Inkscape::Extension::Extensio
 }
 
 /** \brief  Create a label for the description */
-Gtk::Widget *WidgetImage::get_widget(sigc::signal<void> * /*changeSignal*/)
+Gtk::Widget *WidgetImage::get_widget(sigc::signal<void ()> * /*changeSignal*/)
 {
-    if (_hidden || _image_path.empty()) {
+    if (_hidden || (_image_path.empty() && _icon_name.empty())) {
         return nullptr;
     }
 
-    Gtk::Image *image = Gtk::manage(new Gtk::Image(_image_path));
+    Gtk::Image *image = nullptr;
+    if (!_image_path.empty()) {
+        image = Gtk::manage(new Gtk::Image(_image_path));
 
-    // resize if requested
-    if (_width && _height) {
-        Glib::RefPtr<Gdk::Pixbuf> pixbuf = image->get_pixbuf();
-        pixbuf = pixbuf->scale_simple(_width, _height, Gdk::INTERP_BILINEAR);
-        image->set(pixbuf);
+        // resize if requested
+        if (_width && _height) {
+            Glib::RefPtr<Gdk::Pixbuf> pixbuf = image->get_pixbuf();
+            pixbuf = pixbuf->scale_simple(_width, _height, Gdk::INTERP_BILINEAR);
+            image->set(pixbuf);
+        }
+    } else if (_width || _height) {
+        image = sp_get_icon_image(_icon_name, std::max(_width, _height));
+    } else {
+        image = sp_get_icon_image(_icon_name, Gtk::ICON_SIZE_DIALOG);
     }
 
     image->show();

@@ -93,7 +93,7 @@ void AboutDialog::show_about() {
             version->signal_clicked().connect(
                     sigc::bind(sigc::ptr_fun(&copy_version), version, label));
         }
-        
+
         Gtk::Button *debug_info;
         Gtk::Label *label2;
         builder->get_widget("debug_info", debug_info);
@@ -101,6 +101,13 @@ void AboutDialog::show_about() {
         if (debug_info) {
             debug_info->signal_clicked().connect(
                     sigc::bind(sigc::ptr_fun(&copy_debug_info), version, label2));
+        }
+
+        Gtk::Label *copyright;
+        builder->get_widget("copyright", copyright);
+        if (copyright) {
+            copyright->set_label(
+                Glib::ustring::compose(copyright->get_label(), Inkscape::inkscape_build_year()));
         }
 
         // Render the about screen image via inkscape SPDocument
@@ -182,7 +189,6 @@ void AboutDialog::show_about() {
         g_error("About screen window couldn't be loaded. Missing window id in glade file.");
     }
 }
-  
 
 } // namespace Dialog
 } // namespace UI

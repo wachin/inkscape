@@ -32,6 +32,8 @@
 
 #include <gtkmm/adjustment.h>
 
+#include "xml/node-observer.h"
+
 class SPDesktop;
 
 namespace Gtk {
@@ -52,7 +54,10 @@ class SpinButtonToolItem;
 }
 
 namespace Toolbar {
-class SpiralToolbar : public Toolbar {
+class SpiralToolbar
+	: public Toolbar
+	, private XML::NodeObserver
+{
 private:
     UI::Widget::LabelToolItem *_mode_item;
 
@@ -66,9 +71,9 @@ private:
     Glib::RefPtr<Gtk::Adjustment> _expansion_adj;
     Glib::RefPtr<Gtk::Adjustment> _t0_adj;
 
-    bool _freeze;
+    bool _freeze{false};
 
-    XML::Node *_repr;
+    XML::Node *_repr{nullptr};
 
     void value_changed(Glib::RefPtr<Gtk::Adjustment> &adj,
                        Glib::ustring const           &value_name);
@@ -77,6 +82,10 @@ private:
 
     std::unique_ptr<sigc::connection> _connection;
 
+    void event_attr_changed(XML::Node &repr);
+
+	void notifyAttributeChanged(Inkscape::XML::Node &node, GQuark key, Inkscape::Util::ptr_shared oldval, Inkscape::Util::ptr_shared newval) final;
+
 protected:
     SpiralToolbar(SPDesktop *desktop);
     ~SpiralToolbar() override;
@@ -84,12 +93,6 @@ protected:
 public:
     static GtkWidget * create(SPDesktop *desktop);
 
-    static void event_attr_changed(Inkscape::XML::Node *repr,
-                                   gchar const         *name,
-                                   gchar const         *old_value,
-                                   gchar const         *new_value,
-                                   bool                 is_interactive,
-                                   gpointer             data);
 };
 }
 }

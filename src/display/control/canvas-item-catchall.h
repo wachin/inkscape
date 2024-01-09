@@ -17,32 +17,24 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
-#include <2geom/point.h>
-#include <2geom/transforms.h>
-
 #include "canvas-item.h"
 
 namespace Inkscape {
 
-class CanvasItemGroup; // A canvas control that contains other canvas controls.
-
-class CanvasItemCatchall : public CanvasItem {
-
+class CanvasItemCatchall final : public CanvasItem
+{
 public:
     CanvasItemCatchall(CanvasItemGroup *group);
 
-    // Geometry
-    void update(Geom::Affine const &affine) override;
-    double closest_distance_to(Geom::Point const &p);
-
     // Selection
-    bool contains(Geom::Point const &p, double tolerance = 0) override;
+    bool contains(Geom::Point const &p, double tolerance) override;
 
-    // Display
-    void render(Inkscape::CanvasItemBuffer *buf) override;
- 
+protected:
+    ~CanvasItemCatchall() override = default;
+
+    void _update(bool propagate) override;
+    void _render(Inkscape::CanvasItemBuffer &buf) const override;
 };
-
 
 } // namespace Inkscape
 

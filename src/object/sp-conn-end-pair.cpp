@@ -58,7 +58,6 @@ void SPConnEndPair::release()
         handle_ix->_changed_connection.disconnect();
         handle_ix->_delete_connection.disconnect();
         handle_ix->_transformed_connection.disconnect();
-        handle_ix->_group_connection.disconnect();
         g_free(handle_ix->href);
         handle_ix->href = nullptr;
         handle_ix->ref.detach();
@@ -89,7 +88,7 @@ void sp_conn_end_pair_build(SPObject *object)
 
 static void avoid_conn_transformed(Geom::Affine const */*mp*/, SPItem *moved_item)
 {
-    SPPath *path = SP_PATH(moved_item);
+    auto path = cast<SPPath>(moved_item);
     if (path->connEndPair.isAutoRoutingConn()) {
         path->connEndPair.tellLibavoidNewEndpoints();
     }
@@ -182,7 +181,7 @@ void SPConnEndPair::getAttachedItems(SPItem *h2attItem[2]) const {
         if(sub_obj) {
             // For sub objects, we have to go fishing for the virtual/shadow
             // object which has the correct position for this use/symbol
-            SPUse *use = dynamic_cast<SPUse *>(obj);
+            auto use = cast<SPUse>(obj);
             if(use) {
                 auto root = use->root();
                 bool found = false;
@@ -206,8 +205,8 @@ void SPConnEndPair::getAttachedItems(SPItem *h2attItem[2]) const {
         // group no longer has an onscreen representation and can only be
         // selected through the XML editor, it makes sense just to detach
         // connectors from them.
-        if (SP_IS_GROUP(h2attItem[h])) {
-            if (SP_GROUP(h2attItem[h])->getItemCount() == 0) {
+        if (auto group = cast<SPGroup>(h2attItem[h])) {
+            if (group->getItemCount() == 0) {
                 // This group is empty, so detach.
                 sp_conn_end_detach(_path, h);
                 h2attItem[h] = nullptr;
@@ -304,10 +303,9 @@ void SPConnEndPair::makePathInvalid()
     _connRef->makePathInvalid();
 }
 
-
 // Redraws the curve along the recalculated route
 // Straight or curved
-void recreateCurve(SPCurve *curve, Avoid::ConnRef *connRef, const gdouble curvature)
+SPCurve SPConnEndPair::createCurve(Avoid::ConnRef *connRef, const gdouble curvature)
 {
     g_assert(connRef != nullptr);
 
@@ -317,33 +315,34 @@ void recreateCurve(SPCurve *curve, Avoid::ConnRef *connRef, const gdouble curvat
     if (!straight) route = route.curvedPolyline(curvature);
     connRef->calcRouteDist();
 
-    curve->reset();
+    SPCurve curve;
 
-    curve->moveto( Geom::Point(route.ps[0].x, route.ps[0].y) );
+    curve.moveto(Geom::Point(route.ps[0].x, route.ps[0].y));
     int pn = route.size();
     for (int i = 1; i < pn; ++i) {
         Geom::Point p(route.ps[i].x, route.ps[i].y);
         if (straight) {
-            curve->lineto( p );
+            curve.lineto(p);
         } else {
             switch (route.ts[i]) {
                 case 'M':
-                    curve->moveto( p );
+                    curve.moveto(p);
                     break;
                 case 'L':
-                    curve->lineto( p );
+                    curve.lineto(p);
                     break;
                 case 'C':
-                    g_assert( i+2<pn );
-                    curve->curveto( p, Geom::Point(route.ps[i+1].x, route.ps[i+1].y),
-                            Geom::Point(route.ps[i+2].x, route.ps[i+2].y) );
+                    g_assert(i + 2 < pn);
+                    curve.curveto(p, Geom::Point(route.ps[i+1].x, route.ps[i+1].y),
+                                  Geom::Point(route.ps[i+2].x, route.ps[i+2].y));
                     i+=2;
                     break;
             }
         }
     }
-}
 
+    return curve;
+}
 
 void SPConnEndPair::tellLibavoidNewEndpoints(bool const processTransaction)
 {
@@ -360,24 +359,22 @@ void SPConnEndPair::tellLibavoidNewEndpoints(bool const processTransaction)
     return;
 }
 
-
 bool SPConnEndPair::reroutePathFromLibavoid()
 {
-    if (_connRef == nullptr || !isAutoRoutingConn()) {
+    if (!_connRef || !isAutoRoutingConn()) {
         // Do nothing
         return false;
     }
 
-    SPCurve *curve = _path->curve();
+    auto curve = createCurve(_connRef, _connCurvature);
 
-    recreateCurve(curve, _connRef, _connCurvature);
+    auto doc2item = _path->i2doc_affine().inverse();
+    curve.transform(doc2item);
 
-    Geom::Affine doc2item = _path->i2doc_affine().inverse();
-    curve->transform(doc2item);
+    _path->setCurve(std::move(curve));
 
     return true;
 }
-
 
 /*
   Local Variables:

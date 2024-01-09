@@ -271,10 +271,10 @@ bool PovOutput::doCurve(SPItem *item, const String &id)
     using Geom::Y;
 
     //### Get the Shape
-    if (!SP_IS_SHAPE(item))//Bulia's suggestion.  Allow all shapes
+    if (!is<SPShape>(item))//Bulia's suggestion.  Allow all shapes
         return true;
 
-    SPShape *shape = SP_SHAPE(item);
+    auto shape = cast<SPShape>(item);
     if (shape->curve()->is_empty()) {
         return true;
     }
@@ -467,9 +467,9 @@ bool PovOutput::doTreeRecursive(SPDocument *doc, SPObject *obj)
             id = obj->getId();
         }
 
-    if (SP_IS_ITEM(obj))
+    if (is<SPItem>(obj))
         {
-        SPItem *item = SP_ITEM(obj);
+        auto item = cast<SPItem>(obj);
         if (!doCurve(item, id))
             return false;
         }

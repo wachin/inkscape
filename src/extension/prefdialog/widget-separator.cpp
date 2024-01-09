@@ -27,7 +27,7 @@ WidgetSeparator::WidgetSeparator(Inkscape::XML::Node *xml, Inkscape::Extension::
 }
 
 /** \brief  Create a label for the description */
-Gtk::Widget *WidgetSeparator::get_widget(sigc::signal<void> *changeSignal)
+Gtk::Widget *WidgetSeparator::get_widget(sigc::signal<void ()> *changeSignal)
 {
     if (_hidden) {
         return nullptr;

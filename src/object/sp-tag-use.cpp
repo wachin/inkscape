@@ -24,6 +24,7 @@
 #include "document.h"
 #include "uri.h"
 #include "xml/repr.h"
+#include "xml/href-attribute-helper.h"
 #include "preferences.h"
 #include "style.h"
 #include "sp-factory.h"
@@ -130,7 +131,8 @@ SPTagUse::write(Inkscape::XML::Document *xml_doc, Inkscape::XML::Node *repr, gui
     
     if (ref->getURI()) {
         auto uri_string = ref->getURI()->str();
-        repr->setAttributeOrRemoveIfEmpty("xlink:href", uri_string);
+        auto href_key = Inkscape::getHrefAttribute(*repr).first;
+        repr->setAttributeOrRemoveIfEmpty(href_key, uri_string);
     }
 
     return repr;
@@ -148,12 +150,12 @@ SPTagUse::write(Inkscape::XML::Document *xml_doc, Inkscape::XML::Node *repr, gui
 SPItem * SPTagUse::root()
 {
     SPObject *orig = child;
-    while (orig && SP_IS_TAG_USE(orig)) {
-        orig = SP_TAG_USE(orig)->child;
+    while (orig && is<SPTagUse>(orig)) {
+        orig = cast<SPTagUse>(orig)->child;
     }
-    if (!orig || !SP_IS_ITEM(orig))
+    if (!orig || !is<SPItem>(orig))
         return nullptr;
-    return SP_ITEM(orig);
+    return cast<SPItem>(orig);
 }
 
 void

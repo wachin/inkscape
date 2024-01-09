@@ -27,17 +27,12 @@
 namespace Inkscape {
 namespace Filters {
 
-FilterMorphology::FilterMorphology()
-= default;
+FilterMorphology::FilterMorphology() = default;
 
-FilterPrimitive * FilterMorphology::create() {
-    return new FilterMorphology();
-}
+FilterMorphology::~FilterMorphology() = default;
 
-FilterMorphology::~FilterMorphology()
-= default;
-
-enum MorphologyOp {
+enum MorphologyOp
+{
     ERODE,
     DILATE
 };
@@ -53,7 +48,8 @@ namespace {
  *       One problem with the 2D algorithm is that it is harder to parallelize.
  */
 template <typename Comparison, Geom::Dim2 axis, int BPP>
-void morphologicalFilter1D(cairo_surface_t * const input, cairo_surface_t * const out, double radius) {
+void morphologicalFilter1D(cairo_surface_t * const input, cairo_surface_t * const out, double radius)
+{
     Comparison comp;
 
     int w = cairo_image_surface_get_width(out);
@@ -71,18 +67,15 @@ void morphologicalFilter1D(cairo_surface_t * const input, cairo_surface_t * cons
 
     #if HAVE_OPENMP
     int limit = w * h;
-    Inkscape::Preferences *prefs = Inkscape::Preferences::get();
-    int numOfThreads = prefs->getIntLimited("/options/threading/numthreads", omp_get_num_procs(), 1, 256);
-    (void) numOfThreads; // suppress unused variable warning
-    #pragma omp parallel for if(limit > OPENMP_THRESHOLD) num_threads(numOfThreads)
+    #pragma omp parallel for if(limit > OPENMP_THRESHOLD) num_threads(get_num_filter_threads())
     #endif // HAVE_OPENMP
     for (int i = 0; i < h; ++i) {
         // TODO: Store position and value in one 32 bit integer? 24 bits should be enough for a position, it would be quite strange to have an image with a width/height of more than 16 million(!).
-        std::deque< std::pair<int,unsigned char> > vals[BPP]; // In my tests it was actually slightly faster to allocate it here than allocate it once for all threads and retrieving the correct set based on the thread id.
+        std::deque<std::pair<int, unsigned char>> vals[BPP]; // In my tests it was actually slightly faster to allocate it here than allocate it once for all threads and retrieving the correct set based on the thread id.
 
         // Initialize with transparent black
-        for(int p = 0; p < BPP; ++p) {
-            vals[p].push_back(std::pair<int,unsigned char>(-1,0)); // TODO: Only do this when performing an erosion?
+        for (int p = 0; p < BPP; ++p) {
+            vals[p].emplace_back(-1, 0); // TODO: Only do this when performing an erosion?
         }
 
         // Process "row"
@@ -95,11 +88,11 @@ void morphologicalFilter1D(cairo_surface_t * const input, cairo_surface_t * cons
                 if (!vals[p].empty() && vals[p].front().first+wi <= j) vals[p].pop_front(); // out-of-range
                 if (j < w) {
                     while(!vals[p].empty() && !comp(vals[p].back().second, *in_p)) vals[p].pop_back(); // useless
-                    vals[p].push_back(std::make_pair(j, *in_p));
+                    vals[p].emplace_back(j, *in_p);
                     ++in_p;
                 } else if (j == w) { // Transparent black beyond the image. TODO: Only do this when performing an erosion?
                     while(!vals[p].empty() && !comp(vals[p].back().second, 0)) vals[p].pop_back();
-                    vals[p].push_back(std::make_pair(j, 0));
+                    vals[p].emplace_back(j, 0);
                 }
                 // Set output
                 if (j >= ri) {
@@ -115,7 +108,7 @@ void morphologicalFilter1D(cairo_surface_t * const input, cairo_surface_t * cons
                 // Push new value onto FIFO, erasing any previous values that are "useless" (see paper) or out-of-range
                 if (!vals[p].empty() && vals[p].front().first <= j) vals[p].pop_front(); // out-of-range
                 while(!vals[p].empty() && !comp(vals[p].back().second, *in_p)) vals[p].pop_back(); // useless
-                vals[p].push_back(std::make_pair(j+wi, *in_p));
+                vals[p].emplace_back(j + wi, *in_p);
                 ++in_p;
             }
             if (axis == Geom::Y) in_p += stridein - BPP;
@@ -127,7 +120,7 @@ void morphologicalFilter1D(cairo_surface_t * const input, cairo_surface_t * cons
                 // Push new value onto FIFO, erasing any previous values that are "useless" (see paper) or out-of-range
                 if (!vals[p].empty() && vals[p].front().first <= j) vals[p].pop_front(); // out-of-range
                 while(!vals[p].empty() && !comp(vals[p].back().second, *in_p)) vals[p].pop_back(); // useless
-                vals[p].push_back(std::make_pair(j+wi, *in_p));
+                vals[p].emplace_back(j + wi, *in_p);
                 ++in_p;
                 // Set output
                 *out_p = vals[p].front().second;
@@ -142,7 +135,7 @@ void morphologicalFilter1D(cairo_surface_t * const input, cairo_surface_t * cons
         // The following loop makes sure that the border is handled correctly.
         for(int p = 0; p < BPP; ++p) { // Iterate over channels
             while(!vals[p].empty() && !comp(vals[p].back().second, 0)) vals[p].pop_back();
-            vals[p].push_back(std::make_pair(w+wi, 0));
+            vals[p].emplace_back(w + wi, 0);
         }
         // Now we just have to finish the output.
         for (int j = std::max(w,ri); j < w+ri; ++j) {
@@ -160,9 +153,9 @@ void morphologicalFilter1D(cairo_surface_t * const input, cairo_surface_t * cons
     cairo_surface_mark_dirty(out);
 }
 
-} // end anonymous namespace
+} // namespace
 
-void FilterMorphology::render_cairo(FilterSlot &slot)
+void FilterMorphology::render_cairo(FilterSlot &slot) const
 {
     cairo_surface_t *input = slot.getcairo(_input);
 
@@ -222,30 +215,33 @@ void FilterMorphology::render_cairo(FilterSlot &slot)
     cairo_surface_destroy(out);
 }
 
-void FilterMorphology::area_enlarge(Geom::IntRect &area, Geom::Affine const &trans)
+void FilterMorphology::area_enlarge(Geom::IntRect &area, Geom::Affine const &trans) const
 {
-    int enlarge_x = ceil(xradius * trans.expansionX());
-    int enlarge_y = ceil(yradius * trans.expansionY());
+    int enlarge_x = std::ceil(xradius * trans.expansionX());
+    int enlarge_y = std::ceil(yradius * trans.expansionY());
 
     area.expandBy(enlarge_x, enlarge_y);
 }
 
-double FilterMorphology::complexity(Geom::Affine const &trans)
+double FilterMorphology::complexity(Geom::Affine const &trans) const
 {
-    int enlarge_x = ceil(xradius * trans.expansionX());
-    int enlarge_y = ceil(yradius * trans.expansionY());
+    int enlarge_x = std::ceil(xradius * trans.expansionX());
+    int enlarge_y = std::ceil(yradius * trans.expansionY());
     return enlarge_x * enlarge_y;
 }
 
-void FilterMorphology::set_operator(FilterMorphologyOperator &o){
+void FilterMorphology::set_operator(FilterMorphologyOperator o)
+{
     Operator = o;
 }
 
-void FilterMorphology::set_xradius(double x){
+void FilterMorphology::set_xradius(double x)
+{
     xradius = x;
 }
 
-void FilterMorphology::set_yradius(double y){
+void FilterMorphology::set_yradius(double y)
+{
     yradius = y;
 }
 

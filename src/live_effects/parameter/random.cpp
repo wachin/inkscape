@@ -5,18 +5,25 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
-#include "ui/widget/registered-widget.h"
-#include "live_effects/parameter/random.h"
-#include "live_effects/effect.h"
+#include "random.h"
+
 #include <glibmm/i18n.h>
-#include "svg/svg.h"
-#include "ui/widget/random.h"
 
+#include "live_effects/effect.h"
 #include "svg/stringstream.h"
-
-#include "verbs.h"
+#include "svg/svg.h"
+#include "ui/icon-names.h"
+#include "ui/widget/random.h"
+#include "ui/widget/registered-widget.h"
 
 #define noLPERANDOMPARAM_DEBUG
+
+/* RNG stolen from /display/nr-filter-turbulence.cpp */
+#define RAND_m 2147483647 /* 2**31 - 1 */
+#define RAND_a 16807 /* 7**5; primitive root of m */
+#define RAND_q 127773 /* m / a */
+#define RAND_r 2836 /* m % a */
+#define BSize 0x100
 
 namespace Inkscape {
 
@@ -30,8 +37,8 @@ RandomParam::RandomParam( const Glib::ustring& label, const Glib::ustring& tip,
 {
     defvalue = default_value;
     value = defvalue;
-    min = -Geom::infinity();
-    max = Geom::infinity();
+    min = -SCALARPARAM_G_MAXDOUBLE;
+    max = SCALARPARAM_G_MAXDOUBLE;
     integer = false;
 
     defseed = default_seed;
@@ -40,8 +47,7 @@ RandomParam::RandomParam( const Glib::ustring& label, const Glib::ustring& tip,
     _randomsign = randomsign;
 }
 
-RandomParam::~RandomParam()
-= default;
+RandomParam::~RandomParam() = default;
 
 bool
 RandomParam::param_readSVGValue(const gchar * strvalue)
@@ -111,14 +117,36 @@ RandomParam::param_set_value(gdouble val, long newseed)
         value = min;
 
     startseed = setup_seed(newseed);
+    // we reach maximum value so randomize over to fix duple in next cycle
+    Glib::ustring version = param_effect->lpeversion.param_getSVGValue();
+    if (startseed == RAND_m - 1 && ((
+        effectType() != ROUGH_HATCHES &&
+        effectType() != ROUGHEN) || 
+        version >= "1.2")) 
+    {
+        startseed = rand() * startseed;
+    }
     seed = startseed;
 }
 
 void
 RandomParam::param_set_range(gdouble min, gdouble max)
 {
-    this->min = min;
-    this->max = max;
+    // if you look at client code, you'll see that many effects
+    // has a tendency to set an upper range of Geom::infinity().
+    // Once again, in gtk2, this is not a problem. But in gtk3,
+    // widgets get allocated the amount of size they ask for,
+    // leading to excessively long widgets.
+    if (min >= -SCALARPARAM_G_MAXDOUBLE) {
+        this->min = min;
+    } else {
+        this->min = -SCALARPARAM_G_MAXDOUBLE;
+    }
+    if (max <= SCALARPARAM_G_MAXDOUBLE) {
+        this->max = max;
+    } else {
+        this->max = SCALARPARAM_G_MAXDOUBLE;
+    }
 }
 
 void
@@ -154,7 +182,7 @@ RandomParam::param_newWidget()
     regrandom->setProgrammatically = false;
     regrandom->signal_button_release_event().connect(sigc::mem_fun (*this, &RandomParam::on_button_release));
 
-    regrandom->set_undo_parameters(SP_VERB_DIALOG_LIVE_PATH_EFFECT, _("Change random parameter"));
+    regrandom->set_undo_parameters(_("Change random parameter"), INKSCAPE_ICON("dialog-path-effects"));
 
     return dynamic_cast<Gtk::Widget *> (regrandom);
 }
@@ -173,12 +201,6 @@ RandomParam::operator gdouble()
     }
 };
 
-/* RNG stolen from /display/nr-filter-turbulence.cpp */
-#define RAND_m 2147483647 /* 2**31 - 1 */
-#define RAND_a 16807 /* 7**5; primitive root of m */
-#define RAND_q 127773 /* m / a */
-#define RAND_r 2836 /* m % a */
-#define BSize 0x100
 
 long
 RandomParam::setup_seed(long lSeed)

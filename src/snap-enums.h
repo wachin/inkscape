@@ -25,6 +25,11 @@ enum SnapSourceType { // When adding source types here, then also update Inkscap
     SNAPSOURCE_BBOX_CORNER,
     SNAPSOURCE_BBOX_MIDPOINT,
     SNAPSOURCE_BBOX_EDGE_MIDPOINT,
+
+    // Allow PAGES to be moved as BBOX (enabled alignment snapping)
+    SNAPSOURCE_PAGE_CENTER,
+    SNAPSOURCE_PAGE_CORNER,
+
     //-------------------------------------------------------------------
     // For the same reason, nodes will not snap to bbox points
     SNAPSOURCE_NODE_CATEGORY = 32, // will be used as a flag and must therefore be a power of two
@@ -89,6 +94,7 @@ enum SnapTargetType {
     //-------------------------------------------------------------------
     SNAPTARGET_DATUMS_CATEGORY = 64, // will be used as a flag and must therefore be a power of two
     SNAPTARGET_GRID,
+    SNAPTARGET_GRID_LINE,
     SNAPTARGET_GRID_INTERSECTION,
     SNAPTARGET_GRID_PERPENDICULAR,
     SNAPTARGET_GUIDE,
@@ -96,8 +102,14 @@ enum SnapTargetType {
     SNAPTARGET_GUIDE_ORIGIN,
     SNAPTARGET_GUIDE_PERPENDICULAR,
     SNAPTARGET_GRID_GUIDE_INTERSECTION,
-    SNAPTARGET_PAGE_BORDER,
-    SNAPTARGET_PAGE_CORNER,
+    SNAPTARGET_PAGE_EDGE_BORDER,
+    SNAPTARGET_PAGE_EDGE_CENTER,
+    SNAPTARGET_PAGE_EDGE_CORNER,
+    SNAPTARGET_PAGE_MARGIN_BORDER,
+    SNAPTARGET_PAGE_MARGIN_CENTER,
+    SNAPTARGET_PAGE_MARGIN_CORNER,
+    SNAPTARGET_PAGE_BLEED_BORDER,
+    SNAPTARGET_PAGE_BLEED_CORNER,
     //-------------------------------------------------------------------
     SNAPTARGET_OTHERS_CATEGORY = 128, // will be used as a flag and must therefore be a power of two
     SNAPTARGET_OBJECT_MIDPOINT,
@@ -114,8 +126,11 @@ enum SnapTargetType {
     SNAPTARGET_ALIGNMENT_BBOX_CORNER,
     SNAPTARGET_ALIGNMENT_BBOX_MIDPOINT,
     SNAPTARGET_ALIGNMENT_BBOX_EDGE_MIDPOINT,
-    SNAPTARGET_ALIGNMENT_PAGE_CENTER,
-    SNAPTARGET_ALIGNMENT_PAGE_CORNER,
+    SNAPTARGET_ALIGNMENT_PAGE_EDGE_CENTER,
+    SNAPTARGET_ALIGNMENT_PAGE_EDGE_CORNER,
+    SNAPTARGET_ALIGNMENT_PAGE_MARGIN_CENTER,
+    SNAPTARGET_ALIGNMENT_PAGE_MARGIN_CORNER,
+    SNAPTARGET_ALIGNMENT_PAGE_BLEED_CORNER,
     SNAPTARGET_ALIGNMENT_HANDLE,
     SNAPTARGET_ALIGNMENT_INTERSECTION,
 
@@ -132,6 +147,15 @@ enum SnapTargetType {
 
     //-------------------------------------------------------------------
     SNAPTARGET_MAX_ENUM_VALUE
+};
+
+// simple snapping UI hides variety of choices behind a few categories
+enum class SimpleSnap {
+    BBox = 0,   // bounding box category
+    Nodes,      // nodes, paths
+    Alignment,  // alignment and distribution snaps
+    Rest,       // all the rest
+    _MaxEnumValue
 };
 
 }

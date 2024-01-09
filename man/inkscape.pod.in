@@ -18,13 +18,17 @@ C<inkscape [options] [filename_1 filename_2 ...]>
 options:
 
     -?, --help
+        --help-all
+        --help-gapplication
+        --help-gtk
+
     -V, --version
         --debug-info
         --system-data-directory
         --user-data-directory
 
     -p, --pipe
-        --pdf-page=PAGE
+    -n, --pages=PAGE[,PAGE]
         --pdf-poppler
         --convert-dpi-method=METHOD
         --no-convert-text-baseline-spacing
@@ -43,9 +47,12 @@ options:
     -h, --export-height=HEIGHT
         --export-margin=MARGIN
 
+        --export-page=all|n[,a-b]
     -i, --export-id=OBJECT-ID[;OBJECT-ID]*
     -j, --export-id-only
     -l, --export-plain-svg
+        --export-png-color-mode=COLORMODE
+        --export-png-use-dithering=BOOLEAN
         --export-ps-level=LEVEL
         --export-pdf-version=VERSION
     -T, --export-text-to-path
@@ -66,10 +73,12 @@ options:
         --select=OBJECT-ID[,OBJECT-ID]*
         --actions=ACTION(:ARG)[;ACTION(:ARG)]*
         --action-list
-        --verb=VERB[;VERB]*
-        --verb-list
+        --actions-file=FILENAME
 
     -g, --with-gui
+    -q, --active-window
+        --display=DISPLAY
+        --app-id-tag=TAG
         --batch-process
         --shell
 
@@ -109,6 +118,18 @@ available in the Open Source community.
 
 Shows a help message.
 
+=item B<--help-all>
+
+Shows all help options.
+
+=item B<--help-gapplication>
+
+Shows the GApplication options.
+
+=item B<--help-gtk>
+
+Shows the GTK+ options.
+
 =item B<-V>, B<--version>
 
 Shows the Inkscape version and build date.
@@ -144,9 +165,11 @@ environment variable.
 
 Reads input file from standard input (stdin).
 
-=item B<--pdf-page>=I<PAGE>
+=item B<--pages>=I<PAGE>
 
-Imports the given page of a pdf file. Numbering starts with 1.
+Imports the given comma separated list of pages from a PDF, or multi page SVG file.
+
+This replaces the I<--pdf-page> from previous Inkscape versions.
 
 =item B<--pdf-poppler>
 
@@ -226,14 +249,14 @@ it can be used in combination with L<--export-use-hints>.
 
 =item B<-a> I<x0:y0:x1:y1>, B<--export-area>=I<x0:y0:x1:y1>
 
-In PNG export, set the exported area in SVG user units (anonymous length
-units normally used in Inkscape SVG).  The default is to export the
-entire document page.  The point (0,0) is the lower-left corner.
+In PNG export, set the exported area of the document, specified in px 
+(1/96 in). The default is to export the entire document page. The point 
+(0,0) is the lower-left corner.
 
 =item B<--export-area-snap>
 
-For PNG export, snap the export area outwards to the nearest integer SVG
-user unit (px) values. If you are using the default export resolution of
+For PNG export, snap the export area outwards to the nearest integer px 
+values. If you are using the default export resolution of
 96 dpi and your graphics are pixel-snapped to minimize antialiasing,
 this switch allows you to preserve this alignment even if you are
 exporting some object's bounding box (with L<--export-id>
@@ -265,6 +288,15 @@ Adds a margin around the exported area. The size of the margin is
 specified in units of page size (for SVG) or millimeters (for PS/PDF).
 The option currently has no effect for other export formats.
 
+=item B<-i> I<ID>, B<--export-page>=I<all|n[,a-b]*>
+
+Exports the selected pages only. If more than one page is specified then the
+resulting document may contain multiple pages if the format supports it.
+
+Value can be a comma separated list of page numbers, or page ranges of two
+numbers separated by a dash. The keyword 'all' can be used to indicate all pages
+would be exported.
+
 =item B<-i> I<ID>, B<--export-id>=I<OBJECT-ID[;OBJECT-ID]*>
 
 For PNG, PS, EPS, PDF and plain SVG export, the id attribute value of
@@ -279,17 +311,24 @@ be named this way: [input_filename]_[ID].[export_type]
 
 =item B<-j>, B<--export-id-only>
 
-For PNG and plain SVG, only export the object whose id is given in
+For PNG, PS, EPS, PDF and plain SVG export, only export the object whose id is given in
 L<--export-id>. All other objects are hidden and won't show in export
 even if they overlay the exported object.  Without L<--export-id>, this
-option is ignored. For PDF export, this is the default, so this option
-has no effect.
+option is ignored.
 
 =item B<-l>, B<--export-plain-svg>
 
 Export document(s) to plain SVG format, without sodipodi: or inkscape:
 namespaces and without RDF metadata. Use the L<--export-filename> option
 to specify the filename.
+
+=item B<--export-png-color-mode>=I<COLORMODE>
+
+Sets the color mode (bit depth and color type) for exported bitmaps (Gray_1/Gray_2/Gray_4/Gray_8/Gray_16/RGB_8/RGB_16/GrayAlpha_8/GrayAlpha_16/RGBA_8/RGBA_16)
+
+=item B<--export-png-use-dithering>=I<false|true>
+
+Forces dithering or disables it (the Inkscape build must support dithering for this).
 
 =item B<--export-ps-level>=I<LEVEL>
 
@@ -434,29 +473,29 @@ multiple exports on a single file.
 
 Prints a list of all available actions.
 
-=item B<--verb>=I<VERB[;VERB]*>
+=item B<--actions-file>=I<FILENAME>
 
-The L<--verb> command will execute a specific verb or list of verbs as if they were called from
-a menu or button. Dialogs will appear if that is part of the verb.  To
-get a list of the verb IDs available, use the L<--verb-list> command line
-option.
-
-Note that the L<--verb> command requires a GUI.
-
-Together with L<--select> provides some basic scripting for
-Inkscape from the command line.  They both can receive many arguments as
-needed on the command line and are executed in order on every document.
-
-=item B<--verb-list>
-
-Lists all the verbs that are available in Inkscape by ID. This ID can
-be used in defining keymaps or menus. It can also be used with
-the L<--verb> command line option.
+Execute all actions listed in the file. The file contents must be formatted using the 
+syntax of L<--actions>. This option overrides the L<--actions> argument when both are given.
 
 =item B<-g>, B<--with-gui>
 
 Try to use the GUI (on Unix, use the X server even if $DISPLAY is not
 set).
+
+=item B<-q>, B<--active-window>
+
+Instead of launching a new Inkscape process, this will run the command in the most recently focused Inkscape document.
+
+=item B<--display>=I<DISPLAY>
+
+Sets the X display to use for the Inkscape window.
+
+=item B<--app-id-tag>=I<TAG>
+
+Creates a unique instance of Inkscape with the application ID 'org.inkscape.Inkscape.TAG'. 
+This is useful to separate the Inkscape instances when running different Inkscape versions 
+or using different preferences files concurrently.
 
 =item B<--batch-process>
 
@@ -476,6 +515,9 @@ In shell mode Inkscape expects a sequence of actions (or verbs) as input.
 They will be processed line by line, that means typically when pressing enter.
 It is possible (but not necessary) to put all actions on a single line.
 
+This option can be combined with the L<--active-window> parameter, to execute the 
+shell commands in an already opened Inkscape document.
+
 The following example opens a file and exports it into two different formats,
 then opens another file and exports a single object:
 
@@ -492,13 +534,23 @@ settings that you can change in Inkscape (mostly in the Inkscape
 Preferences dialog).  Also in the subdirectories there, you can place
 your own:
 
-B<$HOME>/.config/inkscape/extensions/ - extension effects.
+B<$HOME>/.config/inkscape/extensions/ - extensions.
 
-B<$HOME>/.config/inkscape/icons/ - icons.
+B<$HOME>/.config/inkscape/fonts/ - fonts.
+
+B<$HOME>/.config/inkscape/icons/ - icon sets.
 
 B<$HOME>/.config/inkscape/keys/ - keyboard maps.
 
+B<$HOME>/.config/inkscape/paint/ - patterns and hatches.
+
+B<$HOME>/.config/inkscape/palettes/ - palettes.
+
+B<$HOME>/.config/inkscape/symbols/ - symbol files.
+
 B<$HOME>/.config/inkscape/templates/ - new file templates.
+
+B<$HOME>/.config/inkscape/ui/ - user interface files.
 
 =head1 DIAGNOSTICS
 
@@ -563,22 +615,23 @@ Query the width of the object with id="text1555":
 Duplicate the objects with id="path1555" and id="rect835", rotate the duplicates 90
 degrees, save SVG, and quit:
 
-    inkscape --select=path1555,rect835 --verb="EditDuplicate;ObjectRotate90;FileSave;FileQuit" filename.svg
+    inkscape --select=path1555,rect835 --actions="duplicate;object-rotate-90-cw" --export-overwrite filename.svg
 
 Select all objects with ellipse tag, rotate them 30 degrees, save the file, and quit.
 
-    inkscape --actions="select-by-element:ellipse;transform-rotate:30;FileSave;FileClose" --batch-process filename.svg
+    inkscape --actions="select-by-element:ellipse;transform-rotate:30" --export-overwrite filename.svg
 
 Export the object with the ID MyTriangle with a semi transparent purple background
 to the file triangle_purple.png and with a red background to the file triangle_red.png.
 
-    inkscape --actions="export-id:MyTriangle; export-id-only; export-background:purple; export-background-opacity:0.5;export-filename:triangle_purple.png; export-do; export-background:red; export-background-opacity:1; export-filename:triangle_red.png" filename.svg
+    inkscape --actions="export-id:MyTriangle; export-id-only; export-background:purple; export-background-opacity:0.5;export-filename:triangle_purple.png; export-do; export-background:red; export-background-opacity:1; export-filename:triangle_red.png; export-do" filename.svg
 
 Read an SVG from standard input (stdin) and export it to PDF format:
 
     cat filename.svg | inkscape --pipe --export-filename=filename.pdf
 
-Export an SVG to PNG format and write it to standard output (stdout), then convert it to JPG format with ImageMagick's convert program:
+Export an SVG to PNG format and write it to standard output (stdout), then convert it 
+to JPG format with ImageMagick's convert program:
 
     inkscape --export-type=png --export-filename=- filename.svg | convert - filename.jpg
 
@@ -607,20 +660,6 @@ Set a custom location for the translation catalog.
 
 For more details see also
 L<http://wiki.inkscape.org/wiki/index.php/Environment_variables>
-
-=head1 THEMES
-
-To load different icons sets instead of the default
-B<$PREFIX>/share/inkscape/icons/icons.svg file, the directory
-B<$HOME>/.config/inkscape/icons/ is used.  Icons are loaded by name
-(e.g. I<fill_none.svg>), or if not found, then from I<icons.svg>.  If
-the icon is not loaded from either of those locations, it falls back to
-the default system location.
-
-The needed icons are loaded from SVG files by searching for the SVG id
-with the matching icon name.  (For example, to load the "fill_none" icon
-from a file, the bounding box seen for SVG id "fill_none" is rendered as
-the icon, whether it comes from I<fill_none.svg> or I<icons.svg>.)
 
 =head1 OTHER INFO
 
@@ -748,10 +787,10 @@ ${INKSCAPE_AUTHORS}
 
 =head1 COPYRIGHT AND LICENSE
 
-B<Copyright (C)> 1999-2020 by Authors.
+B<Copyright (C)> 1999-2023 by Authors.
 
 B<Inkscape> is free software; you can redistribute it and/or modify it
-under the terms of the GPL version 3 or later.
+under the terms of the GPL version 2 or later.
 
 
 =for comment

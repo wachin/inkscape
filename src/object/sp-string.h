@@ -19,10 +19,11 @@
 
 #include "sp-object.h"
 
-class SPString : public SPObject {
+class SPString final : public SPObject {
 public:
 	SPString();
 	~SPString() override;
+    int tag() const override { return tag_of<decltype(*this)>; }
 
     Glib::ustring  string;
 
@@ -33,8 +34,5 @@ public:
 
 	void update(SPCtx* ctx, unsigned int flags) override;
 };
-
-MAKE_SP_OBJECT_DOWNCAST_FUNCTIONS(SP_STRING, SPString)
-MAKE_SP_OBJECT_TYPECHECK_FUNCTIONS(SP_IS_STRING, SPString)
 
 #endif

@@ -29,8 +29,7 @@ LPEdoEffectStackTest::LPEdoEffectStackTest(LivePathEffectObject *lpeobject) :
     point.param_setValue(point);
 }
 
-LPEdoEffectStackTest::~LPEdoEffectStackTest()
-= default;
+LPEdoEffectStackTest::~LPEdoEffectStackTest() = default;
 
 void
 LPEdoEffectStackTest::doEffect (SPCurve * curve)

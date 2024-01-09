@@ -9,6 +9,7 @@
 #include "display/curve.h"
 #include "svg/svg.h"
 
+#include "object/sp-root.h"
 // TODO due to internal breakage in glibmm headers, this must be last:
 #include <glibmm/i18n.h>
 
@@ -28,40 +29,132 @@ LPEFillBetweenStrokes::LPEFillBetweenStrokes(LivePathEffectObject *lpeobject) :
     registerParameter(&reverse_second);
     registerParameter(&join);
     registerParameter(&close);
+    linked_path.setUpdating(true);
+    second_path.setUpdating(true);
 }
 
-LPEFillBetweenStrokes::~LPEFillBetweenStrokes()
-= default;
+LPEFillBetweenStrokes::~LPEFillBetweenStrokes() = default;
+
+void
+LPEFillBetweenStrokes::doOnApply(SPLPEItem const* lpeitem)
+{
+    lpeversion.param_setValue("1.2", true);
+}
+
+bool 
+LPEFillBetweenStrokes::doOnOpen(SPLPEItem const *lpeitem)
+{
+    if (!is_load || is_applied) {
+        return false;
+    }
+    linked_path.setUpdating(false);
+    second_path.setUpdating(false);
+    linked_path.start_listening(linked_path.getObject());
+    linked_path.connect_selection_changed();
+    second_path.start_listening(second_path.getObject());
+    second_path.connect_selection_changed();
+    std::vector<SPLPEItem *> lpeitems = getCurrrentLPEItems();
+    if (lpeitems.size() == 1) {
+        sp_lpe_item = lpeitems[0];
+        prevaffine = i2anc_affine(sp_lpe_item, sp_lpe_item->document->getRoot());
+    }
+    if (auto item = linked_path.getObject()) {
+        item->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG);
+    }
+    if (auto item = second_path.getObject()) {
+        item->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG);
+    }
+    return false;
+}
+
+void 
+LPEFillBetweenStrokes::doBeforeEffect (SPLPEItem const* lpeitem)
+{
+    legacytest = false;
+    std::vector<SPLPEItem *> lpeitems = getCurrrentLPEItems();
+    if (lpeitems.size() == 1) {
+        sp_lpe_item = lpeitems[0];
+    }
+    if (!is_load) {
+        transform_multiply_nested(i2anc_affine(sp_lpe_item, sp_lpe_item->document->getRoot()).inverse() * prevaffine);
+        prevaffine = i2anc_affine(sp_lpe_item, sp_lpe_item->document->getRoot());
+    } else {
+        linked_path.setUpdating(false);
+        second_path.setUpdating(false);
+        linked_path.start_listening(linked_path.getObject());
+        linked_path.connect_selection_changed();
+        second_path.start_listening(second_path.getObject());
+        second_path.connect_selection_changed();
+        if (auto item = linked_path.getObject()) {
+            item->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG);
+        }
+        if (auto item = second_path.getObject()) {
+            item->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG);
+        }
+    }
+    Glib::ustring version = lpeversion.param_getSVGValue();
+    if (version < "1.2") {
+        legacytest = true;
+    }
+}
+void 
+LPEFillBetweenStrokes::transform_multiply_nested(Geom::Affine const &postmul)
+{
+    if (is_visible && sp_lpe_item->pathEffectsEnabled() && !isOnClipboard() && !postmul.isIdentity()) {
+        SPDesktop *desktop = SP_ACTIVE_DESKTOP;
+        Inkscape::Selection *selection = nullptr;
+        if (desktop) {
+            selection = desktop->getSelection();
+        }
+        std::vector<SPLPEItem *> lpeitems = getCurrrentLPEItems();
+        if (lpeitems.size() == 1) {
+            sp_lpe_item = lpeitems[0];
+        }
+        if (auto item = linked_path.getObject()) {
+            if (item->document->isSensitive() && selection && !selection->includes(item, true) && selection->includes(sp_lpe_item, true)) {
+                item->transform *= i2anc_affine(item->parent, item->document->getRoot());
+                item->transform *=  postmul.inverse();
+                item->transform *= i2anc_affine(item->parent, item->document->getRoot()).inverse();
+                item->doWriteTransform(item->transform, nullptr, false);
+                item->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG);
+            }
+        }
+        if (auto item2 = second_path.getObject()) {
+            if (item2->document->isSensitive() && selection && !selection->includes(item2, true) && selection->includes(sp_lpe_item, true)) {
+                item2->transform *= i2anc_affine(item2->parent, item2->document->getRoot());
+                item2->transform *=  postmul.inverse();
+                item2->transform *= i2anc_affine(item2->parent, item2->document->getRoot()).inverse();
+                item2->doWriteTransform(item2->transform, nullptr, false);
+                item2->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG);
+            }
+        }
+
+    }
+}
 
 void LPEFillBetweenStrokes::doEffect (SPCurve * curve)
 {
     if (curve) {
-        SPDesktop *desktop = SP_ACTIVE_DESKTOP;
-        Inkscape::Selection *selection = nullptr;
-        if (desktop) {
-            selection = desktop->selection;
-        }
-        Geom::Affine transf = sp_item_transform_repr(sp_lpe_item);
-        if (transf != Geom::identity()) {
-            sp_lpe_item->doWriteTransform(Geom::identity());
-        }
         if ( linked_path.linksToPath() && second_path.linksToPath() && linked_path.getObject() && second_path.getObject() ) {
             SPItem * linked1 = linked_path.getObject();
-            if (linked1 && transf != Geom::identity() && selection && !selection->includes(linked1->getRepr())) {
-                linked1->doWriteTransform(transf);
+            if (is_load) {
+                linked1->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG);
             }
             Geom::PathVector linked_pathv = linked_path.get_pathvector();
             SPItem * linked2 = second_path.getObject();
-            if (linked2 && transf != Geom::identity() && selection && !selection->includes(linked2->getRepr())) {
-                linked2->doWriteTransform(transf);
+            if (is_load) {
+                linked2->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG);
             }
             Geom::PathVector second_pathv = second_path.get_pathvector();
             Geom::PathVector result_linked_pathv;
             Geom::PathVector result_second_pathv;
+            linked_pathv *= linked1->getRelativeTransform(sp_lpe_item);
+            second_pathv *= linked2->getRelativeTransform(sp_lpe_item);
             for (auto & iter : linked_pathv)
             {
                 result_linked_pathv.push_back(iter);
             }
+            
             for (auto & iter : second_pathv)
             {
                 result_second_pathv.push_back(iter);
@@ -97,10 +190,11 @@ void LPEFillBetweenStrokes::doEffect (SPCurve * curve)
         }
         else if ( linked_path.linksToPath() && linked_path.getObject() ) {
             SPItem *linked1 = linked_path.getObject();
-            if (linked1 && transf != Geom::identity() && selection && !selection->includes(linked1->getRepr())) {
-                linked1->doWriteTransform(transf);
+            if (is_load) {
+                linked1->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG);
             }
             Geom::PathVector linked_pathv = linked_path.get_pathvector();
+            linked_pathv *= linked1->getRelativeTransform(sp_lpe_item);
             Geom::PathVector result_pathv;
             for (auto & iter : linked_pathv)
             {
@@ -115,10 +209,11 @@ void LPEFillBetweenStrokes::doEffect (SPCurve * curve)
         }
         else if ( second_path.linksToPath() && second_path.getObject() ) {
             SPItem *linked2 = second_path.getObject();
-            if (linked2 && transf != Geom::identity() && selection && !selection->includes(linked2->getRepr())) {
-                linked2->doWriteTransform(transf);
+            if (is_load) {
+                linked2->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG);
             }
             Geom::PathVector second_pathv = second_path.get_pathvector();
+            second_pathv *= linked2->getRelativeTransform(sp_lpe_item);
             Geom::PathVector result_pathv;
             for (auto & iter : second_pathv)
             {
@@ -127,6 +222,7 @@ void LPEFillBetweenStrokes::doEffect (SPCurve * curve)
             if ( !result_pathv.empty() ) {
                 if (close) {
                     result_pathv.front().close();
+                    result_pathv.front().snapEnds(0.1);
                 }
                 curve->set_pathvector(result_pathv);
             }

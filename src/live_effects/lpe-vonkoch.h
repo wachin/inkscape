@@ -49,7 +49,7 @@ class LPEVonKoch : public Effect, GroupBBoxEffect {
 public:
     LPEVonKoch(LivePathEffectObject *lpeobject);
     ~LPEVonKoch() override;
-
+    bool doOnOpen(SPLPEItem const *lpeitem) override;
     Geom::PathVector doEffect_path (Geom::PathVector const & path_in) override;
 
     void resetDefaults(SPItem const* item) override;

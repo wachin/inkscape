@@ -17,6 +17,7 @@
 
 #include <2geom/point.h>
 #include <2geom/rect.h>
+#include <2geom/pathvector.h>
 #include <cstdio>
 #include <utility>
 
@@ -139,11 +140,10 @@ class SnapCandidatePath
 {
 
 public:
-    SnapCandidatePath(Geom::PathVector* path, SnapTargetType target, Geom::OptRect bbox, bool edited = false)
-        : path_vector(path), target_type(target), target_bbox(std::move(bbox)), currently_being_edited(edited) {};
-    ~SnapCandidatePath() = default;;
+    SnapCandidatePath(Geom::PathVector path, SnapTargetType target, Geom::OptRect bbox, bool edited = false)
+        : path_vector(std::move(path)), target_type(target), target_bbox(std::move(bbox)), currently_being_edited(edited) {};
 
-    Geom::PathVector* path_vector;
+    Geom::PathVector path_vector;
     SnapTargetType target_type;
     Geom::OptRect target_bbox;
     bool currently_being_edited; // true for the path that's currently being edited in the node tool (if any)

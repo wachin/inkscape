@@ -16,7 +16,7 @@
 #ifndef SEEN_DIALOGS_SP_ATTRIBUTE_WIDGET_H
 #define SEEN_DIALOGS_SP_ATTRIBUTE_WIDGET_H
 
-#include <gtkmm/widget.h>
+#include <gtkmm/bin.h>
 #include <cstddef>
 #include <sigc++/connection.h>
 
@@ -40,7 +40,7 @@ class  SPObject;
  * an object. For each property, it creates an entry next to a label and
  * positiones these labels and entries one by one below each other.
  */
-class SPAttributeTable : public Gtk::Widget {
+class SPAttributeTable : public Gtk::Bin {
 public:
     /**
      * Constructor defaulting to no content.

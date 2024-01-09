@@ -34,7 +34,7 @@ time_t now()
         iss >> now;
         if (iss.fail() || !iss.eof()) {
             std::cerr << "Error: Cannot parse SOURCE_DATE_EPOCH as integer\n";
-            exit(27);
+            std::terminate();
         }
     }
 

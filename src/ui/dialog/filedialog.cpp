@@ -103,11 +103,6 @@ FileOpenDialog *FileOpenDialog::create(Gtk::Window &parentWindow,
 	return dialog;
 }
 
-Glib::ustring FileOpenDialog::getFilename()
-{
-    return myFilename;
-}
-
 //########################################################################
 //# F I L E    S A V E
 //########################################################################
@@ -137,20 +132,10 @@ FileSaveDialog *FileSaveDialog::create(Gtk::Window& parentWindow,
     return dialog;
 }
 
-Glib::ustring FileSaveDialog::getFilename()
-{
-    return myFilename;
-}
-
 Glib::ustring FileSaveDialog::getDocTitle()
 {
 	return myDocTitle;
 }
-
-//void FileSaveDialog::change_path(const Glib::ustring& path)
-//{
-//	myFilename = path;
-//}
 
 void FileSaveDialog::appendExtension(Glib::ustring& path, Inkscape::Extension::Output* outputExtension)
 {
@@ -175,9 +160,9 @@ void FileSaveDialog::appendExtension(Glib::ustring& path, Inkscape::Extension::O
 
 		if (appendExtension) {
 			utf8Name = utf8Name + outputExtension->get_extension();
-			myFilename = Glib::filename_from_utf8( utf8Name );
-		}
-	} catch ( Glib::ConvertError& e ) {
+            _filename = Glib::filename_from_utf8(utf8Name);
+        }
+    } catch ( Glib::ConvertError& e ) {
 		// ignore
 	}
 }

@@ -39,9 +39,7 @@ namespace Dialog {
  */
 class Transformation : public DialogBase
 {
-
 public:
-
     /**
      * Constructor for Transformation.
      *
@@ -67,13 +65,6 @@ public:
      * Cleanup
      */
     ~Transformation() override;
-
-    /**
-     * Factory method.  Create an instance of this class/interface
-     */
-    static Transformation &getInstance()
-        { return *new Transformation(); }
-
 
     /**
      * Show the Move panel
@@ -214,17 +205,6 @@ protected:
     void applyPageTransform(Inkscape::Selection *);
 
 private:
-
-    /**
-     * Copy constructor
-     */
-    Transformation(Transformation const &d) = delete;
-
-    /**
-     * Assignment operator
-     */
-    Transformation operator=(Transformation const &d) = delete;
-
     Gtk::Button *applyButton;
     Gtk::Button *resetButton;
 
@@ -233,19 +213,11 @@ private:
     sigc::connection _tabSwitchConn;
 };
 
-
-
-
 } // namespace Dialog
 } // namespace UI
 } // namespace Inkscape
 
-
-
 #endif //INKSCAPE_UI_DIALOG_TRANSFORMATION_H
-
-
-
 
 /*
   Local Variables:

@@ -33,8 +33,7 @@ LPEPathLength::LPEPathLength(LivePathEffectObject *lpeobject) :
     registerParameter(&display_unit);
 }
 
-LPEPathLength::~LPEPathLength()
-= default;
+LPEPathLength::~LPEPathLength() = default;
 
 Geom::Piecewise<Geom::D2<Geom::SBasis> >
 LPEPathLength::doEffect_pwd2 (Geom::Piecewise<Geom::D2<Geom::SBasis> > const & pwd2_in)
@@ -59,9 +58,9 @@ LPEPathLength::doEffect_pwd2 (Geom::Piecewise<Geom::D2<Geom::SBasis> > const & p
     Point c;
     double area;
     if (centroid(pwd2_in, c, area)) {
-        //g_print ("Area is zero\n");
+        //g_warning ("Area is zero");
     }
-    //g_print ("Area: %f\n", area);
+    //g_warning ("Area: %f", area);
     if (!this->isVisible()) {
         info_text.param_setValue("");
     }

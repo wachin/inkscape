@@ -21,6 +21,7 @@
 #include "svg/svg-color.h"
 #include "svg/css-ostringstream.h"
 #include "style.h"
+#include "util/units.h"
 
 static SPObject *generate_linked_fill(SPShape *source)
 {
@@ -39,6 +40,9 @@ static SPObject *generate_linked_fill(SPShape *source)
     effectTarget = g_strdup_printf("#%s,0,1", source->getId());
     effectRepr->setAttribute("effect", "fill_between_many");
     effectRepr->setAttribute("method", "bsplinespiro");
+    effectRepr->setAttribute("autoreverse", "false");
+    effectRepr->setAttribute("close", "false");
+    effectRepr->setAttribute("join", "false");
     effectRepr->setAttribute("linkedpaths", effectTarget);
     defs->appendChild(effectRepr);
     Inkscape::GC::release(effectRepr);
@@ -206,7 +210,9 @@ void lpe_shape_revert_stroke_and_fill(SPShape *shape, double width)
     } else {
         sp_repr_css_set_property(css, "fill", "none");
     }
-
+    
+    Glib::ustring display_unit = shape->document->getDisplayUnit()->abbr.c_str();
+    width = Inkscape::Util::Quantity::convert(width, display_unit.c_str(), "px");
     Inkscape::CSSOStringStream os;
     os << fabs(width);
     sp_repr_css_set_property(css, "stroke-width", os.str().c_str());

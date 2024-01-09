@@ -46,7 +46,7 @@ class DialogContainer : public Gtk::Box
     using parent_type = Gtk::Box;
 
 public:
-    DialogContainer();
+    DialogContainer(InkscapeWindow* inkscape_window);
     ~DialogContainer() override;
 
     // Columns-related functions
@@ -54,10 +54,8 @@ public:
     DialogMultipaned *create_column();
 
     // Dialog-related functions
-    void new_dialog(unsigned int code);  // TEMP TEMP TEMP
     void new_dialog(const Glib::ustring& dialog_type);
 
-    DialogWindow* new_floating_dialog(unsigned int code);  // TEMP TEMP TEMP
     DialogWindow* new_floating_dialog(const Glib::ustring& dialog_type);
     bool has_dialog_of_type(DialogBase *dialog);
     DialogBase *get_dialog(const Glib::ustring& dialog_type);
@@ -66,7 +64,8 @@ public:
     const std::multimap<Glib::ustring, DialogBase *> *get_dialogs() { return &dialogs; };
     void toggle_dialogs();
     void update_dialogs(); // Update all linked dialogs
-    void set_desktop(SPDesktop *desktop);
+    void set_inkscape_window(InkscapeWindow *inkscape_window);
+    InkscapeWindow* get_inkscape_window() { return _inkscape_window; }
 
     // State saving functionality
     std::unique_ptr<Glib::KeyFile> save_container_state();
@@ -79,8 +78,16 @@ public:
     std::shared_ptr<Glib::KeyFile> get_container_state(const window_position_t* position) const;
     void load_container_state(Glib::KeyFile& state, const std::string& window_id);
 
+#ifdef __APPLE__
+// Note: this is an ugly work-around for https://gitlab.com/inkscape/inkscape/-/issues/4111
+// ToDo: revisit and hopefully remove this hack in gtk4
+static DialogNotebook* new_nb;
+static Gtk::Widget* page_move;
+#endif
+
 private:
-    DialogMultipaned *columns;                    // The main widget inside which other children are kept.
+    InkscapeWindow *_inkscape_window = nullptr;   // Every container is attached to an InkscapeWindow.
+    DialogMultipaned *columns = nullptr;          // The main widget inside which other children are kept.
     std::vector<Gtk::TargetEntry> target_entries; // What kind of object can be dropped.
 
     /**
@@ -95,7 +102,7 @@ private:
     std::multimap<Glib::ustring, DialogBase *>dialogs;
 
     void new_dialog(const Glib::ustring& dialog_type, DialogNotebook* notebook);
-    DialogBase *dialog_factory(const Glib::ustring& dialog_type);
+    std::unique_ptr<DialogBase> dialog_factory(Glib::ustring const &dialog_type);
     Gtk::Widget *create_notebook_tab(Glib::ustring label, Glib::ustring image, const Glib::ustring shortcut);
     DialogWindow* create_new_floating_dialog(const Glib::ustring& dialog_type, bool blink);
 
@@ -109,7 +116,7 @@ private:
     void append_drop(const Glib::RefPtr<Gdk::DragContext> context, DialogMultipaned *column);
     void column_empty(DialogMultipaned *column);
     DialogBase* find_existing_dialog(const Glib::ustring& dialog_type);
-    static bool recreate_dialogs_from_state(const Glib::KeyFile* keyfile);
+    static bool recreate_dialogs_from_state(InkscapeWindow* inkscape_window, const Glib::KeyFile* keyfile);
 };
 
 } // namespace Dialog

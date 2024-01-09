@@ -67,10 +67,10 @@ class GradientSelector : public Gtk::Box, public GradientSelectorInterface {
 
 
   private:
-    sigc::signal<void> _signal_grabbed;
-    sigc::signal<void> _signal_dragged;
-    sigc::signal<void> _signal_released;
-    sigc::signal<void, SPGradient *> _signal_changed;
+    sigc::signal<void ()> _signal_grabbed;
+    sigc::signal<void ()> _signal_dragged;
+    sigc::signal<void ()> _signal_released;
+    sigc::signal<void (SPGradient *)> _signal_changed;
     SelectorMode _mode;
 
     SPGradientUnits _gradientUnits;

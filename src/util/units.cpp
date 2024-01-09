@@ -252,9 +252,17 @@ Unit UnitTable::_empty_unit;
 
 UnitTable::UnitTable()
 {
-    using namespace Inkscape::IO::Resource;
-    auto filename = get_path_string(SYSTEM, UIS, "units.xml");
-    load(filename);
+    /* We need to defer loading units.xml from a user data location
+     * if we're running inside a macOS application bundle, because at this
+     * point we haven't set up the environment (especially XDG variables)
+     * for macOS yet. And the following call we trigger glib to lookup XDG
+     * variables and cache them forever, i.e. we can no longer modify them
+     * in inkscape-main.cpp.
+     */
+    if (!g_str_has_suffix(get_program_dir(), "Contents/MacOS")) {
+        using namespace Inkscape::IO::Resource;
+        load(get_filename(UIS, "units.xml", false, true));
+    }
 }
 
 UnitTable::~UnitTable()

@@ -16,11 +16,9 @@
 #include <string>
 #include <2geom/path.h>
 
+#include "style.h"
 #include "svg/svg.h"
-#include "display/cairo-utils.h"
 #include "display/curve.h"
-#include "display/drawing-context.h"
-#include "display/drawing-surface.h"
 #include "display/drawing.h"
 #include "display/drawing-shape.h"
 #include "helper/geom.h"
@@ -29,19 +27,11 @@
 #include "sp-hatch-path.h"
 #include "svg/css-ostringstream.h"
 
-SPHatchPath::SPHatchPath()
-    : offset(),
-      _display(),
-      _curve(nullptr),
-      _continuous(false)
-{
-    offset.unset();
-}
+SPHatchPath::SPHatchPath() = default;
 
-SPHatchPath::~SPHatchPath()
-= default;
+SPHatchPath::~SPHatchPath() = default;
 
-void SPHatchPath::build(SPDocument* doc, Inkscape::XML::Node* repr)
+void SPHatchPath::build(SPDocument *doc, Inkscape::XML::Node *repr)
 {
     SPObject::build(doc, repr);
 
@@ -54,24 +44,20 @@ void SPHatchPath::build(SPDocument* doc, Inkscape::XML::Node* repr)
 
 void SPHatchPath::release()
 {
-    for (auto & iter : _display) {
-        delete iter.arenaitem;
-        iter.arenaitem = nullptr;
-    }
-
+    views.clear();
     SPObject::release();
 }
 
-void SPHatchPath::set(SPAttr key, const gchar* value)
+void SPHatchPath::set(SPAttr key, gchar const *value)
 {
     switch (key) {
     case SPAttr::D:
         if (value) {
             Geom::PathVector pv;
             _readHatchPathVector(value, pv, _continuous);
-            _curve.reset(new SPCurve(pv));
+            _curve.emplace(std::move(pv));
         } else {
-            _curve.reset(nullptr);
+            _curve.reset();
         }
 
         requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG);
@@ -93,8 +79,7 @@ void SPHatchPath::set(SPAttr key, const gchar* value)
     }
 }
 
-
-void SPHatchPath::update(SPCtx* ctx, unsigned int flags)
+void SPHatchPath::update(SPCtx *ctx, unsigned int flags)
 {
     if (flags & (SP_OBJECT_MODIFIED_FLAG | SP_OBJECT_STYLE_MODIFIED_FLAG | SP_OBJECT_VIEWPORT_MODIFIED_FLAG)) {
         flags &= ~SP_OBJECT_USER_MODIFIED_FLAG_B;
@@ -108,47 +93,44 @@ void SPHatchPath::update(SPCtx* ctx, unsigned int flags)
             double const aw = (ictx) ? 1.0 / ictx->i2vp.descrim() : 1.0;
             style->stroke_width.computed = style->stroke_width.value * aw;
 
-            for (auto & iter : _display) {
-                iter.arenaitem->setStyle(style);
+            for (auto &v : views) {
+                v.drawingitem->setStyle(style);
             }
         }
     }
 
     if (flags & (SP_OBJECT_MODIFIED_FLAG | SP_OBJECT_PARENT_MODIFIED_FLAG)) {
-        for (auto & iter : _display) {
-            _updateView(iter);
+        for (auto &v : views) {
+            _updateView(v);
         }
     }
 }
 
 bool SPHatchPath::isValid() const
 {
-    if (_curve && (_repeatLength() <= 0)) {
-        return false;
-    } else {
-        return true;
-    }
+    return !_curve || _repeatLength() > 0;
 }
 
 Inkscape::DrawingItem *SPHatchPath::show(Inkscape::Drawing &drawing, unsigned int key, Geom::OptInterval extents)
 {
-    Inkscape::DrawingShape *s = new Inkscape::DrawingShape(drawing);
-    _display.push_front(View(s, key));
-    _display.front().extents = extents;
+    views.emplace_back(make_drawingitem<Inkscape::DrawingShape>(drawing), extents, key);
+    auto &v = views.back();
+    auto s = v.drawingitem.get();
 
-    _updateView(_display.front());
+    _updateView(v);
 
     return s;
 }
 
 void SPHatchPath::hide(unsigned int key)
 {
-    for (ViewIterator iter = _display.begin(); iter != _display.end(); ++iter) {
-        if (iter->key == key) {
-            delete iter->arenaitem;
-            _display.erase(iter);
-            return;
-        }
+    auto it = std::find_if(views.begin(), views.end(), [=] (auto &v) {
+        return v.key == key;
+    });
+
+    if (it != views.end()) {
+        views.erase(it);
+        return;
     }
 
     g_assert_not_reached();
@@ -156,9 +138,9 @@ void SPHatchPath::hide(unsigned int key)
 
 void SPHatchPath::setStripExtents(unsigned int key, Geom::OptInterval const &extents)
 {
-    for (auto & iter : _display) {
-        if (iter.key == key) {
-            iter.extents = extents;
+    for (auto &v : views) {
+        if (v.key == key) {
+            v.extents = extents;
             break;
         }
     }
@@ -179,21 +161,21 @@ Geom::Interval SPHatchPath::bounds() const
         bbox = bounds_exact_transformed(_curve->get_pathvector(), transform);
     }
 
-    gdouble stroke_width = style->stroke_width.computed;
+    double stroke_width = style->stroke_width.computed;
     result.setMin(bbox->left() - stroke_width / 2);
     result.setMax(bbox->right() + stroke_width / 2);
     return result;
 }
 
-std::unique_ptr<SPCurve> SPHatchPath::calculateRenderCurve(unsigned key) const
+SPCurve SPHatchPath::calculateRenderCurve(unsigned key) const
 {
-    for (const auto & iter : _display) {
-        if (iter.key == key) {
-            return _calculateRenderCurve(iter);
+    for (auto const &v : views) {
+        if (v.key == key) {
+            return _calculateRenderCurve(v);
         }
     }
     g_assert_not_reached();
-    return nullptr;
+    return SPCurve{};
 }
 
 gdouble SPHatchPath::_repeatLength() const
@@ -212,23 +194,23 @@ void SPHatchPath::_updateView(View &view)
     auto calculated_curve = _calculateRenderCurve(view);
 
     Geom::Affine offset_transform = Geom::Translate(offset.computed, 0);
-    view.arenaitem->setTransform(offset_transform);
+    view.drawingitem->setTransform(offset_transform);
     style->fill.setNone();
-    view.arenaitem->setStyle(style);
-    view.arenaitem->setPath(calculated_curve.get());
+    view.drawingitem->setStyle(style);
+    view.drawingitem->setPath(std::make_shared<SPCurve>(std::move(calculated_curve)));
 }
 
-std::unique_ptr<SPCurve> SPHatchPath::_calculateRenderCurve(View const &view) const
+SPCurve SPHatchPath::_calculateRenderCurve(View const &view) const
 {
-    auto calculated_curve = std::make_unique<SPCurve>();
+    SPCurve calculated_curve;
 
     if (!view.extents) {
         return calculated_curve;
     }
 
     if (!_curve) {
-        calculated_curve->moveto(0, view.extents->min());
-        calculated_curve->lineto(0, view.extents->max());
+        calculated_curve.moveto(0, view.extents->min());
+        calculated_curve.lineto(0, view.extents->max());
         //TODO: if hatch has a dasharray defined, adjust line ends
     } else {
         gdouble repeatLength = _repeatLength();
@@ -236,23 +218,22 @@ std::unique_ptr<SPCurve> SPHatchPath::_calculateRenderCurve(View const &view) co
             gdouble initial_y = floor(view.extents->min() / repeatLength) * repeatLength;
             int segment_cnt = ceil((view.extents->extent()) / repeatLength) + 1;
 
-            auto segment = _curve->copy();
-            segment->transform(Geom::Translate(0, initial_y));
+            auto segment = *_curve;
+            segment.transform(Geom::Translate(0, initial_y));
 
             Geom::Affine step_transform = Geom::Translate(0, repeatLength);
             for (int i = 0; i < segment_cnt; ++i) {
                 if (_continuous) {
-                    calculated_curve->append_continuous(*segment);
+                    calculated_curve.append_continuous(segment);
                 } else {
-                    calculated_curve->append(*segment);
+                    calculated_curve.append(segment);
                 }
-                segment->transform(step_transform);
+                segment.transform(step_transform);
             }
         }
     }
     return calculated_curve;
 }
-
 
 void SPHatchPath::_readHatchPathVector(char const *str, Geom::PathVector &pathv, bool &continous_join)
 {
@@ -287,19 +268,10 @@ void SPHatchPath::_readHatchPathVector(char const *str, Geom::PathVector &pathv,
     }
 }
 
-SPHatchPath::View::View(Inkscape::DrawingShape *arenaitem, int key)
-    : arenaitem(arenaitem),
-      extents(),
-      key(key)
-{
-}
-
-SPHatchPath::View::~View()
-{
-    // remember, do not delete arenaitem here
-    arenaitem = nullptr;
-}
-
+SPHatchPath::View::View(DrawingItemPtr<Inkscape::DrawingShape> drawingitem, Geom::OptInterval const &extents, unsigned key)
+    : drawingitem(std::move(drawingitem))
+    , extents(extents)
+    , key(key) {}
 
 /*
  Local Variables:

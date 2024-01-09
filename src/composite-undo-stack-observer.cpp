@@ -11,7 +11,6 @@
  */
 
 #include <algorithm>
-#include <functional>
 
 #include "composite-undo-stack-observer.h"
 #include "xml/event.h"
@@ -25,9 +24,9 @@ void
 CompositeUndoStackObserver::add(UndoStackObserver& observer)
 {
 	if (!this->_iterating) {
-		this->_active.push_back(UndoStackObserverRecord(observer));
+		this->_active.emplace_back(observer);
 	} else {
-		this->_pending.push_back(UndoStackObserverRecord(observer));
+		this->_pending.emplace_back(observer);
 	}
 }
 
@@ -46,9 +45,9 @@ void
 CompositeUndoStackObserver::notifyUndoEvent(Event* log)
 {
 	this->_lock();
-	for(UndoObserverRecordList::iterator i = this->_active.begin(); i != _active.end(); ++i) {
-		if (!i->to_remove) {
-			i->issueUndo(log);
+	for (auto &i : _active) {
+		if (!i.to_remove) {
+			i.issueUndo(log);
 		}
 	}
 	this->_unlock();
@@ -59,9 +58,9 @@ CompositeUndoStackObserver::notifyRedoEvent(Event* log)
 {
 
 	this->_lock();
-	for(UndoObserverRecordList::iterator i = this->_active.begin(); i != _active.end(); ++i) {
-		if (!i->to_remove) {
-			i->issueRedo(log);
+	for (auto &i : _active) {
+		if (!i.to_remove) {
+			i.issueRedo(log);
 		}
 	}
 	this->_unlock();
@@ -71,9 +70,9 @@ void
 CompositeUndoStackObserver::notifyUndoCommitEvent(Event* log)
 {
 	this->_lock();
-	for(UndoObserverRecordList::iterator i = this->_active.begin(); i != _active.end(); ++i) {
-		if (!i->to_remove) {
-			i->issueUndoCommit(log);
+	for (auto &i : _active) {
+		if (!i.to_remove) {
+			i.issueUndoCommit(log);
 		}
 	}
 	this->_unlock();
@@ -83,9 +82,9 @@ void
 CompositeUndoStackObserver::notifyClearUndoEvent()
 {
 	this->_lock();
-	for(UndoObserverRecordList::iterator i = this->_active.begin(); i != _active.end(); ++i) {
-		if (!i->to_remove) {
-			i->issueClearUndo();
+	for (auto &i : _active) {
+		if (!i.to_remove) {
+			i.issueClearUndo();
 		}
 	}
 	this->_unlock();
@@ -95,9 +94,9 @@ void
 CompositeUndoStackObserver::notifyClearRedoEvent()
 {
 	this->_lock();
-	for(UndoObserverRecordList::iterator i = this->_active.begin(); i != _active.end(); ++i) {
-		if (!i->to_remove) {
-			i->issueClearRedo();
+	for (auto &i : _active) {
+		if (!i.to_remove) {
+			i.issueClearRedo();
 		}
 	}
 	this->_unlock();
@@ -108,7 +107,7 @@ CompositeUndoStackObserver::_remove_one(UndoObserverRecordList& list, UndoStackO
 {
 	UndoStackObserverRecord eq_comp(o);
 
-	UndoObserverRecordList::iterator i = std::find_if(list.begin(), list.end(), std::bind(std::equal_to< UndoStackObserverRecord >(), std::placeholders::_1, eq_comp ));
+	auto i = std::find(list.begin(), list.end(), eq_comp);
 
 	if (i != list.end()) {
 		list.erase(i);
@@ -123,10 +122,10 @@ CompositeUndoStackObserver::_mark_one(UndoObserverRecordList& list, UndoStackObs
 {
 	UndoStackObserverRecord eq_comp(o);
 
-	UndoObserverRecordList::iterator i = std::find_if(list.begin(), list.end(), std::bind(std::equal_to< UndoStackObserverRecord >(), std::placeholders::_1, eq_comp));
+	auto i = std::find(list.begin(), list.end(), eq_comp);
 
 	if (i != list.end()) {
-		(*i).to_remove = true;
+		i->to_remove = true;
 		return true;
 	} else {
 		return false;
@@ -136,31 +135,19 @@ CompositeUndoStackObserver::_mark_one(UndoObserverRecordList& list, UndoStackObs
 void
 CompositeUndoStackObserver::_unlock()
 {
-	if (!--this->_iterating) {
+	if (!--_iterating) {
 		// Remove marked observers
-		UndoObserverRecordList::iterator i = this->_active.begin();
-		for(; i != this->_active.begin(); ) {
-			if (i->to_remove) {
-				i = this->_active.erase(i);
-			}
-			else{
-				++i;
-			}
-		}
+		const auto pred = [](UndoStackObserverRecord const &i) -> bool { return i.to_remove; };
 
-		i = this->_pending.begin();
-		for(; i != this->_pending.begin(); ) {
-			if (i->to_remove) {
-				i = this->_active.erase(i);
-			}
-			else {
-				++i;
-			}
-		}
+		auto newEnd = std::remove_if(_active.begin(), _active.end(), pred);
+		_active.erase(newEnd, _active.end());
+
+		newEnd = std::remove_if(_pending.begin(), _pending.end(), pred);
+		_pending.erase(newEnd, _pending.end());
 
 		// Merge pending and active
-		this->_active.insert(this->_active.end(), this->_pending.begin(), this->_pending.end());
-		this->_pending.clear();
+		_active.insert(_active.end(), _pending.begin(), _pending.end());
+		_pending.clear();
 	}
 }
 

@@ -36,12 +36,11 @@
 #include "document-undo.h"
 #include "document.h"
 #include "inkscape.h"
-#include "verbs.h"
 #include "style.h"
 #include "style-enums.h"
 
 #include "object/sp-image.h"
-
+#include "ui/icon-names.h"
 #include "widgets/sp-attribute-widget.h"
 
 namespace Inkscape {
@@ -115,7 +114,7 @@ void ObjectProperties::_init()
     _label_id.set_mnemonic_widget(_entry_id);
 
     // pressing enter in the id field is the same as clicking Set:
-    _entry_id.signal_activate().connect(sigc::mem_fun(this, &ObjectProperties::_labelChanged));
+    _entry_id.signal_activate().connect(sigc::mem_fun(*this, &ObjectProperties::_labelChanged));
     // focus is in the id field initially:
     _entry_id.grab_focus();
 
@@ -135,7 +134,7 @@ void ObjectProperties::_init()
     _label_label.set_mnemonic_widget(_entry_label);
 
     // pressing enter in the label field is the same as clicking Set:
-    _entry_label.signal_activate().connect(sigc::mem_fun(this, &ObjectProperties::_labelChanged));
+    _entry_label.signal_activate().connect(sigc::mem_fun(*this, &ObjectProperties::_labelChanged));
 
 
     /* Create the label for the object title */
@@ -152,7 +151,7 @@ void ObjectProperties::_init()
 
     _label_title.set_mnemonic_widget(_entry_title);
     // pressing enter in the label field is the same as clicking Set:
-    _entry_title.signal_activate().connect(sigc::mem_fun(this, &ObjectProperties::_labelChanged));
+    _entry_title.signal_activate().connect(sigc::mem_fun(*this, &ObjectProperties::_labelChanged));
 
     _label_color.set_mnemonic_widget(_highlight_color);
     _label_color.set_halign(Gtk::ALIGN_START);
@@ -187,7 +186,7 @@ void ObjectProperties::_init()
 
     _label_dpi.set_mnemonic_widget(_spin_dpi);
     // pressing enter in the label field is the same as clicking Set:
-    _spin_dpi.signal_activate().connect(sigc::mem_fun(this, &ObjectProperties::_labelChanged));
+    _spin_dpi.signal_activate().connect(sigc::mem_fun(*this, &ObjectProperties::_labelChanged));
 
     /* Image rendering */
     /* Create the label for the object ImageRendering */
@@ -213,7 +212,7 @@ void ObjectProperties::_init()
     _label_image_rendering.set_mnemonic_widget(_combo_image_rendering);
 
     _combo_image_rendering.signal_changed().connect(
-        sigc::mem_fun(this, &ObjectProperties::_imageRenderingChanged)
+        sigc::mem_fun(*this, &ObjectProperties::_imageRenderingChanged)
     );
 
 
@@ -247,7 +246,7 @@ void ObjectProperties::_init()
     _cb_hide.set_valign(Gtk::ALIGN_CENTER);
     grid_cb->attach(_cb_hide, 0, 0, 1, 1);
 
-    _cb_hide.signal_toggled().connect(sigc::mem_fun(this, &ObjectProperties::_hiddenToggled));
+    _cb_hide.signal_toggled().connect(sigc::mem_fun(*this, &ObjectProperties::_hiddenToggled));
 
     /* Lock */
     // TRANSLATORS: "Lock" is a verb here
@@ -256,7 +255,7 @@ void ObjectProperties::_init()
     _cb_lock.set_valign(Gtk::ALIGN_CENTER);
     grid_cb->attach(_cb_lock, 1, 0, 1, 1);
 
-    _cb_lock.signal_toggled().connect(sigc::mem_fun(this, &ObjectProperties::_sensitivityToggled));
+    _cb_lock.signal_toggled().connect(sigc::mem_fun(*this, &ObjectProperties::_sensitivityToggled));
 
     /* Preserve aspect ratio */
     _cb_aspect_ratio.set_tooltip_text(_("Check to preserve aspect ratio on images"));
@@ -264,7 +263,7 @@ void ObjectProperties::_init()
     _cb_aspect_ratio.set_valign(Gtk::ALIGN_CENTER);
     grid_cb->attach(_cb_aspect_ratio, 0, 1, 1, 1);
 
-    _cb_aspect_ratio.signal_toggled().connect(sigc::mem_fun(this, &ObjectProperties::_aspectRatioToggled));
+    _cb_aspect_ratio.signal_toggled().connect(sigc::mem_fun(*this, &ObjectProperties::_aspectRatioToggled));
 
 
     /* Button for setting the object's id, label, title and description. */
@@ -273,14 +272,12 @@ void ObjectProperties::_init()
     btn_set->set_valign(Gtk::ALIGN_CENTER);
     grid_cb->attach(*btn_set, 1, 1, 1, 1);
 
-    btn_set->signal_clicked().connect(sigc::mem_fun(this, &ObjectProperties::_labelChanged));
+    btn_set->signal_clicked().connect(sigc::mem_fun(*this, &ObjectProperties::_labelChanged));
 
     /* Interactivity options */
     _exp_interactivity.set_vexpand(false);
     pack_start(_exp_interactivity, Gtk::PACK_SHRINK);
-
     show_all();
-    update_entries();
 }
 
 void ObjectProperties::update_entries()
@@ -360,7 +357,7 @@ void ObjectProperties::update_entries()
         _entry_title.set_sensitive(TRUE);
 
         /* Image Rendering */
-        if (SP_IS_IMAGE(item)) {
+        if (is<SPImage>(item)) {
             _combo_image_rendering.show();
             _label_image_rendering.show();
             _combo_image_rendering.set_active(obj->style->image_rendering.value);
@@ -424,7 +421,7 @@ void ObjectProperties::_labelChanged()
     } else {
         _label_id.set_markup_with_mnemonic(_("_ID:") + Glib::ustring(" "));
         item->setAttribute("id", id);
-        DocumentUndo::done(getDocument(), SP_VERB_DIALOG_ITEM, _("Set object ID"));
+        DocumentUndo::done(getDocument(), _("Set object ID"), INKSCAPE_ICON("dialog-object-properties"));
     }
     g_free(id);
 
@@ -438,21 +435,19 @@ void ObjectProperties::_labelChanged()
     char const *currentlabel = obj->label();
     if (label.compare(currentlabel ? currentlabel : "")) {
         obj->setLabel(label.c_str());
-        DocumentUndo::done(getDocument(), SP_VERB_DIALOG_ITEM,
-                _("Set object label"));
+        DocumentUndo::done(getDocument(), _("Set object label"), INKSCAPE_ICON("dialog-object-properties"));
     }
 
     /* Retrieve the title */
     if (obj->setTitle(_entry_title.get_text().c_str())) {
-        DocumentUndo::done(getDocument(), SP_VERB_DIALOG_ITEM,
-                _("Set object title"));
+        DocumentUndo::done(getDocument(), _("Set object title"), INKSCAPE_ICON("dialog-object-properties"));
     }
 
     /* Retrieve the DPI */
-    if (SP_IS_IMAGE(obj)) {
+    if (is<SPImage>(obj)) {
         Glib::ustring dpi_value = Glib::ustring::format(_spin_dpi.get_value());
         obj->setAttribute("inkscape:svg-dpi", dpi_value);
-        DocumentUndo::done(getDocument(), SP_VERB_DIALOG_ITEM, _("Set image DPI"));
+        DocumentUndo::done(getDocument(), _("Set image DPI"), INKSCAPE_ICON("dialog-object-properties"));
     }
 
     /* Retrieve the description */
@@ -460,8 +455,7 @@ void ObjectProperties::_labelChanged()
     _tv_description.get_buffer()->get_bounds(start, end);
     Glib::ustring desc = _tv_description.get_buffer()->get_text(start, end, TRUE);
     if (obj->setDesc(desc.c_str())) {
-        DocumentUndo::done(getDocument(), SP_VERB_DIALOG_ITEM,
-                _("Set object description"));
+        DocumentUndo::done(getDocument(), _("Set object description"), INKSCAPE_ICON("dialog-object-properties"));
     }
 
     _blocked = false;
@@ -474,7 +468,7 @@ void ObjectProperties::_highlightChanged(guint rgba)
     
     if (auto item = getSelection()->singleItem()) {
         item->setHighlight(rgba);
-        DocumentUndo::done(getDocument(), SP_VERB_DIALOG_ITEM, _("Set item highlight color"));
+        DocumentUndo::done(getDocument(), _("Set item highlight color"), INKSCAPE_ICON("dialog-object-properties"));
     }
 }
 
@@ -497,8 +491,7 @@ void ObjectProperties::_imageRenderingChanged()
     Inkscape::XML::Node *image_node = item->getRepr();
     if (image_node) {
         sp_repr_css_change(image_node, css, "style");
-        DocumentUndo::done(getDocument(), SP_VERB_DIALOG_ITEM,
-                _("Set image rendering option"));
+        DocumentUndo::done(getDocument(), _("Set image rendering option"), INKSCAPE_ICON("dialog-object-properties"));
     }
     sp_repr_css_attr_unref(css);
 
@@ -516,8 +509,7 @@ void ObjectProperties::_sensitivityToggled()
 
     _blocked = true;
     item->setLocked(_cb_lock.get_active());
-    DocumentUndo::done(getDocument(), SP_VERB_DIALOG_ITEM,
-                       _cb_lock.get_active() ? _("Lock object") : _("Unlock object"));
+    DocumentUndo::done(getDocument(), _cb_lock.get_active() ? _("Lock object") : _("Unlock object"), INKSCAPE_ICON("dialog-object-properties"));
     _blocked = false;
 }
 
@@ -540,10 +532,10 @@ void ObjectProperties::_aspectRatioToggled()
         active = "none";
     }
     /* Retrieve the DPI */
-    if (SP_IS_IMAGE(item)) {
+    if (is<SPImage>(item)) {
         Glib::ustring dpi_value = Glib::ustring::format(_spin_dpi.get_value());
         item->setAttribute("preserveAspectRatio", active);
-        DocumentUndo::done(getDocument(), SP_VERB_DIALOG_ITEM, _("Set preserve ratio"));
+        DocumentUndo::done(getDocument(), _("Set preserve ratio"), INKSCAPE_ICON("dialog-object-properties"));
     }
     _blocked = false;
 }
@@ -559,12 +551,16 @@ void ObjectProperties::_hiddenToggled()
 
     _blocked = true;
     item->setExplicitlyHidden(_cb_hide.get_active());
-    DocumentUndo::done(getDocument(), SP_VERB_DIALOG_ITEM,
-               _cb_hide.get_active() ? _("Hide object") : _("Unhide object"));
+    DocumentUndo::done(getDocument(), _cb_hide.get_active() ? _("Hide object") : _("Unhide object"), INKSCAPE_ICON("dialog-object-properties"));
     _blocked = false;
 }
 
 void ObjectProperties::selectionChanged(Selection *selection)
+{
+    update_entries();
+}
+
+void ObjectProperties::desktopReplaced()
 {
     update_entries();
 }

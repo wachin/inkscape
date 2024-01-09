@@ -16,7 +16,6 @@
 
 #include "document.h"
 #include "inkscape-application.h"
-#include "verbs.h"
 
 // Only for use in demonstration widget.
 #include "object/sp-root.h"
@@ -29,7 +28,7 @@ Prototype::Prototype()
     : DialogBase("/dialogs/prototype", "Prototype")
 {
     // A widget for demonstration that displays the current SVG's id.
-    _label = Gtk::manage(new Gtk::Label(_name));
+    _label = Gtk::make_managed<Gtk::Label>(_name);
     _label->set_line_wrap();
 
     _debug_button.set_name("PrototypeDebugButton");
@@ -76,9 +75,9 @@ void Prototype::selectionChanged(Inkscape::Selection *selection)
 
 void Prototype::on_click()
 {
-    Gtk::Window *window = dynamic_cast<Gtk::Window *>(get_toplevel());
+    auto window = dynamic_cast<Gtk::Window*>(get_toplevel());
     if (window) {
-        std::cout << "Dialog is part of: " << window->get_name() << "  (" << window->get_title() << ")" << std::endl;
+        std::cerr << "Dialog is part of: " << window->get_name() << "  (" << window->get_title() << ")" << std::endl;
     } else {
         std::cerr << "Prototype::on_click(): Dialog not attached to window!" << std::endl;
     }

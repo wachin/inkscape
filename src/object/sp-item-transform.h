@@ -18,7 +18,6 @@ Geom::Affine get_scale_transform_for_uniform_stroke (Geom::Rect const &bbox_visu
 Geom::Affine get_scale_transform_for_variable_stroke (Geom::Rect const &bbox_visual, Geom::Rect const &bbox_geom, bool transform_stroke, bool preserve, double x0, double y0, double x1, double y1);
 Geom::Rect get_visual_bbox (Geom::OptRect const &initial_geom_bbox, Geom::Affine const &abs_affine, double const initial_strokewidth, bool const transform_stroke);
 
-
 #endif // SEEN_SP_ITEM_TRANSFORM_H
 
 /*

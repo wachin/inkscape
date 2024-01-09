@@ -11,10 +11,9 @@
 #ifndef SEEN_COMPOSITE_UNDO_COMMIT_OBSERVER_H
 #define SEEN_COMPOSITE_UNDO_COMMIT_OBSERVER_H
 
-#include "inkgc/gc-alloc.h"
 #include "undo-stack-observer.h"
 
-#include <list>
+#include <vector>
 
 namespace Inkscape {
 
@@ -26,7 +25,8 @@ struct Event;
  *
  * Heavily inspired by Inkscape::XML::CompositeNodeObserver.
  */
-class CompositeUndoStackObserver : public UndoStackObserver {
+class CompositeUndoStackObserver : public UndoStackObserver
+{
 public:
 
 	/**
@@ -40,7 +40,7 @@ public:
 		 * \param o Reference to the UndoStackObserver that this UndoStackObserverRecord
 		 * will track.
 		 */
-		UndoStackObserverRecord(UndoStackObserver& o) : to_remove(false), _observer(o) { }
+		UndoStackObserverRecord(UndoStackObserver &o) : to_remove(false), _observer(&o) { }
 		bool to_remove;
 
 		/**
@@ -48,7 +48,7 @@ public:
 		 */
 		bool operator==(UndoStackObserverRecord const& _x) const
 		{
-			return &(this->_observer) == &(_x._observer);
+			return this->_observer == _x._observer;
 		}
 
 		/**
@@ -58,7 +58,7 @@ public:
 		 */
 		void issueRedo(Event* log)
 		{
-			this->_observer.notifyRedoEvent(log);
+			this->_observer->notifyRedoEvent(log);
 		}
 
 		/**
@@ -69,7 +69,7 @@ public:
 		 */
 		void issueUndo(Event* log)
 		{
-			this->_observer.notifyUndoEvent(log);
+			this->_observer->notifyUndoEvent(log);
 		}
 
 		/**
@@ -80,7 +80,7 @@ public:
 		 */
 		void issueUndoCommit(Event* log)
 		{
-			this->_observer.notifyUndoCommitEvent(log);
+			this->_observer->notifyUndoCommitEvent(log);
 		}
 
 		/**
@@ -90,7 +90,7 @@ public:
 		 */
 		void issueClearUndo()
 		{
-			this->_observer.notifyClearUndoEvent();
+			this->_observer->notifyClearUndoEvent();
 		}
 	     
 		/**
@@ -100,15 +100,15 @@ public:
 		 */
 		void issueClearRedo()
 		{
-			this->_observer.notifyClearRedoEvent();
+			this->_observer->notifyClearRedoEvent();
 		}
 
 	private:
-		UndoStackObserver& _observer;
+		UndoStackObserver *_observer;
 	};
 
 	/// A list of UndoStackObserverRecords, used to aggregate multiple UndoStackObservers.
-	typedef std::list< UndoStackObserverRecord, GC::Alloc< UndoStackObserverRecord, GC::MANUAL > > UndoObserverRecordList;
+	typedef std::vector<UndoStackObserverRecord> UndoObserverRecordList;
 
 	/**
 	 * Constructor.

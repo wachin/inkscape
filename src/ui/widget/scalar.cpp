@@ -106,6 +106,32 @@ void Scalar::setDigits(unsigned digits)
     static_cast<SpinButton*>(_widget)->set_digits(digits);
 }
 
+void Scalar::setNoLeadingZeros()
+{
+    g_assert(_widget != nullptr);
+    if (getDigits()) {
+        static_cast<SpinButton*>(_widget)->set_numeric(false);
+        static_cast<SpinButton*>(_widget)->set_update_policy(Gtk::UPDATE_ALWAYS);
+        static_cast<SpinButton*>(_widget)->signal_output().connect(sigc::mem_fun(*this, &Scalar::setNoLeadingZerosOutput));
+    }
+}
+
+bool
+Scalar::setNoLeadingZerosOutput()
+{
+    g_assert(_widget != nullptr);
+    double digits = (double)pow(10.0,static_cast<SpinButton*>(_widget)->get_digits());
+    double val = std::round(static_cast<SpinButton*>(_widget)->get_value() * digits) / digits;
+    static_cast<SpinButton*>(_widget)->set_text(Glib::ustring::format(val).c_str());
+    return true;
+}
+
+void 
+Scalar::setWidthChars(gint width_chars) {
+    g_assert(_widget != nullptr);
+    static_cast<SpinButton*>(_widget)->property_width_chars() = width_chars;
+}
+
 void Scalar::setIncrements(double step, double /*page*/)
 {
     g_assert(_widget != nullptr);

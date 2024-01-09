@@ -15,6 +15,7 @@
 #include "style-swatch.h"
 
 #include <glibmm/i18n.h>
+#include <gtkmm/enums.h>
 #include <gtkmm/grid.h>
 
 #include "inkscape.h"
@@ -105,7 +106,7 @@ void StyleSwatch::ToolObserver::notify(Inkscape::Preferences::Entry const &val)
     prefs->addObserver(*_style_swatch._style_obs);
 }
 
-StyleSwatch::StyleSwatch(SPCSSAttr *css, gchar const *main_tip)
+StyleSwatch::StyleSwatch(SPCSSAttr *css, gchar const *main_tip, Gtk::Orientation orient)
     : Gtk::Box(Gtk::ORIENTATION_HORIZONTAL),
       _desktop(nullptr),
       _css(nullptr),
@@ -116,7 +117,6 @@ StyleSwatch::StyleSwatch(SPCSSAttr *css, gchar const *main_tip)
       _stroke(Gtk::ORIENTATION_HORIZONTAL)
 {
     set_name("StyleSwatch");
-    
     _label[SS_FILL].set_markup(_("Fill:"));
     _label[SS_STROKE].set_markup(_("Stroke:"));
 
@@ -147,16 +147,34 @@ StyleSwatch::StyleSwatch(SPCSSAttr *css, gchar const *main_tip)
     
     _opacity_place.add(_opacity_value);
 
-    _table->attach(_label[SS_FILL],   0, 0, 1, 1);
-    _table->attach(_label[SS_STROKE], 0, 1, 1, 1);
-    _table->attach(_place[SS_FILL],   1, 0, 1, 1);
-    _table->attach(_stroke,           1, 1, 1, 1);
-    _table->attach(_opacity_place,    2, 0, 1, 2);
+    if (orient == Gtk::ORIENTATION_VERTICAL) {
+        _table->attach(_label[SS_FILL],   0, 0, 1, 1);
+        _table->attach(_label[SS_STROKE], 0, 1, 1, 1);
+        _table->attach(_place[SS_FILL],   1, 0, 1, 1);
+        _table->attach(_stroke,           1, 1, 1, 1);
+        _table->attach(_empty_space,      2, 0, 1, 2);
+        _table->attach(_opacity_place,    2, 0, 1, 2);
+        _swatch.add(*_table);
+        pack_start(_swatch, true, true, 0);
 
-    _swatch.add(*_table);
-    pack_start(_swatch, true, true, 0);
+        set_size_request (STYLE_SWATCH_WIDTH, -1);
+    }
+    else {
+        _table->set_column_spacing(4);
+        _table->attach(_label[SS_FILL],   0, 0, 1, 1);
+        _table->attach(_place[SS_FILL],   1, 0, 1, 1);
+        _label[SS_STROKE].set_margin_start(6);
+        _table->attach(_label[SS_STROKE], 2, 0, 1, 1);
+        _table->attach(_stroke,           3, 0, 1, 1);
+        _opacity_place.set_margin_start(6);
+        _table->attach(_opacity_place,    4, 0, 1, 1);
+        _swatch.add(*_table);
+        pack_start(_swatch, true, true, 0);
 
-    set_size_request (STYLE_SWATCH_WIDTH, -1);
+        int patch_w = 6 * 6;
+        _place[SS_FILL].set_size_request(patch_w, -1);
+        _place[SS_STROKE].set_size_request(patch_w, -1);
+    }
 
     setStyle (css);
 
@@ -267,15 +285,15 @@ void StyleSwatch::setStyle(SPStyle *query)
         if (paint->set && paint->isPaintserver()) {
             SPPaintServer *server = (i == SS_FILL)? SP_STYLE_FILL_SERVER (query) : SP_STYLE_STROKE_SERVER (query);
 
-            if (SP_IS_LINEARGRADIENT (server)) {
+            if (is<SPLinearGradient>(server)) {
                 _value[i].set_markup(_("L Gradient"));
                 place->add(_value[i]);
                 place->set_tooltip_text((i == SS_FILL)? (_("Linear gradient (fill)")) : (_("Linear gradient (stroke)")));
-            } else if (SP_IS_RADIALGRADIENT (server)) {
+            } else if (is<SPRadialGradient>(server)) {
                 _value[i].set_markup(_("R Gradient"));
                 place->add(_value[i]);
                 place->set_tooltip_text((i == SS_FILL)? (_("Radial gradient (fill)")) : (_("Radial gradient (stroke)")));
-            } else if (SP_IS_PATTERN (server)) {
+            } else if (is<SPPattern>(server)) {
                 _value[i].set_markup(_("Pattern"));
                 place->add(_value[i]);
                 place->set_tooltip_text((i == SS_FILL)? (_("Pattern (fill)")) : (_("Pattern (stroke)")));
@@ -310,7 +328,10 @@ void StyleSwatch::setStyle(SPStyle *query)
 // Now query stroke_width
     if (has_stroke) {
         if (query->stroke_extensions.hairline) {
-            _stroke_width.set_markup(_("Hairline"));
+            Glib::ustring swidth = "<small>";
+            swidth += _("Hairline");
+            swidth += "</small>";
+            _stroke_width.set_markup(swidth.c_str());
             auto str = Glib::ustring::compose(_("Stroke width: %1"), _("Hairline"));
             _stroke_width_place.set_tooltip_text(str);
         } else {
@@ -323,7 +344,10 @@ void StyleSwatch::setStyle(SPStyle *query)
 
             {
                 gchar *str = g_strdup_printf(" %.3g", w);
-                _stroke_width.set_markup(str);
+                Glib::ustring swidth = "<small>";
+                swidth += str;
+                swidth += "</small>";
+                _stroke_width.set_markup(swidth.c_str());
                 g_free (str);
             }
             {
@@ -345,7 +369,10 @@ void StyleSwatch::setStyle(SPStyle *query)
         {
             gchar *str;
             str = g_strdup_printf(_("O: %2.0f"), (op*100.0));
-            _opacity_value.set_markup (str);
+            Glib::ustring opacity = "<small>";
+            opacity += str;
+            opacity += "</small>";
+            _opacity_value.set_markup (opacity.c_str());
             g_free (str);
         }
         {

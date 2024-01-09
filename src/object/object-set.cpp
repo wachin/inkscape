@@ -25,7 +25,6 @@ namespace Inkscape {
 
 bool ObjectSet::add(SPObject* object, bool nosignal) {
     g_return_val_if_fail(object != nullptr, false);
-    g_return_val_if_fail(SP_IS_OBJECT(object), false);
 
     // any ancestor is in the set - do nothing
     if (_anyAncestorIsInSet(object)) {
@@ -56,7 +55,6 @@ void ObjectSet::add(XML::Node *repr)
 
 bool ObjectSet::remove(SPObject* object) {
     g_return_val_if_fail(object != nullptr, false);
-    g_return_val_if_fail(SP_IS_OBJECT(object), false);
 
     // object is the top of subtree
     if (includes(object)) {
@@ -76,11 +74,38 @@ bool ObjectSet::remove(SPObject* object) {
     return false;
 }
 
-bool ObjectSet::includes(SPObject *object) {
-    g_return_val_if_fail(object != nullptr, false);
-    g_return_val_if_fail(SP_IS_OBJECT(object), false);
+void ObjectSet::_emitChanged(bool persist_selection_context /*= false*/) {
+    _sibling_state.clear();
+}
 
-    return _container.get<hashed>().find(object) != _container.get<hashed>().end();
+bool ObjectSet::includes(SPObject *object, bool anyAncestor) {
+    g_return_val_if_fail(object != nullptr, false);
+    if (anyAncestor) {
+        return _anyAncestorIsInSet(object);
+    } else {
+        return _container.get<hashed>().find(object) != _container.get<hashed>().end();
+    }
+}
+
+bool ObjectSet::includes(Inkscape::XML::Node *node, bool anyAncestor)
+{
+    if (node) {
+        return includes(document()->getObjectByRepr(node), anyAncestor);
+    }
+    return false;
+}
+
+SPObject * 
+ObjectSet::includesAncestor(SPObject *object) {
+    g_return_val_if_fail(object != nullptr, nullptr);
+    SPObject* o = object;
+    while (o != nullptr) {
+        if (includes(o)) {
+            return o;
+        }
+        o = o->parent;
+    }
+    return nullptr;
 }
 
 void ObjectSet::clear() {
@@ -199,12 +224,22 @@ SPObject *ObjectSet::single() {
 SPItem *ObjectSet::singleItem() {
     if (_container.size() == 1) {
         SPObject* obj = *_container.begin();
-        if (SP_IS_ITEM(obj)) {
-            return SP_ITEM(obj);
+        if (is<SPItem>(obj)) {
+            return cast<SPItem>(obj);
         }
     }
 
     return nullptr;
+}
+
+SPItem *ObjectSet::firstItem() const
+{
+    return _container.size() ? cast<SPItem>(_container.front()) : nullptr;
+}
+
+SPItem *ObjectSet::lastItem() const
+{
+    return _container.size() ? cast<SPItem>(_container.back()) : nullptr;
 }
 
 SPItem *ObjectSet::smallestItem(CompareSize compare) {
@@ -257,7 +292,7 @@ Inkscape::XML::Node *ObjectSet::topRepr() const
         return nullptr;
     }
 
-#ifdef __APPLE__
+#ifdef _LIBCPP_VERSION
     // workaround for
     // static_assert(__is_cpp17_forward_iterator<_ForwardIterator>::value
     auto const n = std::vector<Inkscape::XML::Node *>(nodes.begin(), nodes.end());
@@ -287,7 +322,7 @@ int ObjectSet::setBetween(SPObject *obj_a, SPObject *obj_b)
 {
     auto parent = obj_a->parent;
     if (!obj_b)
-        obj_b = singleItem();
+        obj_b = lastItem();
 
     if (!obj_a || !obj_b || parent != obj_b->parent) {
         return 0;
@@ -335,9 +370,8 @@ void ObjectSet::enforceIds()
     for (auto *item : items) {
         if (!item->getId()) {
             // Selected object does not have an ID, so assign it a unique ID
-            gchar *id = sp_object_get_unique_id(item, nullptr);
+            auto id = item->generate_unique_id();
             item->setAttribute("id", id);
-            g_free(id);
             idAssigned = true;
         }
     }
@@ -377,6 +411,20 @@ Geom::OptRect ObjectSet::visualBounds() const
     return bbox;
 }
 
+Geom::OptRect ObjectSet::strokedBounds() const
+{
+    auto items = const_cast<ObjectSet *>(this)->items();
+
+    Geom::OptRect bbox;
+    for (auto *item : items) {
+        bbox.unionWith(item->visualBounds(item->i2doc_affine(), false, true, true));
+    }
+    if (bbox) {
+        *bbox *= _desktop->getDocument()->doc2dt();
+    }
+    return bbox;
+}
+
 Geom::OptRect ObjectSet::preferredBounds() const
 {
     if (Inkscape::Preferences::get()->getInt("/tools/bounding_box") == 0) {
@@ -397,6 +445,15 @@ Geom::OptRect ObjectSet::documentBounds(SPItem::BBoxType type) const
     }
 
     return bbox;
+}
+
+Geom::OptRect ObjectSet::documentPreferredBounds() const
+{
+    if (Inkscape::Preferences::get()->getInt("/tools/bounding_box") == 0) {
+        return documentBounds(SPItem::VISUAL_BBOX);
+    } else {
+        return documentBounds(SPItem::GEOMETRIC_BBOX);
+    }
 }
 
 // If we have a selection of multiple items, then the center of the first item
@@ -455,7 +512,7 @@ void ObjectSet::_remove3DBoxesRecursively(SPObject *obj) {
     for (auto box : boxes) {
         std::list<SPBox3D *>::iterator b = std::find(_3dboxes.begin(), _3dboxes.end(), box);
         if (b == _3dboxes.end()) {
-            g_print ("Warning! Trying to remove unselected box from selection.\n");
+            g_warning ("Warning! Trying to remove unselected box from selection.");
             return;
         }
         _3dboxes.erase(b);

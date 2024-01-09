@@ -16,6 +16,10 @@ class SPDocument;
 
 namespace Inkscape {
 namespace UI {
+namespace Widget {
+class TemplateList;
+}
+
 namespace Dialog {
 
 class StartScreen : public Gtk::Dialog {
@@ -28,6 +32,7 @@ public:
 
 protected:
     bool on_key_press_event(GdkEventKey* event) override;
+    void on_response(int response_id) override;
 
 private:
     void notebook_next(Gtk::Widget *button);
@@ -45,8 +50,8 @@ private:
     void refresh_theme(Glib::ustring theme_name);
     void refresh_dark_switch();
 
-    void new_now();
-    void load_now();
+    void new_document();
+    void load_document();
     void on_recent_changed();
     void on_kind_changed(Gtk::Widget *tab, guint page_num);
 
@@ -55,11 +60,11 @@ private:
     Glib::RefPtr<Gtk::Builder> builder;
     Gtk::Window   *window  = nullptr;
     Gtk::Notebook *tabs    = nullptr;
-    Gtk::Notebook *kinds   = nullptr;
     Gtk::Fixed    *banners = nullptr;
     Gtk::ComboBox *themes  = nullptr;
     Gtk::TreeView *recent_treeview = nullptr;
     Gtk::Button   *load_btn = nullptr;
+    Inkscape::UI::Widget::TemplateList *templates = nullptr;
 
     SPDocument* _document = nullptr;
 };

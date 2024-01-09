@@ -19,41 +19,41 @@
 #include "number-opt-number.h"
 #include "display/nr-filter-convolve-matrix.h"
 
-#define SP_FECONVOLVEMATRIX(obj) (dynamic_cast<SPFeConvolveMatrix*>((SPObject*)obj))
-#define SP_IS_FECONVOLVEMATRIX(obj) (dynamic_cast<const SPFeConvolveMatrix*>((SPObject*)obj) != NULL)
-
-class SPFeConvolveMatrix : public SPFilterPrimitive {
+class SPFeConvolveMatrix final
+    : public SPFilterPrimitive
+{
 public:
-	SPFeConvolveMatrix();
-	~SPFeConvolveMatrix() override;
+    int tag() const override { return tag_of<decltype(*this)>; }
 
-    NumberOptNumber order;
-    std::vector<gdouble> kernelMatrix;
-    double divisor, bias;
-    int targetX, targetY;
-    Inkscape::Filters::FilterConvolveMatrixEdgeMode edgeMode;
+    NumberOptNumber get_order() const { return order; }
+    std::vector<double> const &get_kernel_matrix() const { return kernelMatrix; }
+
+private:
+    double bias = 0.0;
+    Inkscape::Filters::FilterConvolveMatrixEdgeMode edgeMode = Inkscape::Filters::CONVOLVEMATRIX_EDGEMODE_DUPLICATE;
+    bool preserveAlpha = false;
+
+    double divisor = 0.0;
+    int targetX = 1;
+    int targetY = 1;
+    std::vector<double> kernelMatrix;
+
+    bool divisorIsSet = false;
+    bool targetXIsSet = false;
+    bool targetYIsSet = false;
+    bool kernelMatrixIsSet = false;
+
+    NumberOptNumber order = NumberOptNumber(3, 3);
     NumberOptNumber kernelUnitLength;
-    bool preserveAlpha;
-
-    bool targetXIsSet;
-    bool targetYIsSet;
-    bool divisorIsSet;
-    bool kernelMatrixIsSet;
 
 protected:
-	void build(SPDocument* doc, Inkscape::XML::Node* repr) override;
-	void release() override;
+    void build(SPDocument *doc, Inkscape::XML::Node *repr) override;
+    void set(SPAttr key, char const *value) override;
 
-	void set(SPAttr key, const gchar* value) override;
-
-	void update(SPCtx* ctx, unsigned int flags) override;
-
-	Inkscape::XML::Node* write(Inkscape::XML::Document* doc, Inkscape::XML::Node* repr, guint flags) override;
-
-	void build_renderer(Inkscape::Filters::Filter* filter) override;
+    std::unique_ptr<Inkscape::Filters::FilterPrimitive> build_renderer(Inkscape::DrawingItem *item) const override;
 };
 
-#endif /* !SP_FECONVOLVEMATRIX_H_SEEN */
+#endif // SP_FECONVOLVEMATRIX_H_SEEN
 
 /*
   Local Variables:

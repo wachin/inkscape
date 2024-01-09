@@ -14,38 +14,30 @@
 
 #include "sp-filter-primitive.h"
 
-#define SP_FECOMPONENTTRANSFER(obj) (dynamic_cast<SPFeComponentTransfer*>((SPObject*)obj))
-#define SP_IS_FECOMPONENTTRANSFER(obj) (dynamic_cast<const SPFeComponentTransfer*>((SPObject*)obj) != NULL)
-
 namespace Inkscape {
 namespace Filters {
 class FilterComponentTransfer;
-} }
+} // namespace Filters
+} // namespace Inkscape
 
-class SPFeComponentTransfer : public SPFilterPrimitive {
+class SPFeComponentTransfer final
+    : public SPFilterPrimitive
+{
 public:
-	SPFeComponentTransfer();
-	~SPFeComponentTransfer() override;
-
-    Inkscape::Filters::FilterComponentTransfer *renderer;
+    int tag() const override { return tag_of<decltype(*this)>; }
 
 protected:
-	void build(SPDocument* doc, Inkscape::XML::Node* repr) override;
+    void build(SPDocument *doc, Inkscape::XML::Node *repr) override;
 	void release() override;
+    void modified(unsigned flags) override;
 
-	void child_added(Inkscape::XML::Node* child, Inkscape::XML::Node* ref) override;
-	void remove_child(Inkscape::XML::Node* child) override;
+    void child_added(Inkscape::XML::Node *child, Inkscape::XML::Node *ref) override;
+    void remove_child(Inkscape::XML::Node *child) override;
 
-	void set(SPAttr key, const gchar* value) override;
-
-	void update(SPCtx* ctx, unsigned int flags) override;
-
-	Inkscape::XML::Node* write(Inkscape::XML::Document* doc, Inkscape::XML::Node* repr, guint flags) override;
-
-	void build_renderer(Inkscape::Filters::Filter* filter) override;
+    std::unique_ptr<Inkscape::Filters::FilterPrimitive> build_renderer(Inkscape::DrawingItem *item) const override;
 };
 
-#endif /* !SP_FECOMPONENTTRANSFER_H_SEEN */
+#endif // SP_FECOMPONENTTRANSFER_H_SEEN
 
 /*
   Local Variables:

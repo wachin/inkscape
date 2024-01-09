@@ -19,17 +19,15 @@
 #include "svg/svg-length.h"
 #include "sp-object.h"
 
-
-#define SP_TAG_USE(obj)            (dynamic_cast<SPTagUse*> (obj))
-#define SP_IS_TAG_USE(obj)         (dynamic_cast<SPTagUse*> (obj) != NULL)
-
 class SPItem;
 class SPTagUse;
 class SPTagUseReference;
 
-class SPTagUse : public SPObject {
+class SPTagUse final : public SPObject {
 
 public:
+    int tag() const override { return tag_of<decltype(*this)>; }
+
     // item built from the original's repr (the visible clone)
     // relative to the SPUse itself, it is treated as a child, similar to a grouped item relative to its group
     SPObject *child;

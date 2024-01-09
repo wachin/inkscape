@@ -40,17 +40,10 @@ public:
     GlyphsPanel();
     ~GlyphsPanel() override;
 
-    static GlyphsPanel& getInstance();
-
     void selectionChanged(Selection *selection) override;
     void selectionModified(Selection *selection, guint flags) override;
 
-protected:
-
 private:
-    GlyphsPanel(GlyphsPanel const &) = delete; // no copy
-    GlyphsPanel &operator=(GlyphsPanel const &) = delete; // no assign
-
     static GlyphColumns *getColumns();
 
     void rebuild();
@@ -63,9 +56,9 @@ private:
 
     Glib::RefPtr<Gtk::ListStore> store;
     Gtk::IconView *iconView;
-    Glib::RefPtr<Gtk::Entry> entry;
-    Glib::RefPtr<Gtk::Label> label;
-    Glib::RefPtr<Gtk::Button> insertBtn;
+    std::shared_ptr<Gtk::Entry> entry;
+    std::shared_ptr<Gtk::Label> label;
+    std::shared_ptr<Gtk::Button> insertBtn;
     Gtk::ComboBoxText *scriptCombo;
     Gtk::ComboBoxText *rangeCombo;
     Inkscape::UI::Widget::FontSelector *fontSelector;

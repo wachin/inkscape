@@ -49,7 +49,14 @@ class PrefCheckButton : public Gtk::CheckButton
 public:
     void init(Glib::ustring const &label, Glib::ustring const &prefs_path,
               bool default_value);
-    sigc::signal<void, bool> changed_signal;
+    // Allow use with the GtkBuilder get_derived_widget
+    PrefCheckButton(BaseObjectType *cobject, const Glib::RefPtr<Gtk::Builder> &refGlade, Glib::ustring pref, bool def)
+        : Gtk::CheckButton(cobject)
+    {
+        init("", pref, def);
+    }
+    PrefCheckButton() : Gtk::CheckButton() {};
+    sigc::signal<void (bool)> changed_signal;
 protected:
     Glib::ustring _prefs_path;
     void on_toggled() override;
@@ -62,7 +69,7 @@ public:
               int int_value, bool default_value, PrefRadioButton* group_member);
     void init(Glib::ustring const &label, Glib::ustring const &prefs_path,
               Glib::ustring const &string_value, bool default_value, PrefRadioButton* group_member);
-    sigc::signal<void, bool> changed_signal;
+    sigc::signal<void (bool)> changed_signal;
 protected:
     Glib::ustring _prefs_path;
     Glib::ustring _string_value;
@@ -76,13 +83,22 @@ protected:
     void on_toggled() override;
 };
 
+struct PrefItem { Glib::ustring label; int int_value; Glib::ustring tooltip; bool is_default = false; };
+
+class PrefRadioButtons : public Gtk::Box {
+public:
+    PrefRadioButtons(const std::vector<PrefItem>& buttons, const Glib::ustring& prefs_path);
+
+private:
+};
+
 class PrefSpinButton : public SpinButton
 {
 public:
     void init(Glib::ustring const &prefs_path,
               double lower, double upper, double step_increment, double page_increment,
               double default_value, bool is_int, bool is_percent);
-    sigc::signal<void, double> changed_signal;
+    sigc::signal<void (double)> changed_signal;
 protected:
     Glib::ustring _prefs_path;
     bool _is_int;
@@ -152,7 +168,7 @@ private:
 class PrefSlider : public Gtk::Box
 {
 public:
-    PrefSlider() : Gtk::Box(Gtk::ORIENTATION_HORIZONTAL) {}
+    PrefSlider(bool spin = true) : Gtk::Box(Gtk::ORIENTATION_HORIZONTAL) { _spin = spin; }
 
     void init(Glib::ustring const &prefs_path,
     		  double lower, double upper, double step_increment, double page_increment, double default_value, int digits);
@@ -165,9 +181,9 @@ private:
     bool on_mnemonic_activate( bool group_cycling ) override;
 
     Glib::ustring _prefs_path;
-    Inkscape::UI::Widget::SpinButton *_sb;
-
-    Gtk::Scale*     _slider;
+    Inkscape::UI::Widget::SpinButton *_sb = nullptr;
+    bool _spin;
+    Gtk::Scale*     _slider = nullptr;
 
     bool freeze; // used to block recursive updates of slider and spinbutton
 };
@@ -177,7 +193,7 @@ class PrefCombo : public Gtk::ComboBoxText
 {
 public:
     void init(Glib::ustring const &prefs_path,
-              Glib::ustring labels[], int values[], int num_items, int default_value);
+              Glib::ustring const labels[], int const values[], int num_items, int default_value);
 
     /**
      * Initialize a combo box.
@@ -215,6 +231,11 @@ public:
     void init(Glib::ustring const &prefs_path, bool mask);
 protected:
     Glib::ustring _prefs_path;
+    void on_changed() override;
+};
+
+class PrefEntryFile : public PrefEntry
+{
     void on_changed() override;
 };
 
@@ -312,7 +333,7 @@ class DialogPage : public Gtk::Grid
 public:
     DialogPage();
     void add_line(bool indent, Glib::ustring const &label, Gtk::Widget& widget, Glib::ustring const &suffix, Glib::ustring const &tip, bool expand = true, Gtk::Widget *other_widget = nullptr);
-    void add_group_header(Glib::ustring name);
+    void add_group_header(Glib::ustring name, int columns = 1);
     void add_group_note(Glib::ustring name);
     void set_tip(Gtk::Widget &widget, Glib::ustring const &tip);
 };

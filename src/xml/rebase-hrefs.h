@@ -20,6 +20,16 @@ namespace Inkscape {
 namespace XML {
 
 /**
+ * Change relative hrefs in current root XML node (faster than full document generation)
+ *
+ * to be relative to \a new_base instead of doc.base.
+ *
+ * (NULL doc base or new_base is interpreted as current working directory.)
+ *
+ * @param spns True if doc should contain sodipodi:absref attributes.
+ */
+void rebase_hrefs(Inkscape::XML::Node *rootxml, gchar const *const old_base, gchar const *const new_base, bool const spns);
+/**
  * Change relative hrefs in doc to be relative to \a new_base instead of doc.base.
  *
  * (NULL doc base or new_base is interpreted as current working directory.)

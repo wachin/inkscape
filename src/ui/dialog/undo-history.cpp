@@ -14,12 +14,12 @@
 
 #include "undo-history.h"
 
+#include "actions/actions-tools.h"
 #include "document-undo.h"
 #include "document.h"
 #include "inkscape.h"
 #include "ui/icon-loader.h"
 #include "util/signal-blocker.h"
-
 
 namespace Inkscape {
 namespace UI {
@@ -81,11 +81,6 @@ void CellRendererInt::render_vfunc(const Cairo::RefPtr<Cairo::Context>& cr,
 
 const CellRendererInt::Filter& CellRendererInt::no_filter = CellRendererInt::NoFilter();
 
-UndoHistory& UndoHistory::getInstance()
-{
-    return *new UndoHistory();
-}
-
 UndoHistory::UndoHistory()
     : DialogBase("/dialogs/undo-history", "UndoHistory"),
       _event_log(nullptr),
@@ -96,7 +91,7 @@ UndoHistory::UndoHistory()
 {
     auto *_columns = &EventLog::getColumns();
 
-    set_size_request(-1, 95);
+    set_size_request(-1, -1);
 
     pack_start(_scrolled_window);
     _scrolled_window.set_policy(Gtk::POLICY_NEVER, Gtk::POLICY_AUTOMATIC);
@@ -135,7 +130,7 @@ UndoHistory::UndoHistory()
     _event_list_view.set_expander_column( *_event_list_view.get_column(cols_count-1) );
 
     _scrolled_window.add(_event_list_view);
-
+    _scrolled_window.set_overlay_scrolling(false);
     // connect EventLog callbacks
     _callback_connections[EventLog::CALLB_SELECTION_CHANGE] =
         _event_list_selection->signal_changed().connect(sigc::mem_fun(*this, &Inkscape::UI::Dialog::UndoHistory::_onListSelectionChange));
@@ -219,7 +214,6 @@ UndoHistory::_onListSelectionChange()
      * a branch we're currently in is collapsed.
      */
     if (!selected) {
-
         EventLog::iterator curr_event = _event_log->getCurrEvent();
 
         if (curr_event->parent()) {
@@ -286,7 +280,7 @@ UndoHistory::_onListSelectionChange()
 
             _event_log->blockNotifications();
 
-            while ( selected != last_selected ) {
+            while (last_selected && selected != last_selected ) {
 
                 DocumentUndo::redo(getDocument());
 
@@ -311,7 +305,6 @@ UndoHistory::_onListSelectionChange()
         _event_log->setCurrEvent(selected);
         _event_log->updateUndoVerbs();
     }
-
 }
 
 void

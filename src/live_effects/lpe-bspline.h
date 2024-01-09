@@ -38,6 +38,7 @@ public:
 
     // TODO make this private
     ScalarParam steps;
+    BoolParam uniform;
 
 private:
     ScalarParam helper_size;
@@ -47,7 +48,7 @@ private:
     ScalarParam weight;
     Geom::PathVector hp;
 };
-void sp_bspline_do_effect(SPCurve *curve, double helper_size, Geom::PathVector &hp);
+void sp_bspline_do_effect(SPCurve &curve, double helper_size, Geom::PathVector &hp, bool uniform);
 
 } //namespace LivePathEffect
 } //namespace Inkscape

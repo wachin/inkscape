@@ -23,7 +23,7 @@ Inkscape::LineSnapper::LineSnapper(SnapManager *sm, Geom::Coord const d) : Snapp
 void Inkscape::LineSnapper::freeSnap(IntermSnapResults &isr,
                                                     Inkscape::SnapCandidatePoint const &p,
                                                     Geom::OptRect const &/*bbox_to_snap*/,
-                                                    std::vector<SPItem const *> const */*it*/,
+                                                    std::vector<SPObject const *> const */*it*/,
                                                     std::vector<Inkscape::SnapCandidatePoint> */*unselected_nodes*/) const
 {
     if (!(_snap_enabled && _snapmanager->snapprefs.isSourceSnappable(p.getSourceType())) ) {
@@ -70,7 +70,7 @@ void Inkscape::LineSnapper::freeSnap(IntermSnapResults &isr,
                 // We won't try to snap tangentially; a line being tangential to another line can be achieved by snapping both its endpoints
                 // individually to the other line. There's no need to have an explicit tangential snap here, that would be redundant
 
-                if (_snapmanager->snapprefs.getSnapPerp()) { // Find the point that leads to a perpendicular snap
+                if (_snapmanager->snapprefs.isTargetSnappable(Inkscape::SNAPTARGET_PATH_PERPENDICULAR)) { // Find the point that leads to a perpendicular snap
                     Geom::Point const origin_proj = Geom::projection(origin, Geom::Line(p1, p2));
                     Geom::Coord dist = Geom::L2(origin_proj - p.getPoint());
                     if (dist < getSnapperTolerance()) {
@@ -86,7 +86,7 @@ void Inkscape::LineSnapper::constrainedSnap(IntermSnapResults &isr,
                                                Inkscape::SnapCandidatePoint const &p,
                                                Geom::OptRect const &/*bbox_to_snap*/,
                                                SnapConstraint const &c,
-                                               std::vector<SPItem const *> const */*it*/,
+                                               std::vector<SPObject const *> const */*it*/,
                                                std::vector<SnapCandidatePoint> */*unselected_nodes*/) const
 
 {

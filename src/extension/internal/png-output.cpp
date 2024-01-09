@@ -14,18 +14,13 @@
 
 #include "png-output.h"
 
-#include <clocale>
-#include <cstdio>
-#include <fstream>
-#include <ios>
+#include <cstdlib>
 #include <iostream>
 #include <string>
+#include <glibmm.h>
+#include <giomm.h>
 
 #include "clear-n_.h"
-
-// Replace with C++17, see notes in file-export-cmd.cpp
-#include <boost/filesystem.hpp>
-namespace filesystem = boost::filesystem;
 
 namespace Inkscape {
 namespace Extension {
@@ -35,10 +30,18 @@ void PngOutput::export_raster(Inkscape::Extension::Output * /*module*/,
         const SPDocument * /*doc*/, std::string const &png_file, gchar const *filename)
 {
     // We want to move the png file to the new location
-    auto input_fn = filesystem::path(png_file);
-    auto output_fn = filesystem::path(filename);
-    filesystem::copy_file(input_fn, output_fn, filesystem::copy_option::overwrite_if_exists);
-    boost::filesystem::remove(input_fn);
+    Glib::RefPtr<Gio::File> input_fn = Gio::File::create_for_path(png_file);
+    Glib::RefPtr<Gio::File> output_fn = Gio::File::create_for_path(filename);
+    try {
+        // This file must be copied because the permissions must be created
+        // based on it's target location and not the temp directory.
+        input_fn->copy(output_fn, Gio::FILE_COPY_OVERWRITE | Gio::FILE_COPY_TARGET_DEFAULT_PERMS);
+    }
+    catch (const Gio::Error& e) {
+        std::cerr << "Moving resource " << png_file
+                  << " to "             << filename
+                  << " failed: "        << e.what().raw() << std::endl;
+    }
 }
 
 void PngOutput::init()
@@ -47,8 +50,36 @@ void PngOutput::init()
     Inkscape::Extension::build_from_mem(
         "<inkscape-extension xmlns=\"" INKSCAPE_EXTENSION_URI "\">\n"
             "<name>" N_("Portable Network Graphic") "</name>\n"
-            "<id>org.inkscape.output.png.inkscape</id>\n"
-            "<output raster=\"true\">\n"
+            "<id>" SP_MODULE_KEY_RASTER_PNG "</id>\n"
+            "<param name='png_interlacing' type='bool' gui-text='" N_("Interlacing") "'>false</param>"
+            "<param name='png_bitdepth' type='optiongroup' appearance='combo' gui-text='" N_("Bit Depth") "'>"
+               "<option value='99'>" N_("RGBA 8") "</option>" // First because it's the default option
+               "<option value='100'>" N_("RGBA 16") "</option>"
+               "<option value='67'>" N_("GrayAlpha 8") "</option>"
+               "<option value='68'>" N_("GrayAlpha 16") "</option>"
+               "<option value='35'>" N_("RGB 8") "</option>"
+               "<option value='36'>" N_("RGB 16") "</option>"
+               "<option value='0'>" N_("Gray 1") "</option>"
+               "<option value='1'>" N_("Gray 2") "</option>"
+               "<option value='2'>" N_("Gray 4") "</option>"
+               "<option value='3'>" N_("Gray 8") "</option>"
+               "<option value='4'>" N_("Gray 16") "</option>"
+            "</param>"
+            "<param name='png_compression' type='optiongroup' appearance='combo' gui-text='" N_("Compression") "'>"
+               "<option value='0'>" N_("0 - No Compression") "</option>"
+               "<option value='1'>" N_("1 - Best Speed") "</option>"
+               "<option value='2'>2</option>"
+               "<option value='3'>3</option>"
+               "<option value='4'>4</option>"
+               "<option value='5'>5</option>"
+               "<option value='6'>" N_("6 - Default Compression") "</option>" // First because it's default (and broken)
+               "<option value='7'>7</option>"
+               "<option value='8'>8</option>"
+               "<option value='9'>" N_("9 - Best Compression") "</option>"
+            "</param>"
+            "<param name='png_phys' gui-text='" N_("pHYs DPI") "' type='float' min='0.0' max='100000.0'>0.0</param>"
+            "<param name='png_antialias' gui-text='" N_("Antialias") "' type='int' min='0' max='3'>2</param>"
+            "<output raster=\"true\" priority=\"1\">\n"
                 "<extension>.png</extension>\n"
                 "<mimetype>image/png</mimetype>\n"
                 "<filetypename>" N_("Portable Network Graphic (*.png)") "</filetypename>\n"

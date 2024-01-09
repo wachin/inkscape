@@ -8,9 +8,11 @@
  */
 
 #include <set>
+#include <vector>
 
 #include <glibmm/i18n.h>
 #include <glibmm/regex.h>
+#include <glibmm/ustring.h>
 
 #include <gtkmm/messagedialog.h>
 #include <gtkmm/checkbutton.h>
@@ -25,14 +27,14 @@
 #include "selection-chemistry.h"
 #include "text-editing.h"
 
+#include "object/sp-item.h"
 #include "object/sp-root.h"
 #include "object/sp-text.h"
 #include "object/sp-textpath.h"
-#include "object/sp-flowtext.h"
 #include "object/sp-flowdiv.h"
 #include "object/sp-tspan.h"
 
-#include "libnrtype/FontFactory.h"
+#include "libnrtype/font-factory.h"
 #include "libnrtype/font-instance.h"
 
 #include "ui/dialog-events.h"
@@ -40,86 +42,63 @@
 namespace Inkscape {
 namespace UI {
 namespace Dialog {
+namespace {
 
-FontSubstitution::FontSubstitution()
-= default;
-
-FontSubstitution::~FontSubstitution()
-= default;
-
-void
-FontSubstitution::checkFontSubstitutions(SPDocument* doc)
+void show(std::vector<SPItem*> const &list, Glib::ustring const &out)
 {
-    Inkscape::Preferences *prefs = Inkscape::Preferences::get();
-    int show_dlg = prefs->getInt("/options/font/substitutedlg", 0);
-    if (show_dlg) {
-        Glib::ustring out;
-        std::vector<SPItem*> l =  getFontReplacedItems(doc, &out);
-        if (out.length() > 0) {
-            show(out, l);
-        }
-    }
-}
-
-void
-FontSubstitution::show(Glib::ustring out, std::vector<SPItem*> &l)
-{
-   Gtk::MessageDialog warning(_("\nSome fonts are not available and have been substituted."),
-                       false, Gtk::MESSAGE_INFO, Gtk::BUTTONS_OK, true);
+   Gtk::MessageDialog warning(_("Some fonts are not available and have been substituted."),
+                              false, Gtk::MESSAGE_INFO, Gtk::BUTTONS_OK, true);
    warning.set_resizable(true);
    warning.set_title(_("Font substitution"));
 
-   GtkWidget *dlg = GTK_WIDGET(warning.gobj());
-   sp_transientize(dlg);
+   sp_transientize(GTK_WIDGET(warning.gobj()));
 
-   Gtk::TextView * textview = new Gtk::TextView();
-   textview->set_editable(false);
-   textview->set_wrap_mode(Gtk::WRAP_WORD);
-   textview->show();
-   textview->get_buffer()->set_text(_(out.c_str()));
+   Gtk::TextView textview;
+   textview.set_editable(false);
+   textview.set_wrap_mode(Gtk::WRAP_WORD);
+   textview.show();
+   textview.get_buffer()->set_text(_(out.c_str()));
 
-   Gtk::ScrolledWindow * scrollwindow = new Gtk::ScrolledWindow();
-   scrollwindow->add(*textview);
-   scrollwindow->set_policy(Gtk::POLICY_AUTOMATIC, Gtk::POLICY_AUTOMATIC);
-   scrollwindow->set_shadow_type(Gtk::SHADOW_IN);
-   scrollwindow->set_size_request(0, 100);
-   scrollwindow->show();
+   Gtk::ScrolledWindow scrollwindow;
+   scrollwindow.add(textview);
+   scrollwindow.set_policy(Gtk::POLICY_AUTOMATIC, Gtk::POLICY_AUTOMATIC);
+   scrollwindow.set_shadow_type(Gtk::SHADOW_IN);
+   scrollwindow.set_size_request(0, 100);
+   scrollwindow.show();
 
-   Gtk::CheckButton *cbSelect = new Gtk::CheckButton();
-   cbSelect->set_label(_("Select all the affected items"));
-   cbSelect->set_active(true);
-   cbSelect->show();
+   Gtk::CheckButton cbSelect;
+   cbSelect.set_label(_("Select all the affected items"));
+   cbSelect.set_active(true);
+   cbSelect.show();
 
-   Gtk::CheckButton *cbWarning = new Gtk::CheckButton();
-   cbWarning->set_label(_("Don't show this warning again"));
-   cbWarning->show();
+   Gtk::CheckButton cbWarning;
+   cbWarning.set_label(_("Don't show this warning again"));
+   cbWarning.show();
 
    auto box = warning.get_content_area();
+   box->set_border_width(5);
    box->set_spacing(2);
-   box->pack_start(*scrollwindow, true, true, 4);
-   box->pack_start(*cbSelect, false, false, 0);
-   box->pack_start(*cbWarning, false, false, 0);
+   box->pack_start(scrollwindow, true, true, 4);
+   box->pack_start(cbSelect, false, false, 0);
+   box->pack_start(cbWarning, false, false, 0);
 
    warning.run();
 
-   if (cbWarning->get_active()) {
-       Inkscape::Preferences *prefs = Inkscape::Preferences::get();
-       prefs->setInt("/options/font/substitutedlg", 0);
+   if (cbWarning.get_active()) {
+       Inkscape::Preferences::get()->setBool("/options/font/substitutedlg", false);
    }
 
-   if (cbSelect->get_active()) {
-
-       SPDesktop *desktop = SP_ACTIVE_DESKTOP;
-       Inkscape::Selection *selection = desktop->getSelection();
+   if (cbSelect.get_active()) {
+       auto desktop = SP_ACTIVE_DESKTOP;
+       auto selection = desktop->getSelection();
        selection->clear();
-       selection->setList(l);
+       selection->setList(list);
    }
-
 }
 
 /*
- * Find all the fonts that are in the document but not available on the users system
- * and have been substituted for other fonts
+ * Find all the fonts that are in the document but not available on the user's system
+ * and have been substituted for other fonts.
  *
  * Return a list of SPItems where fonts have been substituted.
  *
@@ -128,136 +107,127 @@ FontSubstitution::show(Glib::ustring out, std::vector<SPItem*> &l)
  * b. Build up a list of the objects rendered fonts - taken for the objects layout/spans
  * If there are fonts in a. that are not in b. then those fonts have been substituted.
  */
-std::vector<SPItem*> FontSubstitution::getFontReplacedItems(SPDocument* doc, Glib::ustring *out)
+std::pair<std::vector<SPItem*>, Glib::ustring> getFontReplacedItems(SPDocument *doc)
 {
-    SPDesktop *desktop = SP_ACTIVE_DESKTOP;
-    std::vector<SPItem*> allList;
-    std::vector<SPItem*> outList,x,y;
+    std::vector<SPItem*> outList;
     std::set<Glib::ustring> setErrors;
     std::set<Glib::ustring> setFontSpans;
-    std::map<SPItem *, Glib::ustring> mapFontStyles;
+    std::map<SPItem*, Glib::ustring> mapFontStyles;
+    Glib::ustring out;
 
-    allList = get_all_items(x, doc->getRoot(), desktop, false, false, true, y);
-    for(auto item : allList){
-        SPStyle *style = item->style;
+    auto const allList = get_all_items(doc->getRoot(), SP_ACTIVE_DESKTOP, false, false, true);
+    for (auto item : allList) {
+        auto style = item->style;
         Glib::ustring family = "";
 
-        if (is_top_level_text_object (item)) {
+        if (is_top_level_text_object(item)) {
             // Should only need to check the first span, since the others should be covered by TSPAN's etc
             family = te_get_layout(item)->getFontFamily(0);
             setFontSpans.insert(family);
         }
-        else if (SP_IS_TEXTPATH(item)) {
-            SPTextPath const *textpath = SP_TEXTPATH(item);
-            if (textpath->originalPath != nullptr) {
-                family = SP_TEXT(item->parent)->layout.getFontFamily(0);
+        else if (auto textpath = cast<SPTextPath>(item)) {
+            if (textpath->originalPath) {
+                family = cast<SPText>(item->parent)->layout.getFontFamily(0);
                 setFontSpans.insert(family);
             }
         }
-        else if (SP_IS_TSPAN(item) || SP_IS_FLOWTSPAN(item)) {
+        else if (is<SPTSpan>(item) || is<SPFlowtspan>(item)) {
             // is_part_of_text_subtree (item)
              // TSPAN layout comes from the parent->layout->_spans
              SPObject *parent_text = item;
-             while (parent_text && !SP_IS_TEXT(parent_text)) {
+             while (parent_text && !is<SPText>(parent_text)) {
                  parent_text = parent_text->parent;
              }
-             if (parent_text != nullptr) {
-                 family = SP_TEXT(parent_text)->layout.getFontFamily(0);
+             if (parent_text) {
+                 family = cast<SPText>(parent_text)->layout.getFontFamily(0);
                  // Add all the spans fonts to the set
-                 for (unsigned int f=0; f < parent_text->children.size(); f++) {
-                     family = SP_TEXT(parent_text)->layout.getFontFamily(f);
+                 for (unsigned int f = 0; f < parent_text->children.size(); f++) {
+                     family = cast<SPText>(parent_text)->layout.getFontFamily(f);
                      setFontSpans.insert(family);
                  }
              }
         }
 
         if (style) {
-            gchar const *style_font = nullptr;
-            if (style->font_family.set)
+            char const *style_font = nullptr;
+            if (style->font_family.set) {
                 style_font = style->font_family.value();
-            else if (style->font_specification.set)
+            } else if (style->font_specification.set) {
                 style_font = style->font_specification.value();
-            else
+            } else {
                 style_font = style->font_family.value();
+            }
 
             if (style_font) {
                 if (has_visible_text(item)) {
-                    mapFontStyles.insert(std::make_pair (item, style_font));
+                    mapFontStyles.insert(std::make_pair(item, style_font));
                 }
             }
         }
     }
 
     // Check if any document styles are not in the actual layout
-    std::map<SPItem *, Glib::ustring>::const_reverse_iterator mapIter;
-    for (mapIter = mapFontStyles.rbegin(); mapIter != mapFontStyles.rend(); ++mapIter) {
+    for (auto mapIter = mapFontStyles.rbegin(); mapIter != mapFontStyles.rend(); ++mapIter) {
         SPItem *item = mapIter->first;
         Glib::ustring fonts = mapIter->second;
 
         // CSS font fallbacks can have more that one font listed, split the font list
         std::vector<Glib::ustring> vFonts = Glib::Regex::split_simple("," , fonts);
         bool fontFound = false;
-        for(auto font : vFonts) {
+        for (auto const &font : vFonts) {
             // trim whitespace
             size_t startpos = font.find_first_not_of(" \n\r\t");
             size_t endpos = font.find_last_not_of(" \n\r\t");
-            if(( std::string::npos == startpos ) || ( std::string::npos == endpos)) {
+            if (startpos == std::string::npos || endpos == std::string::npos) {
                 continue; // empty font name
             }
-            font = font.substr( startpos, endpos-startpos+1 );
-            std::set<Glib::ustring>::const_iterator iter = setFontSpans.find(font);
-            if (iter != setFontSpans.end() ||
-                    font == Glib::ustring("sans-serif") ||
-                    font == Glib::ustring("Sans") ||
-                    font == Glib::ustring("serif") ||
-                    font == Glib::ustring("Serif") ||
-                    font == Glib::ustring("monospace") ||
-                    font == Glib::ustring("Monospace")) {
+            auto const trimmed = font.substr(startpos, endpos - startpos + 1);
+            if (setFontSpans.find(trimmed) != setFontSpans.end() ||
+                trimmed == Glib::ustring("sans-serif") ||
+                trimmed == Glib::ustring("Sans") ||
+                trimmed == Glib::ustring("serif") ||
+                trimmed == Glib::ustring("Serif") ||
+                trimmed == Glib::ustring("monospace") ||
+                trimmed == Glib::ustring("Monospace"))
+            {
                 fontFound = true;
                 break;
             }
         }
-        if (fontFound == false) {
+        if (!fontFound) {
             Glib::ustring subName = getSubstituteFontName(fonts);
-            Glib::ustring err = Glib::ustring::compose(
-                    _("Font '%1' substituted with '%2'"), fonts.c_str(), subName.c_str());
+            Glib::ustring err = Glib::ustring::compose(_("Font '%1' substituted with '%2'"), fonts.c_str(), subName.c_str());
             setErrors.insert(err);
-            outList.push_back(item);
+            outList.emplace_back(item);
         }
     }
 
-    std::set<Glib::ustring>::const_iterator setIter;
-    for (setIter = setErrors.begin(); setIter != setErrors.end(); ++setIter) {
-        Glib::ustring err = (*setIter);
-        out->append(err + "\n");
+    for (auto const &err : setErrors) {
+        out.append(err + "\n");
         g_warning("%s", err.c_str());
     }
 
-    return outList;
+    return std::make_pair(std::move(outList), std::move(out));
 }
 
+} // namespace
 
-Glib::ustring FontSubstitution::getSubstituteFontName (Glib::ustring font)
+void checkFontSubstitutions(SPDocument *doc)
 {
-    Glib::ustring out = font;
-
-    PangoFontDescription *descr = pango_font_description_new();
-    pango_font_description_set_family(descr,font.c_str());
-    font_instance *res = (font_factory::Default())->Face(descr);
-    if (res->pFont) {
-        PangoFontDescription *nFaceDesc = pango_font_describe(res->pFont);
-        out = sp_font_description_get_family(nFaceDesc);
+    bool show_dlg = Inkscape::Preferences::get()->getBool("/options/font/substitutedlg");
+    if (!show_dlg) {
+        return;
     }
-    pango_font_description_free(descr);
 
-    return out;
+    auto [list, msg] = getFontReplacedItems(doc);
+    if (!msg.empty()) {
+        show(list, msg);
+    }
 }
-
 
 } // namespace Dialog
 } // namespace UI
 } // namespace Inkscape
-
 
 /*
   Local Variables:

@@ -71,7 +71,7 @@ private:
 
     std::vector<Glib::ustring> count_dialogs(const Glib::KeyFile *state) const;
     void load_transient_state(Glib::KeyFile *keyfile);
-    void dialog_defaults();
+    void dialog_defaults(DialogContainer* docking_container);
 
     // transient dialog state for floating windows user closes
     std::map<std::string, std::shared_ptr<Glib::KeyFile>> _floating_dialogs;

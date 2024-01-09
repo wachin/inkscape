@@ -10,7 +10,7 @@ set(CPACK_PACKAGE_VENDOR "Inkscape")
 set(CPACK_PACKAGE_VERSION_MAJOR ${INKSCAPE_VERSION_MAJOR}) # TODO: Can be set via project(), see CMAKE_PROJECT_VERSION_PATCH
 set(CPACK_PACKAGE_VERSION_MINOR ${INKSCAPE_VERSION_MINOR})
 set(CPACK_PACKAGE_VERSION_PATCH ${INKSCAPE_VERSION_PATCH})
-set(CPACK_PACKAGE_VERSION "${CPACK_PACKAGE_VERSION_MAJOR}.${CPACK_PACKAGE_VERSION_MINOR}.${CPACK_PACKAGE_VERSION_PATCH}-${INKSCAPE_VERSION_SUFFIX}")
+set(CPACK_PACKAGE_VERSION "${CPACK_PACKAGE_VERSION_MAJOR}.${CPACK_PACKAGE_VERSION_MINOR}.${CPACK_PACKAGE_VERSION_PATCH}${INKSCAPE_VERSION_SUFFIX}")
 set(CPACK_PACKAGE_DESCRIPTION_FILE "${CMAKE_SOURCE_DIR}/README.md") # TODO: Where is this used? Do we need a better source?
 set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Open-source vector graphics editor")
 set(CPACK_PACKAGE_HOMEPAGE_URL "https://inkscape.org")
@@ -22,17 +22,20 @@ set(CPACK_PACKAGE_CHECKSUM "SHA256")
 
 set(CPACK_PACKAGE_EXECUTABLES "inkscape;Inkscape;inkview;Inkview")
 set(CPACK_CREATE_DESKTOP_LINKS "inkscape")
+
 if(WIN32)
     set(CPACK_PACKAGE_INSTALL_DIRECTORY "Inkscape")
+    set(CPACK_STRIP_FILES FALSE)
 else()
-set(CPACK_PACKAGE_INSTALL_DIRECTORY "inkscape")
+    set(CPACK_PACKAGE_INSTALL_DIRECTORY "inkscape")
+    set(CPACK_STRIP_FILES TRUE)
 endif()
 
-set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_SOURCE_DIR}/LICENSES/GPL-3.0.txt")
+# This creates a screen in the windows installers asking users to "Agree" to the GPL which is incorrect.
+# set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_SOURCE_DIR}/LICENSES/GPL-3.0.txt")
 set(CPACK_RESOURCE_FILE_README "${CMAKE_SOURCE_DIR}/README.md")
 # set( CPACK_RESOURCE_FILE_WELCOME "${CMAKE_SOURCE_DIR}/README.md") # TODO: can we use this?
 
-set(CPACK_STRIP_FILES TRUE)
 set(CPACK_WARN_ON_ABSOLUTE_INSTALL_DESTINATION TRUE)
 
 # specific config for source packaging (note this is used by the 'dist' target)
@@ -56,6 +59,7 @@ configure_file("${CMAKE_SOURCE_DIR}/CMakeScripts/CPack.cmake" "${CMAKE_BINARY_DI
 set(CPACK_NSIS_MUI_ICON "${CMAKE_SOURCE_DIR}/share/branding/inkscape.ico")
 set(CPACK_NSIS_MUI_HEADERIMAGE "${CMAKE_SOURCE_DIR}/packaging/nsis/header.bmp")
 set(CPACK_NSIS_MUI_WELCOMEFINISHPAGE_BITMAP "${CMAKE_SOURCE_DIR}/packaging/nsis/welcomefinish.bmp")
+set(CPACK_NSIS_IGNORE_LICENSE_PAGE 1)
 set(CPACK_NSIS_INSTALLED_ICON_NAME "bin/inkscape.exe")
 set(CPACK_NSIS_HELP_LINK "${CPACK_PACKAGE_HOMEPAGE_URL}")
 set(CPACK_NSIS_URL_INFO_ABOUT "${CPACK_PACKAGE_HOMEPAGE_URL}")
@@ -64,6 +68,7 @@ set(CPACK_NSIS_COMPRESSOR "/SOLID lzma") # zlib|bzip2|lzma
 set(CPACK_NSIS_ENABLE_UNINSTALL_BEFORE_INSTALL "ON")
 set(CPACK_NSIS_MODIFY_PATH "ON") # while the name does not suggest it, this also provides the possibility to add desktop icons
 set(CPACK_NSIS_MUI_FINISHPAGE_RUN "inkscape") # TODO: this results in instance with administrative privileges!
+set(CPACK_NSIS_MANIFEST_DPI_AWARE ON) # Make the text not blurry in installer
 
 set(CPACK_NSIS_COMPRESSOR "${CPACK_NSIS_COMPRESSOR}\n  SetCompressorDictSize 64") # hack (improve compression)
 set(CPACK_NSIS_COMPRESSOR "${CPACK_NSIS_COMPRESSOR}\n  BrandingText '${CPACK_PACKAGE_DESCRIPTION_SUMMARY}'") # hack (overwrite BrandingText)
@@ -71,7 +76,7 @@ set(CPACK_NSIS_COMPRESSOR "${CPACK_NSIS_COMPRESSOR}\n  !define MUI_COMPONENTSPAG
 
 file(TO_NATIVE_PATH "${CMAKE_SOURCE_DIR}/packaging/nsis/fileassoc.nsh" native_path)
 string(REPLACE "\\" "\\\\" native_path "${native_path}")
-set(CPACK_NSIS_EXTRA_PREINSTALL_COMMANDS "!include ${native_path}")
+set(CPACK_NSIS_EXTRA_PREINSTALL_COMMANDS "!include '${native_path}'")
 set(CPACK_NSIS_EXTRA_INSTALL_COMMANDS "\
   WriteRegStr SHCTX 'SOFTWARE\\\\Microsoft\\\\Windows\\\\CurrentVersion\\\\App Paths\\\\inkscape.exe' '' '$INSTDIR\\\\bin\\\\inkscape.exe'\n\
   WriteRegStr SHCTX 'SOFTWARE\\\\Microsoft\\\\Windows\\\\CurrentVersion\\\\App Paths\\\\inkscape.exe' 'Path' '$INSTDIR\\\\bin'\n\
@@ -89,6 +94,7 @@ set(CPACK_WIX_UPGRADE_GUID "4d5fedaa-84a0-48be-bd2a-08246398361a")
 set(CPACK_WIX_PRODUCT_ICON "${CMAKE_SOURCE_DIR}/share/branding/inkscape.ico")
 set(CPACK_WIX_UI_BANNER "${CMAKE_SOURCE_DIR}/packaging/wix/Bitmaps/banner.bmp")
 set(CPACK_WIX_UI_DIALOG "${CMAKE_SOURCE_DIR}/packaging/wix/Bitmaps/dialog.bmp")
+set(CPACK_WIX_UI_REF "WixUI_FeatureTree_NoLicense")
 set(CPACK_WIX_PROPERTY_ARPHELPLINK "${CPACK_PACKAGE_HOMEPAGE_URL}")
 set(CPACK_WIX_PROPERTY_ARPURLINFOABOUT "${CPACK_PACKAGE_HOMEPAGE_URL}")
 set(CPACK_WIX_PROPERTY_ARPURLUPDATEINFO "${CPACK_PACKAGE_HOMEPAGE_URL}/release")
@@ -97,15 +103,29 @@ set(CPACK_WIX_LIGHT_EXTRA_FLAGS "-dcl:high") # set high compression
 
 set(CPACK_WIX_PATCH_FILE "${CMAKE_SOURCE_DIR}/packaging/wix/app_registration.xml"
                          "${CMAKE_SOURCE_DIR}/packaging/wix/feature_attributes.xml")
+set(CPACK_WIX_EXTRA_SOURCES "${CMAKE_SOURCE_DIR}/packaging/wix/featuretree_nolicense.wxs")
 
 # DEB (Linux .deb bundle)
-set(CPACK_DEBIAN_PACKAGE_DEPENDS "libaspell15 (>= 0.60.7~20110707), libatkmm-1.6-1v5 (>= 2.24.0), libc6 (>= 2.14), libcairo2 (>= 1.14.0), libcairomm-1.0-1v5 (>= 1.12.0), libcdr-0.1-1, libdbus-glib-1-2 (>= 0.88), libfontconfig1 (>= 2.12), libfreetype6 (>= 2.2.1), libgc1c2 (>= 1:7.2d), libgcc1 (>= 1:4.0), libgdk-pixbuf2.0-0 (>= 2.22.0), libglib2.0-0 (>= 2.41.1), libglibmm-2.4-1v5 (>= 2.54.0), libgomp1 (>= 4.9), libgsl23, libgslcblas0, libgtk-3-0 (>= 3.21.5), libgtkmm-3.0-1v5 (>= 3.22.0), libgtkspell3-3-0, libharfbuzz0b (>= 1.2.6), libjpeg8 (>= 8c), liblcms2-2 (>= 2.2+git20110628), libmagick++-6.q16-7 (>= 8:6.9.6.8), libpango-1.0-0 (>= 1.37.2), libpangocairo-1.0-0 (>= 1.14.0), libpangoft2-1.0-0 (>= 1.37.2), libpangomm-1.4-1v5 (>= 2.40.0), libpng16-16 (>= 1.6.2-1), libpoppler-glib8 (>= 0.18.0), libpoppler68 (>= 0.57.0), libpotrace0, librevenge-0.0-0, libsigc++-2.0-0v5 (>= 2.8.0), libsoup2.4-1 (>= 2.41.90), libstdc++6 (>= 5.2), libvisio-0.1-1, libwpg-0.3-3, libx11-6, libxml2 (>= 2.7.4), libxslt1.1 (>= 1.1.25), zlib1g (>= 1:1.1.4)")
 set(CPACK_DEBIAN_PACKAGE_SECTION "graphics")
-set(CPACK_DEBIAN_PACKAGE_RECOMMENDS "aspell, imagemagick, libwmf-bin, perlmagick, python-numpy, python-lxml, python-scour, python-uniconvertor, python-cssselect")
-set(CPACK_DEBIAN_PACKAGE_SUGGESTS "dia, libsvg-perl, libxml-xql-perl, pstoedit, python-uniconvertor, ruby")
+set(CPACK_DEBIAN_INKSCAPE_PACKAGE_SUGGESTS "dia, pstoedit, scribus")
+set(CPACK_DEBIAN_FILE_NAME DEB-DEFAULT)
+set(CPACK_DEBIAN_PACKAGE_DEPENDS "inkscape") # all package depend on inkscape
+set(CPACK_DEBIAN_INKSCAPE_PACKAGE_DEPENDS "lib2geom${2GEOM_VERSION}")
+set(CPACK_DEBIAN_INKSCAPE_PACKAGE_RECOMMENDS "aspell, imagemagick, libwmf-bin, inkscape-extensions, inkscape-translations, inkscape-themes")
 
+set(CPACK_DEB_COMPONENT_INSTALL ON)
+set(CPACK_COMPONENTS_GROUPING IGNORE)
 
-
+set(CPACK_DEBIAN_INKSCAPE-EXTENSIONS_PACKAGE_DEPENDS "python3-numpy, python3-lxml, python3-scour, python3-packaging, python3-cssselect, python3-bs4, python3-requests")
+set(CPACK_DEBIAN_INKSCAPE-EXTENSIONS_PACKAGE_RECOMMENDS "inkscape-extension-manager")
+set(CPACK_DEBIAN_INKSCAPE-EXTENSION-MANAGER_PACKAGE_DEPENDS "inkscape-extensions, python3-filecache")
+set(CPACK_DEBIAN_LIB2GEOM-DEV_PACKAGE_RECOMMENDS "lib2geom${2GEOM_VERSION}")
+set(CPACK_DEBIAN_LIB2GEOM1.3.0_PACKAGE_NAME "lib2geom${2GEOM_VERSION}")
+set(CPACK_DEBIAN_LIB2GEOM-DEV_PACKAGE_NAME "lib2geom-dev")
+set(CPACK_DEBIAN_PACKAGE_GENERATE_SHLIBS ON)
+set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
+set(CPACK_ADD_LDCONFIG_CALL ON)
+set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS_PRIVATE_DIRS ${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR})
 
 ## load cpack module (do this *after* all the CPACK_* variables have been set)
 include(CPack)
@@ -180,12 +200,29 @@ cpack_add_component_group(
 get_inkscape_languages()
 list(LENGTH INKSCAPE_LANGUAGE_CODES length)
 math(EXPR length "${length} - 1")
-foreach(index RANGE ${length})
-    list(GET INKSCAPE_LANGUAGE_CODES ${index} language_code)
-    list(GET INKSCAPE_LANGUAGE_NAMES ${index} language_name)
-    string(MAKE_C_IDENTIFIER "${language_code}" language_code_escaped)
-    cpack_add_component(translations.${language_code_escaped}
-                        DISPLAY_NAME "${language_name}"
+if(WIN32)
+    foreach(index RANGE ${length})
+        list(GET INKSCAPE_LANGUAGE_CODES ${index} language_code)
+        list(GET INKSCAPE_LANGUAGE_NAMES ${index} language_name)
+        string(MAKE_C_IDENTIFIER "${language_code}" language_code_escaped)
+        cpack_add_component(translations.${language_code_escaped}
+                            DISPLAY_NAME "${language_name}"
+                            GROUP "group_3_translations"
+                            INSTALL_TYPES full)
+    endforeach()
+else()
+    cpack_add_component(translations
+                        DISPLAY_NAME "Translations"
                         GROUP "group_3_translations"
                         INSTALL_TYPES full)
-endforeach()
+endif()
+
+if(WITH_INTERNAL_2GEOM)
+    cpack_add_component(lib2geom_dev
+                        DISPLAY_NAME "lib2geom-dev"
+                        DESCRIPTION "Geometry library - dev files")
+    cpack_add_component(lib2geom${2GEOM_VERSION}
+                        DISPLAY_NAME "lib2geom"
+                        DESCRIPTION "Geometry library"
+                        HIDDEN REQUIRED)
+endif()

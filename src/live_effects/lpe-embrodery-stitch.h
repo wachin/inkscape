@@ -29,8 +29,6 @@ public:
 
     Geom::PathVector doEffect_path(Geom::PathVector const &path_in) override;
 
-    void resetDefaults(SPItem const *item) override;
-
     enum order_method {
         order_method_no_reorder,
         order_method_zigzag,

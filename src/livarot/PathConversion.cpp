@@ -24,25 +24,39 @@
 
 void Path::ConvertWithBackData(double treshhold)
 {
+    // if a quadratic Bezier spline was being added (Path::BezierTo or Path::TempBezierTo
+    // were called and Path::EndBezierTo hasn't been called yet), cancel it
     if ( descr_flags & descr_adding_bezier ) {
         CancelBezier();
     }
 
+    // are we doing a sub path? if yes, clear the flags. CloseSubPath just clears the flags
+    // it doesn't close a sub path
     if ( descr_flags & descr_doing_subpath ) {
         CloseSubpath();
     }
 
+    // set the backdata flag to true since this function will be calculating and storing backdata stuff
     SetBackData(true);
+    // clears any pre-existing polyline approximation stuff
     ResetPoints();
+
+    // nothing to approximate so return
     if ( descr_cmd.empty() ) {
         return;
     }
 
-    Geom::Point curX;
+    Geom::Point curX; // the last point added
+    // the description to process. We start with 1 usually since the first is always a MoveTo that
+    // we handle before the loop (see below). In the case that the first is not a moveTo, We set
+    // curP to 0.
     int curP = 1;
+    // index of the last moveto point. Useful when a close path command is encountered.
     int lastMoveTo = -1;
 
     // The initial moveto.
+    // if the first command is a moveTo, set that as the lastPoint (curX) otherwise add a point at
+    // the origin as a moveTo.
     {
         int const firstTyp = descr_cmd[0]->getType();
         if ( firstTyp == descr_moveto ) {
@@ -51,10 +65,13 @@ void Path::ConvertWithBackData(double treshhold)
             curP = 0;
             curX[Geom::X] = curX[Geom::Y] = 0;
         }
+        // tiny detail to see here is that piece (the index of the path command this point comes from) is set to 0 which
+        // may or may not be true. If there was not a MoveTo, index 0 can have other description types.
         lastMoveTo = AddPoint(curX, 0, 0.0, true);
     }
 
     // And the rest, one by one.
+    // within this loop, curP holds the current path command index, curX holds the last point added
     while ( curP < int(descr_cmd.size()) ) {
 
         int const nType = descr_cmd[curP]->getType();
@@ -62,6 +79,7 @@ void Path::ConvertWithBackData(double treshhold)
 
         switch (nType) {
             case descr_forced: {
+                // just add a forced point (at the last point added). These arguments are useless by the way.
                 AddForcedPoint(curX, curP, 1.0);
                 curP++;
                 break;
@@ -70,6 +88,7 @@ void Path::ConvertWithBackData(double treshhold)
             case descr_moveto: {
                 PathDescrMoveTo *nData = dynamic_cast<PathDescrMoveTo*>(descr_cmd[curP]);
                 nextX = nData->p;
+                // add the moveTo point and also store this in lastMoveTo
                 lastMoveTo = AddPoint(nextX, curP, 0.0, true);
                 // et on avance
                 curP++;
@@ -77,8 +96,16 @@ void Path::ConvertWithBackData(double treshhold)
             }
 
             case descr_close: {
+                // add the lastMoveTo point again
                 nextX = pts[lastMoveTo].p;
                 int n = AddPoint(nextX, curP, 1.0, false);
+                // we check if n > 0 because in some cases the last point has already been added so AddPoint would
+                // return -1 .. but then that last point won't get marked with closed = true .. I wonder if that would cause
+                // problems. Just to explain this say:
+                // MoveTo(0, 0); LineTo(10, 0); LineTo(10, 10); LineTo(0, 10); LineTo(0, 0); Close();
+                // LineTo(0, 0) would have already added a point at origin. So AddPoint won't add anything. But my point is that
+                // then the last point (0,0) won't get marked as closed = true which it should be.
+                // But then maybe this doesn't matter because closed variable is barely used.
                 if (n > 0) pts[n].closed = true;
                 curP++;
                 break;
@@ -96,7 +123,12 @@ void Path::ConvertWithBackData(double treshhold)
             case descr_cubicto: {
                 PathDescrCubicTo *nData = dynamic_cast<PathDescrCubicTo *>(descr_cmd[curP]);
                 nextX = nData->p;
+                // RecCubicTo will see if threshold is fine with approximating this cubic bezier with
+                // a line segment through the start and end points. If no, it'd split the cubic at its
+                // center point and recursively call itself on the left and right side. The center point
+                // gets added in the points list too.
                 RecCubicTo(curX, nData->start, nextX, nData->end, treshhold, 8, 0.0, 1.0, curP);
+                // RecCubicTo adds any points inside the cubic and last one is added here
                 AddPoint(nextX, curP, 1.0, false);
                 // et on avance
                 curP++;
@@ -106,6 +138,7 @@ void Path::ConvertWithBackData(double treshhold)
             case descr_arcto: {
                 PathDescrArcTo *nData = dynamic_cast<PathDescrArcTo *>(descr_cmd[curP]);
                 nextX = nData->p;
+                // Similar to RecCubicTo, just for Arcs
                 DoArc(curX, nextX, nData->rx, nData->ry, nData->angle, nData->large, nData->clockwise, treshhold, curP);
                 AddPoint(nextX, curP, 1.0, false);
                 // et on avance
@@ -117,6 +150,7 @@ void Path::ConvertWithBackData(double treshhold)
                 PathDescrBezierTo *nBData = dynamic_cast<PathDescrBezierTo *>(descr_cmd[curP]);
                 int nbInterm = nBData->nb;
                 nextX = nBData->p;
+                // same as RecCubicTo and RecArcTo but for quadratic bezier splines
 
                 int ip = curP + 1;
                 PathDescrIntermBezierTo *nData = dynamic_cast<PathDescrIntermBezierTo *>(descr_cmd[ip]);
@@ -861,25 +895,36 @@ void Path::RecCubicTo( Geom::Point const &iS, Geom::Point const &isD,
                        Geom::Point const &iE, Geom::Point const &ieD,
                        double tresh, int lev, double maxL)
 {
+    // vector from start to end point
     Geom::Point se = iE - iS;
+    // length of that vector
     const double dC = Geom::L2(se);
+    // if the vector from start to end point is smaller than 0.01
     if ( dC < 0.01 ) {
-
+        // we still need to get an idea of how far away the curve goes from the start to end line segment se
+        // for that, we measure lengths of isD and ieD
         const double sC = dot(isD,isD);
         const double eC = dot(ieD,ieD);
+        // if they are limited by tresh, great
         if ( sC < tresh && eC < tresh ) {
             return;
         }
+        // otherwise proceed
 
     } else {
+        // okay so length is greater than or equal to 0.01, we can still check the perpendicular component
+        // of the control handles and see if they are limited by tresh
         const double sC = fabs(cross(se, isD)) / dC;
         const double eC = fabs(cross(se, ieD)) / dC;
         if ( sC < tresh && eC < tresh ) {
             // presque tt droit -> attention si on nous demande de bien subdiviser les petits segments
+            // if the perpendicular is limited and a maxL is set, check if maxL is being respected, if yes
+            // return otherwise we split
             if ( maxL > 0 && dC > maxL ) {
                 if ( lev <= 0 ) {
                     return;
                 }
+                // maths for splitting one cubic bezier into two
                 Geom::Point m = 0.5 * (iS + iE) + 0.125 * (isD - ieD);
                 Geom::Point md = 0.75 * (iE - iS) - 0.125 * (isD + ieD);
 
@@ -975,8 +1020,12 @@ void Path::DoArc(Geom::Point const &iS, Geom::Point const &iE,
     Geom::Rotate cb(sang);
     Geom::Rotate cbangle(angle*M_PI/180.0);
 
+    // max angle is basically the maximum arc angle you can have that won't create
+    // an arc that exceeds the threshold
     double max_ang = 2 * acos ( 1 - tresh / fmax(rx, ry)  );
     max_ang = fmin (max_ang, M_PI / 2 );
+    // divide the whole arc range into sectors such that each sector
+    // is no bigger than max ang
     int const num_sectors = abs(sang - eang) / max_ang + 1;
 
     if (wise) {
@@ -1446,6 +1495,8 @@ void Path::Fill(Shape* dest, int pathID, bool justAdd, bool closeIfNeeded, bool 
         if ( back ) {
             {
                 // !invert && back && !weighted
+
+                // add all points to the shape
                 for (auto & pt : pts) {
                     dest->AddPoint(pt.p);
                 }

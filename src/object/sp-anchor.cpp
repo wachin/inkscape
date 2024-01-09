@@ -18,6 +18,7 @@
 #include <glibmm/i18n.h>
 #include "xml/quote.h"
 #include "xml/repr.h"
+#include "xml/href-attribute-helper.h"
 #include "attributes.h"
 #include "sp-anchor.h"
 #include "ui/view/svg-view-widget.h"
@@ -118,7 +119,7 @@ Inkscape::XML::Node* SPAnchor::write(Inkscape::XML::Document *xml_doc, Inkscape:
         repr = xml_doc->createElement("svg:a");
     }
 
-    repr->setAttribute("xlink:href", this->href);
+    Inkscape::setHrefAttribute(*repr, this->href);
     if (this->type) repr->setAttribute("xlink:type", this->type);
     if (this->title) repr->setAttribute("xlink:title", this->title);
 
@@ -142,7 +143,7 @@ const char* SPAnchor::typeName() const {
 }
 
 const char* SPAnchor::displayName() const {
-    return _("Link");
+    return C_("Hyperlink|Noun", "Link");
 }
 
 gchar* SPAnchor::description() const {
@@ -165,7 +166,7 @@ int SPAnchor::event(SPEvent* event) {
 	case SPEvent::ACTIVATE:
             if (this->href) {
                 // If this actually worked, it could be useful to open a webpage with the link.
-                g_print("Activated xlink:href=\"%s\"\n", this->href);
+                g_message("Activated xlink:href=\"%s\"", this->href);
                 return TRUE;
             }
             break;

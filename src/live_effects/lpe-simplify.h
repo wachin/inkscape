@@ -27,7 +27,9 @@ public:
     void doBeforeEffect (SPLPEItem const* lpeitem) override;
 
     virtual void generateHelperPathAndSmooth(Geom::PathVector &result);
-
+    
+    void doOnApply(SPLPEItem const* lpeitem) override;
+    
     Gtk::Widget * newWidget() override;
 
     virtual void drawNode(Geom::Point p);
@@ -41,6 +43,7 @@ public:
     void addCanvasIndicators(SPLPEItem const */*lpeitem*/, std::vector<Geom::PathVector> &hp_vec) override;
 
 private:
+    void setVersioningData();
     ScalarParam steps;
     ScalarParam smooth_angles;
     ScalarParam helper_size;

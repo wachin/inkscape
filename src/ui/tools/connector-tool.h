@@ -14,13 +14,17 @@
  */
 
 #include <map>
-#include <memory>
+#include <optional>
 #include <string>
 
 #include <2geom/point.h>
 #include <sigc++/connection.h>
 
+#include "display/curve.h"
+
 #include "ui/tools/tool-base.h"
+
+#include "xml/node-observer.h"
 
 class SPItem;
 class SPCurve;
@@ -51,74 +55,88 @@ enum {
     SP_CONNECTOR_CONTEXT_NEWCONNPOINT
 };
 
-typedef std::map<SPKnot *, int>  SPKnotList;
+using SPKnotList = std::map<SPKnot *, int>;
 
-namespace Inkscape {
-namespace UI {
-namespace Tools {
+namespace Inkscape::UI::Tools {
 
-class ConnectorTool : public ToolBase {
+class ConnectorTool;
+
+class CCToolShapeNodeObserver : public Inkscape::XML::NodeObserver
+{
+    friend class ConnectorTool;
+    ~CCToolShapeNodeObserver() override = default; // can only exist as a direct base of ConnectorTool
+
+    void notifyAttributeChanged(Inkscape::XML::Node &, GQuark, Util::ptr_shared, Util::ptr_shared) final;
+};
+
+class CCToolLayerNodeObserver : public Inkscape::XML::NodeObserver
+{
+    friend class ConnectorTool;
+    ~CCToolLayerNodeObserver() override = default; // can only exist as a direct base of ConnectorTool
+
+    void notifyChildRemoved(Inkscape::XML::Node &, Inkscape::XML::Node &, Inkscape::XML::Node *) final;
+};
+
+class ConnectorTool
+    : public ToolBase
+    , private CCToolShapeNodeObserver
+    , private CCToolLayerNodeObserver
+{
 public:
-    ConnectorTool();
+    ConnectorTool(SPDesktop *desktop);
     ~ConnectorTool() override;
 
-    Inkscape::Selection *selection;
+    Inkscape::Selection *selection{nullptr};
     Geom::Point p[5];
 
     /** \invar npoints in {0, 2}. */
-    gint npoints;
+    gint npoints{0};
     unsigned int state : 4;
 
     // Red curve
-    Inkscape::CanvasItemBpath *red_bpath;
-    std::unique_ptr<SPCurve> red_curve;
-    guint32 red_color;
+    Inkscape::CanvasItemBpath *red_bpath{nullptr};
+    std::optional<SPCurve> red_curve;
+    guint32 red_color{0xff00007f};
 
     // Green curve
-    std::unique_ptr<SPCurve> green_curve;
+    std::optional<SPCurve> green_curve;
 
     // The new connector
-    SPItem *newconn;
-    Avoid::ConnRef *newConnRef;
-    gdouble curvature;
-    bool isOrthogonal;
+    SPItem *newconn{nullptr};
+    Avoid::ConnRef *newConnRef{nullptr};
+    gdouble curvature{0.0};
+    bool isOrthogonal{false};
 
     // The active shape
-    SPItem *active_shape;
-    Inkscape::XML::Node *active_shape_repr;
-    Inkscape::XML::Node *active_shape_layer_repr;
+    SPItem *active_shape{nullptr};
+    Inkscape::XML::Node *active_shape_repr{nullptr};
+    Inkscape::XML::Node *active_shape_layer_repr{nullptr};
 
     // Same as above, but for the active connector
-    SPItem *active_conn;
-    Inkscape::XML::Node *active_conn_repr;
+    SPItem *active_conn{nullptr};
+    Inkscape::XML::Node *active_conn_repr{nullptr};
     sigc::connection sel_changed_connection;
 
     // The activehandle
-    SPKnot *active_handle;
+    SPKnot *active_handle{nullptr};
 
     // The selected handle, used in editing mode
-    SPKnot *selected_handle;
+    SPKnot *selected_handle{nullptr};
 
-    SPItem *clickeditem;
-    SPKnot *clickedhandle;
+    SPItem *clickeditem{nullptr};
+    SPKnot *clickedhandle{nullptr};
 
     SPKnotList knots;
     SPKnot *endpt_handle[2]{};
     sigc::connection endpt_handler_connection[2];
-    gchar *shref;
-    gchar *sub_shref;
-    gchar *ehref;
-    gchar *sub_ehref;
+    gchar *shref{nullptr};
+    gchar *sub_shref{nullptr};
+    gchar *ehref {nullptr};
+    gchar *sub_ehref{nullptr};
 
-    static std::string const prefsPath;
-
-    void setup() override;
-    void finish() override;
     void set(const Inkscape::Preferences::Entry& val) override;
     bool root_handler(GdkEvent* event) override;
     bool item_handler(SPItem* item, GdkEvent* event) override;
-
-    std::string const& getPrefsPath() override;
 
     void cc_clear_active_shape();
     void cc_set_active_conn(SPItem *item);
@@ -145,6 +163,11 @@ private:
     bool _ptHandleTest(Geom::Point& p, gchar **href, gchar **subhref);
 
     void _reroutingFinish(Geom::Point *const p);
+
+    CCToolShapeNodeObserver &shapeNodeObserver() { return *this; }
+    CCToolLayerNodeObserver &layerNodeObserver() { return *this; }
+    friend CCToolShapeNodeObserver;
+    friend CCToolLayerNodeObserver;
 };
 
 void cc_selection_set_avoid(SPDesktop *, bool const set_ignore);
@@ -152,9 +175,7 @@ void cc_create_connection_point(ConnectorTool* cc);
 void cc_remove_connection_point(ConnectorTool* cc);
 bool cc_item_is_connector(SPItem *item);
 
-}
-}
-}
+} // namespace Inkscape::UI::Tools
 
 #endif /* !SEEN_CONNECTOR_CONTEXT_H */
 

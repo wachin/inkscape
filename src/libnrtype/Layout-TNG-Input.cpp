@@ -21,7 +21,7 @@
 #include "Layout-TNG.h"
 #include "style.h"
 #include "svg/svg-length.h"
-#include "FontFactory.h"
+#include "font-factory.h"
 
 
 namespace Inkscape {
@@ -55,7 +55,12 @@ void Layout::appendText(Glib::ustring const &text,
     new_source->text_begin = text_begin;
     new_source->text_end = text_end;
     new_source->style = style;
-    sp_style_ref(style);
+    /*
+     * Clear all input sources when any input source's style is deleted.
+     * This is ok, because this is always followed up shortly afterwards
+     * with a full teardown + recreation, so there is no visible effect.
+     */
+    new_source->style_conn = style->object->connectRelease([this] (auto) { clear(); });
 
     new_source->text_length = 0;
     for ( ; text_begin != text_end && text_begin != text.end() ; ++text_begin)
@@ -194,11 +199,11 @@ Layout::Alignment Layout::InputStreamTextSource::styleGetAlignment(Layout::Direc
     return para_direction == LEFT_TO_RIGHT ? LEFT : RIGHT;
 }
 
-font_instance *Layout::InputStreamTextSource::styleGetFontInstance() const
+std::shared_ptr<FontInstance> Layout::InputStreamTextSource::styleGetFontInstance() const
 {
     PangoFontDescription *descr = styleGetFontDescription();
     if (descr == nullptr) return nullptr;
-    font_instance *res = (font_factory::Default())->Face(descr);
+    auto res = FontFactory::get().Face(descr);
     pango_font_description_free(descr);
     return res;
 }
@@ -209,33 +214,13 @@ PangoFontDescription *Layout::InputStreamTextSource::styleGetFontDescription() c
     PangoFontDescription *descr = ink_font_description_from_style( style );
 
     // Font size not yet set
-#ifdef USE_PANGO_WIN32
-
-    // Damn Pango fudges the size, so we need to unfudge. See source of pango_win32_font_map_init()
-    pango_font_description_set_size(descr,
-        (int) ((font_factory::Default())->fontSize*PANGO_SCALE*72 / GetDeviceCaps(pango_win32_get_dc(),LOGPIXELSY))
-    );
-
-    // We unset stretch on Win32, because pango-win32 has no concept of it
-    // (Windows doesn't really provide any useful field it could use).
-    // If we did set stretch, then any text with a font-stretch attribute would
-    // end up falling back to a default.
-    pango_font_description_unset_fields(descr, PANGO_FONT_MASK_STRETCH);
-
-#else
-
     // mandatory huge size (hinting workaround)
-    pango_font_description_set_size(descr, (int) ((font_factory::Default())->fontSize*PANGO_SCALE));
-
-#endif
+    pango_font_description_set_size(descr, FontFactory::get().fontSize * PANGO_SCALE);
 
     return descr;
 }
 
-Layout::InputStreamTextSource::~InputStreamTextSource()
-{
-    sp_style_unref(style);
-}
+Layout::InputStreamTextSource::~InputStreamTextSource() = default;
 
 }//namespace Text
 }//namespace Inkscape

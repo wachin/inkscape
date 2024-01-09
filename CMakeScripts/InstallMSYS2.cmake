@@ -10,7 +10,9 @@ if(WIN32)
     ${MINGW_BIN}/LIBEAY32.dll
     ${MINGW_BIN}/SSLEAY32.dll
     ${MINGW_BIN}/imagequant.dll
-    ${MINGW_BIN}/libMagick*.dll
+    ${MINGW_BIN}/lib2geom.dll
+    ${MINGW_BIN}/libLerc.dll
+    ${MINGW_BIN}/libaom.dll
     ${MINGW_BIN}/libaspell-[0-9]*.dll
     ${MINGW_BIN}/libatk-1.0-[0-9]*.dll
     ${MINGW_BIN}/libatkmm-1.6-[0-9]*.dll
@@ -23,8 +25,11 @@ if(WIN32)
     ${MINGW_BIN}/libcairomm-1.0-[0-9]*.dll
     ${MINGW_BIN}/libcdr-0.[0-9]*.dll
     ${MINGW_BIN}/libcrypto-1_[0-9]*.dll
+    ${MINGW_BIN}/libcrypto-3*.dll
     ${MINGW_BIN}/libcurl-[0-9]*.dll
     ${MINGW_BIN}/libdatrie-[0-9]*.dll
+    ${MINGW_BIN}/libdav1d.dll
+    ${MINGW_BIN}/libde265-[0-9]*.dll
     ${MINGW_BIN}/libdeflate.dll
     ${MINGW_BIN}/libdouble-conversion.dll
     ${MINGW_BIN}/libenchant-[0-9]*.dll
@@ -47,6 +52,7 @@ if(WIN32)
     ${MINGW_BIN}/libglib-2.0-[0-9]*.dll
     ${MINGW_BIN}/libglibmm-2.4-[0-9]*.dll
     ${MINGW_BIN}/libgmodule-2.0-[0-9]*.dll
+    ${MINGW_BIN}/libgmp-[0-9]*.dll
     ${MINGW_BIN}/libgobject-2.0-[0-9]*.dll
     ${MINGW_BIN}/libgomp-[0-9]*.dll
     ${MINGW_BIN}/libgraphite[0-9]*.dll
@@ -55,7 +61,9 @@ if(WIN32)
     ${MINGW_BIN}/libgspell-1-[0-9]*.dll
     ${MINGW_BIN}/libgtk-3-[0-9]*.dll
     ${MINGW_BIN}/libgtkmm-3.0-[0-9]*.dll
+    ${MINGW_BIN}/libgtksourceview-4-[0-9]*.dll
     ${MINGW_BIN}/libharfbuzz-[0-9]*.dll
+    ${MINGW_BIN}/libheif.dll
     ${MINGW_BIN}/libiconv-[0-9]*.dll
     ${MINGW_BIN}/libicudt[0-9]*.dll
     ${MINGW_BIN}/libicuin[0-9]*.dll
@@ -68,16 +76,19 @@ if(WIN32)
     ${MINGW_BIN}/liblqr-1-[0-9]*.dll
     ${MINGW_BIN}/liblzma-[0-9]*.dll
     ${MINGW_BIN}/libmpdec-[0-9]*.dll
-    ${MINGW_BIN}/libnghttp2-[0-9]*.dll
+    ${MINGW_BIN}/libmpfr-[0-9]*.dll
+    ${MINGW_BIN}/libncursesw6.dll
+    ${MINGW_BIN}/libnghttp2*.dll
     ${MINGW_BIN}/libnspr[0-9]*.dll
     ${MINGW_BIN}/libopenblas.dll
     ${MINGW_BIN}/libopenjp2-[0-9]*.dll
+    ${MINGW_BIN}/libpanelw6.dll
     ${MINGW_BIN}/libpango-1.0-[0-9]*.dll
     ${MINGW_BIN}/libpangocairo-1.0-[0-9]*.dll
     ${MINGW_BIN}/libpangoft2-1.0-[0-9]*.dll
     ${MINGW_BIN}/libpangomm-1.4-[0-9]*.dll
     ${MINGW_BIN}/libpangowin32-1.0-[0-9]*.dll
-    ${MINGW_BIN}/libpcre-[0-9]*.dll
+    ${MINGW_BIN}/libpcre2-8-[0-9]*.dll
     ${MINGW_BIN}/libpixman-1-[0-9]*.dll
     ${MINGW_BIN}/libplc[0-9]*.dll
     ${MINGW_BIN}/libplds[0-9]*.dll
@@ -88,15 +99,17 @@ if(WIN32)
     ${MINGW_BIN}/libpsl-[0-9]*.dll
     ${MINGW_BIN}/libquadmath-[0-9]*.dll
     ${MINGW_BIN}/libraqm-[0-9]*.dll
+    ${MINGW_BIN}/libreadline8.dll
     ${MINGW_BIN}/librevenge-0.[0-9]*.dll
     ${MINGW_BIN}/librevenge-stream-0.[0-9]*.dll
     ${MINGW_BIN}/librsvg-2-[0-9]*.dll
+    ${MINGW_BIN}/libsharpyuv-0.dll
     ${MINGW_BIN}/libsigc-2.0-[0-9]*.dll
     ${MINGW_BIN}/libsoup-2.4-[0-9]*.dll
     ${MINGW_BIN}/libsqlite3-[0-9]*.dll
     ${MINGW_BIN}/libssh2-[0-9]*.dll
     ${MINGW_BIN}/libssl-1_[0-9]*.dll
-    ${MINGW_BIN}/libssp-[0-9]*.dll
+    ${MINGW_BIN}/libssl-3*.dll
     ${MINGW_BIN}/libstdc++-[0-9]*.dll
     ${MINGW_BIN}/libtermcap-[0-9]*.dll
     ${MINGW_BIN}/libthai-[0-9]*.dll
@@ -107,13 +120,17 @@ if(WIN32)
     ${MINGW_BIN}/libwebpdemux-[0-9]*.dll
     ${MINGW_BIN}/libwebpmux-[0-9]*.dll
     ${MINGW_BIN}/libwinpthread-[0-9]*.dll
+    ${MINGW_BIN}/libwmf-0-2-[0-9]*.dll
+    ${MINGW_BIN}/libwmflite-0-2-[0-9]*.dll
     ${MINGW_BIN}/libwpd-0.[0-9]*.dll
     ${MINGW_BIN}/libwpg-0.[0-9]*.dll
     ${MINGW_BIN}/libxml2-[0-9]*.dll
     ${MINGW_BIN}/libxslt-[0-9]*.dll
+    ${MINGW_BIN}/libx265.dll
     ${MINGW_BIN}/libzstd.dll
     ${MINGW_BIN}/nss[0-9]*.dll
     ${MINGW_BIN}/nssutil[0-9]*.dll
+    ${MINGW_BIN}/rav1e.dll
     ${MINGW_BIN}/smime[0-9]*.dll
     ${MINGW_BIN}/tcl[0-9]*.dll
     ${MINGW_BIN}/tk[0-9]*.dll
@@ -121,13 +138,43 @@ if(WIN32)
   INSTALL(FILES ${MINGW_LIBS} DESTINATION bin)
   # There are differences for 64-Bit and 32-Bit build environments.
   if(HAVE_MINGW64)
-    install(FILES
-      ${MINGW_BIN}/libgcc_s_seh-1.dll
-      DESTINATION bin)
+    if($ENV{MSYSTEM} STREQUAL "CLANGARM64" OR $ENV{MSYSTEM} STREQUAL "CLANG64")
+      install(FILES
+        ${MINGW_BIN}/libc++.dll
+        ${MINGW_BIN}/libunwind.dll
+        DESTINATION bin)
+    else()
+      install(FILES
+        ${MINGW_BIN}/libgcc_s_seh-1.dll
+        DESTINATION bin)
+    endif()
   else()
     install(FILES
       ${MINGW_BIN}/libgcc_s_dw2-1.dll
       DESTINATION bin)
+  endif()
+
+  # Install graphics-magick dlls
+  if(WITH_GRAPHICS_MAGICK)
+    install (DIRECTORY ${MINGW_LIB}/GraphicsMagick-1.3.38
+      DESTINATION lib
+      FILES_MATCHING
+      PATTERN "*.dll"
+      PATTERN "*.la"
+      PATTERN "filters" EXCLUDE)
+    file(GLOB MAGICK_LIBS
+      ${MINGW_BIN}/libGraphicsMagick[+-]*.dll
+      ${MINGW_BIN}/libjxl.dll
+      ${MINGW_BIN}/libjxl_threads.dll
+      ${MINGW_BIN}/libltdl-[0-9]*.dll
+      ${MINGW_BIN}/libhwy.dll
+      ${MINGW_BIN}/libbrotlienc.dll)
+    install(FILES ${MAGICK_LIBS} DESTINATION bin)
+  endif()
+
+  if(WITH_IMAGE_MAGICK)
+    file(GLOB MAGICK_LIBS ${MINGW_BIN}/libMagick*.dll)
+    install(FILES ${MAGICK_LIBS} DESTINATION bin)
   endif()
 
   # Install hicolor/index.theme to avoid bug 1635207
@@ -157,6 +204,9 @@ if(WIN32)
 
   install(DIRECTORY ${MINGW_PATH}/share/glib-2.0/schemas
     DESTINATION share/glib-2.0)
+
+  install(DIRECTORY ${MINGW_PATH}/share/gtksourceview-4
+    DESTINATION share)
 
   # fontconfig
   install(DIRECTORY ${MINGW_PATH}/etc/fonts
@@ -213,6 +263,7 @@ if(WIN32)
     ${MINGW_LIB}/girepository-1.0/HarfBuzz-0.0.typelib
     ${MINGW_LIB}/girepository-1.0/Pango-1.0.typelib
     ${MINGW_LIB}/girepository-1.0/PangoCairo-1.0.typelib
+    ${MINGW_LIB}/girepository-1.0/freetype2-2.0.typelib
     DESTINATION lib/girepository-1.0)
 
   # Aspell dictionaries
@@ -281,7 +332,7 @@ if(WIN32)
   # Python packages installed via pacman
   set(packages
       "python-lxml" "python-numpy" "python-pillow" "python-six" "python-cairo" "python-cssselect"
-      "python-gobject" "python-coverage" "python-pyserial" "scour")
+      "python-gobject" "python-coverage" "python-pyserial" "python-packaging" "python-zstandard" "scour")
   foreach(package ${packages})
     list_files_pacman(${package} paths)
     install_list(FILES ${paths}
@@ -295,7 +346,7 @@ if(WIN32)
   # Python packages for the extensions manager, and clipart importer extensions
   set(packages
       "python-appdirs" "python-msgpack" "python-lockfile" "python-cachecontrol"
-      "python-idna" "python-urllib3" "python-chardet" "python-certifi" "python-requests")
+      "python-idna" "python-urllib3" "python-chardet" "python-certifi" "python-requests" "python-beautifulsoup4" "python-filelock")
   foreach(package ${packages})
     list_files_pacman(${package} paths)
     install_list(FILES ${paths}
@@ -325,23 +376,27 @@ if(WIN32)
     COMPONENT python)
 
   # gdb
-  install(FILES
-    ${MINGW_BIN}/gdb.exe
-    ${MINGW_BIN}/libreadline8.dll
-    ${MINGW_BIN}/libxxhash.dll
-    DESTINATION bin)
-  install(DIRECTORY
-    ${MINGW_PATH}/share/gdb
-    DESTINATION share
-    PATTERN "*.pyc" EXCLUDE)
-  install(FILES
-    packaging/win32/gdb_create_backtrace.bat
-    DESTINATION bin)
-    
+  if (NOT ($ENV{MSYSTEM} STREQUAL "CLANGARM64" OR $ENV{MSYSTEM} STREQUAL "CLANG64"))
+    install(FILES
+      ${MINGW_BIN}/gdb.exe
+      ${MINGW_BIN}/libxxhash.dll
+      DESTINATION bin)
+    install(DIRECTORY
+      ${MINGW_PATH}/share/gdb
+      DESTINATION share
+      PATTERN "*.pyc" EXCLUDE)
+    install(FILES
+      packaging/win32/gdb_create_backtrace.bat
+      DESTINATION bin)
+    # convenience launcher
+    install(FILES
+      "packaging/win32/Run Inkscape and create debug trace.bat"
+      DESTINATION .)
+  endif()
+
   # convenience launchers
   install(FILES
     "packaging/win32/Run Inkscape !.bat"
-    "packaging/win32/Run Inkscape and create debug trace.bat"
     "packaging/win32/Run Inkscape with GTK Inspector.bat"
     DESTINATION .)
   

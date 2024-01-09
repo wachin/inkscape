@@ -60,7 +60,7 @@ private:
     EnumParam<MarkDirType> mark_dir;
     ScalarParam offset;
     EnumParam<BorderMarkType> border_marks;
-
+    Glib::ustring display_unit;
     static Geom::Point n_major, n_minor; // used for internal computations
 
     LPERuler(const LPERuler&) = delete;

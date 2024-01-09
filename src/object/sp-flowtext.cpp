@@ -23,6 +23,8 @@
 #include "desktop.h"
 #include "desktop-style.h"
 #include "svg/svg.h"
+#include "snap-candidate.h"
+#include "snap-preferences.h"
 
 #include "text-tag-attributes.h"
 #include "text-editing.h"
@@ -36,11 +38,14 @@
 #include "sp-use.h"
 
 #include "libnrtype/font-instance.h"
+#include "libnrtype/font-factory.h"
 
 #include "livarot/Shape.h"
 
 #include "display/curve.h"
 #include "display/drawing-text.h"
+
+#include "layer-manager.h"
 
 SPFlowtext::SPFlowtext() : SPItem(),
     par_indent(0),
@@ -49,6 +54,12 @@ SPFlowtext::SPFlowtext() : SPItem(),
 }
 
 SPFlowtext::~SPFlowtext() = default;
+
+void SPFlowtext::release()
+{
+    view_style_attachments.clear();
+    SPItem::release();
+}
 
 void SPFlowtext::child_added(Inkscape::XML::Node* child, Inkscape::XML::Node* ref) {
 	SPItem::child_added(child, ref);
@@ -85,7 +96,7 @@ void SPFlowtext::update(SPCtx* ctx, unsigned int flags) {
         g_assert(child != nullptr);
 
         if (childflags || (child->uflags & (SP_OBJECT_MODIFIED_FLAG | SP_OBJECT_CHILD_MODIFIED_FLAG))) {
-            SPItem *item = dynamic_cast<SPItem *>(child);
+            auto item = cast<SPItem>(child);
             if (item) {
                 SPItem const &chi = *item;
                 cctx.i2doc = chi.transform * ictx->i2doc;
@@ -105,12 +116,14 @@ void SPFlowtext::update(SPCtx* ctx, unsigned int flags) {
 
     Geom::OptRect pbox = this->geometricBounds();
 
-    for (SPItemView *v = this->display; v != nullptr; v = v->next) {
-        Inkscape::DrawingGroup *g = dynamic_cast<Inkscape::DrawingGroup *>(v->arenaitem);
-        this->_clearFlow(g);
-        g->setStyle(this->style);
+    for (auto &v : views) {
+        auto &sa = view_style_attachments[v.key];
+        sa.unattachAll();
+        auto g = cast<Inkscape::DrawingGroup>(v.drawingitem.get());
+        _clearFlow(g);
+        g->setStyle(style);
         // pass the bbox of the flowtext object as paintbox (used for paintserver fills)
-        this->layout.show(g, pbox);
+        layout.show(g, sa, pbox);
     }
 }
 
@@ -127,16 +140,18 @@ void SPFlowtext::modified(unsigned int flags) {
     if (flags & ( SP_OBJECT_STYLE_MODIFIED_FLAG )) {
         Geom::OptRect pbox = geometricBounds();
 
-        for (SPItemView* v = display; v != nullptr; v = v->next) {
-            Inkscape::DrawingGroup *g = dynamic_cast<Inkscape::DrawingGroup *>(v->arenaitem);
+        for (auto &v : views) {
+            auto &sa = view_style_attachments[v.key];
+            sa.unattachAll();
+            auto g = cast<Inkscape::DrawingGroup>(v.drawingitem.get());
             _clearFlow(g);
             g->setStyle(style);
-            layout.show(g, pbox);
+            layout.show(g, sa, pbox);
         }
     }
 
     for (auto& o: children) {
-        if (dynamic_cast<SPFlowregion *>(&o)) {
+        if (is<SPFlowregion>(&o)) {
             region = &o;
             break;
         }
@@ -226,7 +241,7 @@ Inkscape::XML::Node* SPFlowtext::write(Inkscape::XML::Document* doc, Inkscape::X
         for (auto& child: children) {
             Inkscape::XML::Node *c_repr = nullptr;
 
-            if ( dynamic_cast<SPFlowdiv *>(&child) || dynamic_cast<SPFlowpara *>(&child) || dynamic_cast<SPFlowregion *>(&child) || dynamic_cast<SPFlowregionExclude *>(&child)) {
+            if (is<SPFlowdiv>(&child) || is<SPFlowpara>(&child) || is<SPFlowregion>(&child) || is<SPFlowregionExclude>(&child)) {
                 c_repr = child.updateRepr(doc, nullptr, flags);
             }
 
@@ -241,7 +256,7 @@ Inkscape::XML::Node* SPFlowtext::write(Inkscape::XML::Document* doc, Inkscape::X
         }
     } else {
         for (auto& child: children) {
-            if ( dynamic_cast<SPFlowdiv *>(&child) || dynamic_cast<SPFlowpara *>(&child) || dynamic_cast<SPFlowregion *>(&child) || dynamic_cast<SPFlowregionExclude *>(&child)) {
+            if (is<SPFlowdiv>(&child) || is<SPFlowpara>(&child) || is<SPFlowregion>(&child) || is<SPFlowregionExclude>(&child)) {
                 child.updateRepr(flags);
             }
         }
@@ -255,16 +270,7 @@ Inkscape::XML::Node* SPFlowtext::write(Inkscape::XML::Document* doc, Inkscape::X
 }
 
 Geom::OptRect SPFlowtext::bbox(Geom::Affine const &transform, SPItem::BBoxType type) const {
-    Geom::OptRect bbox = this->layout.bounds(transform);
-
-    // Add stroke width
-    // FIXME this code is incorrect
-    if (bbox && type == SPItem::VISUAL_BBOX && !this->style->stroke.isNone()) {
-        double scale = transform.descrim();
-        bbox->expandBy(0.5 * this->style->stroke_width.computed * scale);
-    }
-
-    return bbox;
+    return this->layout.bounds(transform, type == SPItem::VISUAL_BBOX);
 }
 
 void SPFlowtext::print(SPPrintContext *ctx) {
@@ -313,27 +319,29 @@ void SPFlowtext::snappoints(std::vector<Inkscape::SnapCandidatePoint> &p, Inksca
     }
 }
 
-Inkscape::DrawingItem* SPFlowtext::show(Inkscape::Drawing &drawing, unsigned int /*key*/, unsigned int /*flags*/) {
+Inkscape::DrawingItem* SPFlowtext::show(Inkscape::Drawing &drawing, unsigned int key, unsigned int /*flags*/) {
     Inkscape::DrawingGroup *flowed = new Inkscape::DrawingGroup(drawing);
     flowed->setPickChildren(false);
     flowed->setStyle(this->style);
 
     // pass the bbox of the flowtext object as paintbox (used for paintserver fills)
     Geom::OptRect bbox = this->geometricBounds();
-    this->layout.show(flowed, bbox);
+    layout.show(flowed, view_style_attachments[key], bbox);
 
     return flowed;
 }
 
-void SPFlowtext::hide(unsigned int key) {
-    for (SPItemView* v = this->display; v != nullptr; v = v->next) {
-        if (v->key == key) {
-            Inkscape::DrawingGroup *g = dynamic_cast<Inkscape::DrawingGroup *>(v->arenaitem);
-            this->_clearFlow(g);
+void SPFlowtext::hide(unsigned key)
+{
+    view_style_attachments.erase(key);
+
+    for (auto &v : views) {
+        if (v.key == key) {
+            auto g = cast<Inkscape::DrawingGroup>(v.drawingitem.get());
+            _clearFlow(g);
         }
     }
 }
-
 
 /*
  *
@@ -343,16 +351,15 @@ void SPFlowtext::_buildLayoutInput(SPObject *root, Shape const *exclusion_shape,
     Inkscape::Text::Layout::OptionalTextTagAttrs pi;
     bool with_indent = false;
 
-    if (dynamic_cast<SPFlowpara *>(root) || dynamic_cast<SPFlowdiv *>(root)) {
+    if (is<SPFlowpara>(root) || is<SPFlowdiv>(root)) {
 
         layout.wrap_mode = Inkscape::Text::Layout::WRAP_SHAPE_INSIDE;
 
         layout.strut.reset();
         if (style) {
-            font_instance *font = font_factory::Default()->FaceFromStyle( style );
+            auto font = FontFactory::get().FaceFromStyle(style);
             if (font) {
                 font->FontMetrics(layout.strut.ascent, layout.strut.descent, layout.strut.xheight);
-                font->Unref();
             }
             layout.strut *= style->font_size.computed;
             if (style->line_height.normal ) {
@@ -370,7 +377,7 @@ void SPFlowtext::_buildLayoutInput(SPObject *root, Shape const *exclusion_shape,
         SPObject *t = root;
         SPFlowtext *ft = nullptr;
         while (t && !ft) {
-            ft = dynamic_cast<SPFlowtext *>(t);
+            ft = cast<SPFlowtext>(t);
             t = t->parent;
         }
 
@@ -387,7 +394,7 @@ void SPFlowtext::_buildLayoutInput(SPObject *root, Shape const *exclusion_shape,
     }
 
     if (*pending_line_break_object) {
-        if (dynamic_cast<SPFlowregionbreak *>(*pending_line_break_object)) {
+        if (is<SPFlowregionbreak>(*pending_line_break_object)) {
             layout.appendControlCode(Inkscape::Text::Layout::SHAPE_BREAK, *pending_line_break_object);
         } else {
             layout.appendControlCode(Inkscape::Text::Layout::PARAGRAPH_BREAK, *pending_line_break_object);
@@ -396,10 +403,10 @@ void SPFlowtext::_buildLayoutInput(SPObject *root, Shape const *exclusion_shape,
     }
 
     for (auto& child: root->children) {
-        SPString *str = dynamic_cast<SPString *>(&child);
+        auto str = cast<SPString>(&child);
         if (str) {
             if (*pending_line_break_object) {
-                if (dynamic_cast<SPFlowregionbreak *>(*pending_line_break_object))
+                if (is<SPFlowregionbreak>(*pending_line_break_object))
                     layout.appendControlCode(Inkscape::Text::Layout::SHAPE_BREAK, *pending_line_break_object);
                 else {
                     layout.appendControlCode(Inkscape::Text::Layout::PARAGRAPH_BREAK, *pending_line_break_object);
@@ -412,7 +419,7 @@ void SPFlowtext::_buildLayoutInput(SPObject *root, Shape const *exclusion_shape,
                 layout.appendText(str->string, root->style, &child);
             }
         } else {
-            SPFlowregion *region = dynamic_cast<SPFlowregion *>(&child);
+            auto region = cast<SPFlowregion>(&child);
             if (region) {
                 std::vector<Shape*> const &computed = region->computed;
                 for (auto it : computed) {
@@ -426,15 +433,13 @@ void SPFlowtext::_buildLayoutInput(SPObject *root, Shape const *exclusion_shape,
                 }
             }
             //Xml Tree is being directly used while it shouldn't be.
-            else if (!dynamic_cast<SPFlowregionExclude *>(&child) && !sp_repr_is_meta_element(child.getRepr())) {
+            else if (!is<SPFlowregionExclude>(&child) && !sp_repr_is_meta_element(child.getRepr())) {
                 _buildLayoutInput(&child, exclusion_shape, shapes, pending_line_break_object);
             }
         }
     }
     
-    if (dynamic_cast<SPFlowpara *>(root) && !root->hasChildren()) return;
-
-    if (dynamic_cast<SPFlowdiv *>(root) || dynamic_cast<SPFlowpara *>(root) || dynamic_cast<SPFlowregionbreak *>(root) || dynamic_cast<SPFlowline *>(root)) {
+    if (is<SPFlowdiv>(root) || is<SPFlowpara>(root) || is<SPFlowregionbreak>(root) || is<SPFlowline>(root)) {
         if (!root->hasChildren()) {
             layout.appendText("", root->style, root);
         }
@@ -449,7 +454,7 @@ Shape* SPFlowtext::_buildExclusionShape() const
 
     for (auto& child: children) {
         // RH: is it right that this shouldn't be recursive?
-        SPFlowregionExclude *c_child = dynamic_cast<SPFlowregionExclude *>(const_cast<SPObject*>(&child));
+        auto c_child = cast<SPFlowregionExclude>(const_cast<SPObject*>(&child));
         if ( c_child && c_child->computed && c_child->computed->hasEdges() ) {
             if (shape->hasEdges()) {
                 shape_temp->Booleen(shape, c_child->computed, bool_op_union);
@@ -485,7 +490,7 @@ void SPFlowtext::_clearFlow(Inkscape::DrawingGroup *in_arena)
     in_arena->clearChildren();
 }
 
-std::unique_ptr<SPCurve> SPFlowtext::getNormalizedBpath() const
+SPCurve SPFlowtext::getNormalizedBpath() const
 {
     return layout.convertToCurves();
 }
@@ -553,11 +558,11 @@ Inkscape::XML::Node *SPFlowtext::getAsText()
             Glib::ustring::iterator span_text_start_iter;
             this->layout.getSourceOfCharacter(it, &source_obj, &span_text_start_iter);
 
-            Glib::ustring style_text = (dynamic_cast<SPString *>(source_obj) ? source_obj->parent : source_obj)
+            Glib::ustring style_text = (cast<SPString>(source_obj) ? source_obj->parent : source_obj)
                                            ->style->writeIfDiff(this->style);
             span_tspan->setAttributeOrRemoveIfEmpty("style", style_text);
 
-            SPString *str = dynamic_cast<SPString *>(source_obj);
+            auto str = cast<SPString>(source_obj);
             if (str) {
                 Glib::ustring *string = &(str->string); // TODO fixme: dangerous, unsafe premature-optimization
                 SPObject *span_end_obj = nullptr;
@@ -605,7 +610,7 @@ SPItem *SPFlowtext::get_frame(SPItem const *after)
 
     SPObject *region = nullptr;
     for (auto& o: children) {
-        if (dynamic_cast<SPFlowregion *>(&o)) {
+        if (is<SPFlowregion>(&o)) {
             region = &o;
             break;
         }
@@ -615,7 +620,7 @@ SPItem *SPFlowtext::get_frame(SPItem const *after)
         bool past = false;
 
         for (auto& o: region->children) {
-            SPItem *item = dynamic_cast<SPItem *>(&o);
+            auto item = cast<SPItem>(&o);
             if (item) {
                 if ( (after == nullptr) || past ) {
                     frame = item;
@@ -627,7 +632,7 @@ SPItem *SPFlowtext::get_frame(SPItem const *after)
             }
         }
 
-        SPUse *use = dynamic_cast<SPUse *>(frame);
+        auto use = cast<SPUse>(frame);
         if ( use ) {
             frame = use->get_original();
         }
@@ -639,14 +644,14 @@ bool SPFlowtext::has_internal_frame() const
 {
     SPItem const *frame = get_frame(nullptr);
 
-    return (frame && isAncestorOf(frame) && dynamic_cast<SPRect const *>(frame));
+    return (frame && isAncestorOf(frame) && cast<SPRect>(frame));
 }
 
 
 SPItem *create_flowtext_with_internal_frame (SPDesktop *desktop, Geom::Point p0, Geom::Point p1)
 {
     SPDocument *doc = desktop->getDocument();
-    auto const parent = dynamic_cast<SPItem *>(desktop->currentLayer());
+    auto const parent = desktop->layerManager().currentLayer();
     assert(parent);
 
     Inkscape::XML::Document *xml_doc = doc->getReprDoc();
@@ -657,20 +662,20 @@ SPItem *create_flowtext_with_internal_frame (SPDesktop *desktop, Geom::Point p0,
     /* Set style */
     sp_desktop_apply_style_tool(desktop, root_repr, "/tools/text", true);
 
-    SPItem *ft_item = dynamic_cast<SPItem *>(desktop->currentLayer()->appendChildRepr(root_repr));
+    auto ft_item = cast<SPItem>(parent->appendChildRepr(root_repr));
     g_assert(ft_item != nullptr);
     SPObject *root_object = doc->getObjectByRepr(root_repr);
-    g_assert(dynamic_cast<SPFlowtext *>(root_object) != nullptr);
+    g_assert(cast<SPFlowtext>(root_object) != nullptr);
 
     Inkscape::XML::Node *region_repr = xml_doc->createElement("svg:flowRegion");
     root_repr->appendChild(region_repr);
     SPObject *region_object = doc->getObjectByRepr(region_repr);
-    g_assert(dynamic_cast<SPFlowregion *>(region_object) != nullptr);
+    g_assert(cast<SPFlowregion>(region_object) != nullptr);
 
     Inkscape::XML::Node *rect_repr = xml_doc->createElement("svg:rect"); // FIXME: use path!!! after rects are converted to use path
     region_repr->appendChild(rect_repr);
 
-    SPRect *rect = dynamic_cast<SPRect *>(doc->getObjectByRepr(rect_repr));
+    auto rect = cast<SPRect>(doc->getObjectByRepr(rect_repr));
     g_assert(rect != nullptr);
 
     p0 *= desktop->dt2doc();
@@ -690,7 +695,7 @@ SPItem *create_flowtext_with_internal_frame (SPDesktop *desktop, Geom::Point p0,
     Inkscape::XML::Node *para_repr = xml_doc->createElement("svg:flowPara");
     root_repr->appendChild(para_repr);
     SPObject *para_object = doc->getObjectByRepr(para_repr);
-    g_assert(dynamic_cast<SPFlowpara *>(para_object) != nullptr);
+    g_assert(cast<SPFlowpara>(para_object) != nullptr);
 
     Inkscape::XML::Node *text = xml_doc->createTextNode("");
     para_repr->appendChild(text);
@@ -705,17 +710,17 @@ SPItem *create_flowtext_with_internal_frame (SPDesktop *desktop, Geom::Point p0,
 
 void SPFlowtext::fix_overflow_flowregion(bool inverse)
 {
-    SPObject *object = dynamic_cast<SPObject *>(this);
+    SPObject *object = this;
     for (auto child : object->childList(false)) {
-        SPFlowregion *flowregion = dynamic_cast<SPFlowregion *>(child);
+        auto flowregion = cast<SPFlowregion>(child);
         if (flowregion) {
-            object = dynamic_cast<SPObject *>(flowregion);
+            object = flowregion;
             for (auto childshapes : object->childList(false)) {
                 Geom::Scale scale = Geom::Scale(1000); //200? maybe find better way to fix overglow issue removing new lines...
                 if (inverse) {
                     scale = scale.inverse();
                 }
-                SP_ITEM(childshapes)->doWriteTransform(scale, nullptr, true);
+                cast<SPItem>(childshapes)->doWriteTransform(scale, nullptr, true);
             }
             break;
         }
@@ -740,13 +745,13 @@ Geom::Affine SPFlowtext::set_transform (Geom::Affine const &xform)
 
     SPObject *region = nullptr;
     for (auto& o: children) {
-        if (dynamic_cast<SPFlowregion *>(&o)) {
+        if (is<SPFlowregion>(&o)) {
             region = &o;
             break;
         }
     }
     if (region) {
-        SPRect *rect = dynamic_cast<SPRect *>(region->firstChild());
+        auto rect = cast<SPRect>(region->firstChild());
         if (rect) {
             rect->set_i2d_affine(xform * rect->i2dt_affine());
             rect->doWriteTransform(rect->transform, nullptr, true);
@@ -772,6 +777,17 @@ Geom::Affine SPFlowtext::set_transform (Geom::Affine const &xform)
     this->adjust_gradient(xform * ret.inverse());
 
     return Geom::Affine();
+}
+
+/**
+ * Get the position of the baseline point for this text object.
+ */
+std::optional<Geom::Point> SPFlowtext::getBaselinePoint() const
+{
+    if (layout.outputExists()) {
+        return layout.baselineAnchorPoint();
+    }
+    return std::optional<Geom::Point>();
 }
 
 /*

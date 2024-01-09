@@ -22,6 +22,7 @@
 #include <glibmm/fileutils.h>
 #include <glibmm/i18n.h>
 #include <list>
+#include <thread>
 #include <vector>
 
 //Inkscape includes
@@ -120,11 +121,6 @@ FileDialogBaseWin32::~FileDialogBaseWin32()
     g_free(_title);
 }
 
-Inkscape::Extension::Extension *FileDialogBaseWin32::getSelectionType()
-{
-    return _extension;
-}
-
 Glib::ustring FileDialogBaseWin32::getCurrentDirectory()
 {
     return _current_directory;
@@ -183,7 +179,7 @@ FileOpenDialogImplWin32::~FileOpenDialogImplWin32()
         delete[] _extension_map;
 }
 
-void FileOpenDialogImplWin32::addFilterMenu(Glib::ustring name, Glib::ustring pattern)
+void FileOpenDialogImplWin32::addFilterMenu(const Glib::ustring &name, Glib::ustring pattern, Inkscape::Extension::Extension *mod)
 {
     std::list<Filter> filter_list;
 
@@ -471,7 +467,7 @@ void FileOpenDialogImplWin32::GetOpenFileName_thread()
     // Copy the selected file name, converting from UTF-8 to UTF-16
     memset(_path_string, 0, sizeof(_path_string));
     gunichar2* utf16_path_string = g_utf8_to_utf16(
-        myFilename.data(), -1, NULL, NULL, NULL);
+        getFilename().data(), -1, NULL, NULL, NULL);
     wcsncpy(_path_string, (wchar_t*)utf16_path_string, _MAX_PATH);
     g_free(utf16_path_string);
 
@@ -496,7 +492,7 @@ void FileOpenDialogImplWin32::GetOpenFileName_thread()
     _extension = _extension_map[ofn.nFilterIndex - 1];
 
     // Copy the selected file name, converting from UTF-16 to UTF-8
-    myFilename = utf16_to_ustring(_path_string, _MAX_PATH);
+    setFilename(utf16_to_ustring(_path_string, _MAX_PATH));
 
     // Tidy up
     g_free(current_directory_string);
@@ -1492,29 +1488,21 @@ FileOpenDialogImplWin32::show()
     // We can only run one worker thread at a time
     if(_mutex != NULL) return false;
 
-#if !GLIB_CHECK_VERSION(2,32,0)
-    if(!Glib::thread_supported())
-        Glib::thread_init();
-#endif
-
     _result = false;
     _finished = false;
     _file_selected = false;
     _main_loop = g_main_loop_new(g_main_context_default(), FALSE);
 
-#if GLIB_CHECK_VERSION(2,32,0)
-    _mutex = new Glib::Threads::Mutex();
-    if(Glib::Threads::Thread::create(sigc::mem_fun(*this, &FileOpenDialogImplWin32::GetOpenFileName_thread)))
-#else
-    _mutex = new Glib::Mutex();
-    if(Glib::Thread::create(sigc::mem_fun(*this, &FileOpenDialogImplWin32::GetOpenFileName_thread), true))
-#endif
+    _mutex = std::make_unique<std::mutex>();
+
+    std::thread thethread([this] { GetOpenFileName_thread(); });
+
     {
         while(1)
         {
             g_main_context_iteration(g_main_context_default(), FALSE);
 
-            if(_mutex->trylock())
+            if(_mutex->try_lock())
             {
                 // Read mutexed data
                 const bool finished = _finished;
@@ -1530,8 +1518,9 @@ FileOpenDialogImplWin32::show()
         }
     }
 
+    thethread.join();
+
     // Tidy up
-    delete _mutex;
     _mutex = NULL;
 
     return _result;
@@ -1561,11 +1550,13 @@ FileSaveDialogImplWin32::FileSaveDialogImplWin32(Gtk::Window &parent,
             const char *title,
             const Glib::ustring &/*default_key*/,
             const char *docTitle,
-            const Inkscape::Extension::FileSaveMethod save_method) :
-    FileDialogBaseWin32(parent, dir, title, fileTypes,
-                        (save_method == Inkscape::Extension::FILE_SAVE_METHOD_SAVE_COPY) ? "dialogs.save_copy" :  "dialogs.save_as"),
-        _title_label(NULL),
-        _title_edit(NULL)
+            const Inkscape::Extension::FileSaveMethod save_method)
+    : FileDialogBaseWin32(parent, dir, title, fileTypes,
+                          (save_method == Inkscape::Extension::FILE_SAVE_METHOD_SAVE_COPY) ? "dialogs.save_copy"
+                                                                                           : "dialogs.save_as")
+    , save_method(save_method)
+    , _title_label(NULL)
+    , _title_edit(NULL)
 {
     FileSaveDialog::myDocTitle = docTitle;
 
@@ -1573,7 +1564,7 @@ FileSaveDialogImplWin32::FileSaveDialogImplWin32(Gtk::Window &parent,
         createFilterMenu();
 
     /* The code below sets the default file name */
-        myFilename = "";
+        setFilename("");
         if (dir.size() > 0) {
             Glib::ustring udir(dir);
             Glib::ustring::size_type len = udir.length();
@@ -1584,19 +1575,21 @@ FileSaveDialogImplWin32::FileSaveDialogImplWin32(Gtk::Window &parent,
             // Remove the extension: remove everything past the last period found past the last slash
             // (not for CUSTOM_TYPE as we can not automatically add a file extension in that case yet)
             if (dialogType == CUSTOM_TYPE) {
-                myFilename = udir;
+                setFilename(udir);
             } else {
                 size_t last_slash_index = udir.find_last_of( '\\' );
                 size_t last_period_index = udir.find_last_of( '.' );
                 if (last_period_index > last_slash_index) {
-                    myFilename = udir.substr(0, last_period_index );
+                    setFilename(udir.substr(0, last_period_index ));
                 }
             }
 
             // remove one slash if double
+            auto myFilename = getFilename();
             if (1 + myFilename.find("\\\\",2)) {
                 myFilename.replace(myFilename.find("\\\\",2), 1, "");
             }
+            setFilename(myFilename);
         }
 }
 
@@ -1617,11 +1610,19 @@ void FileSaveDialogImplWin32::createFilterMenu()
 
     int filter_count = 0;
     int filter_length = 1;
-    bool is_raster = dialogType == RASTER_TYPES;
 
     for (auto omod : extension_list) {
-        // FIXME: would be nice to grey them out instead of not listing them
-        if (omod->deactivated() || (omod->is_raster() != is_raster))
+        // Windows OFN dialog does not allow disabled entries in the dialog
+        // So we just remove them. This is a regression from the Gtk dialog.
+        if (omod->deactivated())
+            continue;
+
+        // Export types are either exported vector types, or any raster type.
+        if (!omod->is_exported() && omod->is_raster() != (dialogType == EXPORT_TYPES))
+            continue;
+
+        // This extension is limited to save copy only.
+        if (omod->savecopy_only() && save_method != Inkscape::Extension::FILE_SAVE_METHOD_SAVE_COPY)
             continue;
 
         filter_count++;
@@ -1757,7 +1758,7 @@ void FileSaveDialogImplWin32::GetSaveFileName_thread()
     // Copy the selected file name, converting from UTF-8 to UTF-16
     memset(_path_string, 0, sizeof(_path_string));
     gunichar2* utf16_path_string = g_utf8_to_utf16(
-        myFilename.data(), -1, NULL, NULL, NULL);
+        getFilename().data(), -1, NULL, NULL, NULL);
     wcsncpy(_path_string, (wchar_t*)utf16_path_string, _MAX_PATH);
     g_free(utf16_path_string);
 
@@ -1784,7 +1785,7 @@ void FileSaveDialogImplWin32::GetSaveFileName_thread()
     _extension = _extension_map[ofn.nFilterIndex - 1];
 
     // Copy the selected file name, converting from UTF-16 to UTF-8
-    myFilename = utf16_to_ustring(_path_string, _MAX_PATH);
+    setFilename(utf16_to_ustring(_path_string, _MAX_PATH));
 
     // Tidy up
     g_free(current_directory_string);
@@ -1798,36 +1799,22 @@ void FileSaveDialogImplWin32::GetSaveFileName_thread()
 bool
 FileSaveDialogImplWin32::show()
 {
-#if !GLIB_CHECK_VERSION(2,32,0)
-    if(!Glib::thread_supported())
-        Glib::thread_init();
-#endif
-
     _result = false;
     _main_loop = g_main_loop_new(g_main_context_default(), FALSE);
 
     if(_main_loop != NULL)
     {
-#if GLIB_CHECK_VERSION(2,32,0)
-        if(Glib::Threads::Thread::create(sigc::mem_fun(*this, &FileSaveDialogImplWin32::GetSaveFileName_thread)))
-#else
-        if(Glib::Thread::create(sigc::mem_fun(*this, &FileSaveDialogImplWin32::GetSaveFileName_thread), true))
-#endif
-            g_main_loop_run(_main_loop);
+        std::thread thethread([this] { GetSaveFileName_thread(); });
+        g_main_loop_run(_main_loop);
 
         if(_result && _extension)
-            appendExtension(myFilename, (Inkscape::Extension::Output*)_extension);
+            appendExtension(_filename, (Inkscape::Extension::Output*)_extension);
+
+        thethread.join();
     }
 
     return _result;
 }
-
-void FileSaveDialogImplWin32::setSelectionType( Inkscape::Extension::Extension * /*key*/ )
-{
-    // If no pointer to extension is passed in, look up based on filename extension.
-
-}
-
 
 UINT_PTR CALLBACK FileSaveDialogImplWin32::GetSaveFileName_hookproc(
     HWND hdlg, UINT uiMsg, WPARAM, LPARAM lParam)

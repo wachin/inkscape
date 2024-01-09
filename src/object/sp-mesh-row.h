@@ -15,10 +15,11 @@
 #include "sp-object.h"
 
 /** Gradient Meshrow. */
-class SPMeshrow : public SPObject {
+class SPMeshrow final : public SPObject {
 public:
     SPMeshrow();
     ~SPMeshrow() override;
+    int tag() const override { return tag_of<decltype(*this)>; }
 
     SPMeshrow* getNextMeshrow();
     SPMeshrow* getPrevMeshrow();
@@ -29,9 +30,6 @@ protected:
     void modified(unsigned int flags) override;
     Inkscape::XML::Node* write(Inkscape::XML::Document* doc, Inkscape::XML::Node* repr, unsigned int flags) override;
 };
-
-MAKE_SP_OBJECT_DOWNCAST_FUNCTIONS(SP_MESHROW, SPMeshrow)
-MAKE_SP_OBJECT_TYPECHECK_FUNCTIONS(SP_IS_MESHROW, SPMeshrow)
 
 #endif /* !SEEN_SP_MESHROW_H */
 

@@ -21,6 +21,10 @@ public:
     LPEFillBetweenStrokes(LivePathEffectObject *lpeobject);
     ~LPEFillBetweenStrokes() override;
     void doEffect (SPCurve * curve) override;
+    bool doOnOpen(SPLPEItem const *lpeitem) override;
+    void doBeforeEffect (SPLPEItem const* lpeitem) override;
+    void doOnApply (SPLPEItem const* lpeitem) override;
+    void transform_multiply_nested(Geom::Affine const &postmul);
 
 private:
     OriginalPathParam  linked_path;
@@ -28,6 +32,8 @@ private:
     BoolParam reverse_second;
     BoolParam join;
     BoolParam close;
+    Geom::Affine prevaffine = Geom::identity();
+    bool legacytest = false;
 
 private:
     LPEFillBetweenStrokes(const LPEFillBetweenStrokes&) = delete;

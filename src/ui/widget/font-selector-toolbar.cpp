@@ -66,7 +66,6 @@ FontSelectorToolbar::FontSelectorToolbar ()
     family_combo.set_cell_data_func (family_cell,
                                      sigc::bind(sigc::ptr_fun(family_cell_data_func), &family_cell));
     family_combo.pack_start (family_cell);
-    
 
     Gtk::Entry* entry = family_combo.get_entry();
     entry->signal_icon_press().connect (sigc::mem_fun(*this, &FontSelectorToolbar::on_icon_pressed));
@@ -91,16 +90,16 @@ FontSelectorToolbar::FontSelectorToolbar ()
     attach (style_combo,   1, 0, 1, 1);
 
     // Add signals
-    family_combo.signal_changed().connect (sigc::mem_fun(*this, &FontSelectorToolbar::on_family_changed));
-    style_combo.signal_changed().connect (sigc::mem_fun(*this, &FontSelectorToolbar::on_style_changed));
-    
+    family_combo.signal_changed().connect ([=](){ on_family_changed(); });
+    style_combo.signal_changed().connect ([=](){ on_style_changed(); });
+
     show_all_children();
 
     // Initialize font family lists. (May already be done.) Should be done on document change.
     font_lister->update_font_list(SP_ACTIVE_DESKTOP->getDocument());
 
     // When FontLister is changed, update family and style shown in GUI.
-    font_lister->connectUpdate(sigc::mem_fun(*this, &FontSelectorToolbar::update_font));
+    font_lister->connectUpdate([=](){ update_font(); });
 }
 
 
@@ -121,7 +120,7 @@ FontSelectorToolbar::update_font ()
         family_combo.set_active (row);
     } catch (...) {
         std::cerr << "FontSelectorToolbar::update_font: Couldn't find row for family: "
-                  << font_lister->get_font_family() << std::endl;
+                  << font_lister->get_font_family().raw() << std::endl;
     }
 
     // Set style.
@@ -130,7 +129,7 @@ FontSelectorToolbar::update_font ()
         style_combo.set_active (row);
     } catch (...) {
         std::cerr << "FontSelectorToolbar::update_font: Couldn't find row for style: "
-                  << font_lister->get_font_style() << std::endl;
+                  << font_lister->get_font_style().raw() << std::endl;
     }
 
     // Check for missing fonts.
@@ -233,8 +232,8 @@ FontSelectorToolbar::on_style_changed() {
 
 void
 FontSelectorToolbar::on_icon_pressed (Gtk::EntryIconPosition icon_position, const GdkEventButton* event) {
-    std::cout << "FontSelectorToolbar::on_entry_icon_pressed" << std::endl;
-    std::cout << "    .... Should select all items with same font-family. FIXME" << std::endl;
+    std::cerr << "FontSelectorToolbar::on_entry_icon_pressed" << std::endl;
+    std::cerr << "    .... Should select all items with same font-family. FIXME" << std::endl;
     // Call equivalent of sp_text_toolbox_select_cb() in text-toolbar.cpp
     // Should be action!  (Maybe: select_all_fontfamily( Glib::ustring font_family );).
     // Check how Find dialog works.

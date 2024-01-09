@@ -20,6 +20,7 @@
 #include "selection.h"
 
 #include "display/control/canvas-item-enums.h"
+#include "display/control/canvas-item-ptr.h"
 
 #include "object/persp3d.h"
 
@@ -168,7 +169,7 @@ public:
 
     SPDocument *document;
     std::vector<VPDragger *> draggers;
-    std::vector<Inkscape::CanvasItemCurve *> item_curves;
+    std::vector<CanvasItemPtr<Inkscape::CanvasItemCurve>> item_curves;
 
     void printDraggers(); // convenience for debugging
     /*

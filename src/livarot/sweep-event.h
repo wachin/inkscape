@@ -17,25 +17,43 @@
 class SweepTree;
 
 
-/** One intersection event. */
+/**
+ * An intersection event structure to record any intersections that are
+ * detected (predicted) during the sweepline.
+ */
 class SweepEvent
 {
 public:
-    SweepTree *sweep[2];   ///< Sweep element associated with the left and right edge of the intersection.
+    SweepTree *sweep[2];   /*!< Nodes associated with the left and right edge of the intersection. */
 
-    Geom::Point posx;         ///< Coordinates of the intersection.
-    double tl, tr;          ///< Coordinates of the intersection on the left edge (tl) and on the right edge (tr).
+    Geom::Point posx;      /*!< Point of the intersection. */
+    double tl;             /*!< Time value of the intersection on the left edge (tl).*/
+    double tr;             /*!< Time value of the intersection on the right edge (tr). */
 
-    int ind;                ///< Index in the binary heap.
+    int ind;               /*!< Index in the binary heap. */
 
     SweepEvent();   // not used.
     virtual ~SweepEvent();  // not used.
 
-    /// Initialize a SweepEvent structure.
+    /**
+     * Initialize the sweep event.
+     *
+     * @param iLeft The left node of the intersection.
+     * @param iRight The right node of the intersection.
+     * @param iPt The intersection point.
+     * @param itl The time value of the intersection on the left edge.
+     * @param itr The time value of the intersection on the right edge.
+     */
     void MakeNew (SweepTree * iLeft, SweepTree * iRight, Geom::Point const &iPt,
                   double itl, double itr);
 
     /// Void a SweepEvent structure.
+
+    /**
+     * Empty the sweep event data.
+     *
+     * Also reset event pointers of any SweepTree nodes that might point to this event.
+     */
     void MakeDelete ();
 };
 

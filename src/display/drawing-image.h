@@ -10,12 +10,13 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
-#ifndef SEEN_INKSCAPE_DISPLAY_DRAWING_IMAGE_H
-#define SEEN_INKSCAPE_DISPLAY_DRAWING_IMAGE_H
+#ifndef INKSCAPE_DISPLAY_DRAWING_IMAGE_H
+#define INKSCAPE_DISPLAY_DRAWING_IMAGE_H
 
-#include <cairo.h>
-#include <gdk-pixbuf/gdk-pixbuf.h>
+#include <memory>
 #include <2geom/transforms.h>
+#include <gdk-pixbuf/gdk-pixbuf.h>
+#include <cairo.h>
 
 #include "display/drawing-item.h"
 
@@ -27,22 +28,26 @@ class DrawingImage
 {
 public:
     DrawingImage(Drawing &drawing);
-    ~DrawingImage() override;
+    int tag() const override { return tag_of<decltype(*this)>; }
 
-    void setPixbuf(Inkscape::Pixbuf *pb);
+    void setStyle(SPStyle const *style, SPStyle const *context_style = nullptr) override;
+
+    void setPixbuf(std::shared_ptr<Inkscape::Pixbuf const> pb);
     void setScale(double sx, double sy);
     void setOrigin(Geom::Point const &o);
     void setClipbox(Geom::Rect const &box);
     Geom::Rect bounds() const;
 
 protected:
-    unsigned _updateItem(Geom::IntRect const &area, UpdateContext const &ctx,
-                                 unsigned flags, unsigned reset) override;
-    unsigned _renderItem(DrawingContext &dc, Geom::IntRect const &area, unsigned flags,
-                                 DrawingItem *stop_at) override;
+    ~DrawingImage() override = default;
+
+    unsigned _updateItem(Geom::IntRect const &area, UpdateContext const &ctx, unsigned flags, unsigned reset) override;
+    unsigned _renderItem(DrawingContext &dc, RenderContext &rc, Geom::IntRect const &area, unsigned flags, DrawingItem const *stop_at) const override;
     DrawingItem *_pickItem(Geom::Point const &p, double delta, unsigned flags) override;
 
-    Inkscape::Pixbuf *_pixbuf;
+    std::shared_ptr<Inkscape::Pixbuf const> _pixbuf;
+
+    SPImageRendering style_image_rendering;
 
     // TODO: the following three should probably be merged into a new Geom::Viewbox object
     Geom::Rect _clipbox; ///< for preserveAspectRatio
@@ -50,9 +55,9 @@ protected:
     Geom::Scale _scale;
 };
 
-} // end namespace Inkscape
+} // namespace Inkscape
 
-#endif // !SEEN_INKSCAPE_DISPLAY_DRAWING_ITEM_H
+#endif // INKSCAPE_DISPLAY_DRAWING_IMAGE_H
 
 /*
   Local Variables:

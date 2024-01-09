@@ -20,110 +20,111 @@
 
 #include "svg/stringstream.h"
 
-class NumberOptNumber {
-
+class NumberOptNumber
+{
 public:
-
-    float number; 
-
-    float optNumber;
-
-    unsigned int _set : 1;
-
-    unsigned int optNumber_set : 1;
-
     NumberOptNumber()
     {
-        number = 0.0;
-        optNumber = 0.0;
+        _num = 0.0;
+        _set = false;
+        _optnum = 0.0;
+        _optset = false;
+    }
 
-        _set = FALSE;
-        optNumber_set = FALSE;
+    NumberOptNumber(float num)
+    {
+        _num = num;
+        _set = true;
+        _optnum = 0.0;
+        _optset = false;
+    }
+
+    NumberOptNumber(float num, float optnum)
+    {
+        _num = num;
+        _set = true;
+        _optnum = optnum;
+        _optset = true;
     }
 
     float getNumber() const
     {
-        if(_set)
-            return number;
-        return -1;
+        return _set ? _num : -1;
     }
 
-    float getOptNumber() const
+    float getOptNumber(bool or_num = false) const
     {
-        if(optNumber_set)
-            return optNumber;
-        return -1;
-    }
-
-    void setOptNumber(float num)
-    {
-        optNumber_set = true;
-        optNumber = num;
+        return _optset ? _optnum : (or_num ? _num : -1);
     }
 
     void setNumber(float num)
     {
         _set = true;
-        number = num;
+        _num = num;
     }
 
-    bool optNumIsSet() const {
-        return optNumber_set;
+    void setOptNumber(float optnum)
+    {
+        _optset = optnum != -1;
+        _optnum = optnum;
     }
 
-    bool numIsSet() const {
+    bool numIsSet() const
+    {
         return _set;
+    }
+
+    bool optNumIsSet() const
+    {
+        return _optset;
     }
     
     std::string getValueString() const
     {
         Inkscape::SVGOStringStream os;
 
-        if( _set )
-        {
-
-            if( optNumber_set )
-            {
-                os << number << " " << optNumber;
-            }
-            else {
-                os << number;
+        if (_set) {
+            os << _num;
+            if (_optset) {
+                os << " " << _optnum;
             }
         }
+
         return os.str();
     }
 
     void set(char const *str)
     {
-        if(!str)
+        if (!str) {
             return;
+        }
+
+        _set = false;
+        _optset = false;
 
         char **values = g_strsplit(str, " ", 2);
 
-        if( values[0] != nullptr )
-        {
-            number = g_ascii_strtod(values[0], nullptr);
-            _set = TRUE;
+        if (values[0]) {
+            _num = g_ascii_strtod(values[0], nullptr);
+            _set = true;
 
-            if( values[1] != nullptr )
-            {
-                optNumber = g_ascii_strtod(values[1], nullptr);
-                optNumber_set = TRUE;
+            if (values[1]) {
+                _optnum = g_ascii_strtod(values[1], nullptr);
+                _optset = true;
             }
-            else
-                optNumber_set = FALSE;
-        }
-        else {
-                _set = FALSE;
-                optNumber_set = FALSE;
         }
 
         g_strfreev(values);
     }
 
+private:
+    float _num;
+    float _optnum;
+    bool _set : 1;
+    bool _optset : 1;
 };
 
-#endif /* !SEEN_NUMBER_OPT_NUMBER_H */
+#endif // SEEN_NUMBER_OPT_NUMBER_H
 
 /*
   Local Variables:

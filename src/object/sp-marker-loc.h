@@ -25,7 +25,6 @@ enum SPMarkerLoc {
     SP_MARKER_LOC_QTY = 4
 };
 
-
 #endif /* !SEEN_SP_MARKER_LOC_H */
 
 /*

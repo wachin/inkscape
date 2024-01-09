@@ -348,7 +348,7 @@ public:
                                      struct rdf_work_entity_t const & entity,
                                      gchar const * text );
 
-    static struct rdf_license_t *getLicense(SPDocument *document);
+    static struct rdf_license_t *getLicense(SPDocument *document, bool read_only);
 
     static void setLicense(SPDocument * doc, struct rdf_license_t const * license);
 };
@@ -889,7 +889,7 @@ const gchar *rdf_get_work_entity(SPDocument const * doc, struct rdf_work_entity_
     } else if ( entity ) {
         //g_message("want '%s'\n",entity->title);
 
-        result = RDFImpl::getWorkEntity( doc, *entity );
+        result = RDFImpl::getWorkEntity(doc, *entity);
 
         //g_message("found '%s' == '%s'\n", entity->title, result );
     }
@@ -900,7 +900,7 @@ const gchar *RDFImpl::getWorkEntity(SPDocument const * doc, struct rdf_work_enti
 {
     gchar const *result = nullptr;
 
-    Inkscape::XML::Node const * item = getWorkRepr( doc, entity.tag );
+    Inkscape::XML::Node const * item = getWorkRepr(doc, entity.tag);
     if ( item ) {
         result = getReprText( item, entity );
         // TODO note that this is the location that used to set the title if needed. Ensure code it not required.
@@ -1043,12 +1043,12 @@ rdf_match_license(Inkscape::XML::Node const *repr, struct rdf_license_t const *l
 }
 
 // Public API:
-struct rdf_license_t *rdf_get_license(SPDocument *document)
+struct rdf_license_t *rdf_get_license(SPDocument *document, bool read_only)
 {
-    return RDFImpl::getLicense(document);
+    return RDFImpl::getLicense(document, read_only);
 }
 
-struct rdf_license_t *RDFImpl::getLicense(SPDocument *document)
+struct rdf_license_t *RDFImpl::getLicense(SPDocument *document, bool read_only)
 {
     // Base license lookup on the URI of cc:license rather than the license
     // properties, per instructions from the ccREL gurus.
@@ -1106,27 +1106,33 @@ struct rdf_license_t *RDFImpl::getLicense(SPDocument *document)
                       license_by_properties->uri);
         }
 
-        // Reset license structure to match so the document is consistent
-        // (and this will also silence the warning above on repeated calls).
-        setLicense(document, license_by_uri);
+        if (!read_only) {
+            // Reset license structure to match so the document is consistent
+            // (and this will also silence the warning above on repeated calls).
+            setLicense(document, license_by_uri);
+        }
 
         return license_by_uri;
     }
     else if (license_by_uri != nullptr) {
-        // Only cc:license property, set structure for backward compatibility
-        setLicense(document, license_by_uri);
+        if (!read_only) {
+            // Only cc:license property, set structure for backward compatibility
+            setLicense(document, license_by_uri);
+        }
 
         return license_by_uri;
     }
     else if (license_by_properties != nullptr) {
-        // Only cc:License structure
-        // TODO: this could be a user-visible warning too
-        g_warning("No %s metadata found, derived license URI from %s: %s",
-                  XML_TAG_NAME_LICENSE_PROP, XML_TAG_NAME_LICENSE,
-                  license_by_properties->uri);
+        if (!read_only) {
+            // Only cc:License structure
+            // TODO: this could be a user-visible warning too
+            g_warning("No %s metadata found, derived license URI from %s: %s",
+                    XML_TAG_NAME_LICENSE_PROP, XML_TAG_NAME_LICENSE,
+                    license_by_properties->uri);
 
-        // Set license property to match
-        setWorkEntity(document, *entity, license_by_properties->uri);
+            // Set license property to match
+            setWorkEntity(document, *entity, license_by_properties->uri);
+        }
 
         return license_by_properties;
     }

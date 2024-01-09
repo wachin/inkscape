@@ -18,25 +18,24 @@
 #include "sp-gradient.h"
 
 /** Mesh gradient. */
-class SPMeshGradient : public SPGradient {
+class SPMeshGradient final : public SPGradient {
 public:
     SPMeshGradient();
     ~SPMeshGradient() override;
+    int tag() const override { return tag_of<decltype(*this)>; }
 
     SVGLength x;  // Upper left corner of meshgradient
     SVGLength y;  // Upper right corner of mesh
     SPMeshType type;
     bool type_set;
-    cairo_pattern_t* pattern_new(cairo_t *ct, Geom::OptRect const &bbox, double opacity) override;
+
+    std::unique_ptr<Inkscape::DrawingPaintServer> create_drawing_paintserver() override;
 
 protected:
     void build(SPDocument *document, Inkscape::XML::Node *repr) override;
     void set(SPAttr key, char const *value) override;
     Inkscape::XML::Node* write(Inkscape::XML::Document *xml_doc, Inkscape::XML::Node *repr, unsigned int flags) override;
 };
-
-MAKE_SP_OBJECT_DOWNCAST_FUNCTIONS(SP_MESHGRADIENT, SPMeshGradient)
-MAKE_SP_OBJECT_TYPECHECK_FUNCTIONS(SP_IS_MESHGRADIENT, SPMeshGradient)
 
 #endif /* !SP_MESH_GRADIENT_H */
 

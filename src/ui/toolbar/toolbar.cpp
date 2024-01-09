@@ -15,8 +15,6 @@
 
 #include "desktop.h"
 
-#include "helper/action.h"
-
 namespace Inkscape {
 namespace UI {
 namespace Toolbar {
@@ -51,22 +49,6 @@ Toolbar::add_toggle_button(const Glib::ustring &label_text,
     btn->set_tooltip_text(tooltip_text);
     add(*btn);
     return btn;
-}
-
-/**
- * \brief Add a toolbutton that performs a given verb
- *
- * \param[in] verb_code The code for the verb (e.g., SP_VERB_EDIT_SELECT_ALL)
- *
- * \returns a pointer to the toolbutton
- */
-Gtk::ToolButton *
-Toolbar::add_toolbutton_for_verb(unsigned int verb_code)
-{
-    auto context = Inkscape::ActionContext(_desktop);
-    auto button  = SPAction::create_toolbutton_for_verb(verb_code, context);
-    add(*button);
-    return button;
 }
 
 /**

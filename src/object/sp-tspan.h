@@ -23,10 +23,11 @@ enum {
     SP_TSPAN_ROLE_LINE
 };
 
-class SPTSpan : public SPItem {
+class SPTSpan final : public SPItem {
 public:
 	SPTSpan();
 	~SPTSpan() override;
+    int tag() const override { return tag_of<decltype(*this)>; }
 
     unsigned int role : 2;
     TextTagAttributes attributes;
@@ -42,9 +43,6 @@ public:
         const char* typeName() const override;
         const char* displayName() const override;
 };
-
-MAKE_SP_OBJECT_DOWNCAST_FUNCTIONS(SP_TSPAN, SPTSpan)
-MAKE_SP_OBJECT_TYPECHECK_FUNCTIONS(SP_IS_TSPAN, SPTSpan)
 
 #endif /* !INKSCAPE_SP_TSPAN_H */
 

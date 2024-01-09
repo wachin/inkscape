@@ -43,7 +43,7 @@ namespace Widget {
 class StyleSwatch : public Gtk::Box
 {
 public:
-    StyleSwatch (SPCSSAttr *attr, gchar const *main_tip);
+    StyleSwatch (SPCSSAttr *attr, gchar const *main_tip, Gtk::Orientation orient = Gtk::ORIENTATION_VERTICAL);
 
     ~StyleSwatch() override;
 
@@ -72,6 +72,7 @@ private:
     Gtk::Grid *_table;
 
     Gtk::Label _label[2];
+    Gtk::Box _empty_space;
     Gtk::EventBox _place[2];
     Gtk::EventBox _opacity_place;
     Gtk::Label _value[2];

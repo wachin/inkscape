@@ -82,6 +82,8 @@ public:
     CairoRenderContext *cloneMe() const;
     CairoRenderContext *cloneMe(double width, double height) const;
     bool finish(bool finish_surface = true);
+    bool finishPage();
+    bool nextPage(double width, double height, char const *label);
 
     CairoRenderer *getRenderer() const;
     cairo_t *getCairoContext() const;
@@ -168,10 +170,11 @@ public:
     };
 
     bool renderPathVector(Geom::PathVector const &pathv, SPStyle const *style, Geom::OptRect const &pbox, CairoPaintOrder order = STROKE_OVER_FILL);
-    bool renderImage(Inkscape::Pixbuf *pb,
+    bool renderImage(Inkscape::Pixbuf const *pb,
                      Geom::Affine const &image_transform, SPStyle const *style);
     bool renderGlyphtext(PangoFont *font, Geom::Affine const &font_matrix,
-                         std::vector<CairoGlyphInfo> const &glyphtext, SPStyle const *style);
+                         std::vector<CairoGlyphInfo> const &glyphtext, SPStyle const *style,
+                         bool second_pass = false);
 
     /* More general rendering methods will have to be added (like fill, stroke) */
 
@@ -194,6 +197,10 @@ protected:
     bool _is_texttopath;
     bool _is_omittext;
     bool _is_filtertobitmap;
+    bool _is_show_page;
+    // If both ps and pdf are false, then we are printing.
+    bool _is_pdf;
+    bool _is_ps;
     int _bitmapresolution;
 
     FILE *_stream;

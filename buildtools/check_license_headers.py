@@ -33,6 +33,7 @@ IGNORE_PATHS = [
     "share",
     "src/3rdparty",
     "testfiles/cli_tests/testcases",
+    "testfiles/data/example-FEXTRA-FCOMMENT.gz",
     "testfiles/rendering_tests/fonts/LICENSES",
 ]
 
@@ -77,6 +78,7 @@ PERMITTED_LICENSES = [
     "GPL-3.0-or-later",
     "LGPL-2.1-or-later",
     "LGPL-3.0-or-later",
+    "CC0",
 ]
 
 

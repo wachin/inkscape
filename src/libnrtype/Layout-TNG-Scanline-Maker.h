@@ -9,8 +9,8 @@
  *
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
-#ifndef __LAYOUT_TNG_SCANLINE_MAKER_H__
-#define __LAYOUT_TNG_SCANLINE_MAKER_H__
+#ifndef LAYOUT_TNG_SCANLINE_MAKER_H
+#define LAYOUT_TNG_SCANLINE_MAKER_H
 
 #include <vector>
 #include <cmath>
@@ -35,7 +35,8 @@ class Layout::ScanlineMaker
 public:
     virtual ~ScanlineMaker() = default;
 
-    struct ScanRun {
+    struct ScanRun
+    {
         double y;  /// that's the top of the scan run, not the baseline
         double x_start;    // these are not flipped according to the text direction
         double x_end;
@@ -48,13 +49,13 @@ public:
     between calls if the new height too big to fit in the space remaining in
     this shape. Returns an empty vector if there is no space left in the
     current shape. */
-    virtual std::vector<ScanRun> makeScanline(Layout::FontMetrics const &line_height) =0;
+    virtual std::vector<ScanRun> makeScanline(Layout::FontMetrics const &line_height) = 0;
 
     /** Indicates that the caller has successfully filled the current line
     and hence that the next call to makeScanline() should return lines on
     the next lower line. There is no error return, the next call to
     makeScanline() will give an error if there is no more space. */
-    virtual void completeLine() =0;
+    virtual void completeLine() = 0;
 
     /** Returns the y coordinate of the top of the scanline that will be
     returned by the next call to makeScanline(). */
@@ -63,7 +64,7 @@ public:
     /** Forces an arbitrary change in the stored y coordinate of the object.
     The next call to makeScanline() will return runs whose top is at
     the new coordinate. */
-    virtual void setNewYCoordinate(double new_y) =0;
+    virtual void setNewYCoordinate(double new_y) = 0;
 
     /** Tests whether the caller can fit a new line with the given metrics
     into exactly the space returned by the previous call to makeScanline().
@@ -72,12 +73,12 @@ public:
     The metrics given here are considered to be the ones that are being
     used now, and hence is the line advance height used by completeLine().
     */
-    virtual bool canExtendCurrentScanline(Layout::FontMetrics const &line_height) =0;
+    virtual bool canExtendCurrentScanline(Layout::FontMetrics const &line_height) = 0;
 
     /** Sets current line block height. Call before completeLine() to correct for
     actually used line height (in case some chunks with larger font-size rolled back).
     */
-    virtual void setLineHeight(Layout::FontMetrics const &line_height) =0;
+    virtual void setLineHeight(Layout::FontMetrics const &line_height) = 0;
 };
 
 /** \brief private to Layout. Generates infinite scanlines for when you don't want wrapping
@@ -101,8 +102,7 @@ public:
     /** Increments the current y by the current line height */
     void completeLine() override;
 
-    double yCoordinate() override
-        {return _y;}
+    double yCoordinate() override { return _y; }
 
     /** Just changes y */
     void setNewYCoordinate(double new_y) override;
@@ -169,10 +169,10 @@ private:
     bool _negative_block_progression;     /// if true, indicates that completeLine() should decrement rather than increment, ie block-progression is either rl or bt
 };
 
-}//namespace Text
-}//namespace Inkscape
+} // namespace Text
+} // namespace Inkscape
 
-#endif
+#endif // LAYOUT_TNG_SCANLINE_MAKER_H
 
 /*
   Local Variables:

@@ -18,22 +18,20 @@
  */
 
 #include <memory>
-#include <gdk-pixbuf/gdk-pixbuf.h>
 #include <2geom/point.h>
+#include <gdk-pixbuf/gdk-pixbuf.h>
 
 #include "canvas-item.h"
 #include "canvas-item-enums.h"
 
 #include "enums.h" // SP_ANCHOR_X
+#include "display/initlock.h"
 
 namespace Inkscape {
 
-class CanvasItemGroup; // A canvas control that contains other canvas controls.
-
-class CanvasItemCtrl : public CanvasItem {
-
+class CanvasItemCtrl : public CanvasItem
+{
 public:
-    ~CanvasItemCtrl() override;
     CanvasItemCtrl(CanvasItemGroup *group);
     CanvasItemCtrl(CanvasItemGroup *group, CanvasItemCtrlType type);
     CanvasItemCtrl(CanvasItemGroup *group, CanvasItemCtrlType type, Geom::Point const &p);
@@ -43,53 +41,53 @@ public:
     // Geometry
     void set_position(Geom::Point const &position);
 
-    void update(Geom::Affine const &affine) override;
-    double closest_distance_to(Geom::Point const &p);
+    double closest_distance_to(Geom::Point const &p) const;
 
     // Selection
     bool contains(Geom::Point const &p, double tolerance = 0) override;
 
-    // Display
-    void render(Inkscape::CanvasItemBuffer *buf) override;
-
     // Properties
-    void set_fill(guint32 rgba) override;
-    void set_stroke(guint32 rgba) override;
-    void set_shape(int shape);
+    void set_fill(uint32_t rgba) override;
+    void set_stroke(uint32_t rgba) override;
+    void set_shape(CanvasItemCtrlShape shape);
     void set_shape_default(); // Use type to determine shape.
-    void set_mode(int mode);
+    void set_mode(CanvasItemCtrlMode mode);
     void set_mode_default();
     void set_size(int size);
-    void set_size_via_index(int size_index);
+    virtual void set_size_via_index(int size_index);
     void set_size_default(); // Use preference and type to set size.
     void set_size_extra(int extra); // Used to temporary increase size of ctrl.
     void set_anchor(SPAnchorType anchor);
     void set_angle(double angle);
     void set_type(CanvasItemCtrlType type);
-    void set_pixbuf(GdkPixbuf *pixbuf);
+    void set_pixbuf(Glib::RefPtr<Gdk::Pixbuf> pixbuf);
  
 protected:
-    void build_cache(int device_scale);
+    ~CanvasItemCtrl() override = default;
+
+    void _update(bool propagate) override;
+    void _render(Inkscape::CanvasItemBuffer &buf) const override;
+
+    void build_cache(int device_scale) const;
 
     // Geometry
     Geom::Point _position;
 
     // Display
-    guint32 *_cache = nullptr;
-    bool _built = false;
+    InitLock _built;
+    mutable std::unique_ptr<uint32_t[]> _cache;
 
     // Properties
-    CanvasItemCtrlType _type   = CANVAS_ITEM_CTRL_TYPE_DEFAULT;
+    CanvasItemCtrlType  _type  = CANVAS_ITEM_CTRL_TYPE_DEFAULT;
     CanvasItemCtrlShape _shape = CANVAS_ITEM_CTRL_SHAPE_SQUARE;
-    CanvasItemCtrlMode _mode   = CANVAS_ITEM_CTRL_MODE_XOR;
-    unsigned int _width  = 5;   // Nominally width == height == size... unless we use a pixmap.
-    unsigned int _height = 5;
-    unsigned int _extra  = 0;   // Used to temporarily increase size.
-    double       _angle  = 0.0; // Used for triangles, could be used for arrows.
+    CanvasItemCtrlMode  _mode  = CANVAS_ITEM_CTRL_MODE_XOR;
+    int _width  = 5; // Nominally width == height == size... unless we use a pixmap.
+    int _height = 5;
+    int _extra  = 0; // Used to temporarily increase size.
+    double _angle = 0; // Used for triangles, could be used for arrows.
     SPAnchorType _anchor = SP_ANCHOR_CENTER;
-    GdkPixbuf *_pixbuf = nullptr;
+    Glib::RefPtr<Gdk::Pixbuf> _pixbuf;
 };
-
 
 } // namespace Inkscape
 

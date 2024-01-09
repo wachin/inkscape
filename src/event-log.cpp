@@ -9,14 +9,21 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
-#include "util/signal-blocker.h"
-
 #include "event-log.h"
+
+
 #include <glibmm/i18n.h>
 
+#include "actions/actions-undo-document.h"
+
 #include "desktop.h"
-#include "inkscape.h"
 #include "document.h"
+#include "inkscape.h"
+#include "inkscape-application.h"
+#include "inkscape-window.h"
+
+#include "ui/desktop/menubar.h"
+#include "util/signal-blocker.h"
 
 namespace
 {
@@ -363,36 +370,13 @@ void EventLog::removeDialogConnection(Gtk::TreeView *event_list_view, CallbackMa
     _priv->removeDialogConnection(event_list_view, callback_connections);
 }
 
+// Enable/disable undo/redo GUI items.
 void
 EventLog::updateUndoVerbs()
 {
-    if(_document) {
-        auto &_columns = getColumns();
-
-        if(_getUndoEvent()) { 
-            Inkscape::Verb::get(SP_VERB_EDIT_UNDO)->sensitive(_document, true);
-
-            Inkscape::Verb::get(SP_VERB_EDIT_UNDO)->name(_document,
-                      Glib::ustring(_("_Undo")) + ": " +
-                      Glib::ustring((*_getUndoEvent())[_columns.description]));
-        } else {
-            Inkscape::Verb::get(SP_VERB_EDIT_UNDO)->name(_document, _("_Undo"));
-            Inkscape::Verb::get(SP_VERB_EDIT_UNDO)->sensitive(_document, false);
-        }
-
-        if(_getRedoEvent()) {
-            Inkscape::Verb::get(SP_VERB_EDIT_REDO)->sensitive(_document, true);
-            Inkscape::Verb::get(SP_VERB_EDIT_REDO)->name(_document,
-                      Glib::ustring(_("_Redo")) + ": " +
-                      Glib::ustring((*_getRedoEvent())[_columns.description]));
-
-        } else {
-            Inkscape::Verb::get(SP_VERB_EDIT_REDO)->name(_document, _("_Redo"));
-            Inkscape::Verb::get(SP_VERB_EDIT_REDO)->sensitive(_document, false);
-        }
-
+    if (_document) {
+        enable_undo_actions(_document, static_cast<bool>(_getUndoEvent()), static_cast<bool>(_getRedoEvent()));
     }
-
 }
 
 

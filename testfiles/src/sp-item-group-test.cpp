@@ -39,7 +39,7 @@ TEST_F(SPGroupTest, applyingPowerClipEffectToGroupWithoutClipIsIgnored)
 
     SPDocument *doc = SPDocument::createNewDocFromMem(svg.c_str(), svg.size(), true);
 
-    auto group = dynamic_cast<SPGroup *>(doc->getObjectById("group1"));
+    auto group = cast<SPGroup>(doc->getObjectById("group1"));
     Effect::createAndApply(POWERCLIP, doc, group);
 
     ASSERT_FALSE(group->hasPathEffect());

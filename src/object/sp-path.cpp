@@ -83,7 +83,7 @@ gchar* SPPath::description() const {
         lpe_desc = g_strdup_printf(_(", path effect: %s"), s.c_str());
     }
     char *ret = g_strdup_printf(ngettext(
-                _("%i node%s"), _("%i nodes%s"), count), count, lpe_desc);
+                "%i node%s", "%i nodes%s", count), count, lpe_desc);
     g_free(lpe_desc);
     return ret;
 }
@@ -152,58 +152,25 @@ void SPPath::build(SPDocument *document, Inkscape::XML::Node *repr) {
 
             if (matchInfo.matches()) {
                 Glib::ustring  value = matchInfo.fetch(1);
-                Geom::PathVector pv = sp_svg_read_pathv(value.c_str());
 
-                auto curve = std::make_unique<SPCurve>(pv);
-                if (curve) {
+                // Update curve
+                setCurveInsync(SPCurve(sp_svg_read_pathv(value.c_str())));
 
-                    // Update curve
-                    setCurveInsync(std::move(curve));
+                // Convert from property to attribute (convert back on write)
+                setAttributeOrRemoveIfEmpty("d", value);
 
-                    // Convert from property to attribute (convert back on write)
-                    setAttributeOrRemoveIfEmpty("d", value);
+                SPCSSAttr *css = sp_repr_css_attr( getRepr(), "style");
+                sp_repr_css_unset_property ( css, "d");
+                sp_repr_css_set ( getRepr(), css, "style" );
+                sp_repr_css_attr_unref ( css );
 
-                    SPCSSAttr *css = sp_repr_css_attr( getRepr(), "style");
-                    sp_repr_css_unset_property ( css, "d");
-                    sp_repr_css_set ( getRepr(), css, "style" );
-                    sp_repr_css_attr_unref ( css );
-
-                    style->d.style_src = SPStyleSrc::ATTRIBUTE;
-                } else {
-                    std::cerr << "SPPath::build: Failed to create curve: " << input << std::endl;
-                }
+                style->d.style_src = SPStyleSrc::ATTRIBUTE;
             }
         }
         // If any if statement is false, do nothing... don't overwrite 'd' from attribute
     }
 
-
-    // this->readAttr(SPAttr::INKSCAPE_ORIGINAL_D); // bug #1299948
-    // Why we take the long way of doing this probably needs some explaining:
-    //
-    // Normally upon being built, reading the inkscape:original-d attribute
-    // will cause the path to actually _write to its repr_ in response to this.
-    // This is bad, bad news if the attached effect refers to a path which
-    // hasn't been constructed yet.
-    // 
-    // What will happen is the effect parameter will cause the effect to
-    // recalculate with a completely different value due to the parameter being
-    // "empty" -- even worse, an undo event might be created with the bad value,
-    // and undoing the current action could cause it to revert to the "bad"
-    // state. (After that, the referred object will be constructed and the
-    // reference will trigger the path effect to update and commit the right
-    // value to "d".)
-    //
-    // This mild nastiness here (don't recalculate effects on build) prevents a
-    // plethora of issues with effects with linked parameters doing wild and
-    // stupid things on new documents upon a mere undo.
-
-    if (gchar const* s = this->getRepr()->attribute("inkscape:original-d"))
-    {
-        // Write the value to _curve_before_lpe, do not recalculate effects
-        Geom::PathVector pv = sp_svg_read_pathv(s);
-        _curve_before_lpe.reset(new SPCurve(pv));
-    }
+    this->readAttr(SPAttr::INKSCAPE_ORIGINAL_D);
     this->readAttr(SPAttr::D);
 
     /* d is a required attribute */
@@ -231,51 +198,34 @@ void SPPath::set(SPAttr key, const gchar* value) {
     switch (key) {
         case SPAttr::INKSCAPE_ORIGINAL_D:
             if (value) {
-                Geom::PathVector pv = sp_svg_read_pathv(value);
-                setCurveBeforeLPE(std::make_unique<SPCurve>(pv));
+                setCurveBeforeLPE(SPCurve(sp_svg_read_pathv(value)));
             } else {
-                bool haslpe = this->hasPathEffectOnClipOrMaskRecursive(this);
-                if (!haslpe) {
-                    this->setCurveBeforeLPE(nullptr);
-                } else {
-                    //This happends on undo, fix bug:#1791784
-                    this->removeAllPathEffects(false);
-                }
+                setCurveBeforeLPE(nullptr);
             }
-            // In 2020-8-15 next line is commented and added
-            // a todo to see regressions, after this in a commit this line is uncomented
-            // again this line in a MR that near 1.1 release is finaly rollbacked. 
-            // This rollback happends near release (1.1) and think is beter leave 
-            // uncomented for release as all check are done this way
-            // Commentesd near 1.2 branching to seee isues
-            // If we find necesary and readd it agasin all plesse format the commments 
-            // abobe to nor comment again in the future
-            // sp_lpe_item_update_patheffect(this, true, true);
             break;
 
        case SPAttr::D:
             if (value) {
-                Geom::PathVector pv = sp_svg_read_pathv(value);
-                setCurve(std::make_unique<SPCurve>(pv));
+                setCurve(SPCurve(sp_svg_read_pathv(value)));
             } else {
-                this->setCurve(nullptr);
+                setCurve(nullptr);
             }
             break;
 
         case SPAttr::MARKER:
-            sp_shape_set_marker(this, SP_MARKER_LOC, value);
+            set_marker(SP_MARKER_LOC, value);
             this->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG);
             break;
         case SPAttr::MARKER_START:
-            sp_shape_set_marker(this, SP_MARKER_LOC_START, value);
+            set_marker(SP_MARKER_LOC_START, value);
             this->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG);
             break;
         case SPAttr::MARKER_MID:
-            sp_shape_set_marker(this, SP_MARKER_LOC_MID, value);
+            set_marker(SP_MARKER_LOC_MID, value);
             this->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG);
             break;
         case SPAttr::MARKER_END:
-            sp_shape_set_marker(this, SP_MARKER_LOC_END, value);
+            set_marker(SP_MARKER_LOC_END, value);
             this->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG);
             break;
 
@@ -310,8 +260,8 @@ g_message("sp_path_write writes 'd' attribute");
     }
 
     if (flags & SP_OBJECT_WRITE_EXT) {
-        if ( this->_curve_before_lpe != nullptr ) {
-            repr->setAttribute("inkscape:original-d", sp_svg_write_path(this->_curve_before_lpe->get_pathvector()));
+        if (_curve_before_lpe) {
+            repr->setAttribute("inkscape:original-d", sp_svg_write_path(_curve_before_lpe->get_pathvector()));
         } else {
             repr->removeAttribute("inkscape:original-d");
         }
@@ -349,11 +299,13 @@ Geom::Affine SPPath::set_transform(Geom::Affine const &transform) {
             // we are inside a LPE group creating a new element 
             // and the original-d curve is not defined, 
             // This fix a issue with calligrapic tool that make a transform just when draw
-            setCurveBeforeLPE(std::move(_curve));
+            setCurveBeforeLPE(_curve.get());
         }
         _curve_before_lpe->transform(transform);
+        // fix issue https://gitlab.com/inkscape/inbox/-/issues/5460
+        sp_lpe_item_update_patheffect(this, false, false);
     } else {
-        _curve->transform(transform);
+        setCurve(_curve->transformed(transform));
     }
     // Adjust stroke
     this->adjust_stroke(transform.descrim());

@@ -19,6 +19,7 @@
 #include "desktop.h"
 
 #include "document.h"
+#include "layer-manager.h"
 #include "selection.h"
 #include "2geom/geom.h"
 
@@ -81,28 +82,27 @@ Glib::ustring build_lines(Geom::Rect bounding_area,
     \param  document What should be edited.
 */
 void
-Grid::effect (Inkscape::Extension::Effect *module, Inkscape::UI::View::View *document, Inkscape::Extension::Implementation::ImplementationDocumentCache * /*docCache*/)
+Grid::effect (Inkscape::Extension::Effect *module, Inkscape::UI::View::View *view, Inkscape::Extension::Implementation::ImplementationDocumentCache * /*docCache*/)
 {
-    Inkscape::Selection * selection     = ((SPDesktop *)document)->selection;
+    auto desktop = dynamic_cast<SPDesktop *>(view);
+    Inkscape::Selection *selection = desktop->getSelection();
+    SPDocument *doc = desktop->doc();
 
     Geom::Rect bounding_area = Geom::Rect(Geom::Point(0,0), Geom::Point(100,100));
     if (selection->isEmpty()) {
         /* get page size */
-        SPDocument * doc = document->doc();
-        bounding_area = Geom::Rect(  Geom::Point(0,0),
-                                     Geom::Point(doc->getWidth().value("px"), doc->getHeight().value("px"))  );
-    } else {
-        Geom::OptRect bounds = selection->visualBounds();
-        if (bounds) {
+        if (auto bounds = doc->preferredBounds()) {
             bounding_area = *bounds;
         }
-
-        Geom::Rect temprec = bounding_area * static_cast<SPDesktop *>(document)->doc2dt();
-
+    } else {
+        if (auto bounds = selection->visualBounds()) {
+            bounding_area = *bounds;
+        }
+        Geom::Rect temprec = bounding_area * desktop->doc2dt();
         bounding_area = temprec;
     }
 
-    double scale = document->doc()->getDocumentScale().inverse()[Geom::X];
+    double scale = doc->getDocumentScale().inverse()[Geom::X];
 
     bounding_area *= Geom::Scale(scale);
     Geom::Point spacings( scale * module->get_param_float("xspacing"),
@@ -114,10 +114,10 @@ Grid::effect (Inkscape::Extension::Effect *module, Inkscape::UI::View::View *doc
     Glib::ustring path_data("");
 
     path_data = build_lines(bounding_area, offsets, spacings);
-    Inkscape::XML::Document * xml_doc = document->doc()->getReprDoc();
+    Inkscape::XML::Document * xml_doc = doc->getReprDoc();
 
     //XML Tree being used directly here while it shouldn't be.
-    Inkscape::XML::Node * current_layer = static_cast<SPDesktop *>(document)->currentLayer()->getRepr();
+    Inkscape::XML::Node * current_layer = desktop->layerManager().currentLayer()->getRepr();
     Inkscape::XML::Node * path = xml_doc->createElement("svg:path");
 
     path->setAttribute("d", path_data);
@@ -142,7 +142,7 @@ public:
     PrefAdjustment(Inkscape::Extension::Extension * ext, char * pref) :
             Gtk::Adjustment(0.0, 0.0, 10.0, 0.1), _ext(ext), _pref(pref) {
         this->set_value(_ext->get_param_float(_pref));
-        this->signal_value_changed().connect(sigc::mem_fun(this, &PrefAdjustment::val_changed));
+        this->signal_value_changed().connect(sigc::mem_fun(*this, &PrefAdjustment::val_changed));
         return;
     };
 
@@ -163,14 +163,14 @@ PrefAdjustment::val_changed ()
     return;
 }
 
-/** \brief  A function to get the prefences for the grid
+/** \brief  A function to get the preferences for the grid
     \param  module  Module which holds the params
     \param  view     Unused today - may get style information in the future.
 
     Uses AutoGUI for creating the GUI.
 */
 Gtk::Widget *
-Grid::prefs_effect(Inkscape::Extension::Effect *module, Inkscape::UI::View::View * view, sigc::signal<void> * changeSignal, Inkscape::Extension::Implementation::ImplementationDocumentCache * /*docCache*/)
+Grid::prefs_effect(Inkscape::Extension::Effect *module, Inkscape::UI::View::View * view, sigc::signal<void ()> * changeSignal, Inkscape::Extension::Implementation::ImplementationDocumentCache * /*docCache*/)
 {
     SPDocument * current_document = view->doc();
 

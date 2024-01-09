@@ -27,6 +27,8 @@
 #include <gtkmm/treemodelcolumn.h>
 #include <gtkmm/treepath.h>
 
+#define FONT_FAMILIES_GROUP_SIZE 30
+
 class SPObject;
 class SPDocument;
 class SPCSSAttr;
@@ -139,6 +141,10 @@ public:
 
     FontStyleListClass FontStyleList;
 
+    // This map will give constant time access to each font and it's
+    // PangoFontFamily.
+    std::map <std::string, PangoFontFamily *> pango_family_map;
+
     /** 
      * @return the ListStore with the family names
      *
@@ -159,6 +165,8 @@ public:
      */
     void insert_font_family(Glib::ustring new_family);
 
+    int add_document_fonts_at_top(SPDocument *document);
+
     /**
      * Updates font list to include fonts in document.
      */
@@ -171,6 +179,15 @@ public:
      * Takes a hand written font spec and returns a Pango generated one in
      *  standard form.
      */
+
+    /**
+     * Functions to display the search results in the font list.
+     */
+    bool find_string_case_insensitive(const std::string& text, const std::string& pat);
+    void show_results(const Glib::ustring &search_text);
+    void apply_collections(std::set <Glib::ustring>& selected_collections);
+    void set_dragging_family(const Glib::ustring &new_family);
+
     Glib::ustring canonize_fontspec(Glib::ustring fontspec);
 
     /**
@@ -235,6 +252,11 @@ public:
         return current_family;
     }
 
+    Glib::ustring get_dragging_family()
+    {
+        return dragging_family;
+    }
+
     int get_font_family_row()
     {
         return current_family_row;
@@ -294,16 +316,25 @@ public:
      * Handlers should block signals.
      * Input is fontspec to set.
      */
-    sigc::connection connectUpdate(sigc::slot<void> slot) {
+    sigc::connection connectUpdate(sigc::slot<void ()> slot) {
         return update_signal.connect(slot);
     }
 
     bool blocked() { return block; }
 
+    int get_font_families_size();
+    bool font_installed_on_system(const Glib::ustring& font);
+
+    void init_font_families(int group_offset = -1, int group_size = -1);
+    void init_default_styles();
+    std::string get_font_count_label();
+
 private:
     FontLister();
 
     void update_font_data_recursive(SPObject& r, std::map<Glib::ustring, std::set<Glib::ustring>> &font_data);
+
+	void font_family_row_update(int start=0);
 
     Glib::RefPtr<Gtk::ListStore> font_list_store;
     Glib::RefPtr<Gtk::ListStore> style_list_store;
@@ -314,6 +345,7 @@ private:
      */
     int current_family_row;
     Glib::ustring current_family;
+    Glib::ustring dragging_family;
     Glib::ustring current_style;
 
     /**
@@ -323,7 +355,7 @@ private:
 
     bool block;
     void emit_update();
-    sigc::signal<void> update_signal;
+    sigc::signal<void ()> update_signal;
 };
 
 } // namespace Inkscape
@@ -337,6 +369,8 @@ gboolean font_lister_separator_func2(GtkTreeModel *model,
                                     gpointer /*data*/);
 
 void font_lister_cell_data_func (Gtk::CellRenderer *renderer, Gtk::TreeIter const &iter);
+
+void font_lister_cell_data_func_markup (Gtk::CellRenderer *renderer, Gtk::TreeIter const &iter);
 
 void font_lister_cell_data_func2(GtkCellLayout * /*cell_layout*/,
                                 GtkCellRenderer *cell,

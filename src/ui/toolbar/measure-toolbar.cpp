@@ -34,6 +34,7 @@
 #include "desktop.h"
 #include "document-undo.h"
 #include "message-stack.h"
+#include "object/sp-namedview.h"
 
 #include "ui/icon-names.h"
 #include "ui/tools/measure-tool.h"
@@ -66,7 +67,8 @@ MeasureToolbar::MeasureToolbar(SPDesktop *desktop)
     _tracker(new UnitTracker(Inkscape::Util::UNIT_TYPE_LINEAR))
 {
     auto prefs = Inkscape::Preferences::get();
-    _tracker->setActiveUnitByAbbr(prefs->getString("/tools/measure/unit").c_str());
+    auto unit = desktop->getNamedView()->getDisplayUnit();
+    _tracker->setActiveUnitByAbbr(prefs->getString("/tools/measure/unit", unit->abbr).c_str());
 
     /* Font Size */
     {

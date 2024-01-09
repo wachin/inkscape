@@ -26,9 +26,10 @@
 namespace Inkscape {
 namespace Extension {
 
-class Input;
-class Output;
-class Effect;
+class Template; // New
+class Input;    // Load
+class Output;   // Save
+class Effect;   // Modify
 class Extension;
 
 class DB {
@@ -57,21 +58,24 @@ private:
 
 public:
     DB ();
-    Extension * get (const gchar *key);
+    Extension * get (const gchar *key) const;
     void register_ext (Extension *module);
     void unregister_ext (Extension *module);
     void foreach (void (*in_func)(Extension * in_plug, gpointer in_data), gpointer in_data);
 
 private:
+    static void template_internal(Extension *in_plug, gpointer data);
     static void input_internal (Extension * in_plug, gpointer data);
     static void output_internal (Extension * in_plug, gpointer data);
     static void effect_internal (Extension * in_plug, gpointer data);
 
 public:
+    typedef std::list<Template *> TemplateList;
     typedef std::list<Output *> OutputList;
     typedef std::list<Input *> InputList;
     typedef std::list<Effect *> EffectList;
 
+    TemplateList &get_template_list(TemplateList &ou_list);
     InputList  &get_input_list  (InputList &ou_list);
     OutputList &get_output_list (OutputList &ou_list);
     EffectList &get_effect_list (EffectList &ou_list);

@@ -24,10 +24,8 @@
 
 namespace Inkscape {
 
-class CanvasItemGroup; // A canvas control that contains other canvas controls.
-
-class CanvasItemQuad : public CanvasItem {
-
+class CanvasItemQuad final : public CanvasItem
+{
 public:
     CanvasItemQuad(CanvasItemGroup *group);
     CanvasItemQuad(CanvasItemGroup *group, Geom::Point const &p0, Geom::Point const &p1,
@@ -36,22 +34,24 @@ public:
     // Geometry
     void set_coords(Geom::Point const &p0, Geom::Point const &p1, Geom::Point const &p2, Geom::Point const &p3);
 
-    void update(Geom::Affine const &affine) override;
-    double closest_distance_to(Geom::Point const &p); // Maybe not needed
-
     // Selection
     bool contains(Geom::Point const &p, double tolerance = 0) override;
 
-    // Display
-    void render(Inkscape::CanvasItemBuffer *buf) override;
- 
+    void set_inverted(bool inverted);
+
 protected:
+    ~CanvasItemQuad() override = default;
+
+    void _update(bool propagate) override;
+    void _render(Inkscape::CanvasItemBuffer &buf) const override;
+
     Geom::Point _p0;
     Geom::Point _p1;
     Geom::Point _p2;
     Geom::Point _p3;
-};
 
+    bool _inverted = false;
+};
 
 } // namespace Inkscape
 

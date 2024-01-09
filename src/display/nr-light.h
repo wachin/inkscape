@@ -45,7 +45,7 @@ class DistantLight {
          * \param light the sp light object
          * \param lighting_color the lighting_color used
          */
-        DistantLight(SPFeDistantLight *light, guint32 lighting_color);
+        DistantLight(DistantLightData const &light, guint32 lighting_color);
         virtual ~DistantLight();
 
         /**
@@ -80,7 +80,7 @@ class PointLight {
          * employed in the rendering)
          * \param device_scale for high DPI monitors.
          */
-        PointLight(SPFePointLight *light, guint32 lighting_color, const Geom::Affine &trans, int device_scale = 1);
+        PointLight(PointLightData const &light, guint32 lighting_color, const Geom::Affine &trans, int device_scale = 1);
         virtual ~PointLight();
         /**
          * Computes the light vector of the distant light at point (x,y,z).
@@ -121,7 +121,7 @@ class SpotLight {
          * employed in the rendering)
          * \param device_scale for high DPI monitors.
          */
-        SpotLight(SPFeSpotLight *light, guint32 lighting_color, const Geom::Affine &trans, int device_scale = 1);
+        SpotLight(SpotLightData const &light, guint32 lighting_color, const Geom::Affine &trans, int device_scale = 1);
         virtual ~SpotLight();
 
         /**

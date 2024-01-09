@@ -21,22 +21,19 @@
 namespace Inkscape {
 namespace Filters {
 
-class FilterDisplacementMap : public FilterPrimitive {
+class FilterDisplacementMap : public FilterPrimitive
+{
 public:
-    FilterDisplacementMap();
-    static FilterPrimitive *create();
-    ~FilterDisplacementMap() override;
-
-    void render_cairo(FilterSlot &slot) override;
-    void area_enlarge(Geom::IntRect &area, Geom::Affine const &trans) override;
-    double complexity(Geom::Affine const &ctm) override;
+    void render_cairo(FilterSlot &slot) const override;
+    void area_enlarge(Geom::IntRect &area, Geom::Affine const &trans) const override;
+    double complexity(Geom::Affine const &ctm) const override;
 
     void set_input(int slot) override;
     void set_input(int input, int slot) override;
-    virtual void set_scale(double s);
-    virtual void set_channel_selector(int s, FilterDisplacementMapChannelSelector channel);
+    void set_scale(double s);
+    void set_channel_selector(int s, FilterDisplacementMapChannelSelector channel);
 
-    Glib::ustring name() override { return Glib::ustring("Displacement Map"); }
+    Glib::ustring name() const override { return Glib::ustring("Displacement Map"); }
 
 private:
     double scale;
@@ -44,10 +41,10 @@ private:
     unsigned Xchannel, Ychannel;
 };
 
-} /* namespace Filters */
-} /* namespace Inkscape */
+} // namespace Filters
+} // namespace Inkscape
 
-#endif /* __NR_FILTER_DISPLACEMENT_MAP_H__ */
+#endif // SEEN_NR_FILTER_DISPLACEMENT_MAP_H
 /*
   Local Variables:
   mode:c++

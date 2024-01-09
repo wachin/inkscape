@@ -47,9 +47,9 @@ class PrefDialog : public Gtk::Dialog {
     static const char * live_param_xml;
 
     /** \brief Signal that the user is changing the live effect state */
-    sigc::signal<void> _signal_preview;
+    sigc::signal<void ()> _signal_preview;
     /** \brief Signal that one of the parameters change */
-    sigc::signal<void> _signal_param_change;
+    sigc::signal<void ()> _signal_param_change;
 
     /** \brief  If this is the preferences for an effect, the effect
                 that we're working with. */

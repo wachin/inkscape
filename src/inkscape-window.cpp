@@ -23,9 +23,20 @@
 #include "inkscape-application.h"
 
 #include "actions/actions-canvas-mode.h"
+#include "actions/actions-canvas-snapping.h"
 #include "actions/actions-canvas-transform.h"
 #include "actions/actions-dialogs.h"
+#include "actions/actions-edit-window.h"
+#include "actions/actions-file-window.h"
+#include "actions/actions-help-url.h"
+#include "actions/actions-layer.h"
+#include "actions/actions-node-align.h" // Node alignment.
+#include "actions/actions-paths.h"  // TEMP
+#include "actions/actions-selection-window.h"
 #include "actions/actions-tools.h"
+#include "actions/actions-view-mode.h"
+#include "actions/actions-view-window.h"
+#include "actions/actions-pages.h"
 
 #include "object/sp-namedview.h"  // TODO Remove need for this!
 
@@ -38,6 +49,7 @@
 #include "ui/monitor.h" // get_monitor_geometry_at_point()
 
 #include "ui/desktop/menubar.h"
+#include "ui/desktop/menu-icon-shift.h"
 
 #include "ui/drag-and-drop.h"
 
@@ -45,6 +57,7 @@
 #include "ui/shortcuts.h"
 
 #include "widgets/desktop-widget.h"
+#include "ui/util.h"
 #include "ui/widget/canvas.h"
 
 using Inkscape::UI::Dialog::DialogManager;
@@ -53,14 +66,13 @@ using Inkscape::UI::Dialog::DialogWindow;
 
 static gboolean _resize_children(Gtk::Window *win)
 {
-    win->resize_children();
+    Inkscape::UI::resize_widget_children(win);
     return false;
 }
 
 
 InkscapeWindow::InkscapeWindow(SPDocument* document)
     : _document(document)
-    , _app(nullptr)
 {
     if (!_document) {
         std::cerr << "InkscapeWindow::InkscapeWindow: null document!" << std::endl;
@@ -72,8 +84,6 @@ InkscapeWindow::InkscapeWindow(SPDocument* document)
 
     set_resizable(true);
 
-    insert_action_group("doc", document->getActionGroup());
-
     // =============== Build interface ===============
 
     // Main box
@@ -83,35 +93,54 @@ InkscapeWindow::InkscapeWindow(SPDocument* document)
     add(*_mainbox);
 
     // Desktop widget (=> MultiPaned)
-    _desktop_widget = new SPDesktopWidget(_document);
+    _desktop_widget = new SPDesktopWidget(this, _document);
     _desktop_widget->window = this;
     _desktop_widget->show();
     _desktop = _desktop_widget->desktop;
 
     // =================== Actions ===================
+
     // After canvas has been constructed.. move to canvas proper.
-    add_actions_canvas_transform(this);    // Actions to transform canvas view.
-    add_actions_canvas_mode(this);         // Actions to change canvas display mode.
-    add_actions_dialogs(this);             // Actions to open dialogs.
-    add_actions_tools(this);               // Actions to switch between tools.
+    add_actions_canvas_mode(this);          // Actions to change canvas display mode.
+    add_actions_canvas_snapping(this);      // Actions to toggle on/off snapping modes.
+    add_actions_canvas_transform(this);     // Actions to transform canvas view.
+    add_actions_dialogs(this);              // Actions to open dialogs.
+    add_actions_edit_window(this);          // Actions to edit.
+    add_actions_file_window(this);          // Actions for file actions which are desktop dependent.
+    add_actions_help_url(this);             // Actions to help url.
+    add_actions_layer(this);                // Actions for layer.
+    add_actions_node_align(this);           // Actions to align and distribute nodes (requiring Node tool).
+    add_actions_path(this);                 // Actions for paths. TEMP
+    add_actions_select_window(this);        // Actions with desktop selection
+    add_actions_tools(this);                // Actions to switch between tools.
+    add_actions_view_mode(this);            // Actions to change how Inkscape canvas is displayed.
+    add_actions_view_window(this);          // Actions to add/change window of Inkscape
+    add_actions_page_tools(this);           // Actions specific to pages tool and toolbar
+
+    // Add document action group to window and export to DBus.
+    add_document_actions();
+
+    auto connection = _app->gio_app()->get_dbus_connection();
+    if (connection) {
+        std::string document_action_group_name = _app->gio_app()->get_dbus_object_path() + "/document/" + std::to_string(get_id());
+        connection->export_action_group(document_action_group_name, document->getActionGroup());
+    }
+
+    // This is called here (rather than in InkscapeApplication) solely to add win level action
+    // tooltips to the menu label-to-tooltip map.
+    build_menu();
 
     // ========== Drag and Drop of Documents =========
     ink_drag_setup(_desktop_widget);
-
-    // Menu bar (must come after desktop widget creation as we need _desktop)
-    // _menubar = build_menubar(_desktop);
-    // _menubar->set_name("MenuBar");
-    // _menubar->show_all();
 
     // Pallet
 
     // Status bar
 
-    // _mainbox->pack_start(*_menubar, false, false);
+    // The main section
     _mainbox->pack_start(*Gtk::manage(_desktop_widget), true, true);
 
     // ================== Callbacks ==================
-    signal_delete_event().connect(      sigc::mem_fun(*_desktop, &SPDesktop::onDeleteUI));
     signal_window_state_event().connect(sigc::mem_fun(*_desktop, &SPDesktop::onWindowStateEvent));
     signal_focus_in_event().connect(    sigc::mem_fun(*_desktop_widget, &SPDesktopWidget::onFocusInEvent));
 
@@ -120,18 +149,37 @@ InkscapeWindow::InkscapeWindow(SPDocument* document)
     setup_view();
 
     // Show dialogs after the main window, otherwise dialogs may be associated as the main window of the program.
-    if (_app) {
-        // restore short-lived floating dialogs state if this is the first window being opened
-        bool include_short_lived = _app->get_number_of_windows() == 0;
-        DialogManager::singleton().restore_dialogs_state(_desktop->getContainer(), include_short_lived);
+    // Restore short-lived floating dialogs state if this is the first window being opened
+    bool include_short_lived = _app->get_number_of_windows() == 0;
+    DialogManager::singleton().restore_dialogs_state(_desktop->getContainer(), include_short_lived);
 
-        // This pokes the window to request the right size for the dialogs once loaded.
-        Gtk::Window *win = _desktop->getToplevel();
-        g_idle_add(GSourceFunc(&_resize_children), win);
+    // This pokes the window to request the right size for the dialogs once loaded.
+    g_idle_add(GSourceFunc(&_resize_children), this);
+
+    // ================= Shift Icons =================
+    // Note: The menu is defined at the app level but shifting icons requires actual widgets and
+    // must be done on the window level.
+    Inkscape::Preferences *prefs = Inkscape::Preferences::get();
+    if (prefs->getInt("/theme/shiftIcons", true)) {
+        bool shifted = false;
+        for (auto child : get_children()) {
+            auto menubar = dynamic_cast<Gtk::MenuBar *>(child);
+            if (menubar) {
+                menubar->get_style_context()->add_class("shifticonmenu");
+                if (!shifted) {
+                    shifted = shift_icons(menubar);
+                }
+            }
+        }
     }
 
     // ========= Update text for Accellerators =======
     Inkscape::Shortcuts::getInstance().update_gui_text_recursive(this);
+}
+
+InkscapeWindow::~InkscapeWindow()
+{
+    g_idle_remove_by_data(this);
 }
 
 // Change a document, leaving desktop/view the same. (Eventually move all code here.)
@@ -145,8 +193,7 @@ InkscapeWindow::change_document(SPDocument* document)
 
     _document = document;
     _app->set_active_document(_document);
-    remove_action_group("doc");
-    insert_action_group("doc", document->getActionGroup());
+    add_document_actions();
 
     setup_view();
     update_dialogs();
@@ -171,25 +218,13 @@ InkscapeWindow::setup_view()
     //       the window, but a call to hide() causes Inkscape to just exit since the migration to Gtk::Application
     show();
     
-    sp_namedview_zoom_and_view_from_document(_desktop);
+    _desktop->schedule_zoom_from_document();
     sp_namedview_update_layers_from_document(_desktop);
 
     SPNamedView *nv = _desktop->namedview;
     if (nv && nv->lockguides) {
-        nv->lockGuides();
+        nv->setLockGuides(true);
     }
-}
-
-/**
- * Return true if this is the Cmd-Q shortcut on macOS
- */
-inline bool is_Cmd_Q(GdkEventKey *event)
-{
-#ifdef GDK_WINDOWING_QUARTZ
-    return (event->keyval == 'q' && event->state == (GDK_MOD2_MASK | GDK_META_MASK));
-#else
-    return false;
-#endif
 }
 
 bool
@@ -198,7 +233,7 @@ InkscapeWindow::on_key_press_event(GdkEventKey* event)
 #ifdef EVENT_DEBUG
     ui_dump_event(reinterpret_cast<GdkEvent *>(event), "\nInkscapeWindow::on_key_press_event");
 #endif
-    bool canvas_focused = false;
+
     // Key press and release events are normally sent first to Gtk::Window for processing as
     // accelerators and menomics before bubbling up from the "grab" or "focus" widget (unlike other
     // events which always bubble up). This would means that key combinations used for accelerators
@@ -213,29 +248,22 @@ InkscapeWindow::on_key_press_event(GdkEventKey* event)
         if (focus->event(reinterpret_cast<GdkEvent *>(event))) {
             return true;
         }
-
-        // is canvas focused?
-        canvas_focused = !!dynamic_cast<Inkscape::UI::Widget::Canvas*>(focus);
     }
 
-    if (canvas_focused) {
-        // if canvas is focused, then promote shortcuts or else docked dialogs may steal them
-        if (Inkscape::Shortcuts::getInstance().invoke_verb(event, _desktop)) {
-            return true;
-        }
-    }
-
-    // Intercept Cmd-Q on macOS to not bypass confirmation dialog
-    if (!is_Cmd_Q(event) && Gtk::Window::on_key_press_event(event)) {
+    // Try to find action to call; calling it here makes it higher priority than dialog mnemonics;
+    // this is needed because GTK tries to activate widgets with matching mnemonics first,
+    // even if they are invisible (!) and/or disabled. That cripples some Alt+key shortcuts when
+    // we open and dock some dialogs, whether they are visible or not.
+    // On macOS situation is even worse, as dialogs can steal many common <option>+key shortcuts.
+    if (Inkscape::Shortcuts::getInstance().invoke_action(event)) {
         return true;
     }
 
-    if (!canvas_focused) {
-        // Verbs get last crack at events.
-        return Inkscape::Shortcuts::getInstance().invoke_verb(event, _desktop);
+    if (Gtk::Window::on_key_press_event(event)) {
+        return true;
     }
 
-    // not handled
+    // Not handled
     return false;
 }
 
@@ -269,7 +297,7 @@ InkscapeWindow::on_focus_in_event(GdkEventFocus* event)
         _app->set_active_window(this);
         _app->set_active_document(_document);
         _app->set_active_view(_desktop);
-        _app->set_active_selection(_desktop->selection);
+        _app->set_active_selection(_desktop->getSelection());
         _app->windows_update(_document);
         update_dialogs();
         retransientize_dialogs(*this);
@@ -290,6 +318,44 @@ InkscapeWindow::on_delete_event(GdkEventAny* event)
     return true;
 };
 
+/**
+ * Configure is called when the widget's size, position or stack changes.
+ */
+bool InkscapeWindow::on_configure_event(GdkEventConfigure *event)
+{
+    bool ret = Gtk::ApplicationWindow::on_configure_event(event);
+    // Store the desktop widget size on resize.
+    if (!_desktop || !get_realized())
+        return ret;
+
+    Inkscape::Preferences *prefs = Inkscape::Preferences::get();
+    bool maxed = _desktop->is_maximized();
+    bool full = _desktop->is_fullscreen();
+    prefs->setBool("/desktop/geometry/fullscreen", full);
+    prefs->setBool("/desktop/geometry/maximized", maxed);
+
+    // Don't save geom for maximized, fullscreen or iconified windows.
+    // It just tells you the current maximized size, which is not
+    // as useful as whatever value it had previously.
+    if (!_desktop->is_iconified() && !maxed && !full) {
+
+        // Get size is more accurate than frame extends for window size.
+        int w,h = 0;
+        get_size(w, h);
+        prefs->setInt("/desktop/geometry/width", w);
+        prefs->setInt("/desktop/geometry/height", h);
+
+        // Frame extends returns real positions, unlike get_position()
+        if (Glib::RefPtr<Gdk::Window> gdkw = get_window()) {
+            Gdk::Rectangle rect;
+            gdkw->get_frame_extents(rect);
+            prefs->setInt("/desktop/geometry/x", rect.get_x());
+            prefs->setInt("/desktop/geometry/y", rect.get_y());
+        }
+    }
+    return ret;
+}
+
 void InkscapeWindow::update_dialogs()
 {
     std::vector<Gtk::Window *> windows = _app->gtk_app()->get_windows();
@@ -297,12 +363,33 @@ void InkscapeWindow::update_dialogs()
         DialogWindow *dialog_window = dynamic_cast<DialogWindow *>(window);
         if (dialog_window) {
             // Update the floating dialogs, reset them to the new desktop.
-            dialog_window->update_dialogs();
-            dialog_window->set_desktop(_desktop);
+            dialog_window->set_inkscape_window(this);
         }
     }
+
     // Update the docked dialogs in this InkscapeWindow
     _desktop->updateDialogs();
+}
+
+/**
+ * Make document actions accessible from the window
+ */
+void InkscapeWindow::add_document_actions()
+{
+    auto doc_action_group = _document->getActionGroup();
+
+    insert_action_group("doc", doc_action_group);
+
+#ifdef __APPLE__
+    // Workaround for https://gitlab.gnome.org/GNOME/gtk/-/issues/5667
+    // Copy the document ("doc") actions to the window ("win") so that the
+    // application menu on macOS can handle them. The menu only handles the
+    // window actions (in gtk_application_impl_quartz_active_window_changed),
+    // not the ones attached with "insert_action_group".
+    for (auto const &action_name : doc_action_group->list_actions()) {
+        add_action(doc_action_group->lookup_action(action_name));
+    }
+#endif
 }
 
 /*

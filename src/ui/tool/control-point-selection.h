@@ -25,6 +25,7 @@
 #include <2geom/rect.h>
 #include "ui/tool/commit-events.h"
 #include "ui/tool/manipulator.h"
+#include "ui/tool/node-types.h"
 #include "snap-candidate.h"
 
 class SPDesktop;
@@ -90,14 +91,14 @@ public:
     set_type &allPoints() { return _all_points; }
     // ...for example in these methods. Another useful case is snapping.
     void selectAll();
-    void selectArea(Geom::Rect const &, bool invert = false);
+    void selectArea(Geom::Path const &, bool invert = false);
     void invertSelection();
     void spatialGrow(SelectableControlPoint *origin, int dir);
 
     bool event(Inkscape::UI::Tools::ToolBase *, GdkEvent *) override;
 
     void transform(Geom::Affine const &m);
-    void align(Geom::Dim2 d);
+    void align(Geom::Dim2 d, AlignTargetNode target = AlignTargetNode::MID_NODE);
     void distribute(Geom::Dim2 d);
 
     Geom::OptRect pointwiseBounds();
@@ -111,11 +112,11 @@ public:
     void restoreTransformHandles();
     void toggleTransformHandlesMode();
 
-    sigc::signal<void> signal_update;
+    sigc::signal<void ()> signal_update;
     // It turns out that emitting a signal after every point is selected or deselected is not too efficient,
     // so this can be done in a massive group once the selection is finally changed.
-    sigc::signal<void, std::vector<SelectableControlPoint *>, bool> signal_selection_changed;
-    sigc::signal<void, CommitEvent> signal_commit;
+    sigc::signal<void (std::vector<SelectableControlPoint *>, bool)> signal_selection_changed;
+    sigc::signal<void (CommitEvent)> signal_commit;
 
     void getOriginalPoints(std::vector<Inkscape::SnapCandidatePoint> &pts);
     void getUnselectedPoints(std::vector<Inkscape::SnapCandidatePoint> &pts);

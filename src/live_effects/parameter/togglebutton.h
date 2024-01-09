@@ -46,11 +46,11 @@ public:
 
   inline operator bool() const { return value; };
 
-  sigc::signal<void> &signal_toggled() { return _signal_toggled; }
+  sigc::signal<void ()> &signal_toggled() { return _signal_toggled; }
   virtual void toggled();
   void param_update_default(bool default_value);
   void param_update_default(const gchar *default_value) override;
-
+  ParamType paramType() const override { return ParamType::TOGGLE_BUTTON; };
 private:
     void refresh_button();
     bool value;
@@ -61,7 +61,7 @@ private:
     Gtk::BuiltinIconSize _icon_size;
     Inkscape::UI::Widget::RegisteredToggleButton * checkwdg;
 
-    sigc::signal<void> _signal_toggled;
+    sigc::signal<void ()> _signal_toggled;
     sigc::connection _toggled_connection;
 };
 

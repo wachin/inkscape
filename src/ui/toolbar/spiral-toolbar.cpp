@@ -35,36 +35,22 @@
 #include "desktop.h"
 #include "document-undo.h"
 #include "selection.h"
-#include "verbs.h"
 
 #include "object/sp-spiral.h"
 
 #include "ui/icon-names.h"
-#include "ui/uxmanager.h"
 #include "ui/widget/canvas.h"
 #include "ui/widget/label-tool-item.h"
 #include "ui/widget/spin-button-tool-item.h"
 
-#include "xml/node-event-vector.h"
-
-using Inkscape::UI::UXManager;
 using Inkscape::DocumentUndo;
-
-static Inkscape::XML::NodeEventVector spiral_tb_repr_events = {
-    nullptr, /* child_added */
-    nullptr, /* child_removed */
-    Inkscape::UI::Toolbar::SpiralToolbar::event_attr_changed,
-    nullptr, /* content_changed */
-    nullptr  /* order_changed */
-};
 
 namespace Inkscape {
 namespace UI {
 namespace Toolbar {
-SpiralToolbar::SpiralToolbar(SPDesktop *desktop) :
-        Toolbar(desktop),
-        _freeze(false),
-        _repr(nullptr)
+
+SpiralToolbar::SpiralToolbar(SPDesktop *desktop)
+    : Toolbar(desktop)
 {
     auto prefs = Inkscape::Preferences::get();
 
@@ -140,7 +126,7 @@ SpiralToolbar::SpiralToolbar(SPDesktop *desktop) :
 SpiralToolbar::~SpiralToolbar()
 {
     if(_repr) {
-        _repr->removeListenerByData(this);
+        _repr->removeObserver(*this);
         GC::release(_repr);
         _repr = nullptr;
     }
@@ -181,7 +167,7 @@ SpiralToolbar::value_changed(Glib::RefPtr<Gtk::Adjustment> &adj,
     auto itemlist= _desktop->getSelection()->items();
     for(auto i=itemlist.begin();i!=itemlist.end(); ++i){
         SPItem *item = *i;
-        if (SP_IS_SPIRAL(item)) {
+        if (is<SPSpiral>(item)) {
             Inkscape::XML::Node *repr = item->getRepr();
             repr->setAttributeSvgDouble(namespaced_name, adj->get_value() );
             item->updateRepr();
@@ -192,8 +178,7 @@ SpiralToolbar::value_changed(Glib::RefPtr<Gtk::Adjustment> &adj,
     g_free(namespaced_name);
 
     if (modmade) {
-        DocumentUndo::done(_desktop->getDocument(), SP_VERB_CONTEXT_SPIRAL,
-                           _("Change spiral"));
+        DocumentUndo::done(_desktop->getDocument(), _("Change spiral"), INKSCAPE_ICON("draw-spiral"));
     }
 
     _freeze = false;
@@ -221,7 +206,7 @@ SpiralToolbar::selection_changed(Inkscape::Selection *selection)
     Inkscape::XML::Node *repr = nullptr;
 
     if ( _repr ) {
-        _repr->removeListenerByData(this);
+        _repr->removeObserver(*this);
         GC::release(_repr);
         _repr = nullptr;
     }
@@ -229,7 +214,7 @@ SpiralToolbar::selection_changed(Inkscape::Selection *selection)
     auto itemlist= selection->items();
     for(auto i=itemlist.begin();i!=itemlist.end(); ++i){
         SPItem *item = *i;
-        if (SP_IS_SPIRAL(item)) {
+        if (is<SPSpiral>(item)) {
             n_selected++;
             repr = item->getRepr();
         }
@@ -243,8 +228,8 @@ SpiralToolbar::selection_changed(Inkscape::Selection *selection)
         if (repr) {
             _repr = repr;
             Inkscape::GC::anchor(_repr);
-            _repr->addListener(&spiral_tb_repr_events, this);
-            _repr->synthesizeEvents(&spiral_tb_repr_events, this);
+            _repr->addObserver(*this);
+            _repr->synthesizeEvents(*this);
         }
     } else {
         // FIXME: implement averaging of all parameters for multiple selected
@@ -253,34 +238,27 @@ SpiralToolbar::selection_changed(Inkscape::Selection *selection)
     }
 }
 
-void
-SpiralToolbar::event_attr_changed(Inkscape::XML::Node *repr,
-                                  gchar const * /*name*/,
-                                  gchar const * /*old_value*/,
-                                  gchar const * /*new_value*/,
-                                  bool /*is_interactive*/,
-                                  gpointer data)
+void SpiralToolbar::notifyAttributeChanged(Inkscape::XML::Node &repr, GQuark, Inkscape::Util::ptr_shared, Inkscape::Util::ptr_shared)
 {
-    auto toolbar = reinterpret_cast<SpiralToolbar *>(data);
 
     // quit if run by the _changed callbacks
-    if (toolbar->_freeze) {
+    if (_freeze) {
         return;
     }
 
     // in turn, prevent callbacks from responding
-    toolbar->_freeze = true;
+    _freeze = true;
 
-    double revolution = repr->getAttributeDouble("sodipodi:revolution", 3.0);
-    toolbar->_revolution_adj->set_value(revolution);
+    double revolution = repr.getAttributeDouble("sodipodi:revolution", 3.0);
+    _revolution_adj->set_value(revolution);
 
-    double expansion = repr->getAttributeDouble("sodipodi:expansion", 1.0);
-    toolbar->_expansion_adj->set_value(expansion);
+    double expansion = repr.getAttributeDouble("sodipodi:expansion", 1.0);
+    _expansion_adj->set_value(expansion);
 
-    double t0 = repr->getAttributeDouble("sodipodi:t0", 0.0);
-    toolbar->_t0_adj->set_value(t0);
+    double t0 = repr.getAttributeDouble("sodipodi:t0", 0.0);
+    _t0_adj->set_value(t0);
 
-    toolbar->_freeze = false;
+    _freeze = false;
 }
 
 }

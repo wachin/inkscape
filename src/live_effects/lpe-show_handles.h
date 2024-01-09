@@ -48,7 +48,6 @@ private:
     BoolParam show_center_node;
     ScalarParam scale_nodes_and_handles;
     double stroke_width;
-    static bool alerts_off;
 
     Geom::PathVector outline_path;
 

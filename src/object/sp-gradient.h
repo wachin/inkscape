@@ -81,10 +81,13 @@ std::vector<PaintTarget> const &allPaintTargets();
  * Implement spread, stops list
  * \todo fixme: Implement more here (Lauris)
  */
-class SPGradient : public SPPaintServer {
+class SPGradient
+    : public SPPaintServer
+{
 public:
 	SPGradient();
 	~SPGradient() override;
+    int tag() const override { return tag_of<decltype(*this)>; }
 
 private:
     /** gradientUnits attribute */
@@ -106,6 +109,9 @@ private:
 
     /** Gradient patches */
     unsigned int has_patches : 1;
+
+    /** Pinned in swatches dialog */
+    bool _pinned = false;
 
 public:
     /** Reference (href) */
@@ -151,7 +157,7 @@ public:
  * Returns private vector of given gradient (the gradient at the end of the href chain which has
  * stops), optionally normalizing it.
  *
- * \pre SP_IS_GRADIENT(gradient).
+ * \pre is<SPGradient>(gradient).
  * \pre There exists a gradient in the chain that has stops.
  */
     SPGradient *getVector(bool force_private = false);
@@ -183,6 +189,8 @@ public:
     SPGradientUnits fetchUnits();
 
     void setSwatch(bool swatch = true);
+    void setPinned(bool pinned = true);
+    bool isPinned() const { return _pinned; }
 
     bool isSolid() const;
 
@@ -226,10 +234,6 @@ sp_gradient_pattern_common_setup(cairo_pattern_t *cp,
                                  SPGradient *gr,
                                  Geom::OptRect const &bbox,
                                  double opacity);
-
-
-MAKE_SP_OBJECT_DOWNCAST_FUNCTIONS(SP_GRADIENT, SPGradient)
-MAKE_SP_OBJECT_TYPECHECK_FUNCTIONS(SP_IS_GRADIENT, SPGradient)
 
 #endif // SEEN_SP_GRADIENT_H
 

@@ -21,6 +21,7 @@ set(filters_SRC
   pointlight.cpp
   specularlighting.cpp
   spotlight.cpp
+  slot-resolver.cpp
   tile.cpp
   turbulence.cpp
 
@@ -47,6 +48,7 @@ set(filters_SRC
   pointlight.h
   specularlighting.h
   spotlight.h
+  slot-resolver.h
   tile.h
   turbulence.h
 )

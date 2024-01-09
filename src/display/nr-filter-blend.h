@@ -24,22 +24,22 @@
 namespace Inkscape {
 namespace Filters {
 
-class FilterBlend : public FilterPrimitive {
+class FilterBlend : public FilterPrimitive
+{
 public:
     FilterBlend();
-    static FilterPrimitive *create();
     ~FilterBlend() override;
 
-    void render_cairo(FilterSlot &slot) override;
-    bool can_handle_affine(Geom::Affine const &) override;
-    double complexity(Geom::Affine const &ctm) override;
-    bool uses_background() override;
+    void render_cairo(FilterSlot &slot) const override;
+    bool can_handle_affine(Geom::Affine const &) const override;
+    double complexity(Geom::Affine const &ctm) const override;
+    bool uses_background() const override;
 
     void set_input(int slot) override;
     void set_input(int input, int slot) override;
     void set_mode(SPBlendMode mode);
 
-    Glib::ustring name() override { return Glib::ustring("Blend"); }
+    Glib::ustring name() const override { return Glib::ustring("Blend"); }
 
 private:
     static const std::set<SPBlendMode> _valid_modes;
@@ -48,13 +48,10 @@ private:
 };
 
 
-} /* namespace Filters */
-} /* namespace Inkscape */
+} // namespace Filters
+} // namespace Inkscape
 
-
-
-
-#endif /* __NR_FILTER_BLEND_H__ */
+#endif // SEEN_NR_FILTER_BLEND_H
 /*
   Local Variables:
   mode:c++

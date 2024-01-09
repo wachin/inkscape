@@ -681,7 +681,7 @@ SPMeshNodeArray& SPMeshNodeArray::operator=( const SPMeshNodeArray& rhs ) {
 bool SPMeshNodeArray::read( SPMeshGradient *mg_in ) {
 
     mg = mg_in;
-    SPMeshGradient* mg_array = dynamic_cast<SPMeshGradient*>(mg->getArray());
+    auto mg_array = cast<SPMeshGradient>(mg->getArray());
     if (!mg_array) {
         std::cerr << "SPMeshNodeArray::read: No mesh array!" << std::endl;
         return false;
@@ -692,11 +692,11 @@ bool SPMeshNodeArray::read( SPMeshGradient *mg_in ) {
     unsigned cols = 0;
     unsigned rows = 0;
     for (auto& ro: mg_array->children) {
-        if (SP_IS_MESHROW(&ro)) {
+        if (is<SPMeshrow>(&ro)) {
             ++rows;
             if (rows == 1 ) {
                 for (auto& po: ro.children) {
-                    if (SP_IS_MESHPATCH(&po)) {
+                    if (is<SPMeshpatch>(&po)) {
                         ++cols;
                     }
                 }
@@ -718,14 +718,14 @@ bool SPMeshNodeArray::read( SPMeshGradient *mg_in ) {
     guint irow = 0; // Corresponds to top of patch being read in.
     for (auto& ro: mg_array->children) {
 
-        if (SP_IS_MESHROW(&ro)) {
+        if (is<SPMeshrow>(&ro)) {
 
             guint icolumn = 0; // Corresponds to left of patch being read in.
             for (auto& po: ro.children) {
 
-                if (SP_IS_MESHPATCH(&po)) {
+                if (is<SPMeshpatch>(&po)) {
 
-                    SPMeshpatch *patch = SP_MESHPATCH(&po);
+                    auto patch = cast<SPMeshpatch>(&po);
 
                     // std::cout << "SPMeshNodeArray::read: row size: " << nodes.size() << std::endl;
                     SPMeshPatchI new_patch( &nodes, irow, icolumn ); // Adds new nodes.
@@ -737,14 +737,14 @@ bool SPMeshNodeArray::read( SPMeshGradient *mg_in ) {
                     if( irow != 0 ) ++istop;
 
                     for (auto& so: po.children) {
-                        if (SP_IS_STOP(&so)) {
+                        if (is<SPStop>(&so)) {
 
                             if( istop > 3 ) {
                                 // std::cout << " Mesh Gradient: Too many stops: " << istop << std::endl;
                                 break;
                             }
 
-                            SPStop *stop = SP_STOP(&so);
+                            auto stop = cast<SPStop>(&so);
 
                             // Handle top of first row.
                             if( istop == 0 && icolumn == 0 ) {
@@ -761,7 +761,7 @@ bool SPMeshNodeArray::read( SPMeshGradient *mg_in ) {
 
 
                             // Copy path and then replace commas by spaces so we can use stringstream to parse
-                            std::string path_string = stop->path_string->raw();
+                            std::string path_string = stop->path_string.raw();
                             std::replace(path_string.begin(),path_string.end(),',',' ');
 
                             // std::cout << "    path_string: " << path_string << std::endl;
@@ -928,7 +928,7 @@ void SPMeshNodeArray::write( SPMeshGradient *mg ) {
     using Geom::X;
     using Geom::Y;
 
-    SPMeshGradient* mg_array = dynamic_cast<SPMeshGradient*>(mg->getArray());
+    auto mg_array = cast<SPMeshGradient>(mg->getArray());
     if (!mg_array) {
         // std::cerr << "SPMeshNodeArray::write: missing patches!" << std::endl;
         mg_array = mg;
@@ -1083,7 +1083,7 @@ static SPColor default_color( SPItem *item ) {
             color = paint.value.color;
         } else if ( paint.isPaintserver() ) {
             auto *server = item->style->getFillPaintServer();
-            auto gradient = dynamic_cast<SPGradient *>(server);
+            auto gradient = cast<SPGradient>(server);
             if (gradient && gradient->getVector()) {
                 SPStop *firstStop = gradient->getVector()->getFirstStop();
                 if ( firstStop ) {
@@ -1165,9 +1165,9 @@ void SPMeshNodeArray::create( SPMeshGradient *mg, SPItem *item, Geom::OptRect bb
         gdouble start = 0.0;
         gdouble end   = 2.0 * M_PI;
 
-        if ( SP_IS_STAR( item ) ) {
+        if ( is<SPStar>( item ) ) {
             // But if it is a star... use star parameters!
-            SPStar* star = SP_STAR( item );
+            auto star = cast<SPStar>( item );
             center = star->center;
             rx = star->r[0];
             ry = star->r[0];
@@ -1175,9 +1175,9 @@ void SPMeshNodeArray::create( SPMeshGradient *mg, SPItem *item, Geom::OptRect bb
             end   = start + 2.0 * M_PI;
         }
 
-        if ( SP_IS_GENERICELLIPSE( item ) ) {
+        if ( is<SPGenericEllipse>( item ) ) {
             // For arcs use set start/stop
-            SPGenericEllipse* arc = SP_GENERICELLIPSE( item );
+            auto arc = cast<SPGenericEllipse>( item );
             center[Geom::X] = arc->cx.computed;
             center[Geom::Y] = arc->cy.computed;
             rx = arc->rx.computed;
@@ -1249,11 +1249,11 @@ void SPMeshNodeArray::create( SPMeshGradient *mg, SPItem *item, Geom::OptRect bb
 
         // Normal grid meshes
 
-        if( SP_IS_GENERICELLIPSE( item ) ) {
+        if( is<SPGenericEllipse>( item ) ) {
 
             // std::cout << "We've got ourselves an arc!" << std::endl;
 
-            SPGenericEllipse* arc = SP_GENERICELLIPSE( item );
+            auto arc = cast<SPGenericEllipse>( item );
             center[Geom::X] = arc->cx.computed;
             center[Geom::Y] = arc->cy.computed;
             gdouble rx = arc->rx.computed;
@@ -1302,12 +1302,12 @@ void SPMeshNodeArray::create( SPMeshGradient *mg, SPItem *item, Geom::OptRect bb
 
             // END Arc
 
-        } else if ( SP_IS_STAR( item ) ) {
+        } else if ( is<SPStar>( item ) ) {
 
             // Do simplest thing... assume star is not rounded or randomized.
             // (It should be easy to handle the rounded/randomized cases by making
             //  the appropriate star class function public.)
-            SPStar* star = SP_STAR( item );
+            auto star = cast<SPStar>( item );
             guint sides =  star->sides;
 
             // std::cout << "We've got ourselves an star! Sides: " << sides << std::endl;
@@ -1967,7 +1967,7 @@ guint SPMeshNodeArray::side_toggle( std::vector<guint> corners ) {
                         break;
                     }
                     default:
-                        std::cout << "Toggle sides: Invalid path type: " << path_type << std::endl;
+                        std::cerr << "Toggle sides: Invalid path type: " << path_type << std::endl;
                 }
                 ++toggled;
             }
@@ -2240,11 +2240,11 @@ guint SPMeshNodeArray::color_smooth( std::vector<guint> corners ) {
                 // Move closest handle a maximum of mid point... but don't shorten
                 double max = 0.8;
                 if( length_left  > max * d[0].length() && length_left > d[2].length() ) {
-                    std::cout << " Can't smooth left side" << std::endl;
+                    std::cerr << " Can't smooth left side" << std::endl;
                     length_left  = std::max( max * d[0].length(), d[2].length() );
                 }
                 if( length_right  > max * d[6].length() && length_right > d[4].length() ) {
-                    std::cout << " Can't smooth right side" << std::endl;
+                    std::cerr << " Can't smooth right side" << std::endl;
                     length_right  = std::max( max * d[6].length(), d[4].length() );
                 }
 
@@ -2741,41 +2741,41 @@ void SPMeshNodeArray::update_handles( guint corner, std::vector< guint > /*selec
     //         Geom::Point dsx1 = pnodes[0][1]->p - 
 }
 
-std::unique_ptr<SPCurve> SPMeshNodeArray::outline_path() const
+SPCurve SPMeshNodeArray::outline_path() const
 {
-    auto outline = std::make_unique<SPCurve>();
+    SPCurve outline;
 
     if (nodes.empty() ) {
         std::cerr << "SPMeshNodeArray::outline_path: empty array!" << std::endl;
         return outline;
     }
 
-    outline->moveto( nodes[0][0]->p );
+    outline.moveto( nodes[0][0]->p );
 
     int ncol = nodes[0].size();
     int nrow = nodes.size();
 
     // Top
     for (int i = 1; i < ncol; i += 3 ) {
-        outline->curveto( nodes[0][i]->p, nodes[0][i+1]->p, nodes[0][i+2]->p);
+        outline.curveto( nodes[0][i]->p, nodes[0][i+1]->p, nodes[0][i+2]->p);
     }
 
     // Right
     for (int i = 1; i < nrow; i += 3 ) {
-        outline->curveto( nodes[i][ncol-1]->p, nodes[i+1][ncol-1]->p, nodes[i+2][ncol-1]->p);
+        outline.curveto( nodes[i][ncol-1]->p, nodes[i+1][ncol-1]->p, nodes[i+2][ncol-1]->p);
     }
 
     // Bottom (right to left)
     for (int i = 1; i < ncol; i += 3 ) {
-        outline->curveto( nodes[nrow-1][ncol-i-1]->p, nodes[nrow-1][ncol-i-2]->p, nodes[nrow-1][ncol-i-3]->p);
+        outline.curveto( nodes[nrow-1][ncol-i-1]->p, nodes[nrow-1][ncol-i-2]->p, nodes[nrow-1][ncol-i-3]->p);
     }
 
     // Left (bottom to top)
     for (int i = 1; i < nrow; i += 3 ) {
-        outline->curveto( nodes[nrow-i-1][0]->p, nodes[nrow-i-2][0]->p, nodes[nrow-i-3][0]->p);
+        outline.curveto( nodes[nrow-i-1][0]->p, nodes[nrow-i-2][0]->p, nodes[nrow-i-3][0]->p);
     }
 
-    outline->closepath();
+    outline.closepath();
 
     return outline;
 }
@@ -2801,10 +2801,9 @@ bool SPMeshNodeArray::fill_box(Geom::OptRect &box) {
         mg->gradientTransform.setIdentity();
     }
 
-    auto outline = outline_path();
-    Geom::OptRect mesh_bbox = outline->get_pathvector().boundsExact();
+    auto mesh_bbox = outline_path().get_pathvector().boundsExact();
 
-    if ((*mesh_bbox).width() == 0 || (*mesh_bbox).height() == 0) {
+    if (mesh_bbox->width() == 0 || mesh_bbox->height() == 0) {
         return false;
     }            
 

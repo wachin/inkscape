@@ -265,15 +265,21 @@ Geom::Point Layout::characterAnchorPoint(iterator const &it) const
 {
     if (_characters.empty())
         return _empty_cursor_shape.position;
+
+    Geom::Point res;
     if (it._char_index == _characters.size()) {
-        return Geom::Point(_chunks.back().left_x + _spans.back().x_end, _lines.back().baseline_y + _spans.back().baseline_shift);
+        res = Geom::Point(_chunks.back().left_x + _spans.back().x_end, _lines.back().baseline_y + _spans.back().baseline_shift);
     } else {
-        return Geom::Point(_characters[it._char_index].chunk(this).left_x
+        res = Geom::Point(_characters[it._char_index].chunk(this).left_x
                              + _spans[_characters[it._char_index].in_span].x_start
                              + _characters[it._char_index].x,
                          _characters[it._char_index].line(this).baseline_y
                              + _characters[it._char_index].span(this).baseline_shift);
     }
+    if (_directions_are_orthogonal(_blockProgression(), TOP_TO_BOTTOM)) {
+        std::swap(res[Geom::X], res[Geom::Y]);
+    }
+    return res;
 }
 
 std::optional<Geom::Point> Layout::baselineAnchorPoint() const
@@ -282,11 +288,6 @@ std::optional<Geom::Point> Layout::baselineAnchorPoint() const
     Geom::Point left_pt = this->characterAnchorPoint(pos);
     pos.thisEndOfLine();
     Geom::Point right_pt = this->characterAnchorPoint(pos);
-
-    if (this->_blockProgression() == LEFT_TO_RIGHT || this->_blockProgression() == RIGHT_TO_LEFT) {
-        left_pt = Geom::Point(left_pt[Geom::Y], left_pt[Geom::X]);
-        right_pt = Geom::Point(right_pt[Geom::Y], right_pt[Geom::X]);
-    }
 
     switch (this->paragraphAlignment(pos)) {
         case LEFT:
@@ -312,11 +313,6 @@ Geom::Path Layout::baseline() const
     pos.thisEndOfLine();
     Geom::Point right_pt = this->characterAnchorPoint(pos);
 
-    if (this->_blockProgression() == LEFT_TO_RIGHT || this->_blockProgression() == RIGHT_TO_LEFT) {
-        left_pt = Geom::Point(left_pt[Geom::Y], left_pt[Geom::X]);
-        right_pt = Geom::Point(right_pt[Geom::Y], right_pt[Geom::X]);
-    }
-
     Geom::Path baseline;
     baseline.start(left_pt);
     baseline.appendNew<Geom::LineSegment>(right_pt);
@@ -339,14 +335,20 @@ Geom::Point Layout::chunkAnchorPoint(iterator const &it) const
     else chunk_index = _characters[it._char_index].span(this).in_chunk;
 
     Alignment alignment = _paragraphs[_lines[_chunks[chunk_index].in_line].in_paragraph].alignment;
-    if (alignment == LEFT || alignment == FULL)
-        return Geom::Point(_chunks[chunk_index].left_x, _lines[_chunks[chunk_index].in_line].baseline_y);
-
+    double x = _chunks[chunk_index].left_x;
+    double y = _lines[_chunks[chunk_index].in_line].baseline_y;
     double chunk_width = _getChunkWidth(chunk_index);
-    if (alignment == RIGHT)
-        return Geom::Point(_chunks[chunk_index].left_x + chunk_width, _lines[_chunks[chunk_index].in_line].baseline_y);
-    //centre
-    return Geom::Point(_chunks[chunk_index].left_x + chunk_width * 0.5, _lines[_chunks[chunk_index].in_line].baseline_y);
+    if (alignment == RIGHT) {
+        x += chunk_width;
+    } else if (alignment == CENTER) {
+        x += chunk_width * 0.5;
+    }
+
+    if (_directions_are_orthogonal(_blockProgression(), TOP_TO_BOTTOM)) {
+        return Geom::Point(y, x);
+    } else {
+        return Geom::Point(x, y);
+    }
 }
 
 Geom::Rect Layout::characterBoundingBox(iterator const &it, double *rotation) const
@@ -428,10 +430,10 @@ std::vector<Geom::Point> Layout::createSelectionShape(iterator const &it_start, 
     
     if (it_start._char_index < it_end._char_index) {
         char_index = it_start._char_index;
-        end_char_index = it_end._char_index;
+        end_char_index = std::min((size_t)it_end._char_index, _characters.size());
     } else {
         char_index = it_end._char_index;
-        end_char_index = it_start._char_index;
+        end_char_index = std::min((size_t)it_start._char_index, _characters.size());
     }
     for ( ; char_index < end_char_index ; ) {
         if (_characters[char_index].in_glyph == -1) {
@@ -496,6 +498,7 @@ void Layout::queryCursorShape(iterator const &it, Geom::Point &position, double 
         // this means x & rotation are the current values but y & height belong to the previous character.
         // this isn't quite right because dx attributes will be moved along, but it's good enough
         Span const *span;
+        bool vertical_text = _directions_are_orthogonal(_blockProgression(), TOP_TO_BOTTOM);
         if (_path_fitted) {
             // text on a path
             double x;
@@ -505,7 +508,7 @@ void Layout::queryCursorShape(iterator const &it, Geom::Point &position, double 
             } else {
                 span = &_spans[_characters[it._char_index].in_span];
                 x = _chunks[span->in_chunk].left_x + span->x_start + _characters[it._char_index].x - _chunks[0].left_x;
-                if (_directions_are_orthogonal(_blockProgression(), TOP_TO_BOTTOM))
+                if (vertical_text)
                 	x -= span->line_height.descent;
                 if (it._char_index != 0)
                     span = &_spans[_characters[it._char_index - 1].in_span];
@@ -533,7 +536,7 @@ void Layout::queryCursorShape(iterator const &it, Geom::Point &position, double 
                 point += x * tangent;
             if (x > path_length )
                 point += (x - path_length) * tangent;
-            if (_directions_are_orthogonal(_blockProgression(), TOP_TO_BOTTOM)) {
+            if (vertical_text) {
                 rotation = atan2(-tangent[Geom::X], tangent[Geom::Y]);
                 position[Geom::X] = point[Geom::Y] - tangent[Geom::X] * span->baseline_shift;
                 position[Geom::Y] = point[Geom::X] + tangent[Geom::Y] * span->baseline_shift;
@@ -555,7 +558,7 @@ void Layout::queryCursorShape(iterator const &it, Geom::Point &position, double 
                 // Check if last character is new line.
                 if (_characters.back().the_char == '\n') {
                     last_char_is_newline = true;
-                    position[Geom::X] = chunkAnchorPoint(it)[Geom::X];
+                    position[Geom::X] = chunkAnchorPoint(it)[vertical_text ? Geom::Y : Geom::X];
                 }
             } else {
                 span = &_spans[_characters[it._char_index].in_span];
@@ -576,7 +579,7 @@ void Layout::queryCursorShape(iterator const &it, Geom::Point &position, double 
             if (last_char_is_newline) {
                 // Move cursor to empty new line.
                 double vertical_scale = _glyphs.empty() ? 1.0 : _glyphs.back().vertical_scale;
-                if (_directions_are_orthogonal(_blockProgression(), TOP_TO_BOTTOM)) {
+                if (vertical_text) {
                     // Vertical text
                     position[Geom::Y] -= vertical_scale * span->line_height.emSize();
                 } else {
@@ -588,7 +591,7 @@ void Layout::queryCursorShape(iterator const &it, Geom::Point &position, double 
         // up to now *position is the baseline point, not the final point which will be the bottom of the descent
         double vertical_scale = _glyphs.empty() ? 1.0 : _glyphs.back().vertical_scale;
 
-        if (_directions_are_orthogonal(_blockProgression(), TOP_TO_BOTTOM)) {
+        if (vertical_text) {
 	    // Vertical text
 	    height = vertical_scale * span->line_height.emSize();
             rotation += M_PI / 2;
@@ -598,8 +601,9 @@ void Layout::queryCursorShape(iterator const &it, Geom::Point &position, double 
         } else {
 	    // Horizontal text
             double caret_slope_run = 0.0, caret_slope_rise = 1.0;
-            if (span->font)
-                const_cast<font_instance*>(span->font)->FontSlope(caret_slope_run, caret_slope_rise);
+            if (span->font) {
+                span->font->FontSlope(caret_slope_run, caret_slope_rise);
+            }
             double caret_slope = atan2(caret_slope_run, caret_slope_rise);
             height = vertical_scale * (span->line_height.emSize()) / cos(caret_slope);
             rotation += caret_slope;
@@ -729,8 +733,8 @@ void Layout::simulateLayoutUsingKerning(iterator const &from, iterator const &to
         _cursor_moving_vertically = false;                                               \
         if (_char_index == 0) return false;                                              \
         unsigned original_item;                                                          \
-        if (_char_index == _parent_layout->_characters.size()) {                         \
-            _char_index--;                                                               \
+        if (_char_index >= _parent_layout->_characters.size()) {                         \
+            _char_index = _parent_layout->_characters.size() - 1;                        \
             original_item = item_getter;                                                 \
         } else {                                                                         \
             original_item = item_getter;                                                 \
@@ -752,7 +756,7 @@ void Layout::simulateLayoutUsingKerning(iterator const &from, iterator const &to
 #define NEXT_START_OF_ITEM(item_getter)                                                  \
     {                                                                                    \
         _cursor_moving_vertically = false;                                               \
-        if (_char_index == _parent_layout->_characters.size()) return false;             \
+        if (_char_index >= _parent_layout->_characters.size()) return false;             \
         unsigned original_item = item_getter;                                            \
         for( ; ; ) {                                                                     \
             _char_index++;                                                               \
@@ -829,7 +833,7 @@ bool Layout::iterator::nextStartOfSource()
 
 bool Layout::iterator::thisEndOfLine()
 {
-    if (_char_index == _parent_layout->_characters.size()) return false;
+    if (_char_index >= _parent_layout->_characters.size()) return false;
     if (nextStartOfLine())
     {
         if (_char_index && _parent_layout->_characters[_char_index - 1].char_attributes.is_white)
@@ -843,7 +847,7 @@ bool Layout::iterator::thisEndOfLine()
 
 void Layout::iterator::beginCursorUpDown()
 {
-    if (_char_index == _parent_layout->_characters.size())
+    if (_char_index >= _parent_layout->_characters.size())
         _x_coordinate = _parent_layout->_chunks.back().left_x + _parent_layout->_spans.back().x_end;
     else
         _x_coordinate = _parent_layout->_characters[_char_index].x + _parent_layout->_characters[_char_index].span(_parent_layout).x_start + _parent_layout->_characters[_char_index].chunk(_parent_layout).left_x;
@@ -854,7 +858,7 @@ bool Layout::iterator::nextLineCursor(int n)
 {
     if (!_cursor_moving_vertically)
         beginCursorUpDown();
-    if (_char_index == _parent_layout->_characters.size())
+    if (_char_index >= _parent_layout->_characters.size())
         return false;
     unsigned line_index = _parent_layout->_characters[_char_index].chunk(_parent_layout).in_line;
     if (line_index == _parent_layout->_lines.size() - 1) 
@@ -867,7 +871,7 @@ bool Layout::iterator::nextLineCursor(int n)
                          - _parent_layout->_chunks[_parent_layout->_spans[_parent_layout->_lineToSpan(line_index)].in_chunk].left_x;
     }
     _char_index = _parent_layout->_cursorXOnLineToIterator(line_index + n, _x_coordinate)._char_index;
-    if (_char_index == _parent_layout->_characters.size())
+    if (_char_index >= _parent_layout->_characters.size())
         _glyph_index = _parent_layout->_glyphs.size();
     else
         _glyph_index = _parent_layout->_characters[_char_index].in_glyph;
@@ -879,7 +883,7 @@ bool Layout::iterator::prevLineCursor(int n)
     if (!_cursor_moving_vertically)
         beginCursorUpDown();
     int line_index;
-    if (_char_index == _parent_layout->_characters.size())
+    if (_char_index >= _parent_layout->_characters.size())
         line_index = _parent_layout->_lines.size() - 1;
     else
         line_index = _parent_layout->_characters[_char_index].chunk(_parent_layout).in_line;
@@ -967,7 +971,7 @@ bool Layout::iterator::_cursorLeftOrRightLocalX(Direction direction)
     if (_parent_layout->_characters.empty()) return false;
     unsigned old_span_index;
     Direction old_span_direction;
-    if (_char_index == _parent_layout->_characters.size())
+    if (_char_index >= _parent_layout->_characters.size())
         old_span_index = _parent_layout->_spans.size() - 1;
     else
         old_span_index = _parent_layout->_characters[_char_index].in_span;
@@ -978,7 +982,7 @@ bool Layout::iterator::_cursorLeftOrRightLocalX(Direction direction)
     unsigned old_char_index = _char_index;
     if (old_span_direction != para_direction
         && ((_char_index == 0 && direction == para_direction)
-            || (_char_index == _parent_layout->_characters.size() && direction != para_direction))) {
+            || (_char_index >= _parent_layout->_characters.size() && direction != para_direction))) {
         // the end of the text is actually in the middle because of reordering. Do cleverness
         scan_direction = direction == para_direction ? +1 : -1;
     } else {
@@ -1053,7 +1057,7 @@ bool Layout::iterator::_cursorLeftOrRightLocalX(Direction direction)
         } else
             _char_index = _parent_layout->_spanToCharacter(new_span_index);
     }
-    if (_char_index == _parent_layout->_characters.size()) {
+    if (_char_index >= _parent_layout->_characters.size()) {
         _glyph_index = _parent_layout->_glyphs.size();
         return false;
     }

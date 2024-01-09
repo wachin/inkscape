@@ -55,7 +55,7 @@ gchar* sanitizeString( gchar const * str );
 void spawn_async_with_pipes (const std::string& working_directory,
                              const std::vector<std::string>& argv,
                              Glib::SpawnFlags flags,
-                             const sigc::slot<void>& child_setup,
+                             const sigc::slot<void ()>& child_setup,
                              Glib::Pid* child_pid,
                              int* standard_input,
                              int* standard_output,

@@ -106,6 +106,17 @@ public:
      */
     virtual std::string value_to_string() const;
 
+    /** Sets the current value of the parameter from a string
+     *
+     * \internal Must be implemented by all derived classes.
+     */
+    virtual void string_to_value(const std::string &in);
+
+    /**
+     * Calls string_to_value and then saves the result in the prefs.
+     */
+    virtual const std::string &set(const std::string &in);
+
     /** Recommended spacing between the widgets making up a single Parameter (e.g. label and input) (in px) */
     const static int GUI_PARAM_WIDGETS_SPACING = 4;
 

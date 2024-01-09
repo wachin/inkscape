@@ -28,6 +28,7 @@ void text_flow_into_shape();
 void text_flow_shape_subtract();
 void text_unflow();
 void flowtext_to_text();
+void text_to_glyphs();
 enum text_ref_t { TEXT_REF_DEF = 0x1, TEXT_REF_EXTERNAL = 0x2, TEXT_REF_INTERNAL = 0x4, };
 using text_refs_t = std::vector<std::pair<Glib::ustring, text_ref_t>>;
 template<typename InIter>

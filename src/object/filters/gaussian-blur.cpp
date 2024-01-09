@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 /** \file
  * SVG <gaussianBlur> implementation.
- *
  */
 /*
  * Authors:
@@ -15,47 +14,25 @@
  */
 
 #include "gaussian-blur.h"
-
 #include "attributes.h"
-
 #include "display/nr-filter.h"
 #include "display/nr-filter-gaussian.h"
-
 #include "svg/svg.h"
-
+#include "util/numeric/converters.h"
 #include "xml/repr.h"
 
-SPGaussianBlur::SPGaussianBlur() : SPFilterPrimitive() {
+void SPGaussianBlur::build(SPDocument *document, Inkscape::XML::Node *repr)
+{
+    SPFilterPrimitive::build(document, repr);
+    readAttr(SPAttr::STDDEVIATION);
 }
 
-SPGaussianBlur::~SPGaussianBlur() = default;
-
-/**
- * Reads the Inkscape::XML::Node, and initializes SPGaussianBlur variables.  For this to get called,
- * our name must be associated with a repr via "sp_object_type_register".  Best done through
- * sp-object-repr.cpp's repr_name_entries array.
- */
-void SPGaussianBlur::build(SPDocument *document, Inkscape::XML::Node *repr) {
-	SPFilterPrimitive::build(document, repr);
-
-    this->readAttr(SPAttr::STDDEVIATION);
-}
-
-/**
- * Drops any allocated memory.
- */
-void SPGaussianBlur::release() {
-	SPFilterPrimitive::release();
-}
-
-/**
- * Sets a specific value in the SPGaussianBlur.
- */
-void SPGaussianBlur::set(SPAttr key, gchar const *value) {
-    switch(key) {
+void SPGaussianBlur::set(SPAttr key, char const *value)
+{
+    switch (key) {
         case SPAttr::STDDEVIATION:
-            this->stdDeviation.set(value);
-            this->parent->requestModified(SP_OBJECT_MODIFIED_FLAG);
+            stdDeviation.set(value);
+            requestModified(SP_OBJECT_MODIFIED_FLAG);
             break;
         default:
         	SPFilterPrimitive::set(key, value);
@@ -63,79 +40,55 @@ void SPGaussianBlur::set(SPAttr key, gchar const *value) {
     }
 }
 
-/**
- * Receives update notifications.
- */
-void SPGaussianBlur::update(SPCtx *ctx, guint flags) {
-    if (flags & SP_OBJECT_MODIFIED_FLAG) {
-        this->readAttr(SPAttr::STDDEVIATION);
-    }
-
-    SPFilterPrimitive::update(ctx, flags);
-}
-
-/**
- * Writes its settings to an incoming repr object, if any.
- */
-Inkscape::XML::Node* SPGaussianBlur::write(Inkscape::XML::Document *doc, Inkscape::XML::Node *repr, guint flags) {
-    /* TODO: Don't just clone, but create a new repr node and write all
-     * relevant values into it */
-    if (!repr) {
-        repr = this->getRepr()->duplicate(doc);
-    }
-
-    SPFilterPrimitive::write(doc, repr, flags);
-
-    return repr;
-}
-
-void  sp_gaussianBlur_setDeviation(SPGaussianBlur *blur, float num)
+std::unique_ptr<Inkscape::Filters::FilterPrimitive> SPGaussianBlur::build_renderer(Inkscape::DrawingItem*) const
 {
-    blur->stdDeviation.setNumber(num);
-}
+    auto blur = std::make_unique<Inkscape::Filters::FilterGaussian>();
+    build_renderer_common(blur.get());
 
-void  sp_gaussianBlur_setDeviation(SPGaussianBlur *blur, float num, float optnum)
-{
-    blur->stdDeviation.setNumber(num);
-    blur->stdDeviation.setOptNumber(optnum);
-}
-
-void SPGaussianBlur::build_renderer(Inkscape::Filters::Filter* filter) {
-    int handle = filter->add_primitive(Inkscape::Filters::NR_FILTER_GAUSSIANBLUR);
-    Inkscape::Filters::FilterPrimitive *nr_primitive = filter->get_primitive(handle);
-    Inkscape::Filters::FilterGaussian *nr_blur = dynamic_cast<Inkscape::Filters::FilterGaussian*>(nr_primitive);
-
-    this->renderer_common(nr_primitive);
-
-    gfloat num = this->stdDeviation.getNumber();
+    float num = stdDeviation.getNumber();
 
     if (num >= 0.0) {
-        gfloat optnum = this->stdDeviation.getOptNumber();
-
-        if(optnum >= 0.0) {
-            nr_blur->set_deviation((double) num, (double) optnum);
+        float optnum = stdDeviation.getOptNumber();
+        if (optnum >= 0.0) {
+            blur->set_deviation(num, optnum);
         } else {
-            nr_blur->set_deviation((double) num);
+            blur->set_deviation(num);
         }
     }
+
+    return blur;
 }
 
-/* Calculate the region taken up by gaussian blur
+void SPGaussianBlur::set_deviation(const NumberOptNumber &stdDeviation)
+{
+    double num = stdDeviation.getNumber();
+    std::string arg = Inkscape::Util::format_number(num);
+
+    double optnum = stdDeviation.getOptNumber();
+    if (optnum != num && optnum != -1) {
+        arg += " " + Inkscape::Util::format_number(optnum);
+    }
+    getRepr()->setAttribute("stdDeviation", arg);
+}
+
+/** Calculate the region taken up by gaussian blur
  *
  * @param region The original shape's region or previous primitive's region output.
  */
-Geom::Rect SPGaussianBlur::calculate_region(Geom::Rect region)
+Geom::Rect SPGaussianBlur::calculate_region(Geom::Rect const &region) const
 {
-    double x = this->stdDeviation.getNumber();
-    double y = this->stdDeviation.getOptNumber();
-    if (y == -1.0)
+    double x = stdDeviation.getNumber();
+    double y = stdDeviation.getOptNumber();
+    if (y == -1.0) {
         y = x;
+    }
     // If not within the default 10% margin (see
     // http://www.w3.org/TR/SVG11/filters.html#FilterEffectsRegion), specify margins
     // The 2.4 is an empirical coefficient: at that distance the cutoff is practically invisible
     // (the opacity at 2.4 * radius is about 3e-3)
-    region.expandBy(2.4 * x, 2.4 * y);
-    return region;
+    auto r = region;
+    r.expandBy(2.4 * x, 2.4 * y);
+    return r;
 }
 
 /*

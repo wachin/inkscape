@@ -24,9 +24,9 @@
 #include "document.h"
 #include "inkscape.h"
 #include "message-stack.h"
+#include "layer-manager.h"
 #include "selection-chemistry.h"
 #include "text-editing.h"
-#include "verbs.h"
 
 #include "display/control/canvas-item-rect.h"
 
@@ -40,6 +40,7 @@
 
 #include "ui/dialog/dialog-container.h"
 #include "ui/dialog/inkscape-preferences.h" // for PREFS_PAGE_SPELLCHECK
+#include "ui/icon-names.h"
 #include "ui/tools/text-tool.h"
 
 #include <glibmm/i18n.h>
@@ -78,7 +79,7 @@ std::vector<LanguagePair> SpellCheck::get_available_langs()
 static void show_spellcheck_preferences_dialog()
 {
     Inkscape::Preferences::get()->setInt("/dialogs/preferences/page", PREFS_PAGE_SPELLCHECK);
-    SP_ACTIVE_DESKTOP->getContainer()->new_dialog(SP_VERB_DIALOG_PREFERENCES);
+    SP_ACTIVE_DESKTOP->getContainer()->new_dialog("Spellcheck");
 }
 
 SpellCheck::SpellCheck()
@@ -196,7 +197,6 @@ SpellCheck::SpellCheck()
 
 SpellCheck::~SpellCheck()
 {
-    clearRects();
     disconnect();
 }
 
@@ -211,10 +211,6 @@ void SpellCheck::documentReplaced()
 
 void SpellCheck::clearRects()
 {
-    for(auto rect : _rects) {
-        rect->hide();
-        delete rect;
-    }
     _rects.clear();
 }
 
@@ -230,7 +226,7 @@ void SpellCheck::disconnect()
 
 void SpellCheck::allTextItems (SPObject *r, std::vector<SPItem *> &l, bool hidden, bool locked)
 {
-    if (SP_IS_DEFS(r))
+    if (is<SPDefs>(r))
         return; // we're not interested in items in defs
 
     if (!strcmp(r->getRepr()->name(), "svg:metadata")) {
@@ -239,11 +235,13 @@ void SpellCheck::allTextItems (SPObject *r, std::vector<SPItem *> &l, bool hidde
 
     if (auto desktop = getDesktop()) {
         for (auto& child: r->children) {
-            if (SP_IS_ITEM (&child) && !child.cloned && !desktop->isLayer(SP_ITEM(&child))) {
-                    if ((hidden || !desktop->itemIsHidden(SP_ITEM(&child))) && (locked || !SP_ITEM(&child)->isLocked())) {
-                        if (SP_IS_TEXT(&child) || SP_IS_FLOWTEXT(&child))
-                            l.push_back(static_cast<SPItem*>(&child));
+            if (auto item = cast<SPItem>(&child)) {
+                if (!child.cloned && !desktop->layerManager().isLayer(item)) {
+                    if ((hidden || !desktop->itemIsHidden(item)) && (locked || !item->isLocked())) {
+                        if (is<SPText>(item) || is<SPFlowtext>(item))
+                            l.push_back(item);
                     }
+                }
             }
             allTextItems (&child, l, hidden, locked);
         }
@@ -418,13 +416,13 @@ SpellCheck::nextWord()
     SPObject *char_item = nullptr;
     Glib::ustring::iterator text_iter;
     _layout->getSourceOfCharacter(_end_w, &char_item, &text_iter);
-    if (SP_IS_STRING(char_item)) {
+    if (is<SPString>(char_item)) {
         int this_char = *text_iter;
         if (this_char == '\'' || this_char == 0x2019) {
             Inkscape::Text::Layout::iterator end_t = _end_w;
             end_t.nextCharacter();
             _layout->getSourceOfCharacter(end_t, &char_item, &text_iter);
-            if (SP_IS_STRING(char_item)) {
+            if (is<SPString>(char_item)) {
                 int this_char = *text_iter;
                 if (g_ascii_isalpha(this_char)) { // 's
                     _end_w.nextEndOfWord();
@@ -516,7 +514,7 @@ SpellCheck::nextWord()
             auto rect = new Inkscape::CanvasItemRect(desktop->getCanvasSketch(), area);
             rect->set_stroke(0xff0000ff);
             rect->show();
-            _rects.push_back(rect);
+            _rects.emplace_back(rect);
 
             // scroll to make it all visible
             Geom::Point const center = desktop->current_center();
@@ -529,20 +527,20 @@ SpellCheck::nextWord()
                     scrollto = area.corner(corner);
                 }
             }
-            desktop->scroll_to_point (scrollto, 1.0);
+            desktop->scroll_to_point(scrollto);
         }
 
         // select text; if in Text tool, position cursor to the beginning of word
         // unless it is already in the word
-        if (desktop->selection->singleItem() != _text) {
-            desktop->selection->set (_text);
+        if (desktop->getSelection()->singleItem() != _text) {
+            desktop->getSelection()->set (_text);
         }
 
         if (dynamic_cast<Inkscape::UI::Tools::TextTool *>(desktop->event_context)) {
             Inkscape::Text::Layout::iterator *cursor =
                 sp_text_context_get_cursor_position(SP_TEXT_CONTEXT(desktop->event_context), _text);
             if (!cursor) // some other text is selected there
-                desktop->selection->set (_text);
+                desktop->getSelection()->set (_text);
             else if (*cursor <= _begin_w || *cursor >= _end_w)
                 sp_text_context_place_cursor (SP_TEXT_CONTEXT(desktop->event_context), _text, _begin_w);
         }
@@ -589,14 +587,9 @@ SpellCheck::nextWord()
     return false;
 }
 
-
-
-void
-SpellCheck::deleteLastRect ()
+void SpellCheck::deleteLastRect()
 {
     if (!_rects.empty()) {
-        _rects.back()->hide();
-        delete _rects.back();
         _rects.pop_back();
     }
 }
@@ -673,8 +666,7 @@ void SpellCheck::onAccept ()
             // find the end of the word anew
             _end_w = _begin_w;
             _end_w.nextEndOfWord();
-            DocumentUndo::done(getDocument(), SP_VERB_CONTEXT_TEXT,
-                               _("Fix spelling"));
+            DocumentUndo::done(getDocument(), _("Fix spelling"), INKSCAPE_ICON("draw-text"));
         }
     }
 

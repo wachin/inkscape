@@ -24,39 +24,42 @@
 
 namespace Inkscape {
 
-class CanvasItemGroup; // A canvas control that contains other canvas controls.
-
-class CanvasItemRect : public CanvasItem {
-
+class CanvasItemRect final : public CanvasItem
+{
 public:
     CanvasItemRect(CanvasItemGroup *group);
     CanvasItemRect(CanvasItemGroup *group, Geom::Rect const &rect);
 
     // Geometry
     void set_rect(Geom::Rect const &rect);
-
-    void update(Geom::Affine const &affine) override;
-    double closest_distance_to(Geom::Point const &p); // Maybe not needed
+    void visit_page_rects(std::function<void(Geom::Rect const &)> const &) const override;
 
     // Selection
     bool contains(Geom::Point const &p, double tolerance = 0) override;
 
-    // Display
-    void render(Inkscape::CanvasItemBuffer *buf) override;
-
     // Properties
+    void set_is_page(bool is_page);
+    void set_fill(uint32_t color) override;
     void set_dashed(bool dash = true);
     void set_inverted(bool inverted = false);
-    void set_shadow(guint32 color, int width);
+    void set_shadow(uint32_t color, int width);
  
 protected:
+    ~CanvasItemRect() override = default;
+
+    void _update(bool propagate) override;
+    void _render(Inkscape::CanvasItemBuffer &buf) const override;
+
+    // Geometry
+    double get_shadow_size() const;
+
     Geom::Rect _rect;
+    bool _is_page = false;
     bool _dashed = false;
     bool _inverted = false;
     int _shadow_width = 0;
-    guint32 _shadow_color = 0x00000000;
+    uint32_t _shadow_color = 0x0;
 };
-
 
 } // namespace Inkscape
 

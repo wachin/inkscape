@@ -35,7 +35,7 @@ ZoomToolbar::create(SPDesktop *desktop)
     }
     catch (const Glib::Error& ex)
     {
-        std::cerr << "ZoomToolbar: " << zoom_toolbar_builder_file << " file not read! " << ex.what() << std::endl;
+        std::cerr << "ZoomToolbar: " << zoom_toolbar_builder_file.raw() << " file not read! " << ex.what().raw() << std::endl;
     }
 
     Gtk::Toolbar* toolbar = nullptr;

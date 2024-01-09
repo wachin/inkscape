@@ -15,10 +15,11 @@
 
 #include "db.h"
 
+#include "effect.h"
 #include "implementation/script.h"
 #include "input.h"
 #include "output.h"
-#include "effect.h"
+#include "template.h"
 
 /* Globals */
 
@@ -34,82 +35,51 @@ DB db;
 
 DB::DB (void) = default;
 
+struct ModuleGenericCmp
+{
+    bool operator()(Extension *module1, Extension *module2) const
+    {
+        int n1 = module1->get_sort_priority();
+        int n2 = module2->get_sort_priority();
+        if (n1 != n2)
+            return (n1 < n2);
+        return (strcmp(module1->get_name(), module2->get_name()) <= 0);
+    }
+};
 
 struct ModuleInputCmp {
-  bool operator()(Input* module1, Input* module2) const {
+    bool operator()(Input* module1, Input* module2) const {
 
-    // Ensure SVG files are at top
-    int n1 = 0;
-    int n2 = 0;
-    //                             12345678901234567890123456789012
-    if (strncmp(module1->get_id(),"org.inkscape.input.svg",  22) == 0) n1 = 1;
-    if (strncmp(module2->get_id(),"org.inkscape.input.svg",  22) == 0) n2 = 1;
-    if (strncmp(module1->get_id(),"org.inkscape.input.svgz", 23) == 0) n1 = 2;
-    if (strncmp(module2->get_id(),"org.inkscape.input.svgz", 23) == 0) n2 = 2;
+        int n1 = module1->get_sort_priority();
+        int n2 = module2->get_sort_priority();
+        // Treat zero as not-defined for purpose of comparison.
+        if (n1 || n2)
+            return n1 && n2 ? (n1 < n2) : !n2;
 
-    if (n1 != 0 && n2 != 0) return (n1 < n2);
-    if (n1 != 0) return true;
-    if (n2 != 0) return false;
-
-    // GDK filetypenames begin with lower case letters and thus are sorted at the end.
-    // Special case "sK1" which starts with a lower case letter to keep it out of GDK region.
-    if (strncmp(module1->get_id(),"org.inkscape.input.sk1",  22) == 0) {
-      return ( strcmp("SK1", module2->get_filetypename()) <= 0 );
+        return (strcmp(module1->get_filetypename(), module2->get_filetypename()) <= 0);
     }
-    if (strncmp(module2->get_id(),"org.inkscape.input.sk1",  22) == 0) {
-      return ( strcmp(module1->get_filetypename(), "SK1" ) <= 0 );
-    }
-
-    return ( strcmp(module1->get_filetypename(), module2->get_filetypename()) <= 0 );
-  }
 };
 
 
 struct ModuleOutputCmp {
-  bool operator()(Output* module1, Output* module2) const {
+    bool operator()(Output* module1, Output* module2) const {
 
-    // Ensure SVG files are at top
-    int n1 = 0;
-    int n2 = 0;
-    //                             12345678901234567890123456789012
-    if (strncmp(module1->get_id(),"org.inkscape.output.png.inkscape",  32) == 0) n1 = 1;
-    if (strncmp(module2->get_id(),"org.inkscape.output.png.inkscape",  32) == 0) n2 = 1;
-    if (strncmp(module1->get_id(),"org.inkscape.output.svg.inkscape",  32) == 0) n1 = 1;
-    if (strncmp(module2->get_id(),"org.inkscape.output.svg.inkscape",  32) == 0) n2 = 1;
-    if (strncmp(module1->get_id(),"org.inkscape.output.svg.plain",     29) == 0) n1 = 2;
-    if (strncmp(module2->get_id(),"org.inkscape.output.svg.plain",     29) == 0) n2 = 2;
-    if (strncmp(module1->get_id(),"org.inkscape.output.svgz.inkscape", 33) == 0) n1 = 3;
-    if (strncmp(module2->get_id(),"org.inkscape.output.svgz.inkscape", 33) == 0) n2 = 3;
-    if (strncmp(module1->get_id(),"org.inkscape.output.svgz.plain",    30) == 0) n1 = 4;
-    if (strncmp(module2->get_id(),"org.inkscape.output.svgz.plain",    30) == 0) n2 = 4;
-    if (strncmp(module1->get_id(),"org.inkscape.output.scour",         25) == 0) n1 = 5;
-    if (strncmp(module2->get_id(),"org.inkscape.output.scour",         25) == 0) n2 = 5;
-    if (strncmp(module1->get_id(),"org.inkscape.output.ZIP",           23) == 0) n1 = 6;
-    if (strncmp(module2->get_id(),"org.inkscape.output.ZIP",           23) == 0) n2 = 6;
-    if (strncmp(module1->get_id(),"org.inkscape.output.LAYERS",        26) == 0) n1 = 7;
-    if (strncmp(module2->get_id(),"org.inkscape.output.LAYERS",        26) == 0) n2 = 7;
+        int n1 = module1->get_sort_priority();
+        int n2 = module2->get_sort_priority();
+        // Treat zero as not-defined for purpose of comparison.
+        if (n1 || n2)
+            return n1 && n2 ? (n1 < n2) : !n2;
 
-    if (n1 != 0 && n2 != 0) return (n1 < n2);
-    if (n1 != 0) return true;
-    if (n2 != 0) return false;
-
-    // Special case "sK1" which starts with a lower case letter.
-    if (strncmp(module1->get_id(),"org.inkscape.output.sk1",  23) == 0) {
-      return ( strcmp("SK1", module2->get_filetypename()) <= 0 );
-    }
-    if (strncmp(module2->get_id(),"org.inkscape.output.sk1",  23) == 0) {
-      return ( strcmp(module1->get_filetypename(), "SK1" ) <= 0 );
-    }
-    // special case: two extensions for the same file type. I only one of them is a script, prefer the other one
-    if (Glib::ustring(module1->get_extension()).lowercase() == Glib::ustring(module2->get_extension()).lowercase()) {
-        bool module1_is_script = dynamic_cast<Inkscape::Extension::Implementation::Script *>(module1->get_imp());
-        bool module2_is_script = dynamic_cast<Inkscape::Extension::Implementation::Script *>(module2->get_imp());
-        if (module1_is_script != module2_is_script) {
-            return module1_is_script ? false : true;
+        // special case: two extensions for the same file type. I only one of them is a script, prefer the other one
+        if (Glib::ustring(module1->get_extension()).lowercase() == Glib::ustring(module2->get_extension()).lowercase()) {
+            bool module1_is_script = dynamic_cast<Inkscape::Extension::Implementation::Script *>(module1->get_imp());
+            bool module2_is_script = dynamic_cast<Inkscape::Extension::Implementation::Script *>(module2->get_imp());
+            if (module1_is_script != module2_is_script) {
+                return module1_is_script ? false : true;
+            }
         }
+        return (strcmp(module1->get_filetypename(), module2->get_filetypename()) <= 0);
     }
-    return ( strcmp(module1->get_filetypename(), module2->get_filetypename()) <= 0 );
-  }
 };
 
 
@@ -120,19 +90,20 @@ struct ModuleOutputCmp {
 void
 DB::register_ext (Extension *module)
 {
-	g_return_if_fail(module != nullptr);
-	g_return_if_fail(module->get_id() != nullptr);
+    g_return_if_fail(module != nullptr);
+    g_return_if_fail(module->get_id() != nullptr);
 
-	// only add to list if it's a never-before-seen module
-        bool add_to_list = 
-               ( moduledict.find(module->get_id()) == moduledict.end());
-        
-	//printf("Registering: '%s' '%s' add:%d\n", module->get_id(), module->get_name(), add_to_list);
-	moduledict[module->get_id()] = module;
+    //printf("Registering: '%s' '%s' add:%d\n", module->get_id(), module->get_name(), add_to_list);
 
-	if (add_to_list) {
-	  modulelist.push_back( module );
-	}
+    // only add to list if it's a never-before-seen module
+    auto iter = moduledict.find(module->get_id());
+    if (iter != moduledict.end()) {
+        Extension *previous = iter->second;
+        unregister_ext(previous);
+        delete previous;
+    }
+    moduledict[module->get_id()] = module;
+    modulelist.push_back( module );
 }
 
 /**
@@ -142,14 +113,17 @@ DB::register_ext (Extension *module)
 void
 DB::unregister_ext (Extension * module)
 {
-	g_return_if_fail(module != nullptr);
-	g_return_if_fail(module->get_id() != nullptr);
+    g_return_if_fail(module != nullptr);
+    g_return_if_fail(module->get_id() != nullptr);
 
-	// printf("Extension DB: removing %s\n", module->get_id());
-	moduledict.erase(moduledict.find(module->get_id()));
-	// only remove if it's not there any more
-	if ( moduledict.find(module->get_id()) != moduledict.end())
-		modulelist.remove(module);
+    // printf("Extension DB: removing %s\n", module->get_id());
+
+    // only remove if it's not there any more
+    auto iter = moduledict.find(module->get_id());
+    if (iter != moduledict.end() && module == iter->second) {
+        moduledict.erase(iter);
+	modulelist.remove(module);
+    }
 }
 
 /**
@@ -163,11 +137,17 @@ DB::unregister_ext (Extension * module)
 	when it is no longer needed.
 */
 Extension *
-DB::get (const gchar *key)
+DB::get (const gchar *key) const
 {
         if (key == nullptr) return nullptr;
 
-	Extension *mod = moduledict[key];
+	auto it = moduledict.find(key);
+	if (it == moduledict.end())
+		return nullptr;
+
+	Extension *mod = it->second;
+	assert(mod);
+
 	if ( !mod || mod->deactivated() )
 		return nullptr;
 
@@ -196,6 +176,21 @@ DB::foreach (void (*in_func)(Extension * in_plug, gpointer in_data), gpointer in
 }
 
 /**
+ * @return none
+ * @brief  The function to look at each module and see if it is
+       a template module, then add it to the list.
+ * @param in_plug - Module to be examined
+ * @param data    - The list to be attached to
+*/
+void DB::template_internal(Extension *in_plug, gpointer data)
+{
+    if (auto tmod = dynamic_cast<Template *>(in_plug)) {
+        auto tlist = reinterpret_cast<TemplateList *>(data);
+        tlist->push_back(tmod);
+    }
+}
+
+/**
 	\return    none
 	\brief     The function to look at each module and see if it is
 	           an input module, then add it to the list.
@@ -209,16 +204,10 @@ DB::foreach (void (*in_func)(Extension * in_plug, gpointer in_data), gpointer in
 void
 DB::input_internal (Extension * in_plug, gpointer data)
 {
-	if (dynamic_cast<Input *>(in_plug)) {
-		InputList * ilist;
-		Input * imod;
-
-		imod = dynamic_cast<Input *>(in_plug);
-		ilist = reinterpret_cast<InputList *>(data);
-
-		ilist->push_back(imod);
-		// printf("Added to input list: %s\n", imod->get_id());
-	}
+    if (auto imod = dynamic_cast<Input *>(in_plug)) {
+        auto ilist = reinterpret_cast<InputList *>(data);
+        ilist->push_back(imod);
+    }
 }
 
 /**
@@ -275,6 +264,19 @@ DB::effect_internal (Extension * in_plug, gpointer data)
 	}
 
 	return;
+}
+
+/**
+ * Create a list of all the Template extensions
+ * @param ou_list - The list that is used to put all the extensions in
+ *
+ * Calls the database \c foreach function with \c template_internal.
+ */
+DB::TemplateList &DB::get_template_list(DB::TemplateList &ou_list)
+{
+    foreach (template_internal, (gpointer)&ou_list);
+    ou_list.sort(ModuleGenericCmp());
+    return ou_list;
 }
 
 /**

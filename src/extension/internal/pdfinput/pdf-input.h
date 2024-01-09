@@ -16,11 +16,13 @@
 #endif
 
 #ifdef HAVE_POPPLER
-#include "poppler-transition-api.h"
-
+#include <gtkmm.h>
 #include <gtkmm/dialog.h>
 
 #include "../../implementation/implementation.h"
+#include "poppler-transition-api.h"
+#include "poppler-utils.h"
+#include "svg-builder.h"
 
 #ifdef HAVE_POPPLER_CAIRO
 struct _PopplerDocument;
@@ -43,6 +45,7 @@ namespace Gtk {
   class RadioButton;
   class Box;
   class Label;
+  class Entry;
 }
 
 namespace Inkscape {
@@ -54,8 +57,16 @@ namespace Widget {
 }
 }
 
+enum class PdfImportType : unsigned char
+{
+    PDF_IMPORT_INTERNAL,
+    PDF_IMPORT_CAIRO,
+};
+
 namespace Extension {
 namespace Internal {
+
+class FontModelColumns;
 
 /**
  * PDF import using libpoppler.
@@ -67,60 +78,40 @@ public:
     ~PdfImportDialog() override;
 
     bool showDialog();
-    int getSelectedPage();
-    bool getImportMethod();
+    std::string getSelectedPages();
+    PdfImportType getImportMethod();
     void getImportSettings(Inkscape::XML::Node *prefs);
+    FontStrategies getFontStrategies();
+    void setFontStrategies(const FontStrategies &fs);
 
 private:
+    void _fontRenderChanged();
     void _setPreviewPage(int page);
+    void _setFonts(const FontList &fonts);
 
     // Signal handlers
     bool _onDraw(const Cairo::RefPtr<Cairo::Context>& cr);
     void _onPageNumberChanged();
-    void _onToggleCropping();
     void _onPrecisionChanged();
-#ifdef HAVE_POPPLER_CAIRO
-    void _onToggleImport();
-#endif
-    
-    class Gtk::Button * cancelbutton;
-    class Gtk::Button * okbutton;
-    class Gtk::Label * _labelSelect;
-    class Inkscape::UI::Widget::SpinButton * _pageNumberSpin;
-    class Gtk::Label * _labelTotalPages;
-    class Gtk::Box * hbox2;
-    class Gtk::CheckButton * _cropCheck;
-    class Gtk::ComboBoxText * _cropTypeCombo;
-    class Gtk::Box * hbox3;
-    class Gtk::Box * vbox2;
-    class Inkscape::UI::Widget::Frame * _pageSettingsFrame;
-    class Gtk::Label * _labelPrecision;
-    class Gtk::Label * _labelPrecisionWarning;
-#ifdef HAVE_POPPLER_CAIRO
-    class Gtk::RadioButton * _importViaPoppler;  // Use poppler_cairo importing
-    class Gtk::Label * _labelViaPoppler;
-    class Gtk::RadioButton * _importViaInternal; // Use native (poppler based) importing
-    class Gtk::Label * _labelViaInternal;
-#endif
-    Gtk::Scale * _fallbackPrecisionSlider;
-    Glib::RefPtr<Gtk::Adjustment> _fallbackPrecisionSlider_adj;
-    class Gtk::Label * _labelPrecisionComment;
-    class Gtk::Box * hbox6;
-#if 0
-    class Gtk::Label * _labelText;
-    class Gtk::ComboBoxText * _textHandlingCombo;
-    class Gtk::Box * hbox5;
-#endif
-    class Gtk::CheckButton * _localFontsCheck;
-    class Gtk::CheckButton * _embedImagesCheck;
-    class Gtk::Box * vbox3;
-    class Inkscape::UI::Widget::Frame * _importSettingsFrame;
-    class Gtk::Box * vbox1;
-    class Gtk::DrawingArea * _previewArea;
-    class Gtk::Box * hbox1;
+
+    Glib::RefPtr<Gtk::Builder> _builder;
+
+    Gtk::Entry &_page_numbers;
+    Gtk::DrawingArea &_preview_area;
+    Gtk::CheckButton &_embed_images;
+    Gtk::Scale &_mesh_slider;
+    Gtk::Label &_mesh_label;
+    Gtk::Button &_next_page;
+    Gtk::Button &_prev_page;
+    Gtk::Label &_current_page;
+    Glib::RefPtr<Gtk::ListStore> _font_model;
+    FontModelColumns *_font_col;
 
     std::shared_ptr<PDFDoc> _pdf_doc;   // Document to be imported
-    int _current_page;  // Current selected page
+    std::string _current_pages;  // Current selected pages
+    FontList _font_list;         // List of fonts and the pages they appear on
+    int _total_pages = 0;
+    int _preview_page = 1;
     Page *_previewed_page;    // Currently previewed page
     unsigned char *_thumb_data; // Thumbnail image data
     int _thumb_width, _thumb_height;    // Thumbnail size
@@ -128,8 +119,8 @@ private:
     int _preview_width, _preview_height;    // Size of the preview area
     bool _render_thumb;     // Whether we can/shall render thumbnails
 #ifdef HAVE_POPPLER_CAIRO
-    cairo_surface_t *_cairo_surface;
-    PopplerDocument *_poppler_doc;
+    cairo_surface_t *_cairo_surface = nullptr;
+    PopplerDocument *_poppler_doc = nullptr;
 #endif
 };
 
@@ -140,6 +131,11 @@ public:
     SPDocument *open( Inkscape::Extension::Input *mod,
                                 const gchar *uri ) override;
     static void         init( );
+private:
+    void add_builder_page(
+        std::shared_ptr<PDFDoc> pdf_doc,
+        SvgBuilder *builder, SPDocument *doc,
+        int page_num);
 };
 
 } // namespace Implementation

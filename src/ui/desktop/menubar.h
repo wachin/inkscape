@@ -9,6 +9,7 @@
 /*
  * Authors:
  *   Tavmjong Bah
+ *   Sushant A.A.
  *
  * Copyright (C) 2018 Authors
  *
@@ -17,24 +18,22 @@
  *
  */
 
-namespace Gtk {
-  class MenuBar;
-  class MenuItem;
-}
+#include <gtkmm.h> // GTK_CHECK_VERSION
 
-namespace Inkscape {
-namespace UI {
-namespace View {
-  class View;
-}
-}
-}
+void build_menu();
 
-bool getStateFromPref(SPDesktop *dt, Glib::ustring item);
-Gtk::MenuBar* build_menubar(Inkscape::UI::View::View* view);
-void reload_menu(Inkscape::UI::View::View* view, Gtk::MenuBar* menubar);
+enum class UseIcons {
+    never = -1, // Match existing preference numbering.
+    as_requested,
+    always,
+};
 
-Gtk::MenuItem *get_menu_item_for_verb(unsigned int verb, Inkscape::UI::View::View *);
+// Rebuild menu with icons enabled or disabled. Recursive.
+#if GTK_CHECK_VERSION(4, 0, 0)
+void rebuild_menu (std::shared_ptr<Gio::MenuModel> menu, std::shared_ptr<Gio::Menu> menu_copy, UseIcons useIcons, Glib::Quark quark, Glib::RefPtr<Gio::Menu>& recent_files);
+#else
+void rebuild_menu (Glib::RefPtr<Gio::MenuModel>    menu, Glib::RefPtr<Gio::Menu>    menu_copy, UseIcons useIcons, Glib::Quark quark, Glib::RefPtr<Gio::Menu>& recent_files);
+#endif
 
 #endif // SEEN_DESKTOP_MENUBAR_H
 

@@ -12,6 +12,7 @@
 #ifndef SEEN_NR_FILTER_PRIMITIVE_H
 #define SEEN_NR_FILTER_PRIMITIVE_H
 
+#include <memory>
 #include <2geom/forward.h>
 #include <2geom/rect.h>
 
@@ -19,6 +20,7 @@
 
 #include "display/nr-filter-types.h"
 #include "svg/svg-length.h"
+#include "style-enums.h"
 
 class SPStyle;
 
@@ -28,14 +30,15 @@ namespace Filters {
 class FilterSlot;
 class FilterUnits;
 
-class FilterPrimitive {
+class FilterPrimitive
+{
 public:
     FilterPrimitive();
     virtual ~FilterPrimitive();
 
-    virtual void render_cairo(FilterSlot &slot);
-    virtual int render(FilterSlot & /*slot*/, FilterUnits const & /*units*/) { return 0; } // pure virtual?
-    virtual void area_enlarge(Geom::IntRect &area, Geom::Affine const &m);
+    virtual void update() {}
+    virtual void render_cairo(FilterSlot &slot) const;
+    virtual void area_enlarge(Geom::IntRect &area, Geom::Affine const &m) const {}
 
     /**
      * Sets the input slot number 'slot' to be used as input in rendering
@@ -71,14 +74,11 @@ public:
 
     // returns cache score factor, reflecting the cost of rendering this filter
     // this should return how many times slower this primitive is that normal rendering
-    virtual double complexity(Geom::Affine const &/*ctm*/) { return 1.0; }
+    virtual double complexity(Geom::Affine const &/*ctm*/) const { return 1.0; }
 
-    virtual bool uses_background() {
-        if (_input == NR_FILTER_BACKGROUNDIMAGE || _input == NR_FILTER_BACKGROUNDALPHA) {
-            return true;
-        } else {
-            return false;
-        }
+    virtual bool uses_background() const
+    {
+        return _input == NR_FILTER_BACKGROUNDIMAGE || _input == NR_FILTER_BACKGROUNDALPHA;
     }
 
     /**
@@ -94,14 +94,9 @@ public:
                        SVGLength const &width, SVGLength const &height);
 
     /**
-     * Resets the filter primitive subregion to its default value
-     */
-    void reset_subregion(); // Not implemented
-
-    /**
      * Returns the filter primitive area in user coordinate system.
      */
-    Geom::Rect filter_primitive_area(FilterUnits const &units);
+    Geom::Rect filter_primitive_area(FilterUnits const &units) const;
 
     /**
      *Indicate whether the filter primitive can handle the given affine.
@@ -117,15 +112,15 @@ public:
      * and a translation. When all primitives of the filter return true, the rendering is
      * performed in display coordinate space and no intermediate surface is used.
      */
-    virtual bool can_handle_affine(Geom::Affine const &) { return false; }
+    virtual bool can_handle_affine(Geom::Affine const &) const { return false; }
 
     /**
      * Sets style for access to properties used by filter primitives.
      */
-    void setStyle(SPStyle *style);
+    void setStyle(SPStyle const *style);
 
     // Useful for debugging
-    virtual Glib::ustring name() { return Glib::ustring("No name"); }
+    virtual Glib::ustring name() const { return "No name"; }
 
 protected:
     int _input;
@@ -137,14 +132,13 @@ protected:
     SVGLength _subregion_width;
     SVGLength _subregion_height;
 
-    SPStyle *_style;
+    SPColorInterpolation color_interpolation;
 };
 
+} // namespace Filters
+} // namespace Inkscape
 
-} /* namespace Filters */
-} /* namespace Inkscape */
-
-#endif /* SEEN_NR_FILTER_PRIMITIVE_H */
+#endif // SEEN_NR_FILTER_PRIMITIVE_H
 /*
   Local Variables:
   mode:c++

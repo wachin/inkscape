@@ -32,11 +32,9 @@
 #include <gtkmm/separatortoolitem.h>
 
 #include "desktop.h"
-#include "document-undo.h"
 
 #include "ui/icon-names.h"
 #include "ui/tools/flood-tool.h"
-#include "ui/uxmanager.h"
 #include "ui/widget/canvas.h"
 #include "ui/widget/combo-tool-item.h"
 #include "ui/widget/spinbutton.h"
@@ -44,7 +42,6 @@
 #include "ui/widget/unit-tracker.h"
 
 using Inkscape::UI::Widget::UnitTracker;
-using Inkscape::DocumentUndo;
 using Inkscape::Util::unit_table;
 
 namespace Inkscape {
@@ -64,7 +61,7 @@ PaintbucketToolbar::PaintbucketToolbar(SPDesktop *desktop)
 
         for (auto item: Inkscape::UI::Tools::FloodTool::channel_list) {
             Gtk::TreeModel::Row row = *(store->append());
-            row[columns.col_label    ] = item;
+            row[columns.col_label    ] = _(item.c_str());
             row[columns.col_sensitive] = true;
         }
 
@@ -86,7 +83,6 @@ PaintbucketToolbar::PaintbucketToolbar(SPDesktop *desktop)
         threshold_item->set_tooltip_text(_("The maximum allowed difference between the clicked pixel and the neighboring pixels to be counted in the fill"));
         threshold_item->set_focus_widget(desktop->canvas);
         _threshold_adj->signal_value_changed().connect(sigc::mem_fun(*this, &PaintbucketToolbar::threshold_changed));
-        // ege_adjustment_action_set_appearance( eact, TOOLBAR_SLIDER_HINT );
         add(*threshold_item);
     }
 

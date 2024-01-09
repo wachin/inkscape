@@ -15,7 +15,6 @@ enum SPGradientUnits {
     SP_GRADIENT_UNITS_USERSPACEONUSE
 };
 
-
 #endif /* !SEEN_SP_GRADIENT_UNITS_H */
 
 /*

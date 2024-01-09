@@ -15,10 +15,12 @@
  */
 
 #include <cstddef>
-#include <list>
+#include <vector>
+#include <memory>
 
 #include <sigc++/sigc++.h>
 
+#include "display/control/canvas-item-ptr.h"
 #include "preferences.h"
 
 class  SPDesktop;
@@ -67,9 +69,9 @@ private:
     Selection *_selection;
     sigc::connection _sel_changed_connection;
     sigc::connection _sel_modified_connection;
-    std::vector<Inkscape::CanvasItem*> _item_bboxes;
-    std::vector<Inkscape::CanvasItem*> _text_baselines;
-    std::vector<Inkscape::CanvasItem*> _item_lines;
+    std::vector<CanvasItemPtr<CanvasItem>> _item_bboxes;
+    std::vector<CanvasItemPtr<CanvasItem>> _text_baselines;
+    std::vector<CanvasItemPtr<CanvasItem>> _item_lines;
 
     BoundingBoxPrefsObserver _bounding_box_prefs_observer;
 };

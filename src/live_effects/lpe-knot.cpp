@@ -23,7 +23,6 @@
 #include "lpe-knot.h"
 
 // for change crossing undo
-#include "verbs.h"
 #include "document.h"
 #include "document-undo.h"
 
@@ -36,6 +35,7 @@
 #include "object/sp-path.h"
 #include "object/sp-shape.h"
 
+#include "ui/icon-names.h"
 #include "ui/knot/knot-holder.h"
 #include "ui/knot/knot-holder-entity.h"
 
@@ -121,9 +121,9 @@ findShadowedTime(Geom::Path const &patha, std::vector<Geom::Point> const &pt_and
         times_i.insert(times_i.end(), temptimes.begin(), temptimes.end() ); 
         temptimes = roots(f[Y]+width);
         times_i.insert(times_i.end(), temptimes.begin(), temptimes.end() ); 
-        temptimes = roots(f[X]-3*width);
+        temptimes = roots(f[X]-3*(width?width:EPSILON/2.0));
         times_i.insert(times_i.end(), temptimes.begin(), temptimes.end() ); 
-        temptimes = roots(f[X]+3*width);
+        temptimes = roots(f[X]+3*(width?width:EPSILON/2.0));
         times_i.insert(times_i.end(), temptimes.begin(), temptimes.end() );
         for (double & k : times_i){
             k+=i;
@@ -211,7 +211,7 @@ CrossingPoints::CrossingPoints(Geom::PathVector const &paths) : std::vector<Cros
                             cp.tj = time.second + jj;
                             push_back(cp);
                         }else{
-                            std::cout<<"ooops: find_(self)_intersections returned NaN:" << std::endl;
+                            std::cerr<<"ooops: find_(self)_intersections returned NaN:" << std::endl;
                             //std::cout<<"intersection "<<i<<"["<<ii<<"](NaN)= "<<j<<"["<<jj<<"](NaN)\n";
                         }
                     }
@@ -390,8 +390,7 @@ LPEKnot::LPEKnot(LivePathEffectObject *lpeobject)
     _provides_knotholder_entities = true;
 }
 
-LPEKnot::~LPEKnot()
-= default;
+LPEKnot::~LPEKnot() = default;
 
 void
 LPEKnot::updateSwitcher(){
@@ -435,12 +434,12 @@ LPEKnot::doEffect_path (Geom::PathVector const &path_in)
 
         std::vector<Interval> dom;
         dom.emplace_back(0., size_nondegenerate(gpaths[i0]));
-        for (unsigned p = 0; p < crossing_points.size(); p++){
-            if ( (crossing_points[p].i == i0) || (crossing_points[p].j == i0) ) {
-                unsigned i = crossing_points[p].i;
-                unsigned j = crossing_points[p].j;
-                double ti = crossing_points[p].ti;
-                double tj = crossing_points[p].tj;
+        for (auto & crossing_point : crossing_points){
+            if ( (crossing_point.i == i0) || (crossing_point.j == i0) ) {
+                unsigned i = crossing_point.i;
+                unsigned j = crossing_point.j;
+                double ti = crossing_point.ti;
+                double tj = crossing_point.tj;
                 
                 double curveidx, t;
                 
@@ -458,19 +457,19 @@ LPEKnot::doEffect_path (Geom::PathVector const &path_in)
                 int geom_sign = ( cross(flag_i[1], flag_j[1]) < 0 ? 1 : -1);
                 bool i0_is_under = false;
                 double width = interruption_width;
-                if ( crossing_points[p].sign * geom_sign > 0 ){
+                if ( crossing_point.sign * geom_sign > 0 ){
                     i0_is_under = ( i == i0 );
                 }
-                else if (crossing_points[p].sign * geom_sign < 0) {
+                else if (crossing_point.sign * geom_sign < 0) {
                     if (j == i0){
                         i0_is_under = true;
                     }
                 }
-                i0_is_under = crossing_points[p].sign != 0 && both ? true : i0_is_under;
+                i0_is_under = crossing_point.sign != 0 && both ? true : i0_is_under;
                 if (i0_is_under && j == i0) {
                     // last check of sign makes sure we get different outputs when
                     // path components are part of the same subpath (i == j)
-                    if (!(i == j && !both && crossing_points[p].sign * geom_sign > 0)) {
+                    if (!(i == j && !both && crossing_point.sign * geom_sign > 0)) {
                         std::swap(i, j);
                         std::swap(ti, tj);
                         std::swap(flag_i, flag_j);
@@ -500,7 +499,7 @@ LPEKnot::doEffect_path (Geom::PathVector const &path_in)
                     }else{
                         dom = complementOf(hidden,dom);
                     }
-                    if (crossing_points[p].i == i0 && crossing_points[p].j == i0 && crossing_points[p].sign != 0 &&
+                    if (crossing_point.i == i0 && crossing_point.j == i0 && crossing_point.sign != 0 &&
                         both) {
                         hidden = findShadowedTime(gpaths[i0], flag_i, tj, width / 2);
                         period = size_nondegenerate(gpaths[i0]);
@@ -555,14 +554,14 @@ static void
 collectPathsAndWidths (SPLPEItem const *lpeitem, Geom::PathVector &paths, std::vector<double> &stroke_widths){
     auto lpeitem_mutable = const_cast<SPLPEItem *>(lpeitem);
 
-    if (auto group = dynamic_cast<SPGroup *>(lpeitem_mutable)) {
-    	std::vector<SPItem*> item_list = sp_item_group_item_list(group);
+    if (auto group = cast<SPGroup>(lpeitem_mutable)) {
+        std::vector<SPItem*> item_list = group->item_list();
         for (auto subitem : item_list) {
-            if (SP_IS_LPE_ITEM(subitem)) {
-                collectPathsAndWidths(SP_LPE_ITEM(subitem), paths, stroke_widths);
+            if (is<SPLPEItem>(subitem)) {
+                collectPathsAndWidths(cast<SPLPEItem>(subitem), paths, stroke_widths);
             }
         }
-    } else if (auto shape = dynamic_cast<SPShape const *>(lpeitem)) {
+    } else if (auto shape = cast<SPShape>(lpeitem)) {
         SPCurve const *c = shape->curve();
         if (c) {
             Geom::PathVector subpaths = pathv_to_linear_and_cubic_beziers(c->get_pathvector());
@@ -582,8 +581,8 @@ LPEKnot::doBeforeEffect (SPLPEItem const* lpeitem)
     using namespace Geom;
     original_bbox(lpeitem);
     
-    if (SP_IS_PATH(lpeitem)) {
-        supplied_path = SP_PATH(lpeitem)->curve()->get_pathvector();
+    if (is<SPPath>(lpeitem)) {
+        supplied_path = cast<SPPath>(lpeitem)->curve()->get_pathvector();
     }
 
     gpaths.clear();
@@ -681,7 +680,7 @@ KnotHolderEntityCrossingSwitcher::knot_set(Geom::Point const &p, Geom::Point con
     lpe->selectedCrossing = idx_of_nearest(lpe->crossing_points,p);
     lpe->updateSwitcher();
     // FIXME: this should not directly ask for updating the item. It should write to SVG, which triggers updating.
-    sp_lpe_item_update_patheffect (SP_LPE_ITEM(item), false, true);
+    sp_lpe_item_update_patheffect (cast<SPLPEItem>(item), false, true);
 }
 
 Geom::Point
@@ -698,14 +697,14 @@ KnotHolderEntityCrossingSwitcher::knot_click(guint state)
     unsigned s = lpe->selectedCrossing;
     if (s < lpe->crossing_points.size()){
         if (state & GDK_SHIFT_MASK){
-            for (unsigned p = 0; p < lpe->crossing_points.size(); p++) {
-                lpe->crossing_points[p].sign = ((lpe->crossing_points[p].sign + 2) % 3) - 1;
+            for (auto & crossing_point : lpe->crossing_points) {
+                crossing_point.sign = ((crossing_point.sign + 2) % 3) - 1;
             }
         }
         else if (state & GDK_CONTROL_MASK) {
             int sign = lpe->crossing_points[s].sign;
-            for (unsigned p = 0; p < lpe->crossing_points.size(); p++) {
-                lpe->crossing_points[p].sign = ((sign + 2) % 3) - 1;
+            for (auto & crossing_point : lpe->crossing_points) {
+                crossing_point.sign = ((sign + 2) % 3) - 1;
             }
         }else{
             int sign = lpe->crossing_points[s].sign;
@@ -713,11 +712,9 @@ KnotHolderEntityCrossingSwitcher::knot_click(guint state)
             //std::cout<<"crossing set to"<<lpe->crossing_points[s].sign<<".\n";
         }
         lpe->crossing_points_vector.param_set_and_write_new_value(lpe->crossing_points.to_vector());
-        DocumentUndo::done(lpe->getSPDoc(), SP_VERB_DIALOG_LIVE_PATH_EFFECT, /// @todo Is this the right verb?
-                           _("Change knot crossing"));
-
+        lpe->makeUndoDone(_("Change knot crossing"));
         // FIXME: this should not directly ask for updating the item. It should write to SVG, which triggers updating.
-//        sp_lpe_item_update_patheffect (SP_LPE_ITEM(item), false, true);
+//        sp_lpe_item_update_patheffect (cast<SPLPEItem>(item), false, true);
     }
 }
 

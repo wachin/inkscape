@@ -3,11 +3,13 @@
  * Authors:
  *   Ted Gould <ted@gould.cx>
  *   Abhishek Sharma
+ *   Sushant A.A. <sushant.co19@gmail.com>
  *
  * Copyright (C) 2002-2007 Authors
  *
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
+
 
 #include "effect.h"
 
@@ -15,12 +17,11 @@
 #include "inkscape.h"
 #include "timer.h"
 
-#include "helper/action.h"
 #include "implementation/implementation.h"
 #include "prefdialog/prefdialog.h"
 #include "ui/view/view.h"
-
-
+#include "inkscape-application.h"
+#include "actions/actions-effect.h"
 
 /* Inkscape::Extension::Effect */
 
@@ -28,22 +29,56 @@ namespace Inkscape {
 namespace Extension {
 
 Effect * Effect::_last_effect = nullptr;
-Inkscape::XML::Node * Effect::_effects_list = nullptr;
-Inkscape::XML::Node * Effect::_filters_list = nullptr;
 
-#define  EFFECTS_LIST  "effects-list"
-#define  FILTERS_LIST  "filters-list"
+/**
+ * Adds effect to Gio::Actions
+ *
+ *  \c effect is Filter or Extension
+ *  \c show_prefs is used to show preferences dialog
+*/
+void
+action_effect (Effect* effect, bool show_prefs)
+{
+    auto doc = InkscapeApplication::instance()->get_active_view();
+    if (effect->_workingDialog && show_prefs) {
+        effect->prefs(doc);
+    } else {
+        effect->effect(doc);
+    }
+}
+
+// Modifying string to get submenu id
+std::string
+action_menu_name (std::string menu)
+{
+    transform(menu.begin(), menu.end(), menu.begin(), ::tolower);
+    for (auto &x:menu) {
+        if (x==' ') {
+            x = '-';
+        }
+    }
+    return menu;
+}
 
 Effect::Effect (Inkscape::XML::Node *in_repr, Implementation::Implementation *in_imp, std::string *base_directory)
     : Extension(in_repr, in_imp, base_directory)
-    , _id_noprefs(Glib::ustring(get_id()) + ".noprefs")
-    , _name_noprefs(Glib::ustring(get_name()) + _(" (No preferences)"))
-    , _verb(get_id(), get_name(), nullptr, nullptr, this, true)
-    , _verb_nopref(_id_noprefs.c_str(), _name_noprefs.c_str(), nullptr, nullptr, this, false)
-    , _menu_node(nullptr), _workingDialog(true)
+    , _menu_node(nullptr)
     , _prefDialog(nullptr)
 {
     Inkscape::XML::Node * local_effects_menu = nullptr;
+
+    // can't use document level because it is not defined
+    static auto app = InkscapeApplication::instance();
+
+    if (!app) {
+        // This happens during tests.
+        // std::cerr << "Effect::Effect:: no app!" << std::endl;
+        return;
+    }
+
+    if (!Inkscape::Application::exists()) {
+        return;
+    }
 
     // This is a weird hack
     if (!strcmp(this->get_id(), "org.inkscape.filter.dropshadow"))
@@ -53,6 +88,9 @@ Effect::Effect (Inkscape::XML::Node *in_repr, Implementation::Implementation *in
 
     no_doc = false;
     no_live_preview = false;
+
+    // Setting initial value of description to name of action incase if there is no description
+    Glib::ustring description  = get_name();
 
     if (repr != nullptr) {
 
@@ -66,6 +104,7 @@ Effect::Effect (Inkscape::XML::Node *in_repr, Implementation::Implementation *in
                 }
                 if (child->attribute("implements-custom-gui") && !strcmp(child->attribute("implements-custom-gui"), "true")) {
                     _workingDialog = false;
+                    ignore_stderr = true;
                 }
                 for (Inkscape::XML::Node *effect_child = child->firstChild(); effect_child != nullptr; effect_child = effect_child->next()) {
                     if (!strcmp(effect_child->name(), INKSCAPE_EXTENSION_NS "effects-menu")) {
@@ -75,15 +114,10 @@ Effect::Effect (Inkscape::XML::Node *in_repr, Implementation::Implementation *in
                             hidden = true;
                         }
                     }
-                    if (!strcmp(effect_child->name(), INKSCAPE_EXTENSION_NS "menu-name") ||
-                            !strcmp(effect_child->name(), INKSCAPE_EXTENSION_NS "_menu-name")) {
-                        // printf("Found local effects menu in %s\n", this->get_name());
-                        _verb.set_name(effect_child->firstChild()->content());
-                    }
                     if (!strcmp(effect_child->name(), INKSCAPE_EXTENSION_NS "menu-tip") ||
                             !strcmp(effect_child->name(), INKSCAPE_EXTENSION_NS "_menu-tip")) {
                         // printf("Found local effects menu in %s\n", this->get_name());
-                        _verb.set_tip(effect_child->firstChild()->content());
+                        description = effect_child->firstChild()->content();
                     }
                 } // children of "effect"
                 break; // there can only be one effect
@@ -91,126 +125,124 @@ Effect::Effect (Inkscape::XML::Node *in_repr, Implementation::Implementation *in
         } // children of "inkscape-extension"
     } // if we have an XML file
 
-    // \TODO this gets called from the Inkscape::Application constructor, where it initializes the menus.
-    // But in the constructor, our object isn't quite there yet!
-    if (Inkscape::Application::exists() && INKSCAPE.use_gui()) {
-        if (_effects_list == nullptr)
-            _effects_list = find_menu(INKSCAPE.get_menus(), EFFECTS_LIST);
-        if (_filters_list == nullptr)
-            _filters_list = find_menu(INKSCAPE.get_menus(), FILTERS_LIST);
+    std::string aid = std::string(get_id());
+    _sanitizeId(aid);
+    std::string action_id = "app." + aid;
+
+    static auto gapp = InkscapeApplication::instance()->gtk_app();
+    if (gapp) {
+        // Might be in command line mode without GUI (testing).
+        action = gapp->add_action( aid, sigc::bind<Effect*>(sigc::ptr_fun(&action_effect), this, true));
+        action_noprefs = gapp->add_action( aid + ".noprefs", sigc::bind<Effect*>(sigc::ptr_fun(&action_effect), this, false));
     }
 
-    if ((_effects_list != nullptr || _filters_list != nullptr)) {
-        Inkscape::XML::Document *xml_doc;
-        xml_doc = _effects_list->document();
-        _menu_node = xml_doc->createElement("verb");
-        _menu_node->setAttribute("verb-id", this->get_id());
+    if (!hidden) {
+        // Submenu retrieval as a list of strings (to handle nested menus).
+        std::list<Glib::ustring> sub_menu_list;
+        get_menu(local_effects_menu, sub_menu_list);
 
-        if (!hidden) {
-            if (_filters_list &&
-                local_effects_menu &&
-                local_effects_menu->attribute("name") &&
-                !strcmp(local_effects_menu->attribute("name"), ("Filters"))) {
-                merge_menu(_filters_list->parent(), _filters_list, local_effects_menu->firstChild(), _menu_node);
-            } else if (_effects_list) {
-                merge_menu(_effects_list->parent(), _effects_list, local_effects_menu, _menu_node);
+        if (local_effects_menu && local_effects_menu->attribute("name") && !strcmp(local_effects_menu->attribute("name"), ("Filters"))) {
+
+            std::vector<std::vector<Glib::ustring>>raw_data_filter =
+                {{ action_id, get_name(), "Filters", description },
+                 { action_id + ".noprefs", Glib::ustring(get_name()) + " " + _("(No preferences)"), "Filters (no prefs)", description }};
+            app->get_action_extra_data().add_data(raw_data_filter);
+
+        } else {
+
+            std::vector<std::vector<Glib::ustring>>raw_data_effect =
+                {{ action_id, get_name(), "Extensions", description },
+                 { action_id + ".noprefs", Glib::ustring(get_name()) + " " + _("(No preferences)"), "Extensions (no prefs)", description }};
+            app->get_action_extra_data().add_data(raw_data_effect);
+
+            sub_menu_list.emplace_front("Effects");
+        }
+        
+        // std::cout << " Effect: name:  " << get_name();
+        // std::cout << "  id: " << aid.c_str();
+        // std::cout << "  menu: ";
+        // for (auto sub_menu : sub_menu_list) {
+        //     std::cout << "|" << sub_menu.raw(); // Must use raw() as somebody has messed up encoding.
+        // }
+        // std::cout << "|" << std::endl;
+
+        // Add submenu to effect data
+        gchar *ellipsized_name = widget_visible_count() ? g_strdup_printf(_("%s..."), get_name()) : nullptr;
+        Glib::ustring menu_name = ellipsized_name ? ellipsized_name : get_name();
+        app->get_action_effect_data().add_data(aid, sub_menu_list, menu_name);
+        g_free(ellipsized_name);
+    }
+}
+
+/** Sanitizes the passed id in place. If an invalid character is found in the ID, a warning
+ *  is printed to stderr. All invalid characters are replaced with an 'X'.
+ */
+void Effect::_sanitizeId(std::string &id)
+{
+    auto allowed = [] (char ch) {
+        // Note: std::isalnum() is locale-dependent
+        if ('A' <= ch && ch <= 'Z') return true;
+        if ('a' <= ch && ch <= 'z') return true;
+        if ('0' <= ch && ch <= '9') return true;
+        if (ch == '.' || ch == '-') return true;
+        return false;
+    };
+
+    // Silently replace any underscores with dashes.
+    std::replace(id.begin(), id.end(), '_', '-');
+
+    // Detect remaining invalid characters and print a warning if found
+    bool errored = false;
+    for (auto &ch : id) {
+        if (!allowed(ch)) {
+            if (!errored) {
+                auto message = std::string{"Invalid extension action ID found: \""} + id + "\".";
+                g_warn_message("Inkscape", __FILE__, __LINE__, "Effect::_sanitizeId()", message.c_str());
+                errored = true;
             }
+            ch = 'X';
         }
     }
+}
 
-    return;
+
+void
+Effect::get_menu (Inkscape::XML::Node * pattern, std::list<Glib::ustring>& sub_menu_list)
+{
+    if (!pattern) {
+        return;
+    }
+
+    Glib::ustring merge_name;
+
+    gchar const *menu_name = pattern->attribute("name");
+    if (!menu_name) {
+        menu_name = pattern->attribute("_name");
+    }
+    if (!menu_name) {
+        return;
+    }
+
+    if (_translation_enabled) {
+        merge_name = get_translation(menu_name);
+    } else {
+        merge_name = _(menu_name);
+    }
+
+    // Making sub menu string
+    sub_menu_list.push_back(merge_name);
+
+    get_menu(pattern->firstChild(), sub_menu_list);
 }
 
 void
-Effect::merge_menu (Inkscape::XML::Node * base,
-                    Inkscape::XML::Node * start,
-                    Inkscape::XML::Node * pattern,
-                    Inkscape::XML::Node * merge) {
-    Glib::ustring mergename;
-    Inkscape::XML::Node * tomerge = nullptr;
-    Inkscape::XML::Node * submenu = nullptr;
-
-    if (pattern == nullptr) {
-        // Merge the verb name
-        tomerge = merge;
-        mergename = get_name();
-    } else {
-        gchar const *menuname = pattern->attribute("name");
-        if (menuname == nullptr) menuname = pattern->attribute("_name");
-        if (menuname == nullptr) return;
-
-        Inkscape::XML::Document *xml_doc;
-        xml_doc = base->document();
-        tomerge = xml_doc->createElement("submenu");
-        if (_translation_enabled) {
-            mergename = get_translation(menuname);
-        } else {
-            // Even if the extension author requested the extension not to be translated,
-            // it still seems desirable to be able to put the extension into the existing (translated) submenus.
-            mergename = _(menuname);
-        }
-        tomerge->setAttribute("name", mergename);
-    }
-
-    int position = -1;
-
-    if (start != nullptr) {
-        Inkscape::XML::Node * menupass;
-        for (menupass = start; menupass != nullptr && strcmp(menupass->name(), "separator"); menupass = menupass->next()) {
-            gchar const * compare_char = nullptr;
-            if (!strcmp(menupass->name(), "verb")) {
-                gchar const * verbid = menupass->attribute("verb-id");
-                Inkscape::Verb * verb = Inkscape::Verb::getbyid(verbid);
-                if (verb == nullptr) {
-					g_warning("Unable to find verb '%s' which is referred to in the menus.", verbid);
-                    continue;
-                }
-                compare_char = verb->get_name();
-            } else if (!strcmp(menupass->name(), "submenu")) {
-                compare_char = menupass->attribute("name");
-                if (compare_char == nullptr)
-                    compare_char = menupass->attribute("_name");
-            }
-
-            position = menupass->position() + 1;
-
-            /* This will cause us to skip tags we don't understand */
-            if (compare_char == nullptr) {
-                continue;
-            }
-
-            Glib::ustring compare(_(compare_char));
-
-            if (mergename == compare) {
-                Inkscape::GC::release(tomerge);
-                tomerge = nullptr;
-                submenu = menupass;
-                break;
-            }
-
-            if (mergename < compare) {
-                position = menupass->position();
-                break;
-            }
-        } // for menu items
-    } // start != NULL
-
-    if (tomerge != nullptr) {
-        if (position != -1) {
-            base->addChildAtPos(tomerge, position);
-        } else {
-            base->appendChild(tomerge);
-        }
-        Inkscape::GC::release(tomerge);
-    }
-
-    if (pattern != nullptr) {
-        if (submenu == nullptr)
-            submenu = tomerge;
-        merge_menu(submenu, submenu->firstChild(), pattern->firstChild(), merge);
-    }
-
-    return;
+Effect::deactivate()
+{
+    if (action)
+        action->set_enabled(false);
+    if (action_noprefs)
+        action_noprefs->set_enabled(false);
+    Extension::deactivate();
 }
 
 Effect::~Effect ()
@@ -227,17 +259,6 @@ Effect::~Effect ()
 }
 
 bool
-Effect::check ()
-{
-    if (!Extension::check()) {
-        _verb.sensitive(nullptr, false);
-        _verb.set_tip(Extension::getErrorReason().c_str()); // TODO: insensitive menuitems don't show a tooltip
-        return false;
-    }
-    return true;
-}
-
-bool
 Effect::prefs (Inkscape::UI::View::View * doc)
 {
     if (_prefDialog != nullptr) {
@@ -245,7 +266,7 @@ Effect::prefs (Inkscape::UI::View::View * doc)
         return true;
     }
 
-    if (widget_visible_count() == 0) {
+    if (!widget_visible_count()) {
         effect(doc);
         return true;
     }
@@ -295,8 +316,7 @@ Effect::effect (Inkscape::UI::View::View * doc)
 /** \brief  Sets which effect was called last
     \param in_effect  The effect that has been called
 
-    This function sets the static variable \c _last_effect and it
-    ensures that the last effect verb is sensitive.
+    This function sets the static variable \c _last_effect
 
     If the \c in_effect variable is \c NULL then the last effect
     verb is made insensitive.
@@ -304,15 +324,8 @@ Effect::effect (Inkscape::UI::View::View * doc)
 void
 Effect::set_last_effect (Effect * in_effect)
 {
-    if (in_effect == nullptr) {
-        Inkscape::Verb::get(SP_VERB_EFFECT_LAST)->sensitive(nullptr, false);
-        Inkscape::Verb::get(SP_VERB_EFFECT_LAST_PREF)->sensitive(nullptr, false);
-    } else if (_last_effect == nullptr) {
-        Inkscape::Verb::get(SP_VERB_EFFECT_LAST)->sensitive(nullptr, true);
-        Inkscape::Verb::get(SP_VERB_EFFECT_LAST_PREF)->sensitive(nullptr, true);
-    }
-
     _last_effect = in_effect;
+    enable_effect_actions(InkscapeApplication::instance(), !!in_effect);
     return;
 }
 
@@ -329,8 +342,9 @@ Effect::find_menu (Inkscape::XML::Node * menustruct, const gchar *name)
         Inkscape::XML::Node * firstchild = child->firstChild();
         if (firstchild != nullptr) {
             Inkscape::XML::Node *found = find_menu (firstchild, name);
-            if (found)
+            if (found) {
                 return found;
+            }
         }
     }
     return nullptr;
@@ -353,33 +367,6 @@ void
 Effect::set_pref_dialog (PrefDialog * prefdialog)
 {
     _prefDialog = prefdialog;
-    return;
-}
-
-SPAction *
-Effect::EffectVerb::make_action (Inkscape::ActionContext const & context)
-{
-    return make_action_helper(context, &perform, static_cast<void *>(this));
-}
-
-/** \brief  Decode the verb code and take appropriate action */
-void
-Effect::EffectVerb::perform( SPAction *action, void * data )
-{
-    g_return_if_fail(ensure_desktop_valid(action));
-    Inkscape::UI::View::View * current_view = sp_action_get_view(action);
-
-    Effect::EffectVerb * ev = reinterpret_cast<Effect::EffectVerb *>(data);
-    Effect * effect = ev->_effect;
-
-    if (effect == nullptr) return;
-
-    if (ev->_showPrefs) {
-        effect->prefs(current_view);
-    } else {
-        effect->effect(current_view);
-    }
-
     return;
 }
 

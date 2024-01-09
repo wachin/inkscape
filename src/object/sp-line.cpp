@@ -149,10 +149,10 @@ Geom::Affine SPLine::set_transform(Geom::Affine const &transform) {
 }
 
 void SPLine::set_shape() {
-    auto c = std::make_unique<SPCurve>();
+    SPCurve c;
 
-    c->moveto(this->x1.computed, this->y1.computed);
-    c->lineto(this->x2.computed, this->y2.computed);
+    c.moveto(this->x1.computed, this->y1.computed);
+    c.lineto(this->x2.computed, this->y2.computed);
 
     // *_insync does not call update, avoiding infinite recursion when set_shape is called by update
     setCurveInsync(std::move(c));

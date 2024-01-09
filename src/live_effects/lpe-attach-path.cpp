@@ -40,15 +40,52 @@ LPEAttachPath::LPEAttachPath(LivePathEffectObject *lpeobject) :
     show_orig_path = true;
     curve_start_previous_origin = start_path_curve_end.getOrigin();
     curve_end_previous_origin = end_path_curve_end.getOrigin();
+    start_path.setUpdating(true);
+    end_path.setUpdating(true);
 }
 
-LPEAttachPath::~LPEAttachPath()
-= default;
+LPEAttachPath::~LPEAttachPath() = default;
 
 void LPEAttachPath::resetDefaults(SPItem const * /*item*/)
 {
+    Effect::resetDefaults(nullptr);
     curve_start_previous_origin = start_path_curve_end.getOrigin();
     curve_end_previous_origin = end_path_curve_end.getOrigin();
+}
+
+void 
+LPEAttachPath::doBeforeEffect (SPLPEItem const* lpeitem)
+{
+    if (is_load) {
+        start_path.setUpdating(false);
+        start_path.start_listening(start_path.getObject());
+        start_path.connect_selection_changed();
+        end_path.setUpdating(false);
+        end_path.start_listening(end_path.getObject());
+        end_path.connect_selection_changed();
+        if (auto item = end_path.getObject()) {
+            item->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG);
+        }
+        if (auto item = start_path.getObject()) {
+            item->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG);
+        }
+    }
+}
+
+
+bool 
+LPEAttachPath::doOnOpen(SPLPEItem const *lpeitem)
+{
+    if (!is_load || is_applied) {
+        return false;
+    }
+    start_path.setUpdating(false);
+    start_path.start_listening(start_path.getObject());
+    start_path.connect_selection_changed();
+    end_path.setUpdating(false);
+    end_path.start_listening(end_path.getObject());
+    end_path.connect_selection_changed();
+    return false;
 }
 
 void LPEAttachPath::doEffect (SPCurve * curve)
@@ -60,7 +97,7 @@ void LPEAttachPath::doEffect (SPCurve * curve)
         bool set_start_end = start_path_curve_end.getOrigin() != curve_start_previous_origin;
         bool set_end_end = end_path_curve_end.getOrigin() != curve_end_previous_origin;
         
-        if (start_path.linksToPath()) {
+        if (start_path.linksToPath() && start_path.getObject()) {
 
             Geom::PathVector linked_pathv = start_path.get_pathvector();
             Geom::Affine linkedtransform = start_path.getObject()->getRelativeTransform(sp_lpe_item);
@@ -74,11 +111,10 @@ void LPEAttachPath::doEffect (SPCurve * curve)
                 
                 for (unsigned deriv_n = 1; deriv_n < derivs.size(); deriv_n++) {
                     Geom::Coord length = derivs[deriv_n].length();
-                    if ( ! Geom::are_near(length, 0) ) {
+                    if ( ! Geom::are_near(length, 0) && !start_path.getObject()->_tmpsuccessor) {
                         if (set_start_end) {
                             start_path_position.param_set_value(transformedpath.nearestTime(start_path_curve_end.getOrigin()).asFlatTime());
                         }
-                        
                         if (start_path_position > transformedpath.size()) {
                             start_path_position.param_set_value(transformedpath.size());
                         } else if (start_path_position < 0) {
@@ -114,7 +150,7 @@ void LPEAttachPath::doEffect (SPCurve * curve)
         
         p.append(this_pathv.front());
         
-        if (end_path.linksToPath()) {
+        if (end_path.linksToPath() && end_path.getObject()) {
 
             Geom::PathVector linked_pathv = end_path.get_pathvector();
             Geom::Affine linkedtransform = end_path.getObject()->getRelativeTransform(sp_lpe_item);
@@ -129,7 +165,7 @@ void LPEAttachPath::doEffect (SPCurve * curve)
                 std::vector<Geom::Point> derivs = last_seg_reverse->pointAndDerivatives(0, 3);
                 for (unsigned deriv_n = 1; deriv_n < derivs.size(); deriv_n++) {
                     Geom::Coord length = derivs[deriv_n].length();
-                    if ( ! Geom::are_near(length, 0) ) {
+                    if ( ! Geom::are_near(length, 0) && !end_path.getObject()->_tmpsuccessor) {
                         if (set_end_end) {
                             end_path_position.param_set_value(transformedpath.nearestTime(end_path_curve_end.getOrigin()).asFlatTime());
                         }

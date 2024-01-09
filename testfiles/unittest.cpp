@@ -10,17 +10,16 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
-#include "gtest/gtest.h"
+#include <gtest/gtest.h>
 
 #include <glib.h>
-
-#include "inkgc/gc-core.h"
-#include "inkscape.h"
-
 #include <giomm/init.h>
 
-int main(int argc, char **argv) {
+#include "inkgc/gc-core.h"
+#include "util/statics.h"
 
+int main(int argc, char **argv)
+{
     // setup general environment
 #if !GLIB_CHECK_VERSION(2,36,0)
     g_type_init();
@@ -34,7 +33,10 @@ int main(int argc, char **argv) {
     Inkscape::GC::init();
 
     ::testing::InitGoogleTest(&argc, argv);
-    return RUN_ALL_TESTS();
+    auto ret = RUN_ALL_TESTS();
+
+    Inkscape::Util::StaticsBin::get().destroy();
+    return ret;
 }
 
 /*

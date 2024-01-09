@@ -13,7 +13,6 @@
 #include <vector>
 
 #include "document-subset.h"
-#include "gc-finalized.h"
 
 class SPDocument;
 
@@ -21,12 +20,11 @@ namespace Inkscape {
 
 class ColorProfile;
 
-class ProfileManager : public DocumentSubset,
-                       public GC::Finalized
+class ProfileManager : public DocumentSubset
 {
 public:
     ProfileManager(SPDocument *document);
-    ~ProfileManager() override;
+    ~ProfileManager();
 
     ColorProfile* find(char const* name);
 

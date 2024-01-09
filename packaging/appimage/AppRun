@@ -17,7 +17,7 @@ fi
 # or to be called with ./Inkscape*.AppImage inkview
 ############################################################################################
 
-if [ ! -z $APPIMAGE ] ; then
+if [ ! -z "$APPIMAGE" ] ; then
   BINARY_NAME=$(basename "$ARGV0")
 else
   BINARY_NAME=$(basename "$0")
@@ -35,6 +35,12 @@ fi
 ############################################################################################
 
 export PATH="${HERE}/usr/bin:${PATH}"
+
+############################################################################################
+# Make sure commands launch Inkscape through this file to correctly set environment
+############################################################################################
+
+export INKSCAPE_COMMAND="${HERE}/AppRun"
 
 ############################################################################################
 # Run experimental bundle that bundles everything if a private ld-linux-x86-64.so.2 is there
@@ -62,4 +68,7 @@ LIBRARY_PATH+=":$GDK_PIXBUF_MODULEDIR" # Otherwise getting "Unable to load image
 # Otherwise getting "Unable to load image-loading module" when opening extension manager
 export LD_LIBRARY_PATH="$GDK_PIXBUF_MODULEDIR"
 
+if [[ "$( dirname  "$0"; )" == *"tmp/.mount_"* ]] ; then 
+    echo "You should not use AppImage in production, but you can speedup the AppImage by following this guide: https://inkscape.org/learn/appimage/"
+fi
 exec "$HERE/lib/$PLATFORM/ld-linux-x86-64.so.2" --inhibit-cache --library-path "$LIBRARY_PATH" "$MAIN" "$@"

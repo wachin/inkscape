@@ -11,22 +11,20 @@
 #define SEEN_SP_GRADIENT_REFERENCE_H
 
 #include "uri-references.h"
+#include "sp-gradient.h"
 
-class SPGradient;
-class SPObject;
-
-class SPGradientReference : public Inkscape::URIReference {
+class SPGradientReference : public Inkscape::URIReference
+{
 public:
-    SPGradientReference(SPObject *obj) : URIReference(obj) {}
+    SPGradientReference(SPGradient *grad) : URIReference(grad) {}
 
     SPGradient *getObject() const {
-        return reinterpret_cast<SPGradient *>(URIReference::getObject());
+        return static_cast<SPGradient *>(URIReference::getObject());
     }
 
 protected:
     bool _acceptObject(SPObject *obj) const override;
 };
-
 
 #endif /* !SEEN_SP_GRADIENT_REFERENCE_H */
 

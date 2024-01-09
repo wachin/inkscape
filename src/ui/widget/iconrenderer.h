@@ -30,7 +30,7 @@ public:
 
     void add_icon(Glib::ustring name);
 
-    typedef sigc::signal<void, Glib::ustring> type_signal_activated;
+    typedef sigc::signal<void (Glib::ustring)> type_signal_activated;
     type_signal_activated signal_activated();
 protected:
     type_signal_activated m_signal_activated;

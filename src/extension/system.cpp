@@ -17,32 +17,30 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
-#include "ui/interface.h"
-
 #include "system.h"
-#include "preferences.h"
-#include "extension.h"
-#include "db.h"
-#include "input.h"
-#include "output.h"
-#include "effect.h"
-#include "patheffect.h"
-#include "print.h"
-#include "implementation/script.h"
-#include "implementation/xslt.h"
-#include "xml/rebase-hrefs.h"
-#include "io/sys.h"
-#include "inkscape.h"
-#include "document-undo.h"
-#include "loader.h"
 
 #include <glibmm/miscutils.h>
 
+#include "db.h"
+#include "document-undo.h"
+#include "effect.h"
+#include "extension.h"
+#include "implementation/script.h"
+#include "implementation/xslt.h"
+#include "inkscape.h"
+#include "input.h"
+#include "io/sys.h"
+#include "loader.h"
+#include "output.h"
+#include "patheffect.h"
+#include "preferences.h"
+#include "print.h"
+#include "template.h"
+#include "ui/interface.h"
+#include "xml/rebase-hrefs.h"
+
 namespace Inkscape {
 namespace Extension {
-
-static void open_internal(Inkscape::Extension::Extension *in_plug, gpointer in_data);
-static void save_internal(Inkscape::Extension::Extension *in_plug, gpointer in_data);
 
 /**
  * \return   A new document created from the filename passed in
@@ -69,10 +67,13 @@ SPDocument *open(Extension *key, gchar const *filename)
     Input *imod = nullptr;
 
     if (key == nullptr) {
-        gpointer parray[2];
-        parray[0] = (gpointer)filename;
-        parray[1] = (gpointer)&imod;
-        db.foreach(open_internal, (gpointer)&parray);
+        DB::InputList o;
+        for (auto mod : db.get_input_list(o)) {
+            if (mod->can_open_filename(filename)) {
+                imod = mod;
+                break;
+            }
+        }
     } else {
         imod = dynamic_cast<Input *>(key);
     }
@@ -118,23 +119,24 @@ SPDocument *open(Extension *key, gchar const *filename)
         throw Input::open_failed();
     }
 
-    if (!imod->prefs(filename)) {
+    if (!imod->prefs()) {
         throw Input::open_cancelled();
     }
 
     SPDocument *doc = imod->open(filename);
 
     if (!doc) {
+        if (last_chance_svg) {
+            if ( INKSCAPE.use_gui() ) {
+                sp_ui_error_dialog(_("Could not detect file format. Tried to open it as an SVG anyway but this also failed."));
+            } else {
+                g_warning("%s", _("Could not detect file format. Tried to open it as an SVG anyway but this also failed."));
+            }
+        }
         throw Input::open_failed();
     }
-
-    if (last_chance_svg) {
-        if ( INKSCAPE.use_gui() ) {
-            sp_ui_error_dialog(_("Format autodetect failed. The file is being opened as SVG."));
-        } else {
-            g_warning("%s", _("Format autodetect failed. The file is being opened as SVG."));
-        }
-    }
+    // If last_chance_svg is true here, it means we successfully opened a file as an svg
+    // and there's no need to warn the user about it, just do it.
 
     doc->setDocumentFilename(filename);
     if (!show) {
@@ -142,54 +144,6 @@ SPDocument *open(Extension *key, gchar const *filename)
     }
 
     return doc;
-}
-
-/**
- * \return   none
- * \brief    This is the function that searches each module to see
- *           if it matches the filename for autodetection.
- * \param    in_plug  The module to be tested
- * \param    in_data  An array of pointers containing the filename, and
- *                    the place to put a successfully found module.
- *
- * Basically this function only looks at input modules as it is part of the open function.  If the
- * module is an input module, it then starts to take it apart, and the data that is passed in.
- * Because the data being passed in is in such a weird format, there are a few casts to make it
- * easier to use.  While it looks like a lot of local variables, they'll all get removed by the
- * compiler.
- *
- * First thing that is checked is if the filename is shorter than the extension itself.  There is
- * no way for a match in that case.  If it's long enough then there is a string compare of the end
- * of the filename (for the length of the extension), and the extension itself.  If this passes
- * then the pointer passed in is set to the current module.
- */
-static void
-open_internal(Extension *in_plug, gpointer in_data)
-{
-    auto imod = dynamic_cast<Input *>(in_plug);
-    if (imod && !imod->deactivated()) {
-        gpointer *parray = (gpointer *)in_data;
-        gchar const *filename = (gchar const *)parray[0];
-        Input **pimod = (Input **)parray[1];
-
-        // skip all the rest if we already found a function to open it
-        // since they're ordered by preference now.
-        if (!*pimod) {
-            gchar const *ext = imod->get_extension();
-
-            gchar *filenamelower = g_utf8_strdown(filename, -1);
-            gchar *extensionlower = g_utf8_strdown(ext, -1);
-
-            if (g_str_has_suffix(filenamelower, extensionlower)) {
-                *pimod = imod;
-            }
-
-            g_free(filenamelower);
-            g_free(extensionlower);
-        }
-    }
-
-    return;
 }
 
 /**
@@ -216,16 +170,18 @@ open_internal(Extension *in_plug, gpointer in_data)
  * Lastly, the save function is called in the module itself.
  */
 void
-save(Extension *key, SPDocument *doc, gchar const *filename, bool setextension, bool check_overwrite, bool official,
+save(Extension *key, SPDocument *doc, gchar const *filename, bool check_overwrite, bool official,
     Inkscape::Extension::FileSaveMethod save_method)
 {
     Output *omod;
     if (key == nullptr) {
-        gpointer parray[2];
-        parray[0] = (gpointer)filename;
-        parray[1] = (gpointer)&omod;
-        omod = nullptr;
-        db.foreach(save_internal, (gpointer)&parray);
+        DB::OutputList o;
+        for (auto mod : db.get_output_list(o)) {
+            if (mod->can_save_filename(filename)) {
+                omod = mod;
+                break;
+            }
+        }
 
         /* This is a nasty hack, but it is required to ensure that
            autodetect will always save with the Inkscape extensions
@@ -255,22 +211,7 @@ save(Extension *key, SPDocument *doc, gchar const *filename, bool setextension, 
         throw Output::save_cancelled();
     }
 
-    gchar *fileName = nullptr;
-    if (setextension) {
-        gchar *lowerfile = g_utf8_strdown(filename, -1);
-        gchar *lowerext = g_utf8_strdown(omod->get_extension(), -1);
-
-        if (!g_str_has_suffix(lowerfile, lowerext)) {
-            fileName = g_strdup_printf("%s%s", filename, omod->get_extension());
-        }
-
-        g_free(lowerfile);
-        g_free(lowerext);
-    }
-
-    if (fileName == nullptr) {
-        fileName = g_strdup(filename);
-    }
+    gchar *fileName = g_strdup(filename);
 
     if (check_overwrite && !sp_ui_overwrite_file(fileName)) {
         g_free(fileName);
@@ -355,54 +296,6 @@ save(Extension *key, SPDocument *doc, gchar const *filename, bool setextension, 
     return;
 }
 
-/**
- * \return   none
- * \brief    This is the function that searches each module to see
- *           if it matches the filename for autodetection.
- * \param    in_plug  The module to be tested
- * \param    in_data  An array of pointers containing the filename, and
- *                    the place to put a successfully found module.
- *
- * Basically this function only looks at output modules as it is part of the open function.  If the
- * module is an output module, it then starts to take it apart, and the data that is passed in.
- * Because the data being passed in is in such a weird format, there are a few casts to make it
- * easier to use.  While it looks like a lot of local variables, they'll all get removed by the
- * compiler.
- *
- * First thing that is checked is if the filename is shorter than the extension itself.  There is
- * no way for a match in that case.  If it's long enough then there is a string compare of the end
- * of the filename (for the length of the extension), and the extension itself.  If this passes
- * then the pointer passed in is set to the current module.
- */
-static void
-save_internal(Extension *in_plug, gpointer in_data)
-{
-    auto omod = dynamic_cast<Output *>(in_plug);
-    if (omod && !omod->deactivated()) {
-        gpointer *parray = (gpointer *)in_data;
-        gchar const *filename = (gchar const *)parray[0];
-        Output **pomod = (Output **)parray[1];
-
-        // skip all the rest if we already found someone to save it
-        // since they're ordered by preference now.
-        if (!*pomod) {
-            gchar const *ext = omod->get_extension();
-
-            gchar *filenamelower = g_utf8_strdown(filename, -1);
-            gchar *extensionlower = g_utf8_strdown(ext, -1);
-
-            if (g_str_has_suffix(filenamelower, extensionlower)) {
-                *pomod = omod;
-            }
-
-            g_free(filenamelower);
-            g_free(extensionlower);
-        }
-    }
-
-    return;
-}
-
 Print *
 get_print(gchar const *key)
 {
@@ -447,6 +340,8 @@ build_from_reprdoc(Inkscape::XML::Document *doc, Implementation::Implementation 
         /* printf("Child: %s\n", child_repr->name()); */
         if (!strcmp(element_name, INKSCAPE_EXTENSION_NS "input")) {
             module_functional_type = MODULE_INPUT;
+        } else if (!strcmp(element_name, INKSCAPE_EXTENSION_NS "template")) {
+            module_functional_type = MODULE_TEMPLATE;
         } else if (!strcmp(element_name, INKSCAPE_EXTENSION_NS "output")) {
             module_functional_type = MODULE_OUTPUT;
         } else if (!strcmp(element_name, INKSCAPE_EXTENSION_NS "effect")) {
@@ -459,7 +354,7 @@ build_from_reprdoc(Inkscape::XML::Document *doc, Implementation::Implementation 
             module_implementation_type = MODULE_EXTENSION;
         } else if (!strcmp(element_name, INKSCAPE_EXTENSION_NS "xslt")) {
             module_implementation_type = MODULE_XSLT;
-        } else if (!strcmp(element_name,  INKSCAPE_EXTENSION_NS "plugin")) {
+        } else if (!strcmp(element_name, INKSCAPE_EXTENSION_NS "plugin")) {
             module_implementation_type = MODULE_PLUGIN;
         }
 
@@ -503,6 +398,10 @@ build_from_reprdoc(Inkscape::XML::Document *doc, Implementation::Implementation 
         switch (module_functional_type) {
             case MODULE_INPUT: {
                 module = new Input(repr, imp, baseDir);
+                break;
+            }
+            case MODULE_TEMPLATE: {
+                module = new Template(repr, imp, baseDir);
                 break;
             }
             case MODULE_OUTPUT: {

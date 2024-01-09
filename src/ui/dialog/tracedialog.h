@@ -4,56 +4,36 @@
  */
 /* Authors:
  *   Bob Jamison
- *   Other dudes from The Inkscape Organization
+ *   Others - see git history.
  *
- * Copyright (C) 2004, 2005 Authors
+ * Copyright (C) 2004-2022 Authors
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
-#ifndef __TRACEDIALOG_H__
-#define __TRACEDIALOG_H__
+#ifndef INKSCAPE_UI_DIALOG_TRACE_H
+#define INKSCAPE_UI_DIALOG_TRACE_H
 
+#include <memory>
 #include "ui/dialog/dialog-base.h"
-#include "verbs.h"
 
 namespace Inkscape {
 namespace UI {
 namespace Dialog {
 
-
-/**
- * A dialog that displays log messages
- */
 class TraceDialog : public DialogBase
 {
-
 public:
+    static std::unique_ptr<TraceDialog> create();
 
-    /**
-     * Constructor
-     */
+protected:
     TraceDialog() : DialogBase("/dialogs/trace", "Trace") {}
-
-
-    /**
-     * Factory method
-     */
-    static TraceDialog &getInstance();
-
-    /**
-     * Destructor
-     */
-    ~TraceDialog() override = default;;
-
-
 };
-
 
 } //namespace Dialog
 } //namespace UI
 } //namespace Inkscape
 
-#endif /* __TRACEDIALOG_H__ */
+#endif // INKSCAPE_UI_DIALOG_TRACE_H
 
 /*
   Local Variables:

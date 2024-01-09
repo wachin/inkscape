@@ -38,42 +38,40 @@
 #include "enums.h"
 #include "file.h"
 #include "inkscape-application.h"
+#include "inkscape-window.h"
 #include "inkscape-version.h"
-#include "verbs.h"
 
-#include "display/control/canvas-axonomgrid.h"
 #include "display/control/canvas-item-drawing.h"
 #include "display/control/canvas-item-guideline.h"
 
 #include "extension/db.h"
 
-#include "helper/action.h"
-
 #include "object/sp-image.h"
 #include "object/sp-namedview.h"
 #include "object/sp-root.h"
+#include "object/sp-grid.h"
 
 #include "ui/shortcuts.h"
 #include "ui/dialog/swatches.h"
 #include "ui/icon-loader.h"
 #include "ui/icon-names.h"
+#include "ui/monitor.h"   // Monitor aspect ratio
 #include "ui/dialog/dialog-container.h"
 #include "ui/dialog/dialog-multipaned.h"
 #include "ui/dialog/dialog-window.h"
 #include "ui/tools/box3d-tool.h"
-#include "ui/uxmanager.h"
-#include "ui/widget/button.h"
+#include "ui/tools/text-tool.h"
+#include "ui/util.h"
 #include "ui/widget/canvas.h"
 #include "ui/widget/canvas-grid.h"
+#include "ui/widget/combo-tool-item.h"
 #include "ui/widget/ink-ruler.h"
 #include "ui/widget/layer-selector.h"
+#include "ui/widget/page-selector.h"
 #include "ui/widget/selected-style.h"
 #include "ui/widget/spin-button-tool-item.h"
 #include "ui/widget/unit-tracker.h"
 #include "ui/themes.h"
-
-// TEMP
-#include "ui/desktop/menubar.h"
 
 #include "util/units.h"
 
@@ -83,20 +81,13 @@
 #include "widget-sizes.h"
 
 #include "ui/widget/color-palette.h"
-#include "ui/widget/preview.h"
-#include "ui/dialog/color-item.h"
-#include "widgets/ege-paint-def.h"
-
-#ifdef GDK_WINDOWING_QUARTZ
-#include <gtkosxapplication.h>
-#endif
+#include "widgets/paintdef.h"
 
 using Inkscape::DocumentUndo;
 using Inkscape::UI::Dialog::DialogContainer;
 using Inkscape::UI::Dialog::DialogMultipaned;
 using Inkscape::UI::Dialog::DialogWindow;
 using Inkscape::UI::Widget::UnitTracker;
-using Inkscape::UI::UXManager;
 using Inkscape::UI::ToolboxFactory;
 using Inkscape::Util::unit_table;
 
@@ -108,13 +99,11 @@ class CMSPrefWatcher {
 public:
     CMSPrefWatcher() :
         _dpw(*this),
-        _spw(*this),
         _tracker(ege_color_prof_tracker_new(nullptr))
     {
         Inkscape::Preferences *prefs = Inkscape::Preferences::get();
         g_signal_connect( G_OBJECT(_tracker), "modified", G_CALLBACK(hook), this );
         prefs->addObserver(_dpw);
-        prefs->addObserver(_spw);
     }
     virtual ~CMSPrefWatcher() = default;
 
@@ -135,7 +124,6 @@ private:
         void notify(Inkscape::Preferences::Entry const &/*val*/) override {
             Inkscape::Preferences *prefs = Inkscape::Preferences::get();
             _pw._setCmsSensitive(!prefs->getString("/options/displayprofile/uri").empty());
-            _pw._refreshAll();
         }
     private:
         CMSPrefWatcher &_pw;
@@ -143,26 +131,12 @@ private:
 
     DisplayProfileWatcher _dpw;
 
-    class SoftProofWatcher : public Inkscape::Preferences::Observer {
-    public:
-        SoftProofWatcher(CMSPrefWatcher &pw) : Observer("/options/softproof"), _pw(pw) {}
-        void notify(Inkscape::Preferences::Entry const &) override {
-            _pw._refreshAll();
-        }
-    private:
-        CMSPrefWatcher &_pw;
-    };
-
-    SoftProofWatcher _spw;
-
-    void _refreshAll();
     void _setCmsSensitive(bool value);
 
     std::list<SPDesktopWidget*> _widget_list;
     EgeColorProfTracker *_tracker;
 
     friend class DisplayProfileWatcher;
-    friend class SoftproofWatcher;
 };
 
 void CMSPrefWatcher::hook(EgeColorProfTracker * /*tracker*/, gint monitor, CMSPrefWatcher * /*watcher*/)
@@ -172,13 +146,6 @@ void CMSPrefWatcher::hook(EgeColorProfTracker * /*tracker*/, gint monitor, CMSPr
 
     ege_color_prof_tracker_get_profile_for( monitor, reinterpret_cast<gpointer*>(&buf), &len );
     Glib::ustring id = Inkscape::CMSSystem::setDisplayPer( buf, len, monitor );
-}
-
-void CMSPrefWatcher::_refreshAll()
-{
-    for (auto & it : _widget_list) {
-        it->requestCanvasUpdate();
-    }
 }
 
 void CMSPrefWatcher::_setCmsSensitive(bool enabled)
@@ -193,7 +160,8 @@ void CMSPrefWatcher::_setCmsSensitive(bool enabled)
 
 static CMSPrefWatcher* watcher = nullptr;
 
-SPDesktopWidget::SPDesktopWidget()
+SPDesktopWidget::SPDesktopWidget(InkscapeWindow* inkscape_window)
+    : window (inkscape_window)
 {
     auto *const dtw = this;
 
@@ -209,80 +177,139 @@ SPDesktopWidget::SPDesktopWidget()
     dtw->_statusbar->set_name("DesktopStatusBar");
     dtw->_vbox->pack_end(*dtw->_statusbar, false, true);
 
-    /* Swatches panel */
-    {
-        // auto panel = Gtk::manage(new Inkscape::UI::Widget::ColorPalette());
-        // auto sets = Inkscape::UI::Dialog::SwatchesPanel::getSwatchSets();
-    /*
-		  std::vector<Widget*> vc;
-		  
-		  Inkscape::UI::Dialog::ColorItem rm(ege::PaintDef::NONE);
-		  vc.push_back(rm.createWidget());
-		  for (auto& c : sets[1]->_colors) {
-			  vc.push_back(c.createWidget());
-			//   getPreview(Inkscape::UI::Widget::PREVIEW_STYLE_ICON, Inkscape::UI::Widget::VIEW_TYPE_GRID,
-			//   Inkscape::UI::Widget::PREVIEW_SIZE_TINY, 100, 0));
-		  }
-		  panel->set_colors(vc);
-		  std::vector<Glib::ustring> names;
-		  for (auto& pal : sets) {
-			  names.push_back(pal->_name);
-		  }
-		  panel->set_palettes(names);
-		  panel->get_palette_selected_signal().connect([=](Glib::ustring name){
-				auto sets = Inkscape::UI::Dialog::SwatchesPanel::getSwatchSets();
-			  auto pal = std::find_if(sets.begin(), sets.end(), [&](auto& set){ return set->_name == name; });
-			  if (pal != sets.end()) {
-				  //
-		  std::vector<Widget*> vc;
-		  for (auto& c : (*pal)->_colors) {
-			  vc.push_back(c.getPreview(Inkscape::UI::Widget::PREVIEW_STYLE_ICON, Inkscape::UI::Widget::VIEW_TYPE_GRID,
-			  Inkscape::UI::Widget::PREVIEW_SIZE_TINY, 100, 0));
-		  }
-		  panel->set_colors(vc);
-			  }
-		  });
-      */
-      //   panel->set_vexpand(false);
-        dtw->_panels = Gtk::manage(new Inkscape::UI::Dialog::SwatchesPanel("/embedded/swatches"));
-        dtw->_panels->set_vexpand(false);
-        dtw->_vbox->pack_end(*dtw->_panels, false, true);
-        // dtw->_vbox->pack_end(*panel, false, true);
-    }
+    /* Swatch Bar */
+    dtw->_panels = Gtk::manage(new Inkscape::UI::Dialog::SwatchesPanel("/embedded/swatches"));
+    dtw->_panels->set_vexpand(false);
+    dtw->_vbox->pack_end(*dtw->_panels, false, true);
 
     /* DesktopHBox (Vertical toolboxes, canvas) */
     dtw->_hbox = Gtk::manage(new Gtk::Box());
     dtw->_hbox->set_name("DesktopHbox");
+
+    dtw->_tbbox = Gtk::manage(new Gtk::Paned(Gtk::ORIENTATION_HORIZONTAL));
+    dtw->_tbbox->set_name("ToolboxCanvasPaned");
+    dtw->_hbox->pack_start(*dtw->_tbbox, true, true);
+
     dtw->_vbox->pack_end(*dtw->_hbox, true, true);
+
+    dtw->_top_toolbars = Gtk::make_managed<Gtk::Grid>();
+    dtw->_top_toolbars->set_name("TopToolbars");
+    dtw->_vbox->pack_end(*dtw->_top_toolbars, false, true);
 
     /* Toolboxes */
     dtw->aux_toolbox = ToolboxFactory::createAuxToolbox();
-    dtw->_vbox->pack_end(*Glib::wrap(dtw->aux_toolbox), false, true);
 
     dtw->snap_toolbox = ToolboxFactory::createSnapToolbox();
-    ToolboxFactory::setOrientation( dtw->snap_toolbox, GTK_ORIENTATION_VERTICAL );
-    dtw->_hbox->pack_end(*Glib::wrap(dtw->snap_toolbox), false, true);
 
     dtw->commands_toolbox = ToolboxFactory::createCommandsToolbox();
-    dtw->_vbox->pack_end(*Glib::wrap(dtw->commands_toolbox), false, true);
+    auto cmd = Glib::wrap(dtw->commands_toolbox);
+    dtw->_top_toolbars->attach(*cmd, 0, 0);
 
-    dtw->tool_toolbox = ToolboxFactory::createToolToolbox();
+    dtw->_top_toolbars->attach(*Glib::wrap(dtw->aux_toolbox), 0, 1);
+
+    dtw->tool_toolbox = ToolboxFactory::createToolToolbox(inkscape_window);
     ToolboxFactory::setOrientation( dtw->tool_toolbox, GTK_ORIENTATION_VERTICAL );
-    dtw->_hbox->pack_start(*Glib::wrap(dtw->tool_toolbox), false, true);
+    dtw->_tbbox->pack1(*Glib::wrap(dtw->tool_toolbox), false, false);
+
+    auto adjust_pos = [=](){
+        int minimum_width, natural_width;
+        auto toolbox = Glib::wrap(dtw->tool_toolbox);
+        toolbox->get_preferred_width(minimum_width, natural_width);
+        if (minimum_width > 0) {
+            int pos = dtw->_tbbox->get_position();
+            int new_pos = pos + minimum_width / 2;
+            const auto max = 5; // max buttons in a row
+            new_pos = std::min(new_pos - new_pos % minimum_width, max * minimum_width);
+            if (pos != new_pos) dtw->_tbbox->set_position(new_pos);
+        }
+    };
+    dtw->_tbbox->property_position().signal_changed().connect([=](){ adjust_pos(); });
+
+    _tb_snap_pos = prefs->createObserver("/toolbox/simplesnap", sigc::mem_fun(*this, &SPDesktopWidget::repack_snaptoolbar));
+    repack_snaptoolbar();
+
+    auto tbox_width = prefs->getEntry("/toolbox/tools/width");
+    if (tbox_width.isValid()) {
+        _tbbox->set_position(tbox_width.getIntLimited(32, 8, 500));
+    }
+
+    auto set_visible_buttons = [=](GtkWidget* tb) {
+        int buttons_before_separator = 0;
+        Gtk::Widget* last_sep = nullptr;
+        Gtk::FlowBox* last_box = nullptr;
+        sp_traverse_widget_tree(Glib::wrap(tb), [&](Gtk::Widget* widget) {
+            if (auto flowbox = dynamic_cast<Gtk::FlowBox*>(widget)) {
+                flowbox->show();
+                flowbox->set_no_show_all();
+                flowbox->set_max_children_per_line(1);
+                last_box = flowbox;
+            }
+            else if (auto btn = dynamic_cast<Gtk::Button*>(widget)) {
+                auto name = sp_get_action_target(widget);
+                auto show = prefs->getBool(ToolboxFactory::get_tool_visible_buttons_path(name), true);
+                auto parent = btn->get_parent();
+                if (show) {
+                    parent->show();
+                    ++buttons_before_separator;
+                    // keep the max_children up to date improves display.
+                    last_box->set_max_children_per_line(buttons_before_separator);
+                    last_sep = nullptr;
+                }
+                else {
+                    parent->hide();
+                }
+            }
+            else if (auto sep = dynamic_cast<Gtk::Separator*>(widget)) {
+                if (buttons_before_separator <= 0) {
+                    sep->hide();
+                }
+                else {
+                    sep->show();
+                    buttons_before_separator = 0;
+                    last_sep = sep;
+                }
+            }
+            return false;
+        });
+        if (last_sep) {
+            // hide trailing separator
+            last_sep->hide();
+        }
+    };
+    auto set_toolbar_prefs = [=]() {
+        int min = ToolboxFactory::min_pixel_size;
+        int max = ToolboxFactory::max_pixel_size;
+        int s = prefs->getIntLimited(ToolboxFactory::tools_icon_size, min, min, max);
+        Inkscape::UI::set_icon_sizes(tool_toolbox, s);
+        adjust_pos();
+    };
+
+    // watch for changes
+    _tb_icon_sizes1 = prefs->createObserver(ToolboxFactory::tools_icon_size,    [=]() { set_toolbar_prefs(); });
+    _tb_icon_sizes2 = prefs->createObserver(ToolboxFactory::ctrlbars_icon_size, [=]() { apply_ctrlbar_settings(); });
+    _tb_visible_buttons = prefs->createObserver(ToolboxFactory::tools_visible_buttons, [=]() { set_visible_buttons(tool_toolbox); });
+
+    // restore preferences
+    set_toolbar_prefs();
+    apply_ctrlbar_settings();
+    set_visible_buttons(tool_toolbox);
 
     /* Canvas Grid (canvas, rulers, scrollbars, etc.) */
-    dtw->_canvas_grid = Gtk::manage(new Inkscape::UI::Widget::CanvasGrid(this));
+    // desktop widgets owns it
+    _canvas_grid = new Inkscape::UI::Widget::CanvasGrid(this);
 
     /* Canvas */
     dtw->_canvas = _canvas_grid->GetCanvas();
-
     dtw->_canvas->set_cms_active(prefs->getBool("/options/displayprofile/enable"));
 
+    _ds_sticky_zoom = prefs->createObserver("/options/stickyzoom/value", [=]() { sticky_zoom_updated(); });
+    sticky_zoom_updated();
+
     /* Dialog Container */
-    _container = Gtk::manage(new DialogContainer());
+    _container = Gtk::manage(new DialogContainer(inkscape_window));
     _columns = _container->get_columns();
     _columns->set_dropzone_sizes(2, -1);
-    dtw->_hbox->pack_start(*_container, false, true);
+    dtw->_tbbox->pack2(*_container, true, true);
 
     _canvas_grid->set_hexpand(true);
     _canvas_grid->set_vexpand(true);
@@ -293,14 +320,20 @@ SPDesktopWidget::SPDesktopWidget()
     // Selected Style (Fill/Stroke/Opacity)
     dtw->_selected_style = Gtk::manage(new Inkscape::UI::Widget::SelectedStyle(true));
     dtw->_statusbar->pack_start(*dtw->_selected_style, false, false);
-
-    // Separator
-    dtw->_statusbar->pack_start(*Gtk::manage(new Gtk::Separator(Gtk::ORIENTATION_VERTICAL)),
-		                false, false);
+    _selected_style->show_all();
+    _selected_style->set_no_show_all();
 
     // Layer Selector
-    dtw->layer_selector = Gtk::manage(new Inkscape::UI::Widget::LayerSelector(nullptr));
-    dtw->_statusbar->pack_start(*dtw->layer_selector, false, false, 1);
+    _layer_selector = Gtk::manage(new Inkscape::UI::Widget::LayerSelector(nullptr));
+    // separate layer selector buttons from status text
+    auto vseparator = Gtk::make_managed<Gtk::Separator>(Gtk::ORIENTATION_VERTICAL);
+    vseparator->set_margin_end(6);
+    vseparator->set_margin_top(6);
+    vseparator->set_margin_bottom(6);
+    _layer_selector->pack_end(*vseparator);
+    _layer_selector->show_all();
+    _layer_selector->set_no_show_all();
+    dtw->_statusbar->pack_start(*_layer_selector, false, false, 1);
 
     // Select Status
     dtw->_select_status = Gtk::manage(new Gtk::Label());
@@ -316,7 +349,7 @@ SPDesktopWidget::SPDesktopWidget()
 
     dtw->_statusbar->pack_start(*dtw->_select_status, true, true);
 
-
+    dtw->_zoom_status_box = Gtk::make_managed<Gtk::Box>();
     // Zoom status spinbutton ---------------
     auto zoom_adj = Gtk::Adjustment::create(100.0, log(SP_DESKTOP_ZOOM_MIN)/log(2), log(SP_DESKTOP_ZOOM_MAX)/log(2), 0.1);
     dtw->_zoom_status = Gtk::manage(new Inkscape::UI::Widget::SpinButton(zoom_adj));
@@ -329,10 +362,10 @@ SPDesktopWidget::SPDesktopWidget()
     dtw->_zoom_status->set_update_policy(Gtk::UPDATE_ALWAYS);
 
     // Callbacks
-    dtw->_zoom_status_input_connection  = dtw->_zoom_status->signal_input().connect(sigc::mem_fun(dtw, &SPDesktopWidget::zoom_input));
-    dtw->_zoom_status_output_connection = dtw->_zoom_status->signal_output().connect(sigc::mem_fun(dtw, &SPDesktopWidget::zoom_output));
-    dtw->_zoom_status_value_changed_connection = dtw->_zoom_status->signal_value_changed().connect(sigc::mem_fun(dtw, &SPDesktopWidget::zoom_value_changed));
-    dtw->_zoom_status_populate_popup_connection = dtw->_zoom_status->signal_populate_popup().connect(sigc::mem_fun(dtw, &SPDesktopWidget::zoom_populate_popup));
+    dtw->_zoom_status_input_connection  = dtw->_zoom_status->signal_input().connect(sigc::mem_fun(*dtw, &SPDesktopWidget::zoom_input));
+    dtw->_zoom_status_output_connection = dtw->_zoom_status->signal_output().connect(sigc::mem_fun(*dtw, &SPDesktopWidget::zoom_output));
+    dtw->_zoom_status_value_changed_connection = dtw->_zoom_status->signal_value_changed().connect(sigc::mem_fun(*dtw, &SPDesktopWidget::zoom_value_changed));
+    dtw->_zoom_status_populate_popup_connection = dtw->_zoom_status->signal_populate_popup().connect(sigc::mem_fun(*dtw, &SPDesktopWidget::zoom_populate_popup));
 
     // Style
     auto css_provider_spinbutton = Gtk::CssProvider::create();
@@ -342,6 +375,8 @@ SPDesktopWidget::SPDesktopWidget()
     auto context_zoom = dtw->_zoom_status->get_style_context();
     context_zoom->add_provider(css_provider_spinbutton, GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
 
+    dtw->_rotation_status_box = Gtk::make_managed<Gtk::Box>();
+    dtw->_rotation_status_box->set_margin_start(10);
     // Rotate status spinbutton ---------------
     auto rotation_adj = Gtk::Adjustment::create(0, -360.0, 360.0, 1.0);
 
@@ -361,15 +396,14 @@ SPDesktopWidget::SPDesktopWidget()
     dtw->_rotation_status->set_update_policy(Gtk::UPDATE_ALWAYS);
 
     // Callbacks
-    dtw->_rotation_status_output_connection = dtw->_rotation_status->signal_output().connect(sigc::mem_fun(dtw, &SPDesktopWidget::rotation_output));
-    dtw->_rotation_status_value_changed_connection = dtw->_rotation_status->signal_value_changed().connect(sigc::mem_fun(dtw, &SPDesktopWidget::rotation_value_changed));
-    dtw->_rotation_status_populate_popup_connection = dtw->_rotation_status->signal_populate_popup().connect(sigc::mem_fun(dtw, &SPDesktopWidget::rotation_populate_popup));
+    dtw->_rotation_status_output_connection = dtw->_rotation_status->signal_output().connect(sigc::mem_fun(*dtw, &SPDesktopWidget::rotation_output));
+    dtw->_rotation_status_value_changed_connection = dtw->_rotation_status->signal_value_changed().connect(sigc::mem_fun(*dtw, &SPDesktopWidget::rotation_value_changed));
+    dtw->_rotation_status_populate_popup_connection = dtw->_rotation_status->signal_populate_popup().connect(sigc::mem_fun(*dtw, &SPDesktopWidget::rotation_populate_popup));
 
     // Style
     dtw->_rotation_status->set_name("RotationStatus");
     auto context_rotation = dtw->_rotation_status->get_style_context();
     context_rotation->add_provider(css_provider_spinbutton, GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
-
 
     // Cursor coordinates
     dtw->_coord_status = Gtk::manage(new Gtk::Grid());
@@ -406,17 +440,30 @@ SPDesktopWidget::SPDesktopWidget()
     dtw->_coord_status_y->set_halign(Gtk::ALIGN_END);
     dtw->_coord_status->attach(*dtw->_coord_status_x, 2, 0, 1, 1);
     dtw->_coord_status->attach(*dtw->_coord_status_y, 2, 1, 1, 1);
+    dtw->_coord_status->show_all();
+    dtw->_coord_status->set_no_show_all();
 
-    dtw->_coord_status->attach(*label_z, 3, 0, 1, 2);
-    dtw->_coord_status->attach(*dtw->_zoom_status, 4, 0, 1, 2);
+    dtw->_zoom_status_box->pack_start(*label_z, true, true);
+    dtw->_zoom_status_box->pack_end(*dtw->_zoom_status, true, true);
+    dtw->_zoom_status_box->show_all();
 
-    dtw->_coord_status->attach(*label_r, 5, 0, 1, 2);
-    dtw->_coord_status->attach(*dtw->_rotation_status, 6, 0, 1, 2);
+    dtw->_rotation_status_box->pack_start(*label_r, true, true);
+    dtw->_rotation_status_box->pack_end(*dtw->_rotation_status, true, true);
+    dtw->_rotation_status_box->show_all();
+    dtw->_rotation_status_box->set_no_show_all();
 
+    dtw->_statusbar->pack_end(*dtw->_rotation_status_box, false, false);
+    dtw->_statusbar->pack_end(*dtw->_zoom_status_box, false, false);
     dtw->_statusbar->pack_end(*dtw->_coord_status, false, false);
 
+    update_statusbar_visibility();
+
+    _statusbar_preferences_observer = prefs->createObserver("/statusbar/visibility", [=]() {
+        update_statusbar_visibility();
+    });
+
     // --------------- Color Management ---------------- //
-    dtw->_tracker = ege_color_prof_tracker_new(GTK_WIDGET(dtw->layer_selector->gobj()));
+    dtw->_tracker = ege_color_prof_tracker_new(GTK_WIDGET(_layer_selector->gobj()));
     bool fromDisplay = prefs->getBool( "/options/displayprofile/from_display");
     if ( fromDisplay ) {
         auto id = Inkscape::CMSSystem::getDisplayId(0);
@@ -432,6 +479,26 @@ SPDesktopWidget::SPDesktopWidget()
     dtw->_canvas->grab_focus();
 }
 
+void SPDesktopWidget::apply_ctrlbar_settings() {
+    Inkscape::Preferences* prefs = Inkscape::Preferences::get();
+    int min = ToolboxFactory::min_pixel_size;
+    int max = ToolboxFactory::max_pixel_size;
+    int size = prefs->getIntLimited(ToolboxFactory::ctrlbars_icon_size, min, min, max);
+    Inkscape::UI::set_icon_sizes(snap_toolbox, size);
+    Inkscape::UI::set_icon_sizes(commands_toolbox, size);
+    Inkscape::UI::set_icon_sizes(aux_toolbox, size);
+}
+
+void SPDesktopWidget::update_statusbar_visibility() {
+    auto prefs = Inkscape::Preferences::get();
+    Glib::ustring path("/statusbar/visibility/");
+
+    _coord_status->set_visible(prefs->getBool(path + "coordinates", true));
+    _rotation_status_box->set_visible(prefs->getBool(path + "rotation", true));
+    _layer_selector->set_visible(prefs->getBool(path + "layer", true));
+    _selected_style->set_visible(prefs->getBool(path + "style", true));
+}
+
 void
 SPDesktopWidget::setMessage (Inkscape::MessageType type, const gchar *message)
 {
@@ -445,20 +512,6 @@ SPDesktopWidget::setMessage (Inkscape::MessageType type, const gchar *message)
     _select_status->set_tooltip_text(_select_status->get_text());
 }
 
-Geom::Point
-SPDesktopWidget::window_get_pointer()
-{
-    int x, y;
-    auto window = _canvas->get_window();
-    auto display = window->get_display();
-    auto seat = display->get_default_seat();
-    auto device = seat->get_pointer();
-    Gdk::ModifierType m;
-    window->get_device_position(device, x, y, m);
-
-    return Geom::Point(x, y);
-}
-
 /**
  * Called before SPDesktopWidget destruction.
  * (Might be called more than once)
@@ -468,7 +521,9 @@ SPDesktopWidget::on_unrealize()
 {
     auto dtw = this;
 
-    UXManager::getInstance()->delTrack(dtw);
+    if (_tbbox) {
+        Inkscape::Preferences::get()->setInt("/toolbox/tools/width", _tbbox->get_position());
+    }
 
     if (dtw->desktop) {
         if ( watcher ) {
@@ -480,7 +535,8 @@ SPDesktopWidget::on_unrealize()
         }
 
         // Canvas
-        dtw->_canvas->set_desktop(nullptr); // Canvas may still attempt to draw during destruction.
+        dtw->_canvas->set_drawing(nullptr); // Ensures deactivation
+        dtw->_canvas->set_desktop(nullptr); // Todo: Remove desktop dependency.
 
         // Zoom
         dtw->_zoom_status_input_connection.disconnect();
@@ -496,9 +552,11 @@ SPDesktopWidget::on_unrealize()
         dtw->_rotation_status_value_changed_connection.disconnect();
         dtw->_rotation_status_populate_popup_connection.disconnect();
 
-        delete _container;
+        dtw->_panels->setDesktop(nullptr);
 
-        dtw->layer_selector->setDesktop(nullptr);
+        delete _container; // will unrealize dtw->_canvas
+
+        _layer_selector->setDesktop(nullptr);
         INKSCAPE.remove_desktop(dtw->desktop); // clears selection and event_context
         dtw->modified_connection.disconnect();
         dtw->desktop->destroy();
@@ -509,7 +567,9 @@ SPDesktopWidget::on_unrealize()
     parent_type::on_unrealize();
 }
 
-SPDesktopWidget::~SPDesktopWidget() {}
+SPDesktopWidget::~SPDesktopWidget() {
+    delete _canvas_grid;
+}
 
 /**
  * Set the title in the desktop-window (if desktop has an own window).
@@ -523,6 +583,7 @@ SPDesktopWidget::updateTitle(gchar const* uri)
     if (window) {
 
         SPDocument *doc = this->desktop->doc();
+        auto namedview = doc->getNamedView();
 
         std::string Name;
         if (doc->isModifiedSinceSave()) {
@@ -531,9 +592,9 @@ SPDesktopWidget::updateTitle(gchar const* uri)
 
         Name += uri;
 
-        if (desktop->number > 1) {
+        if (namedview->viewcount > 1) {
             Name += ": ";
-            Name += std::to_string(desktop->number);
+            Name += std::to_string(namedview->viewcount);
         }
         Name += " (";
 
@@ -545,7 +606,7 @@ SPDesktopWidget::updateTitle(gchar const* uri)
         } else if (render_mode == Inkscape::RenderMode::NO_FILTERS) {
             Name += N_("no filters");
         } else if (render_mode == Inkscape::RenderMode::VISIBLE_HAIRLINES) {
-            Name += N_("visible hairlines");
+            Name += N_("enhance thin lines");
         } else if (render_mode == Inkscape::RenderMode::OUTLINE_OVERLAY) {
             Name += N_("outline overlay");
         }
@@ -577,57 +638,15 @@ SPDesktopWidget::updateTitle(gchar const* uri)
     }
 }
 
-DialogContainer *SPDesktopWidget::getContainer()
+DialogContainer *SPDesktopWidget::getDialogContainer()
 {
     return _container;
 }
 
-/**
- * Resize handler, keeps the desktop centered.
- */
-void SPDesktopWidget::on_size_allocate(Gtk::Allocation &allocation)
+void SPDesktopWidget::showNotice(Glib::ustring const &msg, unsigned timeout)
 {
-    // This function is called a lot during mouse move events without
-    // resizing the widget. Desktop position/zoom must not be updated
-    // for these trivial invocations.
-    if (allocation == get_allocation()) {
-        parent_type::on_size_allocate(allocation);
-        return;
-    }
-
-    Geom::Rect const d_canvas = _canvas->get_area_world();
-
-    parent_type::on_size_allocate(allocation);
-
-    if (d_canvas.hasZeroArea()) {
-        return;
-    }
-
-    Geom::Point const midpoint_dt = desktop->w2d(d_canvas.midpoint());
-    double zoom = desktop->current_zoom();
-
-    if (_canvas_grid->GetStickyZoom()->get_active()) {
-        /* Calculate adjusted zoom */
-        double oldshortside = d_canvas.minExtent();
-        double newshortside = _canvas->get_area_world().minExtent();
-        zoom *= newshortside / oldshortside;
-    }
-
-    desktop->zoom_absolute(midpoint_dt, zoom, false);
+    _canvas_grid->showNotice(msg, timeout);
 }
-
-#ifdef GDK_WINDOWING_QUARTZ
-static GtkMenuItem *_get_help_menu(GtkMenuShell *menu)
-{
-    // Assume "Help" is the last child in menu
-    GtkMenuItem *last = nullptr;
-    auto callback = [](GtkWidget *widget, gpointer data) {
-        *static_cast<GtkMenuItem **>(data) = GTK_MENU_ITEM(widget);
-    };
-    gtk_container_foreach(GTK_CONTAINER(menu), callback, &last);
-    return last;
-}
-#endif
 
 /**
  * Callback to realize desktop widget.
@@ -646,69 +665,13 @@ void SPDesktopWidget::on_realize()
     dtw->desktop->set_display_area (d, 10);
 
     dtw->updateNamedview();
-    gchar *gtkThemeName;
-    gboolean gtkApplicationPreferDarkTheme;
-    GtkSettings *settings = gtk_settings_get_default();
     Gtk::Container *window = get_toplevel();
-    if (settings && window) {
-        g_object_get(settings, "gtk-theme-name", &gtkThemeName, nullptr);
-        g_object_get(settings, "gtk-application-prefer-dark-theme", &gtkApplicationPreferDarkTheme, nullptr);
+    if (window) {
         bool dark = INKSCAPE.themecontext->isCurrentThemeDark(dynamic_cast<Gtk::Container *>(window));
-        if (dark) {
-            prefs->setBool("/theme/darkTheme", true);
-            window->get_style_context()->add_class("dark");
-            window->get_style_context()->remove_class("bright");
-        } else {
-            prefs->setBool("/theme/darkTheme", false);
-            window->get_style_context()->add_class("bright");
-            window->get_style_context()->remove_class("dark");
-        }
-        if (prefs->getBool("/theme/symbolicIcons", false)) {
-            window->get_style_context()->add_class("symbolic");
-            window->get_style_context()->remove_class("regular");
-        } else {
-            window->get_style_context()->add_class("regular");
-            window->get_style_context()->remove_class("symbolic");
-        }
+        prefs->setBool("/theme/darkTheme", dark);
         INKSCAPE.themecontext->getChangeThemeSignal().emit();
+        INKSCAPE.themecontext->add_gtk_css(true);
     }
-
-#ifdef GDK_WINDOWING_QUARTZ
-    // native macOS menu
-    auto osxapp = gtkosx_application_get();
-    auto menushell = static_cast<Gtk::MenuShell *>(dtw->menubar());
-    if (osxapp && menushell && window) {
-        menushell->hide();
-        gtkosx_application_set_menu_bar(osxapp, menushell->gobj());
-        // using quartz accelerators gives menu shortcuts priority over everything else,
-        // messes up text input because Inkscape has single key shortcuts (e.g. 1-6).
-        gtkosx_application_set_use_quartz_accelerators(osxapp, false);
-        gtkosx_application_set_help_menu(osxapp, _get_help_menu(menushell->gobj()));
-        gtkosx_application_set_window_menu(osxapp, nullptr);
-
-        // move some items to "Inkscape" menu
-        unsigned app_menu_verbs[] = {
-            SP_VERB_NONE,
-            SP_VERB_DIALOG_INPUT,
-            SP_VERB_DIALOG_PREFERENCES,
-            SP_VERB_NONE,
-            SP_VERB_HELP_ABOUT,
-        };
-        for (auto verb : app_menu_verbs) {
-            GtkWidget *menuitem = nullptr;
-            if (verb == SP_VERB_NONE) {
-                menuitem = gtk_separator_menu_item_new();
-            } else if (auto item = get_menu_item_for_verb(verb, dtw->desktop)) {
-                menuitem = static_cast<Gtk::Widget *>(item)->gobj();
-            } else {
-                continue;
-            }
-            // Don't use index 0 because it appends the app name. Index 1
-            // seems to work perfectly with inserting items in reverse order.
-            gtkosx_application_insert_app_menu_item(osxapp, menuitem, 1);
-        }
-    }
-#endif
 }
 
 /* This is just to provide access to common functionality from sp_desktop_widget_realize() above
@@ -783,7 +746,6 @@ SPDesktopWidget::color_profile_event(EgeColorProfTracker */*tracker*/, SPDesktop
 
     Glib::ustring id = Inkscape::CMSSystem::getDisplayId( monitorNum );
     dtw->_canvas->set_cms_key(id);
-    dtw->requestCanvasUpdate();
     dtw->cms_adjust_set_sensitive(!id.empty());
 }
 
@@ -791,18 +753,12 @@ void
 SPDesktopWidget::update_guides_lock()
 {
     bool down = _canvas_grid->GetGuideLock()->get_active();
-
-    auto doc  = desktop->getDocument();
     auto nv   = desktop->getNamedView();
+    bool lock = nv->getLockGuides();
 
-    if ( down != nv->lockguides ) {
-        nv->lockguides = down;
-        sp_namedview_guides_toggle_lock(doc, nv);
-        if (down) {
-            setMessage (Inkscape::NORMAL_MESSAGE, _("Locked all guides"));
-        } else {
-            setMessage (Inkscape::NORMAL_MESSAGE, _("Unlocked all guides"));
-        }
+    if (down != lock) {
+        nv->toggleLockGuides();
+        setMessage(Inkscape::NORMAL_MESSAGE, down ? _("Locked all guides") : _("Unlocked all guides"));
     }
 }
 
@@ -814,7 +770,6 @@ SPDesktopWidget::cms_adjust_toggled()
     bool down = _cms_adjust->get_active();
     if ( down != _canvas->get_cms_active() ) {
         _canvas->set_cms_active(down);
-        desktop->redrawDesktop();
         Inkscape::Preferences *prefs = Inkscape::Preferences::get();
         prefs->setBool("/options/displayprofile/enable", down);
         if (down) {
@@ -828,213 +783,7 @@ SPDesktopWidget::cms_adjust_toggled()
 void
 SPDesktopWidget::cms_adjust_set_sensitive(bool enabled)
 {
-    // Inkscape::Verb* verb = Inkscape::Verb::get( SP_VERB_VIEW_CMS_TOGGLE );
-    // if ( verb ) {
-    //     SPAction *act = verb->get_action(Inkscape::ActionContext(getView()));
-    //     if ( act ) {
-    //         sp_action_set_sensitive( act, enabled );
-    //     }
-    // }
     _canvas_grid->GetCmsAdjust()->set_sensitive(enabled);
-}
-
-void
-sp_dtw_desktop_activate (SPDesktopWidget */*dtw*/)
-{
-    /* update active desktop indicator */
-}
-
-void
-sp_dtw_desktop_deactivate (SPDesktopWidget */*dtw*/)
-{
-    /* update inactive desktop indicator */
-}
-
-/**
- *  Shuts down the desktop object for the view being closed.  It checks
- *  to see if the document has been edited, and if so prompts the user
- *  to save, discard, or cancel.  Returns TRUE if the shutdown operation
- *  is cancelled or if the save is cancelled or fails, FALSE otherwise.
- */
-bool
-SPDesktopWidget::shutdown()
-{
-    g_assert(desktop != nullptr);
-
-    if (INKSCAPE.sole_desktop_for_document(*desktop)) {
-        std::unique_ptr<SPDocument> doc(desktop->doc()->doRef());
-        if (doc->isModifiedSinceSave()) {
-            auto toplevel_window = window;
-            Glib::ustring message = g_markup_printf_escaped(
-                _("<span weight=\"bold\" size=\"larger\">Save changes to document \"%s\" before closing?</span>\n\n"
-                  "If you close without saving, your changes will be discarded."),
-                doc->getDocumentName());
-            Gtk::MessageDialog dialog = Gtk::MessageDialog(*toplevel_window, message, true, Gtk::MESSAGE_WARNING, Gtk::BUTTONS_NONE);
-            dialog.property_destroy_with_parent() = true;
-
-            // fix for bug lp:168809
-            Gtk::Container *ma = dialog.get_message_area();
-            std::vector<Gtk::Widget*> ma_labels = ma->get_children();
-            ma_labels[0]->set_can_focus(false);
-
-            Gtk::Button close_button(_("Close _without saving"), true);
-            close_button.show();
-            dialog.add_action_widget(close_button, Gtk::RESPONSE_NO);
-
-            dialog.add_button(_("_Cancel"), Gtk::RESPONSE_CANCEL);
-            dialog.add_button(_("_Save"), Gtk::RESPONSE_YES);
-            dialog.set_default_response(Gtk::RESPONSE_YES);
-
-            gint response = dialog.run();
-
-            switch (response) {
-            case GTK_RESPONSE_YES:
-            {
-                sp_namedview_document_from_window(desktop);
-                if (!sp_file_save_document(*window, doc.get())) {
-                    // save dialog cancelled or save failed
-                    return TRUE;
-                }
-
-                break;
-            }
-            case GTK_RESPONSE_NO:
-                break;
-            default: // cancel pressed, or dialog was closed
-                return TRUE;
-                break;
-            }
-        }
-        /* Code to check data loss */
-        bool allow_data_loss = FALSE;
-        while (doc->getReprRoot()->attribute("inkscape:dataloss") != nullptr && allow_data_loss == FALSE) {
-            auto toplevel_window = window;
-            Glib::ustring message = g_markup_printf_escaped(
-                _("<span weight=\"bold\" size=\"larger\">The file \"%s\" was saved with a format that may cause data loss!</span>\n\n"
-                  "Do you want to save this file as Inkscape SVG?"),
-                doc->getDocumentName() ? doc->getDocumentName() : "Unnamed");
-            Gtk::MessageDialog dialog = Gtk::MessageDialog(*toplevel_window, message, true, Gtk::MESSAGE_WARNING, Gtk::BUTTONS_NONE);
-            dialog.property_destroy_with_parent() = true;
-
-            // fix for bug lp:168809
-            Gtk::Container *ma = dialog.get_message_area();
-            std::vector<Gtk::Widget*> ma_labels = ma->get_children();
-            ma_labels[0]->set_can_focus(false);
-
-            Gtk::Button close_button(_("Close _without saving"), true);
-            close_button.show();
-            dialog.add_action_widget(close_button, Gtk::RESPONSE_NO);
-
-            dialog.add_button(_("_Cancel"), Gtk::RESPONSE_CANCEL);
-
-            Gtk::Button save_button(_("_Save as Inkscape SVG"), true);
-            save_button.set_can_default(true);
-            save_button.show();
-            dialog.add_action_widget(save_button, Gtk::RESPONSE_YES);
-            dialog.set_default_response(Gtk::RESPONSE_YES);
-
-            gint response = dialog.run();
-
-            switch (response) {
-            case GTK_RESPONSE_YES:
-            {
-                if (!sp_file_save_dialog(*window, doc.get(), Inkscape::Extension::FILE_SAVE_METHOD_INKSCAPE_SVG)) {
-                    // save dialog cancelled or save failed
-                    return TRUE;
-                }
-
-                break;
-            }
-            case GTK_RESPONSE_NO:
-                allow_data_loss = TRUE;
-                break;
-            default: // cancel pressed, or dialog was closed
-                return TRUE;
-                break;
-            }
-        }
-    }
-
-    {
-        // Delete all floating DialogWindows if there is only this desktop's window
-        auto app = InkscapeApplication::instance()->gtk_app();
-        SPDesktop *next_desktop = nullptr;
-
-        std::list<SPDesktop *> desktop_list;
-        INKSCAPE.get_all_desktops(desktop_list);
-        for (auto const &d : desktop_list) {
-            if (!next_desktop && d != desktop) {
-                next_desktop = d;
-                break;
-            }
-        }
-
-        if (next_desktop) {
-            next_desktop->presentWindow();
-        }
-
-        for (auto const &window : app->get_windows()) {
-            DialogWindow *dialog_window = dynamic_cast<DialogWindow *>(window);
-            if (dialog_window && !next_desktop) {
-                dialog_window->close();
-            }
-        }
-    }
-
-    /* Save window geometry to prefs for use as a default.
-     * Use depends on setting of "options.savewindowgeometry".
-     * But we save the info here regardless of the setting.
-     */
-    storeDesktopPosition();
-
-    return FALSE;
-}
-
-/**
- * \store dessktop position
- */
-void SPDesktopWidget::storeDesktopPosition(bool store_maximize)
-{
-    Inkscape::Preferences *prefs = Inkscape::Preferences::get();
-    bool maxed = desktop->is_maximized();
-    bool full = desktop->is_fullscreen();
-    // Don't store max/full when setting max/full (it's about to change)
-    if (store_maximize) {
-        prefs->setBool("/desktop/geometry/fullscreen", full);
-        prefs->setBool("/desktop/geometry/maximized", maxed);
-    }
-    // Don't save geom for maximized, fullscreen or iconified windows.
-    // It just tells you the current maximized size, which is not
-    // as useful as whatever value it had previously.
-    if (!desktop->is_iconified() && !maxed && !full) {
-        gint w = -1;
-        gint h, x, y;
-        desktop->getWindowGeometry(x, y, w, h);
-        g_assert(w != -1);
-        prefs->setInt("/desktop/geometry/width", w);
-        prefs->setInt("/desktop/geometry/height", h);
-        prefs->setInt("/desktop/geometry/x", x);
-        prefs->setInt("/desktop/geometry/y", y);
-    }
-}
-
-/**
- * \pre this->desktop->main != 0
- */
-void
-SPDesktopWidget::requestCanvasUpdate() {
-    // ^^ also this->desktop != 0
-    g_return_if_fail(this->desktop != nullptr);
-    desktop->getCanvas()->queue_draw();
-}
-
-void
-SPDesktopWidget::requestCanvasUpdateAndWait() {
-    requestCanvasUpdate();
-
-    while (gtk_events_pending())
-      gtk_main_iteration_do(FALSE);
-
 }
 
 void
@@ -1081,10 +830,18 @@ SPDesktopWidget::letZoomGrabFocus()
 void
 SPDesktopWidget::getWindowGeometry (gint &x, gint &y, gint &w, gint &h)
 {
-    if (window)
-    {
+    if (window) {
         window->get_size (w, h);
         window->get_position (x, y);
+        // The get_positon is very unreliable (see Gtk docs) and will often return zero.
+        if (!x && !y) {
+            if (Glib::RefPtr<Gdk::Window> w = window->get_window()) {
+                Gdk::Rectangle rect;
+                w->get_frame_extents(rect);
+                x = rect.get_x();
+                y = rect.get_y();
+            }
+        }
     }
 }
 
@@ -1186,7 +943,6 @@ SPDesktopWidget::maximize()
         if (desktop->is_maximized()) {
             gtk_window_unmaximize(topw);
         } else {
-            storeDesktopPosition(false);
             gtk_window_maximize(topw);
         }
     }
@@ -1201,7 +957,6 @@ SPDesktopWidget::fullscreen()
             gtk_window_unfullscreen(topw);
             // widget layout is triggered by the resulting window_state_event
         } else {
-            storeDesktopPosition(false);
             gtk_window_fullscreen(topw);
             // widget layout is triggered by the resulting window_state_event
         }
@@ -1209,7 +964,8 @@ SPDesktopWidget::fullscreen()
 }
 
 /**
- * Hide whatever the user does not want to see in the window
+ * Hide whatever the user does not want to see in the window.
+ * Also move command toolbar to top or side as required.
  */
 void SPDesktopWidget::layoutWidgets()
 {
@@ -1217,9 +973,9 @@ void SPDesktopWidget::layoutWidgets()
     Glib::ustring pref_root;
     Inkscape::Preferences *prefs = Inkscape::Preferences::get();
 
-    if (dtw->desktop->is_focusMode()) {
+    if (desktop && desktop->is_focusMode()) {
         pref_root = "/focus/";
-    } else if (dtw->desktop->is_fullscreen()) {
+    } else if (desktop && desktop->is_fullscreen()) {
         pref_root = "/fullscreen/";
     } else {
         pref_root = "/window/";
@@ -1265,6 +1021,63 @@ void SPDesktopWidget::layoutWidgets()
 
     _canvas_grid->ShowScrollbars(prefs->getBool(pref_root + "scrollbars/state", true));
     _canvas_grid->ShowRulers(    prefs->getBool(pref_root + "rulers/state",     true));
+
+    // Move command toolbar as required.
+
+    // If interface_mode unset, use screen aspect ratio. Needs to be synced with "canvas-interface-mode" action.
+    Gdk::Rectangle monitor_geometry = Inkscape::UI::get_monitor_geometry_primary();
+    double const width  = monitor_geometry.get_width();
+    double const height = monitor_geometry.get_height();
+    bool widescreen = (height > 0 && width/height > 1.65);
+    widescreen = prefs->getInt(pref_root + "task/taskset", widescreen ? 2 : 0) == 2; // legacy
+    widescreen = prefs->getBool(pref_root + "interface_mode", widescreen);
+
+    auto commands_toolbox_cpp = dynamic_cast<Gtk::Bin *>(Glib::wrap(commands_toolbox));
+    if (commands_toolbox_cpp) {
+
+        // Unlink command toolbar.
+        commands_toolbox_cpp->reference(); // So toolbox is not deleted.
+        auto parent = commands_toolbox_cpp->get_parent();
+        parent->remove(*commands_toolbox_cpp);
+
+        auto orientation = Gtk::ORIENTATION_HORIZONTAL;
+        auto orientation_c = GTK_ORIENTATION_HORIZONTAL;
+        // Link command toolbar back.
+        if (!widescreen) {
+            _top_toolbars->attach(*commands_toolbox_cpp, 0, 0); // Always first
+            gtk_box_set_child_packing(_vbox->gobj(), commands_toolbox, false, true, 0, GTK_PACK_START); // expand, fill, padding, pack_type
+            orientation = Gtk::ORIENTATION_HORIZONTAL;
+            orientation_c = GTK_ORIENTATION_HORIZONTAL;
+            commands_toolbox_cpp->set_hexpand(true);
+        } else {
+            _hbox->add(*commands_toolbox_cpp);
+            gtk_box_set_child_packing(_hbox->gobj(), commands_toolbox, false, true, 0, GTK_PACK_START); // expand, fill, padding, pack_type
+            orientation = Gtk::ORIENTATION_VERTICAL;
+            orientation_c = GTK_ORIENTATION_VERTICAL;
+            commands_toolbox_cpp->set_hexpand(false);
+        }
+        commands_toolbox_cpp->unreference();
+
+        auto box = dynamic_cast<Gtk::Box *>(commands_toolbox_cpp->get_child());
+        if (box) {
+            box->set_orientation(orientation);
+            for (auto child : box->get_children()) {
+                if (auto toolbar = dynamic_cast<Gtk::Toolbar *>(child)) {
+                    gtk_orientable_set_orientation(GTK_ORIENTABLE(toolbar->gobj()), orientation_c);
+                    //toolbar->set_orientation(orientation); // Missing in C++ interface!
+                }
+            }
+        }
+    } else {
+        std::cerr << "SPDesktopWidget::layoutWidgets(): Wrong widget type for command toolbar!" << std::endl;
+    }
+
+    // Temporary for Gtk3: Gtk toolbar resets icon sizes, so reapply them.
+    // TODO: remove this call in Gtk4 after Gtk::Toolbar is eliminated.
+    apply_ctrlbar_settings();
+    repack_snaptoolbar();
+
+    Inkscape::UI::resize_widget_children(_top_toolbars);
 }
 
 Gtk::Toolbar *
@@ -1330,17 +1143,14 @@ SPDesktopWidget::isToolboxButtonActive (const gchar* id)
 
     // The toolbutton could be a few different types so try casting to
     // each of them.
-    // TODO: This will be simpler in Gtk+ 4 when Actions and ToolItems have gone
+    // TODO: This will be simpler in Gtk+ 4 when ToolItems have gone
     auto toggle_button      = dynamic_cast<Gtk::ToggleButton *>(thing);
-    auto toggle_action      = dynamic_cast<Gtk::ToggleAction *>(thing);
     auto toggle_tool_button = dynamic_cast<Gtk::ToggleToolButton *>(thing);
 
     if ( !thing ) {
         //g_message( "Unable to locate item for {%s}", id );
     } else if (toggle_button) {
         isActive = toggle_button->get_active();
-    } else if (toggle_action) {
-        isActive = toggle_action->get_active();
     } else if (toggle_tool_button) {
         isActive = toggle_tool_button->get_active();
     } else {
@@ -1350,68 +1160,16 @@ SPDesktopWidget::isToolboxButtonActive (const gchar* id)
     return isActive;
 }
 
-void SPDesktopWidget::setToolboxPosition(Glib::ustring const& id, GtkPositionType pos)
+SPDesktopWidget::SPDesktopWidget(InkscapeWindow *inkscape_window, SPDocument *document)
+    : SPDesktopWidget(inkscape_window)
 {
-    // Note - later on these won't be individual member variables.
-    GtkWidget* toolbox = nullptr;
-    if (id == "ToolToolbar") {
-        toolbox = tool_toolbox;
-    } else if (id == "AuxToolbar") {
-        toolbox = aux_toolbox;
-    } else if (id == "CommandsToolbar") {
-        toolbox = commands_toolbox;
-    } else if (id == "SnapToolbar") {
-        toolbox = snap_toolbox;
-    }
+    set_name("SPDesktopWidget");
 
-
-    if (toolbox) {
-        switch(pos) {
-            case GTK_POS_TOP:
-            case GTK_POS_BOTTOM:
-                if ( gtk_widget_is_ancestor(toolbox, GTK_WIDGET(_hbox->gobj())) ) {
-                    // Removing a widget can reduce ref count to zero
-                    g_object_ref(G_OBJECT(toolbox));
-                    _hbox->remove(*Glib::wrap(toolbox));
-                    _vbox->add(*Glib::wrap(toolbox));
-                    g_object_unref(G_OBJECT(toolbox));
-
-                    // Function doesn't seem to be in Gtkmm wrapper yet
-                    gtk_box_set_child_packing(_vbox->gobj(), toolbox, FALSE, TRUE, 0, GTK_PACK_START);
-                }
-                ToolboxFactory::setOrientation(toolbox, GTK_ORIENTATION_HORIZONTAL);
-                break;
-            case GTK_POS_LEFT:
-            case GTK_POS_RIGHT:
-                if ( !gtk_widget_is_ancestor(toolbox, GTK_WIDGET(_hbox->gobj())) ) {
-                    g_object_ref(G_OBJECT(toolbox));
-                    _vbox->remove(*Glib::wrap(toolbox));
-                    _hbox->add(*Glib::wrap(toolbox));
-                    g_object_unref(G_OBJECT(toolbox));
-
-                    // Function doesn't seem to be in Gtkmm wrapper yet
-                    gtk_box_set_child_packing(_hbox->gobj(), toolbox, FALSE, TRUE, 0, GTK_PACK_START);
-                    if (pos == GTK_POS_LEFT) {
-                        _hbox->reorder_child(*Glib::wrap(toolbox), 0 );
-                    }
-                }
-                ToolboxFactory::setOrientation(toolbox, GTK_ORIENTATION_VERTICAL);
-                break;
-        }
-    }
-}
-
-
-SPDesktopWidget::SPDesktopWidget(SPDocument *document)
-    : SPDesktopWidget()
-{
     SPDesktopWidget *dtw = this;
 
-    SPNamedView *namedview = sp_document_namedview(document, nullptr);
+    SPNamedView *namedview = document->getNamedView();
 
     dtw->_dt2r = 1. / namedview->display_units->factor;
-
-    dtw->_ruler_origin = Geom::Point(0,0); //namedview->gridorigin;   Why was the grid origin used here?
 
     // This section seems backwards!
     dtw->desktop = new SPDesktop();
@@ -1433,28 +1191,63 @@ SPDesktopWidget::SPDesktopWidget(SPDocument *document)
     /* Listen on namedview modification */
     dtw->modified_connection = namedview->connectModified(sigc::mem_fun(*dtw, &SPDesktopWidget::namedviewModified));
 
-    dtw->layer_selector->setDesktop(dtw->desktop);
+    _layer_selector->setDesktop(dtw->desktop);
 
-    // TEMP
-    dtw->_menubar = build_menubar(dtw->desktop);
-    dtw->_menubar->set_name("MenuBar");
-    dtw->_menubar->show_all();
-    dtw->_vbox->pack_start(*dtw->_menubar, false, false);
+    // We never want a page widget if there's no desktop.
+    _page_selector = Gtk::manage(new Inkscape::UI::Widget::PageSelector(desktop));
+    _statusbar->pack_end(*_page_selector, false, false);
+
+    ToolboxFactory::setToolboxDesktop(dtw->aux_toolbox, dtw->desktop);
 
     dtw->layoutWidgets();
 
-    std::vector<GtkWidget *> toolboxes;
-    toolboxes.push_back(dtw->tool_toolbox);
-    toolboxes.push_back(dtw->aux_toolbox);
-    toolboxes.push_back(dtw->commands_toolbox);
-    toolboxes.push_back(dtw->snap_toolbox);
-
-    dtw->_panels->update();
-
-    UXManager::getInstance()->addTrack(dtw);
-    UXManager::getInstance()->connectToDesktop( toolboxes, dtw->desktop );
+    dtw->_panels->setDesktop(dtw->desktop);
 }
 
+/**
+ * Choose where to pack the snap toolbar.
+ */
+void SPDesktopWidget::repack_snaptoolbar()
+{
+    Inkscape::Preferences* prefs = Inkscape::Preferences::get();
+    bool is_perm = prefs->getInt("/toolbox/simplesnap", 1) == 2;
+    auto& aux = *Glib::wrap(aux_toolbox);
+    auto& snap = *Glib::wrap(snap_toolbox);
+
+    // Only remove from the parent if the status has changed
+    auto parent = snap.get_parent();
+    if (parent && ((is_perm && parent != _hbox) || (!is_perm && parent != _top_toolbars))) {
+        parent->remove(snap);
+    }
+
+    // Only repack if there's no parent widget now.
+    if (!snap.get_parent()) {
+        if (is_perm) {
+            ToolboxFactory::setOrientation(snap_toolbox, GTK_ORIENTATION_VERTICAL);
+            _hbox->pack_end(snap, false, true);
+        } else {
+            ToolboxFactory::setOrientation(snap_toolbox, GTK_ORIENTATION_HORIZONTAL);
+            _top_toolbars->attach(snap, 1, 0, 1, 2);
+        }
+    }
+
+    // Always reset the various constraints, even if not repacked.
+    if (is_perm) {
+        snap.set_valign(Gtk::ALIGN_START);
+    } else {
+        // This ensures that the Snap toolbox is on the top and only takes the needed space.
+        if (_top_toolbars->get_children().size() == 3 && gtk_widget_get_visible(commands_toolbox)) {
+            _top_toolbars->child_property_width(aux) = 2;
+            _top_toolbars->child_property_height(snap) =  1;
+            snap.set_valign(Gtk::ALIGN_START);
+        }
+        else {
+            _top_toolbars->child_property_width(aux) = 1;
+            _top_toolbars->child_property_height(snap) =  2;
+            snap.set_valign(Gtk::ALIGN_CENTER);
+        }
+    }
+}
 
 void
 SPDesktopWidget::update_rulers()
@@ -1465,11 +1258,10 @@ SPDesktopWidget::update_rulers()
 
 void SPDesktopWidget::namedviewModified(SPObject *obj, guint flags)
 {
-    SPNamedView *nv=SP_NAMEDVIEW(obj);
+    auto nv = cast<SPNamedView>(obj);
 
     if (flags & SP_OBJECT_MODIFIED_FLAG) {
         _dt2r = 1. / nv->display_units->factor;
-        _ruler_origin = Geom::Point(0,0); //nv->gridorigin;   Why was the grid origin used here?
 
         _canvas_grid->GetVRuler()->set_unit(nv->getDisplayUnit());
         _canvas_grid->GetHRuler()->set_unit(nv->getDisplayUnit());
@@ -1498,13 +1290,15 @@ void SPDesktopWidget::namedviewModified(SPObject *obj, guint flags)
                         // Don't apply to text toolbar. We want to be able to
                         // use different units for text. (Bug 1562217)
                         const Glib::ustring name = j->get_name();
-                        if ( name == "TextToolbar" || name == "MeasureToolbar")
+                        if ( name == "TextToolbar" || name == "MeasureToolbar" || name == "CalligraphicToolbar" )
                             continue;
 
-                        auto tracker = dynamic_cast<UnitTracker*>(sp_search_by_name_recursive(j, "unit-tracker"));
+                        auto tracker = dynamic_cast<Inkscape::UI::Widget::ComboToolItem*>(sp_search_by_name_recursive(j, "unit-tracker"));
 
                         if (tracker) { // it's null when inkscape is first opened
-                            tracker->setActiveUnit( nv->display_units );
+                            if (auto ptr = static_cast<UnitTracker*>(tracker->get_data(Glib::Quark("unit-tracker")))) {
+                                ptr->setActiveUnit(nv->display_units);
+                            }
                         }
                     } // grandchildren
                 } // if child is a container
@@ -1522,8 +1316,8 @@ SPDesktopWidget::on_adjustment_value_changed()
     update = true;
 
     // Do not call canvas->scrollTo directly... messes up 'offset'.
-    desktop->scroll_absolute( Geom::Point(_canvas_grid->GetHAdj()->get_value(),
-                                          _canvas_grid->GetVAdj()->get_value()), false);
+    desktop->scroll_absolute(Geom::Point(_canvas_grid->GetHAdj()->get_value(),
+                                         _canvas_grid->GetVAdj()->get_value()));
 
     update = false;
 }
@@ -1535,7 +1329,7 @@ bool SPDesktopWidget::onFocusInEvent(GdkEventFocus*)
     if (prefs->getBool("/options/bitmapautoreload/value", true)) {
         std::vector<SPObject *> imageList = (desktop->doc())->getResourceList("image");
         for (auto it : imageList) {
-            SPImage* image = SP_IMAGE(it);
+            auto image = cast<SPImage>(it);
             image->refresh_if_outdated();
         }
     }
@@ -1628,13 +1422,13 @@ SPDesktopWidget::zoom_populate_popup(Gtk::Menu *menu)
     auto item_25   = Gtk::manage(new Gtk::MenuItem( "25%"));
     auto item_10   = Gtk::manage(new Gtk::MenuItem( "10%"));
 
-    item_1000->signal_activate().connect(sigc::bind(sigc::mem_fun(this, &SPDesktopWidget::zoom_menu_handler), 10.00));
-    item_500->signal_activate().connect( sigc::bind(sigc::mem_fun(this, &SPDesktopWidget::zoom_menu_handler),  5.00));
-    item_200->signal_activate().connect( sigc::bind(sigc::mem_fun(this, &SPDesktopWidget::zoom_menu_handler),  2.00));
-    item_100->signal_activate().connect( sigc::bind(sigc::mem_fun(this, &SPDesktopWidget::zoom_menu_handler),  1.00));
-    item_50->signal_activate().connect(  sigc::bind(sigc::mem_fun(this, &SPDesktopWidget::zoom_menu_handler),  0.50));
-    item_25->signal_activate().connect(  sigc::bind(sigc::mem_fun(this, &SPDesktopWidget::zoom_menu_handler),  0.25));
-    item_10->signal_activate().connect(  sigc::bind(sigc::mem_fun(this, &SPDesktopWidget::zoom_menu_handler),  0.10));
+    item_1000->signal_activate().connect(sigc::bind(sigc::mem_fun(*this, &SPDesktopWidget::zoom_menu_handler), 10.00));
+    item_500->signal_activate().connect( sigc::bind(sigc::mem_fun(*this, &SPDesktopWidget::zoom_menu_handler),  5.00));
+    item_200->signal_activate().connect( sigc::bind(sigc::mem_fun(*this, &SPDesktopWidget::zoom_menu_handler),  2.00));
+    item_100->signal_activate().connect( sigc::bind(sigc::mem_fun(*this, &SPDesktopWidget::zoom_menu_handler),  1.00));
+    item_50->signal_activate().connect(  sigc::bind(sigc::mem_fun(*this, &SPDesktopWidget::zoom_menu_handler),  0.50));
+    item_25->signal_activate().connect(  sigc::bind(sigc::mem_fun(*this, &SPDesktopWidget::zoom_menu_handler),  0.25));
+    item_10->signal_activate().connect(  sigc::bind(sigc::mem_fun(*this, &SPDesktopWidget::zoom_menu_handler),  0.10));
 
     menu->append(*item_1000);
     menu->append(*item_500);
@@ -1648,19 +1442,19 @@ SPDesktopWidget::zoom_populate_popup(Gtk::Menu *menu)
     menu->append(*sep);
 
     auto item_page = Gtk::manage(new Gtk::MenuItem(_("Page")));
-    item_page->signal_activate().connect(sigc::mem_fun(desktop, &SPDesktop::zoom_page));
+    item_page->signal_activate().connect([=]() { desktop->getDocument()->getPageManager().zoomToSelectedPage(desktop); });
     menu->append(*item_page);
 
     auto item_drawing = Gtk::manage(new Gtk::MenuItem(_("Drawing")));
-    item_drawing->signal_activate().connect(sigc::mem_fun(desktop, &SPDesktop::zoom_drawing));
+    item_drawing->signal_activate().connect(sigc::mem_fun(*desktop, &SPDesktop::zoom_drawing));
     menu->append(*item_drawing);
 
     auto item_selection = Gtk::manage(new Gtk::MenuItem(_("Selection")));
-    item_selection->signal_activate().connect(sigc::mem_fun(desktop, &SPDesktop::zoom_selection));
+    item_selection->signal_activate().connect(sigc::mem_fun(*desktop, &SPDesktop::zoom_selection));
     menu->append(*item_selection);
 
     auto item_center_page = Gtk::manage(new Gtk::MenuItem(_("Centre Page")));
-    item_center_page->signal_activate().connect(sigc::mem_fun(desktop, &SPDesktop::zoom_center_page));
+    item_center_page->signal_activate().connect([=]() { desktop->getDocument()->getPageManager().centerToSelectedPage(desktop); });
     menu->append(*item_center_page);
 
     menu->show_all();
@@ -1674,6 +1468,12 @@ SPDesktopWidget::sticky_zoom_toggled()
     prefs->setBool("/options/stickyzoom/value", _canvas_grid->GetStickyZoom()->get_active());
 }
 
+void
+SPDesktopWidget::sticky_zoom_updated()
+{
+    Inkscape::Preferences *prefs = Inkscape::Preferences::get();
+    _canvas_grid->GetStickyZoom()->set_active(prefs->getBool("/options/stickyzoom/value", false));
+}
 
 void
 SPDesktopWidget::update_zoom()
@@ -1743,14 +1543,14 @@ SPDesktopWidget::rotation_populate_popup(Gtk::Menu *menu)
     auto item_p135 = Gtk::manage(new Gtk::MenuItem( "135°"));
     auto item_p180 = Gtk::manage(new Gtk::MenuItem( "180°"));
 
-    item_m135->signal_activate().connect(sigc::bind(sigc::mem_fun(_rotation_status, &Gtk::SpinButton::set_value), -135));
-    item_m90->signal_activate().connect( sigc::bind(sigc::mem_fun(_rotation_status, &Gtk::SpinButton::set_value), -90));
-    item_m45->signal_activate().connect( sigc::bind(sigc::mem_fun(_rotation_status, &Gtk::SpinButton::set_value), -45));
-    item_0->signal_activate().connect(   sigc::bind(sigc::mem_fun(_rotation_status, &Gtk::SpinButton::set_value),   0));
-    item_p45->signal_activate().connect( sigc::bind(sigc::mem_fun(_rotation_status, &Gtk::SpinButton::set_value),  45));
-    item_p90->signal_activate().connect( sigc::bind(sigc::mem_fun(_rotation_status, &Gtk::SpinButton::set_value),  90));
-    item_p135->signal_activate().connect(sigc::bind(sigc::mem_fun(_rotation_status, &Gtk::SpinButton::set_value), 135));
-    item_p180->signal_activate().connect(sigc::bind(sigc::mem_fun(_rotation_status, &Gtk::SpinButton::set_value), 180));
+    item_m135->signal_activate().connect(sigc::bind(sigc::mem_fun(*_rotation_status, &Gtk::SpinButton::set_value), -135));
+    item_m90->signal_activate().connect( sigc::bind(sigc::mem_fun(*_rotation_status, &Gtk::SpinButton::set_value), -90));
+    item_m45->signal_activate().connect( sigc::bind(sigc::mem_fun(*_rotation_status, &Gtk::SpinButton::set_value), -45));
+    item_0->signal_activate().connect(   sigc::bind(sigc::mem_fun(*_rotation_status, &Gtk::SpinButton::set_value),   0));
+    item_p45->signal_activate().connect( sigc::bind(sigc::mem_fun(*_rotation_status, &Gtk::SpinButton::set_value),  45));
+    item_p90->signal_activate().connect( sigc::bind(sigc::mem_fun(*_rotation_status, &Gtk::SpinButton::set_value),  90));
+    item_p135->signal_activate().connect(sigc::bind(sigc::mem_fun(*_rotation_status, &Gtk::SpinButton::set_value), 135));
+    item_p180->signal_activate().connect(sigc::bind(sigc::mem_fun(*_rotation_status, &Gtk::SpinButton::set_value), 180));
 
     menu->append(*item_m135);
     menu->append(*item_m90);
@@ -1815,7 +1615,7 @@ SPDesktopWidget::toggle_color_prof_adj()
 }
 
 static void
-set_adjustment (Glib::RefPtr<Gtk::Adjustment> &adj, double l, double u, double ps, double si, double pi)
+set_adjustment (Gtk::Adjustment *adj, double l, double u, double ps, double si, double pi)
 {
     if ((l != adj->get_lower()) ||
         (u != adj->get_upper()) ||
@@ -1838,20 +1638,23 @@ SPDesktopWidget::update_scrollbars(double scale)
 
     /* The desktop region we always show unconditionally */
     SPDocument *doc = desktop->doc();
-    Geom::Rect darea ( Geom::Point(-doc->getWidth().value("px"), -doc->getHeight().value("px")),
-                     Geom::Point(2 * doc->getWidth().value("px"), 2 * doc->getHeight().value("px"))  );
 
-    Geom::OptRect deskarea;
+    auto deskarea = doc->preferredBounds();
+    deskarea->expandBy(doc->getDimensions()); // Double size
+
+    /* The total size of pages should be added unconditionally */
+    deskarea->unionWith(doc->getPageManager().getDesktopRect());
+
     if (Inkscape::Preferences::get()->getInt("/tools/bounding_box") == 0) {
-        deskarea = darea | doc->getRoot()->desktopVisualBounds();
+        deskarea->unionWith(doc->getRoot()->desktopVisualBounds());
     } else {
-        deskarea = darea | doc->getRoot()->desktopGeometricBounds();
+        deskarea->unionWith(doc->getRoot()->desktopGeometricBounds());
     }
 
     /* Canvas region we always show unconditionally */
     double const y_dir = desktop->yaxisdir();
-    Geom::Rect carea( Geom::Point(deskarea->left() * scale - 64, (deskarea->top() * scale + 64) * y_dir),
-                    Geom::Point(deskarea->right() * scale + 64, (deskarea->bottom() * scale - 64) * y_dir)  );
+    Geom::Rect carea( Geom::Point(deskarea->left()  * scale - 64, (deskarea->top()    * scale + 64) * y_dir),
+                      Geom::Point(deskarea->right() * scale + 64, (deskarea->bottom() * scale - 64) * y_dir) );
 
     Geom::Rect viewbox = _canvas->get_area_world();
 
@@ -1898,12 +1701,9 @@ SPDesktopWidget::ruler_event(GtkWidget *widget, GdkEvent *event, SPDesktopWidget
 bool
 SPDesktopWidget::on_ruler_box_motion_notify_event(GdkEventMotion *event, Gtk::Widget *widget, bool horiz)
 {
-    if (horiz) {
-        sp_event_context_snap_delay_handler(desktop->event_context, (gpointer) widget->gobj(), (gpointer) this, event, Inkscape::UI::Tools::DelayedSnapEvent::GUIDE_HRULER);
-    }
-    else {
-        sp_event_context_snap_delay_handler(desktop->event_context, (gpointer) widget->gobj(), (gpointer) this, event, Inkscape::UI::Tools::DelayedSnapEvent::GUIDE_VRULER);
-    }
+    auto origin = horiz ? Inkscape::UI::Tools::DelayedSnapEvent::GUIDE_HRULER
+                        : Inkscape::UI::Tools::DelayedSnapEvent::GUIDE_VRULER;
+    desktop->event_context->snap_delay_handler(widget->gobj(), this, event, origin);
 
     int wx, wy;
 
@@ -1931,13 +1731,14 @@ SPDesktopWidget::on_ruler_box_motion_notify_event(GdkEventMotion *event, Gtk::Wi
 
         // explicitly show guidelines; if I draw a guide, I want them on
         if ((horiz ? wy : wx) >= 0) {
-            desktop->namedview->setGuides(true);
+            desktop->namedview->setShowGuides(true);
         }
 
+        Geom::Point normal = _normal;
         if (!(event->state & GDK_SHIFT_MASK)) {
-            ruler_snap_new_guide(desktop, event_dt, _normal);
+            ruler_snap_new_guide(desktop, event_dt, normal);
         }
-        _active_guide->set_normal(_normal);
+        _active_guide->set_normal(normal);
         _active_guide->set_origin(event_dt);
 
         desktop->set_coordinate_status(event_dt);
@@ -1962,7 +1763,7 @@ SPDesktopWidget::on_ruler_box_button_release_event(GdkEventButton *event, Gtk::W
     Geom::Point const event_win(wx, wy);
 
     if (_ruler_clicked && event->button == 1) {
-        sp_event_context_discard_delayed_snap_event(desktop->event_context);
+        desktop->event_context->discard_delayed_snap_event();
 
         auto seat = gdk_device_get_seat(event->device);
         gdk_seat_ungrab(seat);
@@ -1970,12 +1771,12 @@ SPDesktopWidget::on_ruler_box_button_release_event(GdkEventButton *event, Gtk::W
         Geom::Point const event_w(_canvas->canvas_to_world(event_win));
         Geom::Point event_dt(desktop->w2d(event_w));
 
+        Geom::Point normal = _normal;
         if (!(event->state & GDK_SHIFT_MASK)) {
-            ruler_snap_new_guide(desktop, event_dt, _normal);
+            ruler_snap_new_guide(desktop, event_dt, normal);
         }
 
-        delete _active_guide;
-        _active_guide = nullptr;
+        _active_guide.reset();
         if ((horiz ? wy : wx) >= 0) {
             Inkscape::XML::Document *xml_doc = desktop->doc()->getReprDoc();
             Inkscape::XML::Node *repr = xml_doc->createElement("sodipodi:guide");
@@ -1987,7 +1788,7 @@ SPDesktopWidget::on_ruler_box_button_release_event(GdkEventButton *event, Gtk::W
             // <sodipodi:guide> stores inverted y-axis coordinates
             if (desktop->is_yaxisdown()) {
                 newy = desktop->doc()->getHeight().value("px") - newy;
-                _normal[Geom::Y] *= -1.0;
+                normal[Geom::Y] *= -1.0;
             }
 
             SPRoot *root = desktop->doc()->getRoot();
@@ -1996,17 +1797,16 @@ SPDesktopWidget::on_ruler_box_button_release_event(GdkEventButton *event, Gtk::W
                 newy = newy * root->viewBox.height() / root->height.computed;
             }
             repr->setAttributePoint("position", Geom::Point( newx, newy ));
-            repr->setAttributePoint("orientation", _normal);
+            repr->setAttributePoint("orientation", normal);
             desktop->namedview->appendChild(repr);
             Inkscape::GC::release(repr);
-            DocumentUndo::done(desktop->getDocument(), SP_VERB_NONE,
-                    _("Create guide"));
+            DocumentUndo::done(desktop->getDocument(), _("Create guide"), "");
         }
         desktop->set_coordinate_status(event_dt);
 
         if (!_ruler_dragged) {
             // Ruler click (without drag) toggle the guide visibility on and off
-            sp_namedview_toggle_guides(desktop->getDocument(), desktop->namedview);
+            desktop->namedview->toggleShowGuides();
         }
 
         _ruler_clicked = false;
@@ -2050,17 +1850,18 @@ SPDesktopWidget::on_ruler_box_button_press_event(GdkEventButton *event, Gtk::Wid
         Geom::Point normal_tr_to_bl(-1., y_dir); //topright to bottomleft
         normal_bl_to_tr.normalize();
         normal_tr_to_bl.normalize();
-        Inkscape::CanvasGrid * grid = sp_namedview_get_first_enabled_grid(desktop->namedview);
-        if (grid){
-            if (grid->getGridType() == Inkscape::GRID_AXONOMETRIC ) {
-                Inkscape::CanvasAxonomGrid *axonomgrid = dynamic_cast<Inkscape::CanvasAxonomGrid *>(grid);
+        SPGrid * grid = desktop->namedview->getFirstEnabledGrid();
+        if (grid) {
+            if (grid->getType() == GridType::AXONOMETRIC ) {
+                auto angle_x = Geom::rad_from_deg(grid->getAngleX());
+                auto angle_z = Geom::rad_from_deg(grid->getAngleZ());
                 if (event->state & GDK_CONTROL_MASK) {
                     // guidelines normal to gridlines
-                    normal_bl_to_tr = Geom::Point::polar(-axonomgrid->angle_rad[0], 1.0);
-                    normal_tr_to_bl = Geom::Point::polar(axonomgrid->angle_rad[2], 1.0);
+                    normal_bl_to_tr = Geom::Point::polar(-angle_x, 1.0);
+                    normal_tr_to_bl = Geom::Point::polar(angle_z, 1.0);
                 } else {
-                    normal_bl_to_tr = rot90(Geom::Point::polar(axonomgrid->angle_rad[2], 1.0));
-                    normal_tr_to_bl = rot90(Geom::Point::polar(-axonomgrid->angle_rad[0], 1.0));
+                    normal_bl_to_tr = Geom::rot90(Geom::Point::polar(angle_z, 1.0));
+                    normal_tr_to_bl = Geom::rot90(Geom::Point::polar(-angle_x, 1.0));
                 }
             }
         }
@@ -2082,7 +1883,7 @@ SPDesktopWidget::on_ruler_box_button_press_event(GdkEventButton *event, Gtk::Wid
             }
         }
 
-        _active_guide = new Inkscape::CanvasItemGuideLine(desktop->getCanvasGuides(), Glib::ustring(), event_dt, _normal);
+        _active_guide = make_canvasitem<Inkscape::CanvasItemGuideLine>(desktop->getCanvasGuides(), Glib::ustring(), event_dt, _normal);
         _active_guide->set_stroke(desktop->namedview->guidehicolor);
 
         // Ruler grabs all events until button release.
@@ -2104,15 +1905,16 @@ SPDesktopWidget::on_ruler_box_button_press_event(GdkEventButton *event, Gtk::Wid
 void
 SPDesktopWidget::ruler_snap_new_guide(SPDesktop *desktop, Geom::Point &event_dt, Geom::Point &normal)
 {
+    desktop->getCanvas()->grab_focus();
     SnapManager &m = desktop->namedview->snap_manager;
     m.setup(desktop);
     // We're dragging a brand new guide, just pulled of the rulers seconds ago. When snapping to a
     // path this guide will change it slope to become either tangential or perpendicular to that path. It's
     // therefore not useful to try tangential or perpendicular snapping, so this will be disabled temporarily
-    bool pref_perp = m.snapprefs.getSnapPerp();
-    bool pref_tang = m.snapprefs.getSnapTang();
-    m.snapprefs.setSnapPerp(false);
-    m.snapprefs.setSnapTang(false);
+    bool pref_perp = m.snapprefs.isTargetSnappable(Inkscape::SNAPTARGET_PATH_PERPENDICULAR);
+    bool pref_tang = m.snapprefs.isTargetSnappable(Inkscape::SNAPTARGET_PATH_TANGENTIAL);
+    m.snapprefs.setTargetSnappable(Inkscape::SNAPTARGET_PATH_PERPENDICULAR, false);
+    m.snapprefs.setTargetSnappable(Inkscape::SNAPTARGET_PATH_TANGENTIAL, false);
     // We only have a temporary guide which is not stored in our document yet.
     // Because the guide snapper only looks in the document for guides to snap to,
     // we don't have to worry about a guide snapping to itself here
@@ -2129,9 +1931,13 @@ SPDesktopWidget::ruler_snap_new_guide(SPDesktop *desktop, Geom::Point &event_dt,
         normal = normal_orig; // we must restore the normal to it's original state
     }
     // Restore the preferences
-    m.snapprefs.setSnapPerp(pref_perp);
-    m.snapprefs.setSnapTang(pref_tang);
+    m.snapprefs.setTargetSnappable(Inkscape::SNAPTARGET_PATH_PERPENDICULAR, pref_perp);
+    m.snapprefs.setTargetSnappable(Inkscape::SNAPTARGET_PATH_TANGENTIAL, pref_tang);
     m.unSetup();
+}
+
+Gio::ActionMap* SPDesktopWidget::get_action_map() {
+    return window;
 }
 
 /*

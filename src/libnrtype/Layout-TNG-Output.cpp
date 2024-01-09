@@ -12,6 +12,7 @@
 
 #include <glib.h>
 #include "Layout-TNG.h"
+#include "style-attachments.h"
 #include "display/drawing-text.h"
 #include "style.h"
 #include "print.h"
@@ -23,6 +24,7 @@
 #include "display/curve.h"
 #include <2geom/pathvector.h>
 #include <3rdparty/libuemf/symbol_convert.h>
+#include "libnrtype/font-factory.h"
 
 
 using Inkscape::Extension::Internal::CairoRenderContext;
@@ -79,18 +81,16 @@ void Layout::_clearOutputObjects()
     _paragraphs.clear();
     _lines.clear();
     _chunks.clear();
-    for (auto & _span : _spans)
-        if (_span.font) _span.font->Unref();
     _spans.clear();
     _characters.clear();
     _glyphs.clear();
     _path_fitted = nullptr;
 }
 
-void Layout::FontMetrics::set(font_instance *font)
+void Layout::FontMetrics::set(FontInstance const *font)
 {
-    if( font != nullptr ) {
-        ascent      = font->GetTypoAscent();  
+    if (font) {
+        ascent      = font->GetTypoAscent();
         descent     = font->GetTypoDescent();
         xheight     = font->GetXHeight();
         ascent_max  = font->GetMaxAscent();
@@ -141,84 +141,96 @@ void Layout::_getGlyphTransformMatrix(int glyph_index, Geom::Affine *matrix) con
     }
 }
 
-void Layout::show(DrawingGroup *in_arena, Geom::OptRect const &paintbox) const
+void Layout::show(DrawingGroup *parent, StyleAttachments &style_attachments, Geom::OptRect const &paintbox) const
 {
     int glyph_index = 0;
     double phase0 = 0.0;
-    for (unsigned span_index = 0 ; span_index < _spans.size() ; span_index++) {
-        if (_input_stream[_spans[span_index].in_input_stream_item]->Type() != TEXT_SOURCE) continue;
 
-        if (_spans[span_index].line(this).hidden) continue; // Line corresponds to text overflow. Don't show!
-
-        InputStreamTextSource const *text_source = static_cast<InputStreamTextSource const *>(_input_stream[_spans[span_index].in_input_stream_item]);
-
-        text_source->style->text_decoration_data.tspan_width             =  _spans[span_index].width();
-        text_source->style->text_decoration_data.ascender                =  _spans[span_index].line_height.getTypoAscent();
-        text_source->style->text_decoration_data.descender               =  _spans[span_index].line_height.getTypoDescent();
-
-        if(!span_index ||
-           (_chunks[_spans[span_index].in_chunk].in_line != _chunks[_spans[span_index-1].in_chunk].in_line)){
-            text_source->style->text_decoration_data.tspan_line_start = true;
-        }
-        else {
-            text_source->style->text_decoration_data.tspan_line_start = false;
-        }
-        if((span_index == _spans.size() -1) || 
-           (_chunks[_spans[span_index].in_chunk].in_line != _chunks[_spans[span_index+1].in_chunk].in_line)){
-            text_source->style->text_decoration_data.tspan_line_end = true;
-        }
-        else {
-            text_source->style->text_decoration_data.tspan_line_end = false;
-        }
-        if(_spans[span_index].font){
-            double underline_thickness, underline_position, line_through_thickness,line_through_position;
-            _spans[span_index].font->FontDecoration(underline_position, underline_thickness, line_through_position, line_through_thickness);
-            text_source->style->text_decoration_data.underline_thickness     = underline_thickness;
-            text_source->style->text_decoration_data.underline_position      = underline_position; 
-            text_source->style->text_decoration_data.line_through_thickness  = line_through_thickness;
-            text_source->style->text_decoration_data.line_through_position   = line_through_position;
-        }
-        else { // can this case ever occur?
-            text_source->style->text_decoration_data.underline_thickness     = 
-            text_source->style->text_decoration_data.underline_position      =  
-            text_source->style->text_decoration_data.line_through_thickness  = 
-            text_source->style->text_decoration_data.line_through_position   = 0.0;
+    for (int i = 0; i < _spans.size(); i++) {
+        if (_input_stream[_spans[i].in_input_stream_item]->Type() != TEXT_SOURCE) {
+            continue;
         }
 
-        DrawingText *nr_text = new DrawingText(in_arena->drawing());
+        if (_spans[i].line(this).hidden) {
+            continue; // Line corresponds to text overflow. Don't show!
+        }
+
+        auto text_source = static_cast<InputStreamTextSource const *>(_input_stream[_spans[i].in_input_stream_item]);
+        auto style = text_source->style;
+
+        style->text_decoration_data.tspan_width = _spans[i].width();
+        style->text_decoration_data.ascender    = _spans[i].line_height.getTypoAscent();
+        style->text_decoration_data.descender   = _spans[i].line_height.getTypoDescent();
+
+        auto line_of_span = [this] (int i) { return _chunks[_spans[i].in_chunk].in_line; };
+        style->text_decoration_data.tspan_line_start = i == 0                 || line_of_span(i) != line_of_span(i - 1);
+        style->text_decoration_data.tspan_line_end   = i == _spans.size() - 1 || line_of_span(i) != line_of_span(i + 1);
+
+        if (_spans[i].font) {
+            double underline_thickness, underline_position, line_through_thickness, line_through_position;
+            _spans[i].font->FontDecoration(underline_position, underline_thickness, line_through_position, line_through_thickness);
+            style->text_decoration_data.underline_thickness    = underline_thickness;
+            style->text_decoration_data.underline_position     = underline_position;
+            style->text_decoration_data.line_through_thickness = line_through_thickness;
+            style->text_decoration_data.line_through_position  = line_through_position;
+        } else { // can this case ever occur?
+            style->text_decoration_data.underline_thickness    = 0.0;
+            style->text_decoration_data.underline_position     = 0.0;
+            style->text_decoration_data.line_through_thickness = 0.0;
+            style->text_decoration_data.line_through_position  = 0.0;
+        }
+
+        auto drawing_text = new DrawingText(parent->drawing());
+
+        if (style->filter.set) {
+            if (auto filter = style->getFilter()) {
+                style_attachments.attachFilter(drawing_text, filter);
+            }
+        }
+
+        if (style->fill.isPaintserver()) {
+            if (auto fill = style->getFillPaintServer()) {
+                style_attachments.attachFill(drawing_text, fill, paintbox);
+            }
+        }
+
+        if (style->stroke.isPaintserver()) {
+            if (auto stroke = style->getStrokePaintServer()) {
+                style_attachments.attachStroke(drawing_text, stroke, paintbox);
+            }
+        }
 
         bool first_line_glyph = true;
-        while (glyph_index < (int)_glyphs.size() && _characters[_glyphs[glyph_index].in_character].in_span == span_index) {
+        while (glyph_index < _glyphs.size() && _characters[_glyphs[glyph_index].in_character].in_span == i) {
             if (_characters[_glyphs[glyph_index].in_character].in_glyph != -1) {
                 Geom::Affine glyph_matrix;
                 _getGlyphTransformMatrix(glyph_index, &glyph_matrix);
-                if(first_line_glyph && text_source->style->text_decoration_data.tspan_line_start){
+                if (first_line_glyph && style->text_decoration_data.tspan_line_start) {
                     first_line_glyph = false;
-                    phase0 =  glyph_matrix.translation()[Geom::X];
+                    phase0 =  glyph_matrix.translation().x();
                 }
-                // Save the starting coordinates for the line - these are needed for figuring out
-                // dot/dash/wave phase.
-                // Use maximum ascent and descent to ensure glyphs that extend outside the embox
-                // are fully drawn.
-                (void) nr_text->addComponent(_spans[span_index].font, _glyphs[glyph_index].glyph, glyph_matrix,
+                // Save the starting coordinates for the line - these are needed for figuring out dot/dash/wave phase.
+                // Use maximum ascent and descent to ensure glyphs that extend outside the embox are fully drawn.
+                drawing_text->addComponent(_spans[i].font, _glyphs[glyph_index].glyph, glyph_matrix,
                     _glyphs[glyph_index].advance,
-                    _spans[span_index].line_height.getMaxAscent(),
-                    _spans[span_index].line_height.getMaxDescent(),
-                    glyph_matrix.translation()[Geom::X] - phase0
+                    _spans[i].line_height.getMaxAscent(),
+                    _spans[i].line_height.getMaxDescent(),
+                    glyph_matrix.translation().x() - phase0
                 );
             }
             glyph_index++;
         }
-        nr_text->setStyle(text_source->style);
-        nr_text->setItemBounds(paintbox);
+
+        drawing_text->setStyle(style);
+        drawing_text->setItemBounds(paintbox);
         // Text spans must be painted in the right order (see inkscape/685)
-        in_arena->appendChild(nr_text);
+        parent->appendChild(drawing_text);
         // Set item bounds without filter enlargement
-        in_arena->setItemBounds(paintbox);
+        parent->setItemBounds(paintbox);
     }
 }
 
-Geom::OptRect Layout::bounds(Geom::Affine const &transform, int start, int length) const
+Geom::OptRect Layout::bounds(Geom::Affine const &transform, bool with_stroke, int start, int length) const
 {
     Geom::OptRect bbox;
     for (unsigned glyph_index = 0 ; glyph_index < _glyphs.size() ; glyph_index++) {
@@ -238,7 +250,18 @@ Geom::OptRect Layout::bounds(Geom::Affine const &transform, int start, int lengt
         if(_glyphs[glyph_index].span(this).font) {
             Geom::OptRect glyph_rect = _glyphs[glyph_index].span(this).font->BBox(_glyphs[glyph_index].glyph);
             if (glyph_rect) {
-                bbox.unionWith(*glyph_rect * total_transform);
+                auto glyph_box = *glyph_rect * total_transform;
+                // FIXME: Expand rectangle by half stroke width, this doesn't include meters
+                // and so is not the most ideal calculation, we could use the glyph Path here.
+                if (with_stroke) {
+                    Span const &span = _spans[_characters[_glyphs[glyph_index].in_character].in_span];
+                    auto text_source = static_cast<InputStreamTextSource const *>(_input_stream[span.in_input_stream_item]);
+                    if (!text_source->style->stroke.isNone()) {
+                        double scale = transform.descrim();
+                        glyph_box.expandBy(0.5 * text_source->style->stroke_width.computed * scale);
+                    }
+                }
+                bbox.unionWith(glyph_box);
             }
         }
     }
@@ -263,7 +286,7 @@ Geom::Affine glyph_matrix;
         for (unsigned glyph_index = 0 ; glyph_index < _glyphs.size() ; glyph_index++) {
             if (_characters[_glyphs[glyph_index].in_character].in_glyph == -1)continue; //invisible glyphs
             Span const &span = _spans[_characters[_glyphs[glyph_index].in_character].in_span];
-            Geom::PathVector const * pv = span.font->PathVector(_glyphs[glyph_index].glyph);
+            Geom::PathVector const *pv = span.font->PathVector(_glyphs[glyph_index].glyph);
             InputStreamTextSource const *text_source = static_cast<InputStreamTextSource const *>(_input_stream[span.in_input_stream_item]);
             if (pv) {
                 _getGlyphTransformMatrix(glyph_index, &glyph_matrix);
@@ -420,97 +443,92 @@ std:: cout << "DEBUG Layout::print in while  ---  "
 void Layout::showGlyphs(CairoRenderContext *ctx) const
 {
     if (_input_stream.empty()) return;
-
-    bool clip_mode = false;//(ctx->getRenderMode() == CairoRenderContext::RENDER_MODE_CLIP);
     std::vector<CairoGlyphInfo> glyphtext;
 
-    for (unsigned glyph_index = 0 ; glyph_index < _glyphs.size() ; ) {
-        if (_characters[_glyphs[glyph_index].in_character].in_glyph == -1) {
-            // invisible glyphs
-            unsigned same_character = _glyphs[glyph_index].in_character;
-            while (_glyphs[glyph_index].in_character == same_character) {
-                glyph_index++;
-                if (glyph_index == _glyphs.size())
-                    return;
+    // The second pass is used to draw fill over stroke in a way that doesn't
+    // cause some glyph chunks to be painted over others.
+    bool second_pass = false;
+
+    for (unsigned pass = 0; pass <= second_pass; pass++) {
+        for (unsigned glyph_index = 0 ; glyph_index < _glyphs.size() ; ) {
+            if (_characters[_glyphs[glyph_index].in_character].in_glyph == -1) {
+                // invisible glyphs
+                unsigned same_character = _glyphs[glyph_index].in_character;
+                while (_glyphs[glyph_index].in_character == same_character) {
+                    glyph_index++;
+                    if (glyph_index == _glyphs.size())
+                        return;
+                }
+                continue;
             }
-            continue;
-        }
-        Span const &span = _spans[_characters[_glyphs[glyph_index].in_character].in_span];
-        InputStreamTextSource const *text_source = static_cast<InputStreamTextSource const *>(_input_stream[span.in_input_stream_item]);
+            Span const &span = _spans[_characters[_glyphs[glyph_index].in_character].in_span];
+            InputStreamTextSource const *text_source = static_cast<InputStreamTextSource const *>(_input_stream[span.in_input_stream_item]);
 
-        Geom::Affine glyph_matrix;
-        _getGlyphTransformMatrix(glyph_index, &glyph_matrix);
-        if (clip_mode) {
-            Geom::PathVector const *pathv = span.font->PathVector(_glyphs[glyph_index].glyph);
-            if (pathv) {
-                Geom::PathVector pathv_trans = (*pathv) * glyph_matrix;
-                SPStyle const *style = text_source->style;
-                ctx->renderPathVector(pathv_trans, style, Geom::OptRect());
+            Geom::Affine glyph_matrix;
+            _getGlyphTransformMatrix(glyph_index, &glyph_matrix);
+
+            Geom::Affine font_matrix = glyph_matrix;
+            font_matrix[4] = 0;
+            font_matrix[5] = 0;
+
+            Glib::ustring::const_iterator span_iter = span.input_stream_first_character;
+            unsigned char_index = _glyphs[glyph_index].in_character;
+            unsigned original_span = _characters[char_index].in_span;
+            while (char_index && _characters[char_index - 1].in_span == original_span) {
+                char_index--;
+                ++span_iter;
             }
-            glyph_index++;
-            continue;
-        }
 
-        Geom::Affine font_matrix = glyph_matrix;
-        font_matrix[4] = 0;
-        font_matrix[5] = 0;
+            // try to output as many characters as possible in one go
+            Glib::ustring span_string;
+            unsigned this_span_index = _characters[_glyphs[glyph_index].in_character].in_span;
+            unsigned int first_index = glyph_index;
+            glyphtext.clear();
+            do {
+                span_string += *span_iter;
+                ++span_iter;
 
-        Glib::ustring::const_iterator span_iter = span.input_stream_first_character;
-        unsigned char_index = _glyphs[glyph_index].in_character;
-        unsigned original_span = _characters[char_index].in_span;
-        while (char_index && _characters[char_index - 1].in_span == original_span) {
-            char_index--;
-            ++span_iter;
-        }
+                unsigned same_character = _glyphs[glyph_index].in_character;
+                while (glyph_index < _glyphs.size() && _glyphs[glyph_index].in_character == same_character) {
+                    if (glyph_index != first_index)
+                        _getGlyphTransformMatrix(glyph_index, &glyph_matrix);
 
-        // try to output as many characters as possible in one go
-        Glib::ustring span_string;
-        unsigned this_span_index = _characters[_glyphs[glyph_index].in_character].in_span;
-        unsigned int first_index = glyph_index;
-        glyphtext.clear();
-        do {
-            span_string += *span_iter;
-            ++span_iter;
+                    CairoGlyphInfo info;
+                    info.index = _glyphs[glyph_index].glyph;
+                    // this is the translation for x,y-offset
+                    info.x = glyph_matrix[4];
+                    info.y = glyph_matrix[5];
 
-            unsigned same_character = _glyphs[glyph_index].in_character;
-            while (glyph_index < _glyphs.size() && _glyphs[glyph_index].in_character == same_character) {
-                if (glyph_index != first_index)
-                    _getGlyphTransformMatrix(glyph_index, &glyph_matrix);
+                    glyphtext.push_back(info);
 
-                CairoGlyphInfo info;
-                info.index = _glyphs[glyph_index].glyph;
-                // this is the translation for x,y-offset
-                info.x = glyph_matrix[4];
-                info.y = glyph_matrix[5];
+                    glyph_index++;
+                }
+            } while (glyph_index < _glyphs.size()
+                     && _path_fitted == nullptr
+                     && (font_matrix * glyph_matrix.inverse()).isIdentity()
+                     && _characters[_glyphs[glyph_index].in_character].in_span == this_span_index);
 
-                glyphtext.push_back(info);
+            // remove vertical flip
+            Geom::Affine flip_matrix;
+            flip_matrix.setIdentity();
+            flip_matrix[3] = -1.0;
+            font_matrix = flip_matrix * font_matrix;
 
-                glyph_index++;
+            SPStyle const *style = text_source->style;
+            float opacity = SP_SCALE24_TO_FLOAT(style->opacity.value);
+
+            if (opacity != 1.0) {
+                ctx->pushState();
+                ctx->setStateForStyle(style);
+                ctx->pushLayer();
             }
-        } while (glyph_index < _glyphs.size()
-                 && _path_fitted == nullptr
-                 && (font_matrix * glyph_matrix.inverse()).isIdentity()
-                 && _characters[_glyphs[glyph_index].in_character].in_span == this_span_index);
-
-        // remove vertical flip
-        Geom::Affine flip_matrix;
-        flip_matrix.setIdentity();
-        flip_matrix[3] = -1.0;
-        font_matrix = flip_matrix * font_matrix;
-
-        SPStyle const *style = text_source->style;
-        float opacity = SP_SCALE24_TO_FLOAT(style->opacity.value);
-
-        if (opacity != 1.0) {
-            ctx->pushState();
-            ctx->setStateForStyle(style);
-            ctx->pushLayer();
-        }
-        if (glyph_index - first_index > 0)
-            ctx->renderGlyphtext(span.font->pFont, font_matrix, glyphtext, style);
-        if (opacity != 1.0) {
-            ctx->popLayer();
-            ctx->popState();
+            if (glyph_index - first_index > 0) {
+                second_pass |= ctx->renderGlyphtext(span.font->get_font(), font_matrix, glyphtext, style, pass);
+            }
+            if (opacity != 1.0) {
+                ctx->popLayer();
+                ctx->popState();
+            }
         }
     }
 }
@@ -544,9 +562,7 @@ static std::string weight_to_text(PangoWeight w)
         case PANGO_WEIGHT_THIN      : return "thin";
         case PANGO_WEIGHT_ULTRALIGHT: return "ultralight";
         case PANGO_WEIGHT_LIGHT     : return "light";
-#if PANGO_VERSION_CHECK(1,36,6)
         case PANGO_WEIGHT_SEMILIGHT : return "semilight";
-#endif
         case PANGO_WEIGHT_BOOK      : return "book";
         case PANGO_WEIGHT_NORMAL    : return "normalweight";
         case PANGO_WEIGHT_MEDIUM    : return "medium";
@@ -566,7 +582,7 @@ Glib::ustring Layout::getFontFamily(unsigned span_index) const
         return "";
 
     if (_spans[span_index].font) {
-        return sp_font_description_get_family(_spans[span_index].font->descr);
+        return sp_font_description_get_family(_spans[span_index].font->get_descr());
     }
 
     return "";
@@ -613,7 +629,6 @@ Glib::ustring Layout::dumpAsText() const
                +  Glib::ustring::compose("  in chunk %1 (x=%2, baselineshift=%3)\n", _spans[span_index].in_chunk, _chunks[_spans[span_index].in_chunk].left_x, _spans[span_index].baseline_shift);
 
         if (_spans[span_index].font) {
-#if PANGO_VERSION_CHECK(1,41,1)
             const char* variations = pango_font_description_get_variations(_spans[span_index].font->descr);
             result += Glib::ustring::compose(
                 "    font '%1' %2 %3 %4 %5\n",
@@ -623,15 +638,6 @@ Glib::ustring Layout::dumpAsText() const
                 weight_to_text( pango_font_description_get_weight(_spans[span_index].font->descr) ),
                 (variations?variations:"")
             );
-#else
-            result += Glib::ustring::compose(
-                "    font '%1' %2 %3 %4\n",
-                sp_font_description_get_family(_spans[span_index].font->descr),
-                _spans[span_index].font_size,
-                style_to_text( pango_font_description_get_style(_spans[span_index].font->descr) ),
-                weight_to_text( pango_font_description_get_weight(_spans[span_index].font->descr) )
-            );
-#endif
         }
         result += Glib::ustring::compose("    x_start = %1, x_end = %2\n", _spans[span_index].x_start, _spans[span_index].x_end)
                +  Glib::ustring::compose("    line height: ascent %1, descent %2\n", _spans[span_index].line_height.ascent, _spans[span_index].line_height.descent)
@@ -812,24 +818,24 @@ void Layout::fitToPathAlign(SVGLength const &startOffset, Path const &path)
     _path_fitted = &path;
 }
 
-std::unique_ptr<SPCurve> Layout::convertToCurves() const
+SPCurve Layout::convertToCurves() const
 {
     return convertToCurves(begin(), end());
 }
 
-std::unique_ptr<SPCurve> Layout::convertToCurves(iterator const &from_glyph, iterator const &to_glyph) const
+SPCurve Layout::convertToCurves(iterator const &from_glyph, iterator const &to_glyph) const
 {
-    auto curve = std::make_unique<SPCurve>();
+    SPCurve curve;
 
     for (int glyph_index = from_glyph._glyph_index ; glyph_index < to_glyph._glyph_index ; glyph_index++) {
         Geom::Affine glyph_matrix;
         Span const &span = _glyphs[glyph_index].span(this);
         _getGlyphTransformMatrix(glyph_index, &glyph_matrix);
 
-        Geom::PathVector const * pathv = span.font->PathVector(_glyphs[glyph_index].glyph);
+        Geom::PathVector const *pathv = span.font->PathVector(_glyphs[glyph_index].glyph);
         if (pathv) {
             Geom::PathVector pathv_trans = (*pathv) * glyph_matrix;
-            curve->append(SPCurve(std::move(pathv_trans)));
+            curve.append(SPCurve(std::move(pathv_trans)));
         }
     }
 

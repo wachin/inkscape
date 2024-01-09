@@ -12,56 +12,53 @@
 
 #include <2geom/bezier-curve.h>
 
-#include "display/drawing.h"
-#include "display/drawing-context.h"
-#include "display/drawing-image.h"
-#include "preferences.h"
-
-#include "display/cairo-utils.h"
+#include "drawing.h"
+#include "drawing-context.h"
+#include "drawing-image.h"
+#include "cairo-utils.h"
+#include "cairo-templates.h"
 
 namespace Inkscape {
 
 DrawingImage::DrawingImage(Drawing &drawing)
     : DrawingItem(drawing)
-    , _pixbuf(nullptr)
-{}
-
-DrawingImage::~DrawingImage()
+    , style_image_rendering(SP_CSS_IMAGE_RENDERING_AUTO)
 {
-    // _pixbuf is owned by SPImage - do not delete it
 }
 
-void
-DrawingImage::setPixbuf(Inkscape::Pixbuf *pb)
+void DrawingImage::setPixbuf(std::shared_ptr<Inkscape::Pixbuf const> pixbuf)
 {
-    _pixbuf = pb;
-
-    _markForUpdate(STATE_ALL, false);
+    defer([this, pixbuf = std::move(pixbuf)] () mutable {
+        _pixbuf = std::move(pixbuf);
+        _markForUpdate(STATE_ALL, false);
+    });
 }
 
-void
-DrawingImage::setScale(double sx, double sy)
+void DrawingImage::setScale(double sx, double sy)
 {
-    _scale = Geom::Scale(sx, sy);
-    _markForUpdate(STATE_ALL, false);
+    defer([=] {
+        _scale = Geom::Scale(sx, sy);
+        _markForUpdate(STATE_ALL, false);
+    });
 }
 
-void
-DrawingImage::setOrigin(Geom::Point const &o)
+void DrawingImage::setOrigin(Geom::Point const &origin)
 {
-    _origin = o;
-    _markForUpdate(STATE_ALL, false);
+    defer([=] {
+        _origin = origin;
+        _markForUpdate(STATE_ALL, false);
+    });
 }
 
-void
-DrawingImage::setClipbox(Geom::Rect const &box)
+void DrawingImage::setClipbox(Geom::Rect const &box)
 {
-    _clipbox = box;
-    _markForUpdate(STATE_ALL, false);
+    defer([=] {
+        _clipbox = box;
+        _markForUpdate(STATE_ALL, false);
+    });
 }
 
-Geom::Rect
-DrawingImage::bounds() const
+Geom::Rect DrawingImage::bounds() const
 {
     if (!_pixbuf) return _clipbox;
 
@@ -77,11 +74,22 @@ DrawingImage::bounds() const
     return ret;
 }
 
-unsigned
-DrawingImage::_updateItem(Geom::IntRect const &, UpdateContext const &, unsigned, unsigned)
+void DrawingImage::setStyle(SPStyle const *style, SPStyle const *context_style)
 {
-    _markForRendering();
+    DrawingItem::setStyle(style, context_style);
 
+    auto image_rendering = SP_CSS_IMAGE_RENDERING_AUTO;
+    if (_style) {
+        image_rendering = _style->image_rendering.computed;
+    }
+
+    defer([=] {
+        style_image_rendering = image_rendering;
+    });
+}
+
+unsigned DrawingImage::_updateItem(Geom::IntRect const &, UpdateContext const &, unsigned, unsigned)
+{
     // Calculate bbox
     if (_pixbuf) {
         Geom::Rect r = bounds() * _ctm;
@@ -93,14 +101,11 @@ DrawingImage::_updateItem(Geom::IntRect const &, UpdateContext const &, unsigned
     return STATE_ALL;
 }
 
-unsigned DrawingImage::_renderItem(DrawingContext &dc, Geom::IntRect const &/*area*/, unsigned /*flags*/, DrawingItem * /*stop_at*/)
+unsigned DrawingImage::_renderItem(DrawingContext &dc, RenderContext &rc, Geom::IntRect const &/*area*/, unsigned flags, DrawingItem const */*stop_at*/) const
 {
-    bool outline = _drawing.outline();
+    bool const outline = (flags & RENDER_OUTLINE) && !_drawing.imageOutlineMode();
 
-    Inkscape::Preferences *prefs = Inkscape::Preferences::get();
-    bool imgoutline = prefs->getBool("/options/rendering/imageinoutlinemode", false);
-
-    if (!outline || imgoutline) {
+    if (!outline) {
         if (!_pixbuf) return RENDER_OK;
 
         Inkscape::DrawingContext::Save save(dc);
@@ -111,38 +116,51 @@ unsigned DrawingImage::_renderItem(DrawingContext &dc, Geom::IntRect const &/*ar
 
         dc.translate(_origin);
         dc.scale(_scale);
-        dc.setSource(_pixbuf->getSurfaceRaw(), 0, 0);
+        // const_cast required since Cairo needs to modify the internal refcount variable, but we do not want to give up the
+        // benefits of const for the rest of our code. The underlying object is guaranteed to be non-const, so this is well-defined.
+        // It is also thread-safe to modify the refcount in this way, since Cairo uses atomics internally.
+        dc.setSource(const_cast<cairo_surface_t*>(_pixbuf->getSurfaceRaw()), 0, 0);
         dc.patternSetExtend(CAIRO_EXTEND_PAD);
 
-        if (_style) {
-            // See: http://www.w3.org/TR/SVG/painting.html#ImageRenderingProperty
-            //      https://drafts.csswg.org/css-images-3/#the-image-rendering
-            //      style.h/style.cpp, cairo-render-context.cpp
-            //
-            // CSS 3 defines:
-            //   'optimizeSpeed' as alias for "pixelated"
-            //   'optimizeQuality' as alias for "smooth"
-            switch (_style->image_rendering.computed) {
-                case SP_CSS_IMAGE_RENDERING_OPTIMIZESPEED:
-                case SP_CSS_IMAGE_RENDERING_PIXELATED:
-                // we don't have an implementation for crisp-edges, but it should *not* smooth or blur
-                case SP_CSS_IMAGE_RENDERING_CRISPEDGES:
-                    dc.patternSetFilter( CAIRO_FILTER_NEAREST );
-                    break;
-                case SP_CSS_IMAGE_RENDERING_AUTO:
-                case SP_CSS_IMAGE_RENDERING_OPTIMIZEQUALITY:
-                default:
-                    // In recent Cairo, BEST used Lanczos3, which is prohibitively slow
-                    dc.patternSetFilter( CAIRO_FILTER_GOOD );
-                    break;
-            }
+        // See: http://www.w3.org/TR/SVG/painting.html#ImageRenderingProperty
+        //      https://drafts.csswg.org/css-images-3/#the-image-rendering
+        //      style.h/style.cpp, cairo-render-context.cpp
+        //
+        // CSS 3 defines:
+        //   'optimizeSpeed' as alias for "pixelated"
+        //   'optimizeQuality' as alias for "smooth"
+        switch (style_image_rendering) {
+            case SP_CSS_IMAGE_RENDERING_OPTIMIZESPEED:
+            case SP_CSS_IMAGE_RENDERING_PIXELATED:
+            // we don't have an implementation for crisp-edges, but it should *not* smooth or blur
+            case SP_CSS_IMAGE_RENDERING_CRISPEDGES:
+                dc.patternSetFilter( CAIRO_FILTER_NEAREST );
+                break;
+            case SP_CSS_IMAGE_RENDERING_AUTO:
+            case SP_CSS_IMAGE_RENDERING_OPTIMIZEQUALITY:
+            default:
+                // In recent Cairo, BEST used Lanczos3, which is prohibitively slow
+                dc.patternSetFilter( CAIRO_FILTER_GOOD );
+                break;
         }
 
-        dc.paint(1);
+        // Handle an exceptional case where the greyscale color mode needs to be applied per-image.
+        bool const greyscale_exception = (flags & RENDER_OUTLINE) && _drawing.colorMode() == ColorMode::GRAYSCALE;
+        if (greyscale_exception) {
+            dc.pushGroup();
+        }
+
+        dc.paint();
+
+        if (greyscale_exception) {
+            ink_cairo_surface_filter(dc.rawTarget(), dc.rawTarget(), _drawing.grayscaleMatrix());
+            dc.popGroupToSource();
+            dc.paint();
+        }
 
     } else { // outline; draw a rect instead
 
-        guint32 rgba = prefs->getInt("/options/wireframecolors/images", 0xff0000ff);
+        auto rgba = _drawing.imageOutlineColor();
 
         {   Inkscape::DrawingContext::Save save(dc);
             dc.transform(_ctm);
@@ -174,20 +192,18 @@ unsigned DrawingImage::_renderItem(DrawingContext &dc, Geom::IntRect const &/*ar
 }
 
 /** Calculates the closest distance from p to the segment a1-a2*/
-static double
-distance_to_segment (Geom::Point const &p, Geom::Point const &a1, Geom::Point const &a2)
+static double distance_to_segment(Geom::Point const &p, Geom::Point const &a1, Geom::Point const &a2)
 {
     Geom::LineSegment l(a1, a2);
     Geom::Point np = l.pointAt(l.nearestTime(p));
     return Geom::distance(np, p);
 }
 
-DrawingItem *
-DrawingImage::_pickItem(Geom::Point const &p, double delta, unsigned /*sticky*/)
+DrawingItem *DrawingImage::_pickItem(Geom::Point const &p, double delta, unsigned flags)
 {
     if (!_pixbuf) return nullptr;
 
-    bool outline = _drawing.outline() || _drawing.outlineOverlay() || _drawing.getOutlineSensitive();
+    bool outline = (flags & PICK_OUTLINE) && !_drawing.imageOutlineMode();
 
     if (outline) {
         Geom::Rect r = bounds();
@@ -205,7 +221,7 @@ DrawingImage::_pickItem(Geom::Point const &p, double delta, unsigned /*sticky*/)
         return nullptr;
 
     } else {
-        unsigned char *const pixels = _pixbuf->pixels();
+        auto pixels = _pixbuf->pixels();
         int width = _pixbuf->width();
         int height = _pixbuf->height();
         size_t rowstride = _pixbuf->rowstride();
@@ -224,7 +240,7 @@ DrawingImage::_pickItem(Geom::Point const &p, double delta, unsigned /*sticky*/)
         if ((ix < 0) || (iy < 0) || (ix >= width) || (iy >= height))
             return nullptr;
 
-        unsigned char *pix_ptr = pixels + iy * rowstride + ix * 4;
+        auto pix_ptr = pixels + iy * rowstride + ix * 4;
         // pick if the image is less than 99% transparent
         guint32 alpha = 0;
         if (_pixbuf->pixelFormat() == Inkscape::Pixbuf::PF_CAIRO) {
@@ -240,7 +256,7 @@ DrawingImage::_pickItem(Geom::Point const &p, double delta, unsigned /*sticky*/)
     }
 }
 
-} // end namespace Inkscape
+} // namespace Inkscape
 
 /*
   Local Variables:

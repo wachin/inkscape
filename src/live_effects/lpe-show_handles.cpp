@@ -46,8 +46,6 @@ LPEShowHandles::LPEShowHandles(LivePathEffectObject *lpeobject)
     stroke_width = 1.0;
 }
 
-bool LPEShowHandles::alerts_off = false;
-
 /**
  * Sets default styles to element
  * this permanently remove.some styles of the element
@@ -55,17 +53,6 @@ bool LPEShowHandles::alerts_off = false;
 
 void LPEShowHandles::doOnApply(SPLPEItem const* lpeitem)
 {
-    if(!alerts_off) {
-        char *msg = _("The \"show handles\" path effect will remove any custom style on the object you are applying it to. If this is not what you want, click Cancel.");
-        Gtk::MessageDialog dialog(msg, false, Gtk::MESSAGE_QUESTION, Gtk::BUTTONS_OK_CANCEL, true);
-        gint response = dialog.run();
-        alerts_off = true;
-        if(response == GTK_RESPONSE_CANCEL) {
-            SPLPEItem* item = const_cast<SPLPEItem*>(lpeitem);
-            item->removeCurrentPathEffect(false);
-            return;
-        }
-    }
     SPLPEItem* item = const_cast<SPLPEItem*>(lpeitem);
     SPCSSAttr *css = sp_repr_css_attr_new ();
     sp_repr_css_set_property (css, "stroke", "black");
@@ -95,8 +82,7 @@ Geom::PathVector LPEShowHandles::doEffect_path (Geom::PathVector const & path_in
         outline_path.clear();
     }
     if (original_d) {
-        auto shape_curve = SPCurve::copy(current_shape->curveForEdit());
-        if (shape_curve) {
+        if (auto const shape_curve = current_shape->curveForEdit()) {
             Geom::PathVector original_curve = shape_curve->get_pathvector();
             if(original_path) {
                 for (const auto & i : original_curve) {

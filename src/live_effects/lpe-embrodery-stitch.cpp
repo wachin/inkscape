@@ -83,8 +83,7 @@ LPEEmbroderyStitch::LPEEmbroderyStitch(LivePathEffectObject *lpeobject) :
     jump_if_longer.param_set_range(0.0, 1000000);
 }
 
-LPEEmbroderyStitch::~LPEEmbroderyStitch()
-= default;
+LPEEmbroderyStitch::~LPEEmbroderyStitch() = default;
 
 double LPEEmbroderyStitch::GetPatternInitialStep(int pattern, int line)
 {
@@ -378,12 +377,6 @@ PathVector LPEEmbroderyStitch::doEffect_path(PathVector const &path_in)
     } else {
         return path_in;
     }
-}
-
-void
-LPEEmbroderyStitch::resetDefaults(SPItem const *item)
-{
-    Effect::resetDefaults(item);
 }
 
 } //namespace LivePathEffect

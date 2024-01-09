@@ -7,103 +7,52 @@
  * Copyright (C) 2018 Authors
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
-#ifndef __IMAGEMAP_H__
-#define __IMAGEMAP_H__
+#ifndef INKSCAPE_TRACE_IMAGEMAP_H
+#define INKSCAPE_TRACE_IMAGEMAP_H
 
-#ifndef TRUE
-#define TRUE  1
-#endif
+#include <vector>
+#include <array>
 
-#ifndef FALSE
-#define FALSE 0
-#endif
+namespace Inkscape {
+namespace Trace {
 
-
-/*#########################################################################
-### G R A Y M A P
-#########################################################################*/
-
-
-typedef struct GrayMap_def GrayMap;
-
-#define GRAYMAP_BLACK 0
-#define GRAYMAP_WHITE 765
-
-/**
- *
- */
-struct GrayMap_def
+template <typename T>
+struct MapBase
 {
-
-    /*#################
-    ### METHODS
-    #################*/
-
-    /**
-     *
-     */
-    void (*setPixel)(GrayMap *me, int x, int y, unsigned long val);
-
-    /**
-     *
-     */
-    unsigned long (*getPixel)(GrayMap *me, int x, int y);
-
-    /**
-     *
-     */
-    int (*writePPM)(GrayMap *me, char *fileName);
-
-
-
-    /**
-     *
-     */
-    void (*destroy)(GrayMap *me);
-
-
-
-    /*#################
-    ### FIELDS
-    #################*/
-
-    /**
-     *
-     */
     int width;
-
-    /**
-     *
-     */
     int height;
+    std::vector<T> pixels;
 
-    /**
-     *  The pixel array
-     */
-    unsigned long *pixels;
+    MapBase(int width, int height)
+        : width(width)
+        , height(height)
+        , pixels(width * height) {}
 
-    /**
-     *  Pointer to the beginning of each row
-     */
-    unsigned long **rows;
-
+    int offset(int x, int y) const { return x + y * width; }
+    T       *row(int y)       { return pixels.data() + y * width; }
+    T const *row(int y) const { return pixels.data() + y * width; }
+    void setPixel(int x, int y, T val) { pixels[offset(x, y)] = val; }
+    T getPixel(int x, int y) const { return pixels[offset(x, y)]; }
 };
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+/*
+ * GrayMap
+ */
 
-GrayMap *GrayMapCreate(int width, int height);
+struct GrayMap
+    : MapBase<unsigned long>
+{
+    static unsigned long constexpr BLACK = 0;
+    static unsigned long constexpr WHITE = 255 * 3;
 
-#ifdef __cplusplus
-}
-#endif
+    GrayMap(int width, int height);
 
+    bool writePPM(char const *fileName);
+};
 
-
-/*#########################################################################
-### R G B   M A P
-#########################################################################*/
+/*
+ * RgbMap
+ */
 
 struct RGB
 {
@@ -112,191 +61,31 @@ struct RGB
     unsigned char b;
 };
 
-
-
-typedef struct RgbMap_def RgbMap;
-
-/**
- *
- */
-struct RgbMap_def
+struct RgbMap
+    : MapBase<RGB>
 {
+    RgbMap(int width, int height);
 
-    /*#################
-    ### METHODS
-    #################*/
-
-    /**
-     *
-     */
-    void (*setPixel)(RgbMap *me, int x, int y, int r, int g, int b);
-
-
-    /**
-     *
-     */
-    void (*setPixelRGB)(RgbMap *me, int x, int y, RGB rgb);
-
-    /**
-     *
-     */
-    RGB (*getPixel)(RgbMap *me, int x, int y);
-
-    /**
-     *
-     */
-    int (*writePPM)(RgbMap *me, char *fileName);
-
-
-
-    /**
-     *
-     */
-    void (*destroy)(RgbMap *me);
-
-
-
-    /*#################
-    ### FIELDS
-    #################*/
-
-    /**
-     *
-     */
-    int width;
-
-    /**
-     *
-     */
-    int height;
-
-    /**
-     * The allocated array of pixels
-     */
-    RGB *pixels;
-
-    /**
-     * Pointers to the beginning of each row of pixels
-     */
-    RGB **rows;
-
+    bool writePPM(char const *fileName);
 };
 
-
-
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-RgbMap *RgbMapCreate(int width, int height);
-
-#ifdef __cplusplus
-}
-#endif
-
-
-
-
-/*#########################################################################
-### I N D E X E D     M A P
-#########################################################################*/
-
-
-typedef struct IndexedMap_def IndexedMap;
-
-/**
- *
+/*
+ * IndexedMap
  */
-struct IndexedMap_def
+
+struct IndexedMap
+    : MapBase<unsigned>
 {
+    IndexedMap(int width, int height);
 
-    /*#################
-    ### METHODS
-    #################*/
+    RGB getPixelValue(int x, int y) const { return clut[getPixel(x, y) % clut.size()]; }
+    bool writePPM(char const *fileName);
 
-    /**
-     *
-     */
-    void (*setPixel)(IndexedMap *me, int x, int y, unsigned int index);
-
-
-    /**
-     *
-     */
-    unsigned int (*getPixel)(IndexedMap *me, int x, int y);
-
-    /**
-     *
-     */
-    RGB (*getPixelValue)(IndexedMap *me, int x, int y);
-
-    /**
-     *
-     */
-    int (*writePPM)(IndexedMap *me, char *fileName);
-
-
-
-    /**
-     *
-     */
-    void (*destroy)(IndexedMap *me);
-
-
-
-    /*#################
-    ### FIELDS
-    #################*/
-
-    /**
-     *
-     */
-    int width;
-
-    /**
-     *
-     */
-    int height;
-
-    /**
-     * The allocated array of pixels
-     */
-    unsigned int *pixels;
-
-    /**
-     * Pointers to the beginning of each row of pixels
-     */
-    unsigned int **rows;
-
-    /**
-     *
-     */
     int nrColors;
-
-    /**
-     * Color look up table
-     */
-    RGB clut[256];
-
+    std::array<RGB, 256> clut; ///< Color look-up table.
 };
 
+} // namespace Trace
+} // namespace Inkscape
 
-
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-IndexedMap *IndexedMapCreate(int width, int height);
-
-#ifdef __cplusplus
-}
-#endif
-
-
-
-
-#endif /* __IMAGEMAP_H__ */
-
-/*#########################################################################
-### E N D    O F    F I L E
-#########################################################################*/
+#endif // INKSCAPE_TRACE_IMAGEMAP_H

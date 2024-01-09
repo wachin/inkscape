@@ -47,13 +47,14 @@ public:
      * Creates a bool check button for a bool parameter.
      * Builds a hbox with a label and a check button in it.
      */
-    Gtk::Widget *get_widget(sigc::signal<void> *changeSignal) override;
+    Gtk::Widget *get_widget(sigc::signal<void ()> *changeSignal) override;
 
     /**
      * Appends 'true' or 'false'.
      * @todo investigate. Returning a value that can then be appended would probably work better/safer.
      */
     std::string value_to_string() const override;
+    void string_to_value(const std::string &in) override;
 
 private:
     /** Internal value. */

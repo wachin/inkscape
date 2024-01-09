@@ -34,8 +34,7 @@ LPEConstructGrid::LPEConstructGrid(LivePathEffectObject *lpeobject) :
     nr_y.param_set_range(1, 1e10);
 }
 
-LPEConstructGrid::~LPEConstructGrid()
-= default;
+LPEConstructGrid::~LPEConstructGrid() = default;
 
 Geom::PathVector
 LPEConstructGrid::doEffect_path (Geom::PathVector const & path_in)

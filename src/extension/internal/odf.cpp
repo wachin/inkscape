@@ -929,7 +929,7 @@ static Geom::OptRect getODFBoundingBox(const SPItem *item)
 static Geom::Affine getODFItemTransform(const SPItem *item)
 {
     Geom::Affine itemTransform (item->i2doc_affine() *
-            SP_ACTIVE_DOCUMENT->getRoot()->c2p.inverse());
+            item->document->getRoot()->c2p.inverse());
     return itemTransform;
 }
 
@@ -983,7 +983,7 @@ static void gatherText(Inkscape::XML::Node *node, Glib::ustring &buf)
  * Method descends into the repr tree, converting image, style, and gradient info
  * into forms compatible in ODF.
  */
-void OdfOutput::preprocess(ZipFile &zf, Inkscape::XML::Node *node)
+void OdfOutput::preprocess(ZipFile &zf, SPDocument *doc, Inkscape::XML::Node *node)
 {
     Glib::ustring nodeName = node->name();
     Glib::ustring id       = getAttribute(node, "id");
@@ -1010,12 +1010,12 @@ void OdfOutput::preprocess(ZipFile &zf, Inkscape::XML::Node *node)
         }
 
     //Now consider items.
-    SPObject *reprobj = SP_ACTIVE_DOCUMENT->getObjectByRepr(node);
+    SPObject *reprobj = doc->getObjectByRepr(node);
     if (!reprobj)
     {
         return;
     }
-    if (!SP_IS_ITEM(reprobj))
+    if (!is<SPItem>(reprobj))
     {
         return;
     }
@@ -1047,7 +1047,7 @@ void OdfOutput::preprocess(ZipFile &zf, Inkscape::XML::Node *node)
 
     for (Inkscape::XML::Node *child = node->firstChild() ;
             child ; child = child->next())
-        preprocess(zf, child);
+        preprocess(zf, doc, child);
 }
 
 
@@ -1297,7 +1297,7 @@ bool OdfOutput::processStyle(SPItem *item, const Glib::ustring &id, const Glib::
     }
     else if (style->fill.isPaintserver())
     {
-        SPGradient *gradient = SP_GRADIENT(SP_STYLE_FILL_SERVER(style));
+        auto gradient = cast<SPGradient>(SP_STYLE_FILL_SERVER(style));
         if (gradient)
         {
             si.fill = "gradient";
@@ -1324,7 +1324,7 @@ bool OdfOutput::processStyle(SPItem *item, const Glib::ustring &id, const Glib::
     }
     else if (style->stroke.isPaintserver())
     {
-        SPGradient *gradient = SP_GRADIENT(SP_STYLE_STROKE_SERVER(style));
+        auto gradient = cast<SPGradient>(SP_STYLE_STROKE_SERVER(style));
         if (gradient)
         {
             si.stroke = "gradient";
@@ -1411,7 +1411,7 @@ bool OdfOutput::processGradient(SPItem *item,
     }
 
     //## Gradient
-    SPGradient *gradient = SP_GRADIENT((checkFillGradient?(SP_STYLE_FILL_SERVER(style)) :(SP_STYLE_STROKE_SERVER(style))));
+    auto gradient = cast<SPGradient>((checkFillGradient?(SP_STYLE_FILL_SERVER(style)) :(SP_STYLE_STROKE_SERVER(style))));
 
     if (gradient == nullptr)
     {
@@ -1430,20 +1430,20 @@ bool OdfOutput::processGradient(SPItem *item,
     }
 
     Glib::ustring gradientName2;
-    if (SP_IS_LINEARGRADIENT(gradient))
+    if (is<SPLinearGradient>(gradient))
     {
         gi.style = "linear";
-        SPLinearGradient *linGrad = SP_LINEARGRADIENT(gradient);
+        auto linGrad = cast<SPLinearGradient>(gradient);
         gi.x1 = linGrad->x1.value;
         gi.y1 = linGrad->y1.value;
         gi.x2 = linGrad->x2.value;
         gi.y2 = linGrad->y2.value;
         gradientName2 = Glib::ustring::compose("ImportedLinearGradient%1", gradientTable.size());
     }
-    else if (SP_IS_RADIALGRADIENT(gradient))
+    else if (is<SPRadialGradient>(gradient))
     {
         gi.style = "radial";
-        SPRadialGradient *radGrad = SP_RADIALGRADIENT(gradient);
+        auto radGrad = cast<SPRadialGradient>(gradient);
         Geom::OptRect bbox = item->documentVisualBounds();
         gi.cx = (radGrad->cx.value-bbox->left())/bbox->width();
         gi.cy = (radGrad->cy.value-bbox->top())/bbox->height();
@@ -1556,19 +1556,20 @@ bool OdfOutput::processGradient(SPItem *item,
  * This is the main SPObject tree output to ODF.
  */
 bool OdfOutput::writeTree(Writer &couts, Writer &souts,
+                          SPDocument *doc,
                           Inkscape::XML::Node *node)
 {
     //# Get the SPItem, if applicable
-    SPObject *reprobj = SP_ACTIVE_DOCUMENT->getObjectByRepr(node);
+    SPObject *reprobj = doc->getObjectByRepr(node);
     if (!reprobj)
     {
         return true;
     }
-    if (!SP_IS_ITEM(reprobj))
+    if (!is<SPItem>(reprobj))
     {
         return true;
     }
-    SPItem *item = SP_ITEM(reprobj);
+    auto item = cast<SPItem>(reprobj);
 
     Glib::ustring nodeName = node->name();
     Glib::ustring id       = getAttribute(node, "id");
@@ -1598,7 +1599,7 @@ bool OdfOutput::writeTree(Writer &couts, Writer &souts,
         for (Inkscape::XML::Node *child = node->firstChild() ;
                child ; child = child->next())
         {
-            if (!writeTree(couts, souts, child))
+            if (!writeTree(couts, souts, doc, child))
             {
                 return false;
             }
@@ -1619,7 +1620,7 @@ bool OdfOutput::writeTree(Writer &couts, Writer &souts,
         for (Inkscape::XML::Node *child = node->firstChild() ;
                child ; child = child->next())
         {
-            if (!writeTree(couts, souts, child))
+            if (!writeTree(couts, souts, doc, child))
             {
                 return false;
             }
@@ -1654,13 +1655,13 @@ bool OdfOutput::writeTree(Writer &couts, Writer &souts,
     //# ITEM DATA
     if (nodeName == "image" || nodeName == "svg:image")
     {
-        if (!SP_IS_IMAGE(item))
+        if (!is<SPImage>(item))
         {
             g_warning("<image> is not an SPImage.");
             return false;
         }
 
-        SPImage *img   = SP_IMAGE(item);
+        auto img = cast<SPImage>(item);
         double ix      = img->x.value;
         double iy      = img->y.value;
         double iwidth  = img->width.value;
@@ -1714,16 +1715,7 @@ bool OdfOutput::writeTree(Writer &couts, Writer &souts,
         return true;
     }
 
-    std::unique_ptr<SPCurve> curve;
-
-    if (auto shape = dynamic_cast<SPShape const *>(item)) {
-        curve = SPCurve::copy(shape->curve());
-    } else if (SP_IS_TEXT(item) || SP_IS_FLOWTEXT(item)) {
-        curve = te_get_layout(item)->convertToCurves();
-    }
-
-    if (curve)
-    {
+    auto process_curve = [&, this] (SPCurve const &curve) {
         //### Default <path> output
         couts.writeString("<draw:path ");
         if (!id.empty())
@@ -1747,18 +1739,25 @@ bool OdfOutput::writeTree(Writer &couts, Writer &souts,
                        bbox_width * 1000.0, bbox_height * 1000.0);
 
         couts.printf(" svg:d=\"");
-        int nrPoints = writePath(couts, curve->get_pathvector(),
+        int nrPoints = writePath(couts, curve.get_pathvector(),
                              tf, bbox_x, bbox_y);
         couts.writeString("\"");
 
         couts.writeString(">\n");
         couts.printf("    <!-- %d nodes -->\n", nrPoints);
         couts.writeString("</draw:path>\n\n");
+    };
+
+    if (auto shape = cast<SPShape>(item)) {
+        if (shape->curve()) {
+            process_curve(*shape->curve());
+        }
+    } else if (is<SPText>(item) || is<SPFlowtext>(item)) {
+        process_curve(te_get_layout(item)->convertToCurves());
     }
 
     return true;
 }
-
 
 /**
  * Write the header for the content.xml file
@@ -1956,10 +1955,10 @@ bool OdfOutput::writeContentFooter(Writer &outs)
 
 
 /**
- * Write the content.xml file.  Writes the namesspace headers, then
+ * Write the content.xml file. Writes the namespace headers, then
  * calls writeTree().
  */
-bool OdfOutput::writeContent(ZipFile &zf, Inkscape::XML::Node *node)
+bool OdfOutput::writeContent(ZipFile &zf, SPDocument *doc)
 {
     //Content.xml stream
     BufferOutputStream cbouts;
@@ -1983,7 +1982,7 @@ bool OdfOutput::writeContent(ZipFile &zf, Inkscape::XML::Node *node)
     //# to both files at the same time
     char *oldlocale = g_strdup (setlocale (LC_NUMERIC, nullptr));
     setlocale (LC_NUMERIC, "C");
-    if (!writeTree(couts, souts, node))
+    if (!writeTree(couts, souts, doc, doc->getReprRoot()))
     {
         g_warning("Failed to convert SVG tree");
         setlocale (LC_NUMERIC, oldlocale);
@@ -2036,17 +2035,12 @@ void OdfOutput::reset()
  */
 void OdfOutput::save(Inkscape::Extension::Output */*mod*/, SPDocument *doc, gchar const *filename)
 {
-    if (doc != SP_ACTIVE_DOCUMENT) {
-        g_warning("OdfOutput can only save the active document");
-        return;
-    }
-
     reset();
 
     docBaseUri = Inkscape::URI::from_dirname(doc->getDocumentBase()).str();
 
     ZipFile zf;
-    preprocess(zf, doc->getReprRoot());
+    preprocess(zf, doc, doc->getReprRoot());
 
     if (!writeManifest(zf))
         {
@@ -2054,7 +2048,7 @@ void OdfOutput::save(Inkscape::Extension::Output */*mod*/, SPDocument *doc, gcha
         return;
         }
 
-    if (!writeContent(zf, doc->getReprRoot()))
+    if (!writeContent(zf, doc))
         {
         g_warning("Failed to write content");
         return;

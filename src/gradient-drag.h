@@ -30,6 +30,7 @@
 
 #include "object/sp-gradient.h" // TODO refactor enums to external .h file
 #include "object/sp-mesh-array.h"
+#include "display/control/canvas-item-ptr.h"
 
 class SPKnot;
 
@@ -195,7 +196,16 @@ public: // FIXME: make more of this private!
     std::vector<double> vert_levels;
 
     std::vector<GrDragger *> draggers;
-    std::vector<Inkscape::CanvasItemCurve *> item_curves;
+
+    struct ItemCurve
+    {
+        SPItem *item;
+        CanvasItemPtr<Inkscape::CanvasItemCurve> curve;
+        bool is_fill = true; // Fill or stroke, used by meshes.
+        int corner0 = -1; // For meshes
+        int corner1 = -1; // For meshes
+    };
+    std::vector<ItemCurve> item_curves;
 
     void updateDraggers();
     void refreshDraggers();

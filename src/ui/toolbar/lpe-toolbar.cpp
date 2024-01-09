@@ -32,9 +32,7 @@
 
 #include "live_effects/lpe-line_segment.h"
 
-#include "helper/action-context.h"
-#include "helper/action.h"
-
+#include "ui/dialog/dialog-container.h"
 #include "ui/icon-names.h"
 #include "ui/tools/lpe-tool.h"
 #include "ui/widget/combo-tool-item.h"
@@ -250,7 +248,7 @@ LPEToolbar::toggle_show_bbox() {
 void
 LPEToolbar::toggle_set_bbox()
 {
-    auto selection = _desktop->selection;
+    auto selection = _desktop->getSelection();
 
     auto bbox = selection->visualBounds();
 
@@ -333,7 +331,7 @@ void
 LPEToolbar::open_lpe_dialog()
 {
     if (dynamic_cast<LpeTool *>(_desktop->event_context)) {
-        sp_action_perform(Inkscape::Verb::get(SP_VERB_DIALOG_LIVE_PATH_EFFECT)->get_action(Inkscape::ActionContext(_desktop)), nullptr);
+        _desktop->getContainer()->new_dialog("LivePathEffect");
     } else {
         std::cerr << "LPEToolbar::open_lpe_dialog: LPEToolbar active but current tool is not LPE tool!" << std::endl;
     }
@@ -380,9 +378,9 @@ LPEToolbar::sel_changed(Inkscape::Selection *selection)
 
     // activate line segment combo box if a single item with LPELineSegment is selected
     SPItem *item = selection->singleItem();
-    if (item && SP_IS_LPE_ITEM(item) && lpetool_item_has_construction(lc, item)) {
+    if (item && is<SPLPEItem>(item) && lpetool_item_has_construction(lc, item)) {
 
-        SPLPEItem *lpeitem = SP_LPE_ITEM(item);
+        auto lpeitem = cast<SPLPEItem>(item);
         Effect* lpe = lpeitem->getCurrentLPE();
         if (lpe && lpe->effectType() == LINE_SEGMENT) {
             LPELineSegment *lpels = static_cast<LPELineSegment*>(lpe);

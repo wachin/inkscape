@@ -31,11 +31,13 @@ SPFilter *new_filter_simple_from_item (SPDocument *document, SPItem *item, const
 SPFilter *modify_filter_gaussian_blur_from_item (SPDocument *document, SPItem *item, double stdDeviation);
 void remove_filter (SPObject *item, bool recursive);
 void remove_hidder_filter (SPObject *item);
+bool has_hidder_filter(SPObject *item);
 void remove_filter_gaussian_blur (SPObject *item);
 void remove_filter_legacy_blend(SPObject *item);
 SPBlendMode filter_get_legacy_blend(SPObject *item);
 bool filter_is_single_gaussian_blur(SPFilter *filter);
 double get_single_gaussian_blur_radius(SPFilter *filter);
+bool set_blend_mode(SPItem* item, SPBlendMode mode);
 
 #endif
 

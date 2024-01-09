@@ -22,9 +22,10 @@
 #include "document.h"
 #include "inkscape-version.h"
 #include "sp-defs.h"
+#include "sp-namedview.h"
 #include "sp-root.h"
+#include "sp-use.h"
 #include "display/drawing-group.h"
-#include "svg/stringstream.h"
 #include "svg/svg.h"
 #include "xml/repr.h"
 #include "util/units.h"
@@ -79,8 +80,8 @@ void SPRoot::build(SPDocument *document, Inkscape::XML::Node *repr)
 
     // Search for first <defs> node
     for (auto& o: children) {
-        if (SP_IS_DEFS(&o)) {
-            this->defs = SP_DEFS(&o);
+        if (is<SPDefs>(&o)) {
+            this->defs = cast<SPDefs>(&o);
             break;
         }
     }
@@ -177,11 +178,11 @@ void SPRoot::child_added(Inkscape::XML::Node *child, Inkscape::XML::Node *ref)
     // See LP bug #1227827
     //g_assert (co != NULL || !strcmp("comment", child->name())); // comment repr node has no object
 
-    if (co && SP_IS_DEFS(co)) {
+    if (co && is<SPDefs>(co)) {
         // We search for first <defs> node - it is not beautiful, but works
         for (auto& c: children) {
-            if (SP_IS_DEFS(&c)) {
-                this->defs = SP_DEFS(&c);
+            if (is<SPDefs>(&c)) {
+                this->defs = cast<SPDefs>(&c);
                 break;
             }
         }
@@ -196,7 +197,7 @@ void SPRoot::remove_child(Inkscape::XML::Node *child)
         // We search for first remaining <defs> node - it is not beautiful, but works
         for (auto& child: children) {
             iter = &child;
-            if (SP_IS_DEFS(iter) && (SPDefs *)iter != this->defs) {
+            if (is<SPDefs>(iter) && (SPDefs *)iter != this->defs) {
                 this->defs = (SPDefs *)iter;
                 break;
             }
@@ -267,7 +268,7 @@ void SPRoot::update(SPCtx *ctx, guint flags)
     }
 
     // Calculate x, y, width, height from parent/initial viewport
-    this->calcDimsFromParentViewport(ictx);
+    this->calcDimsFromParentViewport(ictx, false, cloned ? cast<SPUse>(parent) : nullptr);
 
     // std::cout << "SPRoot::update: final:"
     //           << " x: " << x.computed
@@ -285,9 +286,9 @@ void SPRoot::update(SPCtx *ctx, guint flags)
     SPGroup::update((SPCtx *) &rctx, flags);
 
     /* As last step set additional transform of drawing group */
-    for (SPItemView *v = this->display; v != nullptr; v = v->next) {
-        Inkscape::DrawingGroup *g = dynamic_cast<Inkscape::DrawingGroup *>(v->arenaitem);
-        g->setChildTransform(this->c2p);
+    for (auto &v : views) {
+        auto g = cast<Inkscape::DrawingGroup>(v.drawingitem.get());
+        g->setChildTransform(c2p);
     }
 }
 
@@ -295,9 +296,9 @@ void SPRoot::modified(unsigned int flags)
 {
     SPGroup::modified(flags);
 
-    /* fixme: (Lauris) */
     if (!this->parent && (flags & SP_OBJECT_VIEWPORT_MODIFIED_FLAG)) {
-        this->document->emitResizedSignal(this->width.computed, this->height.computed);
+        // Size of viewport has changed.
+        document->getNamedView()->updateViewPort();
     }
 }
 
@@ -334,13 +335,8 @@ Inkscape::XML::Node *SPRoot::write(Inkscape::XML::Document *xml_doc, Inkscape::X
     repr->setAttribute("width", sp_svg_length_write_with_units(this->width));
     repr->setAttribute("height", sp_svg_length_write_with_units(this->height));
 
-    if (this->viewBox_set) {
-        Inkscape::SVGOStringStream os;
-        os << this->viewBox.left() << " " << this->viewBox.top() << " "
-           << this->viewBox.width() << " " << this->viewBox.height();
-
-        repr->setAttribute("viewBox", os.str());
-    }
+    this->write_viewBox(repr);
+    this->write_preserveAspectRatio(repr);
 
     SPGroup::write(xml_doc, repr, flags);
 
@@ -352,7 +348,7 @@ Inkscape::DrawingItem *SPRoot::show(Inkscape::Drawing &drawing, unsigned int key
     Inkscape::DrawingItem *ai = SPGroup::show(drawing, key, flags);
 
     if (ai) {
-        Inkscape::DrawingGroup *g = dynamic_cast<Inkscape::DrawingGroup *>(ai);
+        auto g = cast<Inkscape::DrawingGroup>(ai);
         g->setChildTransform(this->c2p);
     }
 

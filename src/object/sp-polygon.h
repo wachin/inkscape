@@ -16,19 +16,30 @@
 
 #include "sp-shape.h"
 
-class SPPolygon : public SPShape {
+class SPPolygon : public SPShape
+{
 public:
-	SPPolygon();
-	~SPPolygon() override;
+    SPPolygon();
+    ~SPPolygon() override;
+    int tag() const override { return tag_of<decltype(*this)>; }
 
-	void build(SPDocument *document, Inkscape::XML::Node *repr) override;
-	Inkscape::XML::Node* write(Inkscape::XML::Document *xml_doc, Inkscape::XML::Node *repr, unsigned int flags) override;
-	void set(SPAttr key, char const* value) override;
-        const char* typeName() const override;
-	char* description() const override;
+    void build(SPDocument *document, Inkscape::XML::Node *repr) override;
+    Inkscape::XML::Node *write(Inkscape::XML::Document *xml_doc, Inkscape::XML::Node *repr, unsigned int flags) override;
+    void set(SPAttr key, char const *value) override;
+    char const *typeName() const override;
+    char *description() const override;
 };
 
-// made 'public' so that SPCurve can set it as friend:
-void sp_polygon_set(SPObject *object, unsigned int key, char const*value);
+// Functionality shared with SPPolyline
+enum SPPolyParseError : uint8_t
+{
+    POLY_OK = 0,
+    POLY_END_OF_STRING,
+    POLY_INVALID_NUMBER,
+    POLY_INFINITE_VALUE,
+    POLY_NOT_A_NUMBER
+};
+SPPolyParseError sp_poly_get_value(char const **p, double *v);
+SPCurve sp_poly_parse_curve(char const *points);
 
 #endif

@@ -38,9 +38,6 @@ OriginalPathParam::OriginalPathParam( const Glib::ustring& label, const Glib::us
     _from_original_d = false;
 }
 
-OriginalPathParam::~OriginalPathParam()
-= default;
-
 Gtk::Widget *
 OriginalPathParam::param_newWidget()
 {

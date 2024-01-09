@@ -10,8 +10,13 @@
 #ifndef SEEN_PEN_CONTEXT_H
 #define SEEN_PEN_CONTEXT_H
 
-#include "ui/tools/freehand-base.h"
+#include <array>
+#include <sigc++/sigc++.h>
+
+#include "display/control/canvas-item-enums.h"
 #include "live_effects/effect.h"
+#include "ui/tools/freehand-base.h"
+#include "util/action-accel.h"
 
 #define SP_PEN_CONTEXT(obj) (dynamic_cast<Inkscape::UI::Tools::PenTool*>((Inkscape::UI::Tools::ToolBase*)obj))
 #define SP_IS_PEN_CONTEXT(obj) (dynamic_cast<const Inkscape::UI::Tools::PenTool*>((const Inkscape::UI::Tools::ToolBase*)obj) != NULL)
@@ -29,8 +34,9 @@ namespace Tools {
  */
 class PenTool : public FreehandBase {
 public:
-    PenTool(const std::string& cursor_filename = "pen.svg");
-    PenTool(gchar const *const *cursor_shape);
+    PenTool(SPDesktop *desktop,
+        std::string prefs_path = "/tools/freehand/pen",
+        const std::string& cursor_filename = "pen.svg");
     ~PenTool() override;
 
     enum Mode {
@@ -42,7 +48,8 @@ public:
         POINT,
         CONTROL,
         CLOSE,
-        STOP
+        STOP,
+        DEAD
     };
 
     Geom::Point p[5];
@@ -59,23 +66,20 @@ public:
 
     bool spiro = false;  // Spiro mode active?
     bool bspline = false; // BSpline mode active?
-    int num_clicks = 0;;
 
     unsigned int expecting_clicks_for_LPE = 0; // if positive, finish the path after this many clicks
     Inkscape::LivePathEffect::Effect *waiting_LPE = nullptr; // if NULL, waiting_LPE_type in SPDrawContext is taken into account
     SPLPEItem *waiting_item = nullptr;
 
-    Inkscape::CanvasItemCtrl *c0 = nullptr; // Start point of path.
-    Inkscape::CanvasItemCtrl *c1 = nullptr; // End point of path.
-    
-    Inkscape::CanvasItemCurve *cl0 = nullptr;
-    Inkscape::CanvasItemCurve *cl1 = nullptr;
+    CanvasItemPtr<CanvasItemCtrl> ctrl[4]; // Origin, Start, Center, End point of path.
+    static constexpr std::array<CanvasItemCtrlType, 4> ctrl_types = {
+        CANVAS_ITEM_CTRL_TYPE_NODE_SMOOTH, CANVAS_ITEM_CTRL_TYPE_ROTATE,
+        CANVAS_ITEM_CTRL_TYPE_ROTATE, CANVAS_ITEM_CTRL_TYPE_NODE_SMOOTH};
+
+    CanvasItemPtr<CanvasItemCurve> cl0;
+    CanvasItemPtr<CanvasItemCurve> cl1;
     
     bool events_disabled = false;
-
-    static const std::string prefsPath;
-
-    const std::string& getPrefsPath() override;
 
     void nextParaxialDirection(Geom::Point const &pt, Geom::Point const &origin, guint state);
     void setPolylineMode();
@@ -83,8 +87,6 @@ public:
     void waitForLPEMouseClicks(Inkscape::LivePathEffect::EffectType effect_type, unsigned int num_clicks, bool use_polylines = true);
 
 protected:
-    void setup() override;
-    void finish() override;
     void set(const Inkscape::Preferences::Entry& val) override;
     bool root_handler(GdkEvent* event) override;
     bool item_handler(SPItem* item, GdkEvent* event) override;
@@ -122,7 +124,8 @@ private:
     void _setSubsequentPoint(Geom::Point const p, bool statusbar, guint status = 0);
     void _setCtrl(Geom::Point const p, guint state);
     void _finishSegment(Geom::Point p, guint state);
-    bool _undoLastPoint();
+    bool _undoLastPoint(bool user_undo = false);
+    bool _redoLastPoint();
 
     void _finish(gboolean closed);
 
@@ -145,6 +148,13 @@ private:
     void _endpointSnap(Geom::Point &p, guint const state);
 
     void _cancel();
+
+    sigc::connection _desktop_destroy;
+    Util::ActionAccel _undo, _redo; ///< Keep track of Undo and Redo keybindings
+    // NOTE: undoing work in progress always deletes the last added point,
+    // so there's no need for an undo stack.
+    std::vector<Geom::PathVector> _redo_stack; ///< History of undone events
+    bool _did_redo = false;
 };
 
 }

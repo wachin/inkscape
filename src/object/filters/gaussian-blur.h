@@ -16,36 +16,28 @@
 #include "sp-filter-primitive.h"
 #include "number-opt-number.h"
 
-#define SP_GAUSSIANBLUR(obj) (dynamic_cast<SPGaussianBlur*>((SPObject*)obj))
-#define SP_IS_GAUSSIANBLUR(obj) (dynamic_cast<const SPGaussianBlur*>((SPObject*)obj) != NULL)
-
-class SPGaussianBlur : public SPFilterPrimitive {
+class SPGaussianBlur final
+    : public SPFilterPrimitive
+{
 public:
-	SPGaussianBlur();
-	~SPGaussianBlur() override;
+    int tag() const override { return tag_of<decltype(*this)>; }
 
-        /** stdDeviation attribute */
-        NumberOptNumber stdDeviation;
+    Geom::Rect calculate_region(Geom::Rect const &region) const override;
 
-        Geom::Rect calculate_region(Geom::Rect region) override;
+    NumberOptNumber const &get_std_deviation() const { return stdDeviation; }
+    void set_deviation(const NumberOptNumber &stdDeviation);
+
+private:
+    NumberOptNumber stdDeviation;
 
 protected:
-	void build(SPDocument* doc, Inkscape::XML::Node* repr) override;
-	void release() override;
+    void build(SPDocument *document, Inkscape::XML::Node *repr) override;
+    void set(SPAttr key, char const *value) override;
 
-	void set(SPAttr key, const gchar* value) override;
-
-	void update(SPCtx* ctx, unsigned int flags) override;
-
-	Inkscape::XML::Node* write(Inkscape::XML::Document* doc, Inkscape::XML::Node* repr, guint flags) override;
-
-	void build_renderer(Inkscape::Filters::Filter* filter) override;
+    std::unique_ptr<Inkscape::Filters::FilterPrimitive> build_renderer(Inkscape::DrawingItem *item) const override;
 };
 
-void  sp_gaussianBlur_setDeviation(SPGaussianBlur *blur, float num);
-void  sp_gaussianBlur_setDeviation(SPGaussianBlur *blur, float num, float optnum);
-
-#endif /* !SP_GAUSSIANBLUR_H_SEEN */
+#endif // SP_GAUSSIANBLUR_H_SEEN
 
 /*
   Local Variables:

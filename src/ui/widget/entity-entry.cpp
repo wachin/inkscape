@@ -23,7 +23,6 @@
 #include "inkscape.h"
 #include "preferences.h"
 #include "rdf.h"
-#include "verbs.h"
 
 #include "object/sp-root.h"
 
@@ -92,15 +91,17 @@ EntityLineEntry::~EntityLineEntry()
     delete static_cast<Gtk::Entry*>(_packable);
 }
 
-void EntityLineEntry::update(SPDocument *doc)
+void EntityLineEntry::update(SPDocument* doc, bool read_only)
 {
-    const char *text = rdf_get_work_entity (doc, _entity);
+    const char *text = rdf_get_work_entity(doc, _entity);
     // If RDF title is not set, get the document's <title> and set the RDF:
-    if ( !text && !strcmp(_entity->name, "title") && doc->getRoot() ) {
+    if (!text && !strcmp(_entity->name, "title") && doc->getRoot()) {
         text = doc->getRoot()->title();
-        rdf_set_work_entity(doc, _entity, text);
+        if (!read_only) {
+            rdf_set_work_entity(doc, _entity, text);
+        }
     }
-    static_cast<Gtk::Entry*>(_packable)->set_text (text ? text : "");
+    static_cast<Gtk::Entry*>(_packable)->set_text(text ? text : "");
 }
 
 
@@ -124,10 +125,14 @@ EntityLineEntry::on_changed()
     Glib::ustring text = static_cast<Gtk::Entry*>(_packable)->get_text();
     if (rdf_set_work_entity (doc, _entity, text.c_str())) {
         if (doc->isSensitive()) {
-            DocumentUndo::done(doc, SP_VERB_NONE, "Document metadata updated");
+            DocumentUndo::done(doc, "Document metadata updated", "");
         }
     }
     _wr->setUpdating (false);
+}
+
+Glib::ustring EntityLineEntry::content() const {
+    return static_cast<Gtk::Entry*>(_packable)->get_text();
 }
 
 EntityMultiLineEntry::EntityMultiLineEntry (rdf_work_entity_t* ent, Registry& wr)
@@ -145,22 +150,28 @@ EntityMultiLineEntry::EntityMultiLineEntry (rdf_work_entity_t* ent, Registry& wr
     _changed_connection = _v.get_buffer()->signal_changed().connect (sigc::mem_fun (*this, &EntityMultiLineEntry::on_changed));
 }
 
+Glib::ustring EntityMultiLineEntry::content() const {
+    return _v.get_buffer()->get_text();
+}
+
 EntityMultiLineEntry::~EntityMultiLineEntry()
 {
     delete static_cast<Gtk::ScrolledWindow*>(_packable);
 }
 
-void EntityMultiLineEntry::update(SPDocument *doc)
+void EntityMultiLineEntry::update(SPDocument* doc, bool read_only)
 {
-    const char *text = rdf_get_work_entity (doc, _entity);
+    const char *text = rdf_get_work_entity(doc, _entity);
     // If RDF title is not set, get the document's <title> and set the RDF:
-    if ( !text && !strcmp(_entity->name, "title") && doc->getRoot() ) {
+    if (!text && !strcmp(_entity->name, "title") && doc->getRoot()) {
         text = doc->getRoot()->title();
-        rdf_set_work_entity(doc, _entity, text);
+        if (!read_only) {
+            rdf_set_work_entity(doc, _entity, text);
+        }
     }
     Gtk::ScrolledWindow *s = static_cast<Gtk::ScrolledWindow*>(_packable);
     Gtk::TextView *tv = static_cast<Gtk::TextView*>(s->get_child());
-    tv->get_buffer()->set_text (text ? text : "");
+    tv->get_buffer()->set_text(text ? text : "");
 }
 
 
@@ -188,7 +199,7 @@ EntityMultiLineEntry::on_changed()
     Gtk::TextView *tv = static_cast<Gtk::TextView*>(s->get_child());
     Glib::ustring text = tv->get_buffer()->get_text();
     if (rdf_set_work_entity (doc, _entity, text.c_str())) {
-        DocumentUndo::done(doc, SP_VERB_NONE, "Document metadata updated");
+        DocumentUndo::done(doc, "Document metadata updated", "");
     }
     _wr->setUpdating (false);
 }

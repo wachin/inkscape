@@ -14,9 +14,8 @@
 
 #include "implementation/implementation.h"
 
-#include "prefdialog/prefdialog.h"
-
 #include "xml/repr.h"
+#include "xml/attribute-record.h"
 
 
 /* Inkscape::Extension::Input */
@@ -55,6 +54,14 @@ Input::Input (Inkscape::XML::Node *in_repr, Implementation::Implementation *in_i
 
         while (child_repr != nullptr) {
             if (!strcmp(child_repr->name(), INKSCAPE_EXTENSION_NS "input")) {
+                // Input tag attributes
+                for (const auto &iter : child_repr->attributeList()) {
+                    std::string name = g_quark_to_string(iter.key);
+                    std::string value = std::string(iter.value);
+                    if (name == "priority")
+                        set_sort_priority(strtol(value.c_str(), nullptr, 0));
+                }
+
                 child_repr = child_repr->firstChild();
                 while (child_repr != nullptr) {
                     char const * chname = child_repr->name();
@@ -173,6 +180,21 @@ Input::get_extension()
 }
 
 /**
+    \return  True if the filename matches
+    \brief   Match filename to extension that can open it.
+*/
+bool
+Input::can_open_filename(gchar const *filename)
+{
+    gchar *filenamelower = g_utf8_strdown(filename, -1);
+    gchar *extensionlower = g_utf8_strdown(extension, -1);
+    bool result = g_str_has_suffix(filenamelower, extensionlower);
+    g_free(filenamelower);
+    g_free(extensionlower);
+    return result;
+}
+
+/**
     \return  The name of the filetype supported
     \brief   Get the name of the filetype supported
 */
@@ -205,39 +227,6 @@ Input::get_filetypetooltip(bool translated)
     } else {
         return filetypetooltip;
     }
-}
-
-/**
-    \return  A dialog to get settings for this extension
-    \brief   Create a dialog for preference for this extension
-
-    Calls the implementation to get the preferences.
-*/
-bool
-Input::prefs (const gchar *uri)
-{
-    if (!loaded()) {
-        set_state(Extension::STATE_LOADED);
-    }
-    if (!loaded()) {
-        return false;
-    }
-
-    Gtk::Widget * controls;
-    controls = imp->prefs_input(this, uri);
-    if (controls == nullptr) {
-        // std::cout << "No preferences for Input" << std::endl;
-        return true;
-    }
-
-    Glib::ustring name = this->get_name();
-    PrefDialog *dialog = new PrefDialog(name, controls);
-    int response = dialog->run();
-    dialog->hide();
-
-    delete dialog;
-
-    return (response == Gtk::RESPONSE_OK);
 }
 
 } }  /* namespace Inkscape, Extension */

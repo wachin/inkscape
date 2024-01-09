@@ -21,6 +21,7 @@ namespace Extension {
 
 void init ();
 void load_user_extensions();
+void load_shared_extensions();
 void refresh_user_extensions();
 } } /* namespace Inkscape::Extension */
 

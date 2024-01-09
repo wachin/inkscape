@@ -31,6 +31,7 @@ enum Type {
     EXAMPLES,
     EXTENSIONS,
     FONTS,
+    FONTCOLLECTIONS,
     ICONS,
     KEYS,
     MARKERS,
@@ -52,6 +53,7 @@ enum Domain {
     SYSTEM,
     CREATE,
     CACHE,
+    SHARED,
     USER
 };
 
@@ -98,10 +100,12 @@ void get_filenames_from_path(std::vector<Glib::ustring> &files, std::string cons
                                     std::vector<const char *> const &exclusions = {});
 
 
-char const *profile_path();
-char *profile_path(const char *filename);
-char *homedir_path(const char *filename);
-char *log_path(const char *filename);
+std::string profile_path();
+std::string profile_path(const char *filename);
+std::string shared_path();
+std::string shared_path(const char *filename);
+std::string homedir_path();
+std::string log_path(const char *filename);
 
 }
 

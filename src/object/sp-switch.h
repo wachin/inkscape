@@ -18,11 +18,11 @@
 
 #include "sp-item-group.h"
 
-
-class SPSwitch : public SPGroup {
+class SPSwitch final : public SPGroup {
 public:
 	SPSwitch();
 	~SPSwitch() override;
+    int tag() const override { return tag_of<decltype(*this)>; }
 
     void resetChildEvaluated() { _reevaluate(); }
 

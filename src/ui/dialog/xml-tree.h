@@ -10,9 +10,15 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
-#ifndef SEEN_UI_DIALOGS_XML_TREE_H
-#define SEEN_UI_DIALOGS_XML_TREE_H
+#ifndef INKSCAPE_UI_DIALOG_XML_TREE_H
+#define INKSCAPE_UI_DIALOG_XML_TREE_H
 
+#include <glibmm/ustring.h>
+#include <gtkmm/treeview.h>
+#include <gtkmm/widget.h>
+#include <memory>
+#include <glibmm/refptr.h>
+#include <gtkmm/builder.h>
 #include <gtkmm/button.h>
 #include <gtkmm/entry.h>
 #include <gtkmm/paned.h>
@@ -22,11 +28,12 @@
 #include <gtkmm/switch.h>
 #include <gtkmm/textview.h>
 #include <gtkmm/toolbar.h>
-#include <memory>
 
 #include "message.h"
-#include "ui/dialog/attrdialog.h"
-#include "ui/dialog/dialog-base.h"
+#include "attrdialog.h"
+#include "dialog-base.h"
+#include "preferences.h"
+#include "ui/syntax.h"
 
 class SPObject;
 struct SPXMLViewAttrList;
@@ -36,31 +43,28 @@ struct SPXMLViewTree;
 namespace Inkscape {
 class MessageStack;
 class MessageContext;
-
-namespace XML {
-class Node;
-}
+namespace XML { class Node; }
 
 namespace UI {
 namespace Dialog {
 
 /**
  * A dialog widget to view and edit the document xml
- *
  */
 
 class XmlTree : public DialogBase
 {
 public:
-    XmlTree ();
-    ~XmlTree () override;
+    XmlTree();
+    ~XmlTree() override;
 
-    static XmlTree &getInstance() { return *new XmlTree(); }
+    void setSyntaxStyle(Inkscape::UI::Syntax::XMLStyles const &new_style);
 
 private:
     void unsetDocument();
     void documentReplaced() override;
     void selectionChanged(Selection *selection) override;
+    void desktopReplaced() override;
 
     /**
      * Select a node in the xml tree
@@ -68,24 +72,14 @@ private:
     void set_tree_repr(Inkscape::XML::Node *repr);
 
     /**
-     * Sets the XML status bar when the tree is selected.
-     */
-    void tree_reset_context();
-
-    /**
      * Is the selected tree node editable
      */
     gboolean xml_tree_node_mutable(GtkTreeIter *node);
 
     /**
-     * Callback to close the add dialog on Escape key
-     */
-    static gboolean quit_on_esc (GtkWidget *w, GdkEventKey *event, GObject */*tbl*/);
-
-    /**
      * Select a node in the xml tree
      */
-    void set_tree_select(Inkscape::XML::Node *repr);
+    void set_tree_select(Inkscape::XML::Node *repr, bool edit = false);
 
     /**
      * Set the attribute list to match the selected node in the tree
@@ -103,33 +97,13 @@ private:
     void set_dt_select(Inkscape::XML::Node *repr);
 
     /**
-      * Callback for a node in the tree being selected
-      */
-    static void on_tree_select_row(GtkTreeSelection *selection, gpointer data);
-    /**
      * Callback for deferring the `on_tree_select_row` response in order to
      * skip invalid intermediate selection states. In particular,
      * `gtk_tree_store_remove` makes an undesired selection that we will
      * immediately revert and don't want to an early response for.
      */
-    static gboolean deferred_on_tree_select_row(gpointer);
-    /// Event source ID for the last scheduled `deferred_on_tree_select_row` event.
-    guint deferred_on_tree_select_row_id = 0;
-
-    /**
-      * Callback when a node is moved in the tree
-      */
-    static void after_tree_move(SPXMLViewTree *tree, gpointer value, gpointer data);
-
-    /**
-      * Callback for when an attribute is edited.
-      */
-    //static void on_attr_edited(SPXMLViewAttrList *attributes, const gchar * name, const gchar * value, gpointer /*data*/);
-
-    /**
-      * Callback for when attribute list values change
-      */
-    //static void on_attr_row_changed(SPXMLViewAttrList *attributes, const gchar * name, gpointer data);
+    Inkscape::auto_connection _tree_select_idle;
+    bool deferred_on_tree_select_row();
 
     /**
       * Enable widgets based on current selections
@@ -145,7 +119,6 @@ private:
     /**
       * Callbacks for changes in desktop selection and current document
       */
-    static void on_document_uri_set(gchar const *uri, SPDocument *document);
     static void _set_status_message(Inkscape::MessageType type, const gchar *message, GtkWidget *dialog);
 
     /**
@@ -160,67 +133,60 @@ private:
     void cmd_indent_node();
     void cmd_unindent_node();
 
-    void _attrtoggler();
-    void _toggleDirection(Gtk::RadioButton *vertical);
     void _resized();
     bool in_dt_coordsys(SPObject const &item);
+
+    void rebuildTree();
+    void stopNodeEditing(bool ok, Glib::ustring const &path, Glib::ustring name);
+    void startNodeEditing(Gtk::CellEditable *cell, Glib::ustring const &path);
 
     /**
      * Flag to ensure only one operation is performed at once
      */
-    gint blocked;
-
-    bool _updating;
-    /**
-     * Status bar
-     */
-    std::shared_ptr<Inkscape::MessageStack> _message_stack;
-    std::unique_ptr<Inkscape::MessageContext> _message_context;
+    gint blocked = 0;
 
     /**
      * Signal handlers
      */
-    sigc::connection _message_changed_connection;
-    sigc::connection document_uri_set_connection;
-
-    gint selected_attr;
-    Inkscape::XML::Node *selected_repr;
+    Inkscape::XML::Node *selected_repr = nullptr;
 
     /* XmlTree Widgets */
-    SPXMLViewTree *tree;
-    //SPXMLViewAttrList *attributes;
+    SPXMLViewTree *tree = nullptr;
+    Gtk::TreeView* _treemm = nullptr;
     AttrDialog *attributes;
     Gtk::Box *_attrbox;
 
     /* XML Node Creation pop-up window */
+    Glib::RefPtr<Gtk::Builder> _builder;
     Gtk::Entry *name_entry;
     Gtk::Button *create_button;
-    Gtk::Paned _paned;
+    Gtk::Paned& _paned;
 
-    Gtk::Box node_box;
-    Gtk::Box status_box;
+    // Gtk::Box node_box;
     Gtk::Switch _attrswitch;
     Gtk::Label status;
-    Gtk::Toolbar tree_toolbar;
-    Gtk::ToolButton xml_element_new_button;
-    Gtk::ToolButton xml_text_new_button;
-    Gtk::ToolButton xml_node_delete_button;
-    Gtk::SeparatorToolItem separator;
-    Gtk::ToolButton xml_node_duplicate_button;
-    Gtk::SeparatorToolItem separator2;
-    Gtk::ToolButton unindent_node_button;
-    Gtk::ToolButton indent_node_button;
-    Gtk::ToolButton raise_node_button;
-    Gtk::ToolButton lower_node_button;
+    Gtk::Button& xml_element_new_button;
+    Gtk::Button& xml_text_new_button;
+    Gtk::Button& xml_node_delete_button;
+    Gtk::Button& xml_node_duplicate_button;
+    Gtk::Button& unindent_node_button;
+    Gtk::Button& indent_node_button;
+    Gtk::Button& raise_node_button;
+    Gtk::Button& lower_node_button;
 
-    GtkWidget *new_window;
+    enum DialogLayout: int { Auto = 0, Horizontal, Vertical };
+    DialogLayout _layout = Auto;
+    Pref<Glib::ustring> _syntax_theme;
+    Pref<bool> _mono_font;
+    Inkscape::XML::Node* _dummy = nullptr;
+    Inkscape::XML::Node* _node_parent = nullptr;
 };
 
-}
-}
-}
+} // namespace Dialog
+} // namespace UI
+} // namespace Inkscape
 
-#endif
+#endif // INKSCAPE_UI_DIALOG_XML_TREE_H
 
 /*
   Local Variables:

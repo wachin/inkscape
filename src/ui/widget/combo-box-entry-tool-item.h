@@ -58,7 +58,7 @@ private:
     gboolean            _warning_cb_blocked;
 
     // Signals
-    sigc::signal<void> _signal_changed;
+    sigc::signal<void ()> _signal_changed;
 
     static gint get_active_row_from_text(ComboBoxEntryToolItem *action,
                                          const gchar         *target_text,
@@ -68,6 +68,7 @@ private:
 
     static void combo_box_changed_cb( GtkComboBox* widget, gpointer data );
     static gboolean combo_box_popup_cb( ComboBoxEntryToolItem* widget, gpointer data );
+    static gboolean set_cell_markup(gpointer data);
     static void entry_activate_cb( GtkEntry *widget,
                                    gpointer  data );
     static gboolean match_selected_cb( GtkEntryCompletion *widget,

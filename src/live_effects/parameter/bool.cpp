@@ -5,15 +5,19 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
-#include "ui/widget/registered-widget.h"
-#include "live_effects/parameter/bool.h"
-#include "live_effects/effect.h"
-#include "svg/svg.h"
-#include "svg/stringstream.h"
-#include "inkscape.h"
-#include "verbs.h"
-#include "helper-fns.h"
+#include "bool.h"
+
 #include <glibmm/i18n.h>
+
+#include "inkscape.h"
+
+#include "live_effects/effect.h"
+#include "svg/stringstream.h"
+#include "svg/svg.h"
+#include "ui/icon-names.h"
+#include "ui/widget/registered-widget.h"
+#include "util/numeric/converters.h"
+
 
 namespace Inkscape {
 
@@ -26,8 +30,7 @@ BoolParam::BoolParam( const Glib::ustring& label, const Glib::ustring& tip,
 {
 }
 
-BoolParam::~BoolParam()
-= default;
+BoolParam::~BoolParam() = default;
 
 void
 BoolParam::param_set_default()
@@ -44,13 +47,13 @@ BoolParam::param_update_default(bool const default_value)
 void 
 BoolParam::param_update_default(const gchar * default_value)
 {
-    param_update_default(helperfns_read_bool(default_value, defvalue));
+    param_update_default(Inkscape::Util::read_bool(default_value, defvalue));
 }
 
 bool
 BoolParam::param_readSVGValue(const gchar * strvalue)
 {
-    param_setValue(helperfns_read_bool(strvalue, defvalue));
+    param_setValue(Inkscape::Util::read_bool(strvalue, defvalue));
     return true; // not correct: if value is unacceptable, should return false!
 }
 
@@ -81,7 +84,7 @@ BoolParam::param_newWidget()
 
         checkwdg->setActive(value);
         checkwdg->setProgrammatically = false;
-        checkwdg->set_undo_parameters(SP_VERB_DIALOG_LIVE_PATH_EFFECT, _("Change bool parameter"));
+        checkwdg->set_undo_parameters(_("Change bool parameter"), INKSCAPE_ICON("dialog-path-effects"));
         return dynamic_cast<Gtk::Widget *> (checkwdg);
     } else {
         return nullptr;

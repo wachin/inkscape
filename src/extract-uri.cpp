@@ -9,6 +9,7 @@
  */
 #include <cstring>
 #include <glib.h>
+#include <optional>
 
 #include "extract-uri.h"
 
@@ -97,6 +98,21 @@ std::string extract_uri(char const *s, char const **endptr)
     }
 
     return result;
+}
+
+std::optional<std::string> try_extract_uri(const char* url) {
+    auto link = extract_uri(url);
+    return link.empty() ? std::nullopt : std::make_optional(link);
+}
+
+std::optional<std::string> try_extract_uri_id(const char *url) {
+    if (auto ret = try_extract_uri(url)) {
+        if (!ret->empty() && (*ret)[0] == '#') {
+            ret->erase(0, 1);
+            return ret;
+        }
+    }
+    return std::nullopt;
 }
 
 /*

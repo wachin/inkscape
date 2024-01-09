@@ -33,10 +33,13 @@
 #include "livarot/Path.h"
 #include "livarot/Shape.h"
 
+#include "object/object-set.h"
+#include "object/box3d.h"
 #include "object/sp-item.h"
 #include "object/sp-marker.h"
 #include "object/sp-shape.h"
 #include "object/sp-text.h"
+#include "object/sp-flowtext.h"
 
 #include "svg/svg.h"
 
@@ -49,16 +52,16 @@
 bool
 item_find_paths(const SPItem *item, Geom::PathVector& fill, Geom::PathVector& stroke, bool bbox_only = false)
 {
-    const SPShape *shape = dynamic_cast<const SPShape*>(item);
-    const SPText  *text  = dynamic_cast<const SPText*>(item);
+    auto shape = cast<SPShape>(item);
+    auto text = cast<SPText>(item);
 
     if (!shape && !text) {
         return false;
     }
 
-    std::unique_ptr<SPCurve> curve;
+    std::optional<SPCurve> curve;
     if (shape) {
-        curve = SPCurve::copy(shape->curve());
+        curve = SPCurve::ptr_to_opt(shape->curve());
     } else if (text) {
         curve = text->getNormalizedBpath();
     } else {
@@ -84,7 +87,7 @@ item_find_paths(const SPItem *item, Geom::PathVector& fill, Geom::PathVector& st
         return false;
     }
 
-    if (item->style->stroke.isNone()) {
+    if (item->style->stroke.isNone() || item->style->stroke_width.computed <= Geom::EPSILON) {
         // No stroke, no chocolate!
         return true;
     }
@@ -99,10 +102,6 @@ item_find_paths(const SPItem *item, Geom::PathVector& fill, Geom::PathVector& st
     SPStyle *style = item->style;
 
     double stroke_width = style->stroke_width.computed;
-    if (stroke_width < Geom::EPSILON) {
-        // https://bugs.launchpad.net/inkscape/+bug/1244861
-        stroke_width = Geom::EPSILON;
-    }
     double miter = style->stroke_miterlimit.value * stroke_width;
 
     JoinType join;
@@ -140,7 +139,7 @@ item_find_paths(const SPItem *item, Geom::PathVector& fill, Geom::PathVector& st
     origin->LoadPathVector(pathv);
     offset->SetBackData(false);
 
-    if (!style->stroke_dasharray.values.empty()) {
+    if (!style->stroke_dasharray.values.empty() && style->stroke_dasharray.is_valid()) {
         // We have dashes!
         origin->ConvertWithBackData(0.005); // Approximate by polyline
         origin->DashPolylineFromStyle(style, scale, 0);
@@ -189,10 +188,10 @@ void item_to_outline_add_marker_child( SPItem const *item, Geom::Affine marker_t
     tr = item->transform * tr;
 
     // note: a marker child item can be an item group!
-    if (SP_IS_GROUP(item)) {
+    if (is<SPGroup>(item)) {
         // recurse through all childs:
         for (auto& o: item->children) {
-            if (auto childitem = dynamic_cast<SPItem const *>(&o)) {
+            if (auto childitem = cast<SPItem>(&o)) {
                 item_to_outline_add_marker_child(childitem, tr, pathv_in);
             }
         }
@@ -212,7 +211,7 @@ static
 void item_to_outline_add_marker( SPObject const *marker_object, Geom::Affine marker_transform,
                               Geom::Scale stroke_scale, Geom::PathVector* pathv_in )
 {
-    SPMarker const * marker = SP_MARKER(marker_object);
+    SPMarker const * marker = cast<SPMarker>(marker_object);
 
     Geom::Affine tr(marker_transform);
     if (marker->markerUnits == SP_MARKER_UNITS_STROKEWIDTH) {
@@ -259,7 +258,7 @@ Geom::PathVector* item_to_outline(SPItem const *item, bool exclude_markers)
         return ret_pathv;
     }
 
-    const SPShape *shape = dynamic_cast<const SPShape *>(item);
+    auto shape = cast<SPShape>(item);
     if (shape && shape->hasMarkers()) {
 
         SPStyle *style = shape->style;
@@ -341,27 +340,27 @@ Geom::PathVector* item_to_outline(SPItem const *item, bool exclude_markers)
 
 static
 void item_to_paths_add_marker( SPItem *context,
-                               SPObject *marker_object, Geom::Affine marker_transform,
-                               Geom::Scale stroke_scale,
-                               Inkscape::XML::Node *g_repr, Inkscape::XML::Document *xml_doc,
-                               SPDocument * doc, bool legacy)
+                               SPObject *marker_object,
+                               Geom::Affine marker_transform,
+                               double linewidth,
+                               bool start_marker,
+                               Inkscape::XML::Node *g_repr,
+                               bool legacy)
 {
-    SPMarker* marker = SP_MARKER (marker_object);
+    auto doc = context->document;
+    auto marker = cast<SPMarker>(marker_object);
     SPItem* marker_item = sp_item_first_item_child(marker_object);
     if (!marker_item) {
         return;
     }
 
-    Geom::Affine tr(marker_transform);
 
-    if (marker->markerUnits == SP_MARKER_UNITS_STROKEWIDTH) {
-        tr = stroke_scale * tr;
-    }
     // total marker transform
+    auto tr = marker->get_marker_transform(marker_transform, linewidth, start_marker);
     tr = marker_item->transform * marker->c2p * tr;
 
     if (marker_item->getRepr()) {
-        Inkscape::XML::Node *m_repr = marker_item->getRepr()->duplicate(xml_doc);
+        Inkscape::XML::Node *m_repr = marker_item->getRepr()->duplicate(doc->getReprDoc());
         g_repr->addChildAtPos(m_repr, 0);
         SPItem *marker_item = (SPItem *) doc->getObjectByRepr(m_repr);
         marker_item->doWriteTransform(tr);
@@ -374,44 +373,66 @@ void item_to_paths_add_marker( SPItem *context,
 
 /*
  * Find an outline that represents an item.
- * If not legacy, items are already converted to paths (see verbs.cpp).
  * If legacy, text will not be handled as it is not a shape.
  * If a new item is created it is returned.
  * If the input item is a group and that group contains a changed item, the group node is returned
  * (marking a change).
  *
- * The return value is only used externally to update a selection.
+ * The return value is used externally to update a selection. It is nullptr if no change is made.
  */
 Inkscape::XML::Node*
 item_to_paths(SPItem *item, bool legacy, SPItem *context)
 {
     char const *id = item->getAttribute("id");
+    SPDocument *doc = item->document;
+    bool flatten = false;
     // flatten all paths effects
-    SPLPEItem *lpeitem = SP_LPE_ITEM(item);
-    if (lpeitem) {
-        SPDocument * document = item->document;
+    auto lpeitem = cast<SPLPEItem>(item);
+    if (lpeitem && lpeitem->hasPathEffect()) {
         lpeitem->removeAllPathEffects(true);
-        SPObject *elemref = document->getObjectById(id);
+        SPObject *elemref = doc->getObjectById(id);
         if (elemref && elemref != item) {
             // If the LPE item is a shape, it is converted to a path 
             // so we need to reupdate the item
-            item = dynamic_cast<SPItem *>(elemref);
+            item = cast<SPItem>(elemref);
+        }
+        auto flat_item = cast<SPLPEItem>(elemref);
+        if (!flat_item || !flat_item->hasPathEffect()) {
+            flatten = true;
+        }
+    }
+    // convert text/3dbox to path
+    if (is<SPText>(item) || is<SPFlowtext>(item) || is<SPBox3D>(item)) {
+        if (legacy) {
+            return nullptr;
+        }
+
+        Inkscape::ObjectSet original_objects {doc}; // doc or desktop shouldn't be necessary
+        original_objects.add(item);
+        original_objects.toCurves(true);
+        SPItem * new_item = original_objects.singleItem();
+        if (new_item && new_item != item) {
+            flatten = true;
+            item = new_item;
+        } else {
+            g_warning("item_to_paths: flattening text or 3D box failed.");
+            return nullptr;
         }
     }
     // if group, recurse
-    SPGroup *group = dynamic_cast<SPGroup *>(item);
+    auto group = cast<SPGroup>(item);
     if (group) {
         if (legacy) {
             return nullptr;
         }
-        std::vector<SPItem*> const item_list = sp_item_group_item_list(group);
+        std::vector<SPItem*> const item_list = group->item_list();
         bool did = false;
         for (auto subitem : item_list) {
             if (item_to_paths(subitem, legacy)) {
                 did = true;
             }
         }
-        if (did) {
+        if (did || flatten) {
             // This indicates that at least one thing was changed inside the group.
             return group->getRepr();
         } else {
@@ -419,8 +440,7 @@ item_to_paths(SPItem *item, bool legacy, SPItem *context)
         }
     }
 
-    // As written, only shapes are handled. We bail on text early.
-    SPShape* shape = dynamic_cast<SPShape *>(item);
+    auto shape = cast<SPShape>(item);
     if (!shape) {
         return nullptr;
     }
@@ -441,9 +461,10 @@ item_to_paths(SPItem *item, bool legacy, SPItem *context)
     SPStyle *style = item->style;
     SPCSSAttr *ncss = sp_css_attr_from_style(style, SP_STYLE_FLAG_ALWAYS);
     SPCSSAttr *ncsf = sp_css_attr_from_style(style, SP_STYLE_FLAG_ALWAYS);
+
     if (context) {
-        SPStyle *context_style = context->style;
-        SPCSSAttr *ctxt_style = sp_css_attr_from_style(context_style, SP_STYLE_FLAG_ALWAYS);
+        SPCSSAttr *ctxt_style = sp_css_attr_from_style(context->style, SP_STYLE_FLAG_ALWAYS);
+
         // TODO: browsers have different behaviours with context on markers
         // we need to revisit in the future for best matching
         // also dont know if opacity is or should be included in context
@@ -488,11 +509,10 @@ item_to_paths(SPItem *item, bool legacy, SPItem *context)
     } else {
         sp_repr_css_set_property(ncss, "fill-opacity", "1.0");
     }
-
     
     sp_repr_css_set_property(ncsf, "stroke", "none");
+    sp_repr_css_set_property(ncsf, "stroke-width", nullptr);
     sp_repr_css_set_property(ncsf, "stroke-opacity", "1.0");
-    sp_repr_css_set_property(ncss, "stroke-width", nullptr);
     sp_repr_css_set_property(ncsf, "filter", nullptr);
     sp_repr_css_set_property(ncsf, "opacity", nullptr);
     sp_repr_css_unset_property(ncsf, "marker-start");
@@ -507,7 +527,6 @@ item_to_paths(SPItem *item, bool legacy, SPItem *context)
     // Remember parent
     Inkscape::XML::Node *parent = item->getRepr()->parent();
 
-    SPDocument * doc = item->document;
     Inkscape::XML::Document *xml_doc = doc->getReprDoc();
 
     // Create a group to put everything in.
@@ -542,9 +561,9 @@ item_to_paths(SPItem *item, bool legacy, SPItem *context)
 
     // The markers -----------------------
     Inkscape::XML::Node *markers = nullptr;
-    Geom::Scale scale(style->stroke_width.computed);
 
     if (shape->hasMarkers()) {
+        auto linewidth = style->stroke_width.computed;
         if (!legacy) {
             markers = xml_doc->createElement("svg:g");
             g_repr->addChildAtPos(markers, pos);
@@ -556,8 +575,7 @@ item_to_paths(SPItem *item, bool legacy, SPItem *context)
         for (int i = 0; i < 2; i++) {  // SP_MARKER_LOC and SP_MARKER_LOC_START
             if ( SPObject *marker_obj = shape->_marker[i] ) {
                 Geom::Affine const m (sp_shape_marker_get_transform_at_start(fill_path.front().front()));
-                item_to_paths_add_marker( item, marker_obj, m, scale,
-                                          markers, xml_doc, doc, legacy);
+                item_to_paths_add_marker(item, marker_obj, m, linewidth, true, markers, legacy);
             }
         }
 
@@ -572,8 +590,7 @@ item_to_paths(SPItem *item, bool legacy, SPItem *context)
                      ! ((path_it == (fill_path.end()-1)) && (path_it->size_default() == 0)) ) // if this is the last path and it is a moveto-only, there is no mid marker there
                 {
                     Geom::Affine const m (sp_shape_marker_get_transform_at_start(path_it->front()));
-                    item_to_paths_add_marker( item, midmarker_obj, m, scale,
-                                              markers, xml_doc, doc, legacy);
+                    item_to_paths_add_marker(item, midmarker_obj, m, linewidth, false, markers, legacy);
                 }
 
                 // MID position
@@ -586,8 +603,7 @@ item_to_paths(SPItem *item, bool legacy, SPItem *context)
                          * there should be a midpoint marker between last segment and closing straight line segment
                          */
                         Geom::Affine const m (sp_shape_marker_get_transform(*curve_it1, *curve_it2));
-                        item_to_paths_add_marker( item, midmarker_obj, m, scale,
-                                                  markers, xml_doc, doc, legacy);
+                        item_to_paths_add_marker(item, midmarker_obj, m, linewidth, false, markers, legacy);
 
                         ++curve_it1;
                         ++curve_it2;
@@ -598,8 +614,7 @@ item_to_paths(SPItem *item, bool legacy, SPItem *context)
                 if ( path_it != (fill_path.end()-1) && !path_it->empty()) {
                     Geom::Curve const &lastcurve = path_it->back_default();
                     Geom::Affine const m = sp_shape_marker_get_transform_at_end(lastcurve);
-                    item_to_paths_add_marker( item, midmarker_obj, m, scale,
-                                              markers, xml_doc, doc, legacy);
+                    item_to_paths_add_marker(item, midmarker_obj, m, linewidth, false, markers, legacy);
                 }
             }
         }
@@ -617,8 +632,7 @@ item_to_paths(SPItem *item, bool legacy, SPItem *context)
                 Geom::Curve const &lastcurve = path_last[index];
 
                 Geom::Affine const m = sp_shape_marker_get_transform_at_end(lastcurve);
-                item_to_paths_add_marker( item, marker_obj, m, scale,
-                                          markers, xml_doc, doc, legacy);
+                item_to_paths_add_marker(item, marker_obj, m, linewidth, false, markers, legacy);
             }
         }
     }
@@ -713,7 +727,8 @@ item_to_paths(SPItem *item, bool legacy, SPItem *context)
     }
 
     bool did = false;
-    if( fill || stroke || markers ) {
+    // only consider it a change if more than a fill is created.
+    if (stroke || markers) {
         did = true;
     }
 
@@ -723,10 +738,19 @@ item_to_paths(SPItem *item, bool legacy, SPItem *context)
         out = stroke;
     } else if (!fill && !stroke  && did) {
         out = markers;
-    } else if (!markers && !stroke  && did) {
-        out = fill;
     } else if(did) {
         out = g_repr;
+    } else {
+        parent->removeChild(g_repr);
+        Inkscape::GC::release(g_repr);
+        if (fill) {
+            // Copy the style, to preserve context-fill cascade
+            if (context) {
+                item->setAttribute("style", fill->attribute("style"));
+            }
+            Inkscape::GC::release(fill);
+        }
+        return (flatten ? item->getRepr() : nullptr);
     }
 
     SPCSSAttr *r_style = sp_repr_css_attr_new();
@@ -735,17 +759,19 @@ item_to_paths(SPItem *item, bool legacy, SPItem *context)
     sp_repr_css_change(out, r_style, "style");
 
     sp_repr_css_attr_unref(r_style);
-    if (unique) {
+    if (unique && out != markers) { // markers are already a child of g_repr
         g_assert(out != g_repr);
         parent->addChild(out, g_repr);
         parent->removeChild(g_repr);
+        Inkscape::GC::release(g_repr);
     }
     out->setAttribute("transform", item->getRepr()->attribute("transform"));
-    out->setAttribute("id",id);
-    Inkscape::GC::release(out);
 
     // We're replacing item, delete it.
     item->deleteObject(false);
+
+    out->setAttribute("id",id);
+    Inkscape::GC::release(out);
 
     return out;
 }

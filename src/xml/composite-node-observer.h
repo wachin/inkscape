@@ -16,13 +16,12 @@
 #include "inkgc/gc-alloc.h"
 #include "inkgc/gc-managed.h"
 #include "xml/node-observer.h"
-#include <list>
+
+#include <vector>
 
 namespace Inkscape {
 
 namespace XML {
-
-struct NodeEventVector;
 
 /**
  * @brief An observer that relays notifications to multiple other observers
@@ -34,13 +33,14 @@ struct NodeEventVector;
  */
 class CompositeNodeObserver : public NodeObserver, public GC::Managed<> {
 public:
-    struct ObserverRecord : public GC::Managed<> {
-        explicit ObserverRecord(NodeObserver &o) : observer(o), marked(false) {}
+    struct ObserverRecord
+    {
+        explicit ObserverRecord(NodeObserver *o) : observer(o), marked(false) {}
 
-        NodeObserver &observer;
+        NodeObserver *observer;
         bool marked; //< if marked for removal
     };
-    typedef std::list<ObserverRecord, Inkscape::GC::Alloc<ObserverRecord, Inkscape::GC::MANUAL>> ObserverRecordList;
+    using ObserverRecordList = std::vector<ObserverRecord, Inkscape::GC::Alloc<ObserverRecord, Inkscape::GC::ATOMIC>>;
 
     CompositeNodeObserver()
     : _iterating(0), _active_marked(0), _pending_marked(0) {}
@@ -55,16 +55,6 @@ public:
      * @param observer The observer object to remove
      */
     void remove(NodeObserver &observer);
-    /**
-     * @brief Add a set of callbacks with associated data
-     * @deprecated Use add() instead
-     */
-    void addListener(NodeEventVector const &vector, void *data);
-    /**
-     * @brief Remove a set of callbacks by its associated data
-     * @deprecated Use remove() instead
-     */
-    void removeListenerByData(void *data);
     
     void notifyChildAdded(Node &node, Node &child, Node *prev) override;
 

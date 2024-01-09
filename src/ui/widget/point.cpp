@@ -26,6 +26,8 @@ Point::Point(Glib::ustring const &label, Glib::ustring const &tooltip,
       xwidget("X:",""),
       ywidget("Y:","")
 {
+    xwidget.drag_dest_unset();
+    ywidget.drag_dest_unset();
     static_cast<Gtk::Box*>(_widget)->pack_start(xwidget, true, true);
     static_cast<Gtk::Box*>(_widget)->pack_start(ywidget, true, true);
     static_cast<Gtk::Box*>(_widget)->show_all_children();
@@ -40,6 +42,8 @@ Point::Point(Glib::ustring const &label, Glib::ustring const &tooltip,
       xwidget("X:","", digits),
       ywidget("Y:","", digits)
 {
+    xwidget.drag_dest_unset();
+    ywidget.drag_dest_unset();
     static_cast<Gtk::Box*>(_widget)->pack_start(xwidget, true, true);
     static_cast<Gtk::Box*>(_widget)->pack_start(ywidget, true, true);
     static_cast<Gtk::Box*>(_widget)->show_all_children();
@@ -55,6 +59,8 @@ Point::Point(Glib::ustring const &label, Glib::ustring const &tooltip,
       xwidget("X:","", adjust, digits),
       ywidget("Y:","", adjust, digits)
 {
+    xwidget.drag_dest_unset();
+    ywidget.drag_dest_unset();
     static_cast<Gtk::Box*>(_widget)->pack_start(xwidget, true, true);
     static_cast<Gtk::Box*>(_widget)->pack_start(ywidget, true, true);
     static_cast<Gtk::Box*>(_widget)->show_all_children();

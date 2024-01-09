@@ -36,6 +36,7 @@
 #include <lcms2.h>
 
 #include "xml/repr.h"
+#include "xml/href-attribute-helper.h"
 #include "color.h"
 #include "color-profile.h"
 #include "cms-system.h"
@@ -60,7 +61,6 @@ namespace
 cmsHPROFILE getSystemProfileHandle();
 cmsHPROFILE getProofProfileHandle();
 void loadProfiles();
-Glib::ustring getNameFromProfile(cmsHPROFILE profile);
 }
 
 #ifdef DEBUG_LCMS
@@ -249,6 +249,8 @@ void ColorProfile::release() {
 
     delete this->impl;
     this->impl = nullptr;
+
+    SPObject::release();
 }
 
 void ColorProfileImpl::_clearProfile()
@@ -411,7 +413,7 @@ Inkscape::XML::Node* ColorProfile::write(Inkscape::XML::Document *xml_doc, Inksc
     }
 
     if ( (flags & SP_OBJECT_WRITE_ALL) || this->href ) {
-        repr->setAttribute( "xlink:href", this->href );
+        Inkscape::setHrefAttribute(*repr, this->href );
     }
 
     if ( (flags & SP_OBJECT_WRITE_ALL) || this->local ) {
@@ -490,7 +492,7 @@ static ColorProfile *bruteFind(SPDocument *document, gchar const *name)
 {
     std::vector<SPObject *> current = document->getResourceList("iccprofile");
     for (auto *obj : current) {
-        if (auto prof = dynamic_cast<ColorProfile*>(obj)) {
+        if (auto prof = cast<ColorProfile>(obj)) {
             if ( prof->name && (strcmp(prof->name, name) == 0) ) {
                 return prof;
             }
@@ -603,11 +605,11 @@ private:
     cmsProfileClassSignature _profileClass;
 };
 
-ProfileInfo::ProfileInfo( cmsHPROFILE prof, Glib::ustring  path ) :
-    _path(std::move( path )),
-    _name( getNameFromProfile(prof) ),
-    _profileSpace( cmsGetColorSpace( prof ) ),
-    _profileClass( cmsGetDeviceClass( prof ) )
+ProfileInfo::ProfileInfo(cmsHPROFILE prof, Glib::ustring path)
+    : _path(std::move(path))
+    , _name(ColorProfile::getNameFromProfile(prof))
+    , _profileSpace(cmsGetColorSpace(prof))
+    , _profileClass(cmsGetDeviceClass(prof))
 {
 }
 
@@ -677,13 +679,13 @@ bool Inkscape::CMSSystem::isPrintColorSpace(ColorProfile const *profile)
 
 gint Inkscape::CMSSystem::getChannelCount(ColorProfile const *profile)
 {
-    gint count = 0;
-    if ( profile ) {
-        count = cmsChannelsOf( asICColorSpaceSig(profile->getColorSpace()) );
-    }
-    return count;
+    return profile ? profile->getChannelCount() : 0;
 }
 
+gint ColorProfile::getChannelCount() const
+{
+    return cmsChannelsOf(asICColorSpaceSig(getColorSpace()));
+}
 
 // the bool return value tells if it's a user's directory or a system location
 // note that this will treat places under $HOME as system directories when they are found via $XDG_DATA_DIRS
@@ -827,10 +829,7 @@ void errorHandlerCB(cmsContext /*contextID*/, cmsUInt32Number errorCode, char co
     //g_message("lcms: Error %d; %s", errorCode, errorText);
 }
 
-namespace
-{
-
-Glib::ustring getNameFromProfile(cmsHPROFILE profile)
+Glib::ustring ColorProfile::getNameFromProfile(cmsHPROFILE profile)
 {
     Glib::ustring nameStr;
     if ( profile ) {
@@ -852,6 +851,41 @@ Glib::ustring getNameFromProfile(cmsHPROFILE profile)
     }
     return nameStr;
 }
+
+/**
+ * Cleans up name to remove disallowed characters.
+ * Some discussion at http://markmail.org/message/bhfvdfptt25kgtmj
+ * Allowed ASCII first characters:  ':', 'A'-'Z', '_', 'a'-'z'
+ * Allowed ASCII remaining chars add: '-', '.', '0'-'9',
+ *
+ * @param str the string to clean up.
+ */
+void ColorProfile::sanitizeName(std::string &str)
+{
+    if (str.size() > 0) {
+        char val = str.at(0);
+        if (((val < 'A') || (val > 'Z')) && ((val < 'a') || (val > 'z')) && (val != '_') && (val != ':')) {
+            str.insert(0, "_");
+        }
+        for (int i = 1; i < str.size(); i++) {
+            char val = str.at(i);
+            if (((val < 'A') || (val > 'Z')) && ((val < 'a') || (val > 'z')) && ((val < '0') || (val > '9')) &&
+                (val != '_') && (val != ':') && (val != '-') && (val != '.')) {
+                if (str.at(i - 1) == '-') {
+                    str.erase(i, 1);
+                    i--;
+                } else {
+                    str.replace(i, 1, "-");
+                }
+            }
+        }
+        if (str.at(str.size() - 1) == '-') {
+            str.pop_back();
+        }
+    }
+}
+
+namespace {
 
 /**
  * This function loads or refreshes data in knownProfiles.
@@ -900,9 +934,6 @@ static bool gamutWarn = false;
 static Gdk::RGBA lastGamutColor("#808080");
 
 static bool lastBPC = false;
-#if defined(cmsFLAGS_PRESERVEBLACK)
-static bool lastPreserveBlack = false;
-#endif // defined(cmsFLAGS_PRESERVEBLACK)
 static int lastIntent = INTENT_PERCEPTUAL;
 static int lastProofIntent = INTENT_PERCEPTUAL;
 static cmsHTRANSFORM transf = nullptr;
@@ -1039,9 +1070,6 @@ cmsHTRANSFORM Inkscape::CMSSystem::getDisplayTransform()
     int intent = prefs->getIntLimited( "/options/displayprofile/intent", 0, 0, 3 );
     int proofIntent = prefs->getIntLimited( "/options/softproof/intent", 0, 0, 3 );
     bool bpc = prefs->getBool( "/options/softproof/bpc");
-#if defined(cmsFLAGS_PRESERVEBLACK)
-    bool preserveBlack = prefs->getBool( "/options/softproof/preserveblack");
-#endif //defined(cmsFLAGS_PRESERVEBLACK)
     Glib::ustring colorStr = prefs->getString("/options/softproof/gamutcolor");
     Gdk::RGBA gamutColor( colorStr.empty() ? "#808080" : colorStr );
 
@@ -1049,9 +1077,6 @@ cmsHTRANSFORM Inkscape::CMSSystem::getDisplayTransform()
          || (lastIntent != intent)
          || (lastProofIntent != proofIntent)
          || (bpc != lastBPC)
-#if defined(cmsFLAGS_PRESERVEBLACK)
-         || (preserveBlack != lastPreserveBlack)
-#endif // defined(cmsFLAGS_PRESERVEBLACK)
          || (gamutColor != lastGamutColor)
         ) {
         gamutWarn = warn;
@@ -1059,9 +1084,6 @@ cmsHTRANSFORM Inkscape::CMSSystem::getDisplayTransform()
         lastIntent = intent;
         lastProofIntent = proofIntent;
         lastBPC = bpc;
-#if defined(cmsFLAGS_PRESERVEBLACK)
-        lastPreserveBlack = preserveBlack;
-#endif // defined(cmsFLAGS_PRESERVEBLACK)
         lastGamutColor = gamutColor;
     }
 
@@ -1089,11 +1111,6 @@ cmsHTRANSFORM Inkscape::CMSSystem::getDisplayTransform()
             if ( bpc ) {
                 dwFlags |= cmsFLAGS_BLACKPOINTCOMPENSATION;
             }
-#if defined(cmsFLAGS_PRESERVEBLACK)
-            if ( preserveBlack ) {
-                dwFlags |= cmsFLAGS_PRESERVEBLACK;
-            }
-#endif // defined(cmsFLAGS_PRESERVEBLACK)
             transf = cmsCreateProofingTransform( ColorProfileImpl::getSRGBProfile(), TYPE_BGRA_8, hprof, TYPE_BGRA_8, proofProf, intent, proofIntent, dwFlags );
         } else if ( hprof ) {
             transf = cmsCreateTransform( ColorProfileImpl::getSRGBProfile(), TYPE_BGRA_8, hprof, TYPE_BGRA_8, intent, 0 );
@@ -1199,9 +1216,6 @@ cmsHTRANSFORM Inkscape::CMSSystem::getDisplayPer(std::string const &id)
             int intent = prefs->getIntLimited( "/options/displayprofile/intent", 0, 0, 3 );
             int proofIntent = prefs->getIntLimited( "/options/softproof/intent", 0, 0, 3 );
             bool bpc = prefs->getBool( "/options/softproof/bpc");
-#if defined(cmsFLAGS_PRESERVEBLACK)
-            bool preserveBlack = prefs->getBool( "/options/softproof/preserveblack");
-#endif //defined(cmsFLAGS_PRESERVEBLACK)
             Glib::ustring colorStr = prefs->getString("/options/softproof/gamutcolor");
             Gdk::RGBA gamutColor( colorStr.empty() ? "#808080" : colorStr );
 
@@ -1209,9 +1223,6 @@ cmsHTRANSFORM Inkscape::CMSSystem::getDisplayPer(std::string const &id)
                     || (lastIntent != intent)
                     || (lastProofIntent != proofIntent)
                     || (bpc != lastBPC)
-#if defined(cmsFLAGS_PRESERVEBLACK)
-                    || (preserveBlack != lastPreserveBlack)
-#endif // defined(cmsFLAGS_PRESERVEBLACK)
                     || (gamutColor != lastGamutColor)
                ) {
                 gamutWarn = warn;
@@ -1219,9 +1230,6 @@ cmsHTRANSFORM Inkscape::CMSSystem::getDisplayPer(std::string const &id)
                 lastIntent = intent;
                 lastProofIntent = proofIntent;
                 lastBPC = bpc;
-#if defined(cmsFLAGS_PRESERVEBLACK)
-                lastPreserveBlack = preserveBlack;
-#endif // defined(cmsFLAGS_PRESERVEBLACK)
                 lastGamutColor = gamutColor;
             }
 
@@ -1247,11 +1255,6 @@ cmsHTRANSFORM Inkscape::CMSSystem::getDisplayPer(std::string const &id)
                     if ( bpc ) {
                         dwFlags |= cmsFLAGS_BLACKPOINTCOMPENSATION;
                     }
-#if defined(cmsFLAGS_PRESERVEBLACK)
-                    if ( preserveBlack ) {
-                        dwFlags |= cmsFLAGS_PRESERVEBLACK;
-                    }
-#endif // defined(cmsFLAGS_PRESERVEBLACK)
                     item.transf = cmsCreateProofingTransform( ColorProfileImpl::getSRGBProfile(), TYPE_BGRA_8, item.hprof, TYPE_BGRA_8, proofProf, intent, proofIntent, dwFlags );
                 } else if ( item.hprof ) {
                     item.transf = cmsCreateTransform( ColorProfileImpl::getSRGBProfile(), TYPE_BGRA_8, item.hprof, TYPE_BGRA_8, intent, 0 );

@@ -11,7 +11,8 @@
 
 #include <2geom/point.h>
 #include <gtkmm.h>
-#include "live_effects/parameter/satellitesarray.h"
+
+#include "live_effects/parameter/nodesatellitesarray.h"
 
 class SPDesktop;
 
@@ -30,15 +31,11 @@ public:
     }
 
     static void showDialog(SPDesktop *desktop, double _amount,
-                           const Inkscape::LivePathEffect::
-                           FilletChamferKnotHolderEntity *pt,
-                           bool _use_distance,
-                           bool _aprox_radius,
-                           Satellite _satellite);
+                           const Inkscape::LivePathEffect::FilletChamferKnotHolderEntity *pt, bool _use_distance,
+                           bool _aprox_radius, NodeSatellite _nodesatellite);
 
 protected:
 
-    SPDesktop *_desktop;
     Inkscape::LivePathEffect::FilletChamferKnotHolderEntity *
     _knotpoint;
 
@@ -66,13 +63,12 @@ protected:
         return instance;
     }
 
-    void _setDesktop(SPDesktop *desktop);
     void _setPt(const Inkscape::LivePathEffect::
                 FilletChamferKnotHolderEntity *pt);
     void _setUseDistance(bool use_knot_distance);
     void _setAprox(bool aprox_radius);
     void _setAmount(double amount);
-    void _setSatellite(Satellite satellite);
+    void _setNodeSatellite(NodeSatellite nodesatellite);
     void _prepareLabelRenderer(Gtk::TreeModel::const_iterator const &row);
 
     bool _handleKeyEvent(GdkEventKey *event);
@@ -81,7 +77,7 @@ protected:
     void _apply();
     void _close();
     bool _flexible;
-    Satellite _satellite;
+    NodeSatellite _nodesatellite;
     bool _use_distance;
     double _amount;
     bool _aprox;

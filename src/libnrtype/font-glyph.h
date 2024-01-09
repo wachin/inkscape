@@ -1,28 +1,28 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 /** @file
- * TODO: insert short description here
+ * Struct describing a single glyph in a font.
  *//*
  * Authors: see git history
  *
  * Copyright (C) 2011 Authors
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
-#ifndef SEEN_LIBNRTYPE_FONT_GLYPH_H
-#define SEEN_LIBNRTYPE_FONT_GLYPH_H
+#ifndef LIBNRTYPE_FONT_GLYPH_H
+#define LIBNRTYPE_FONT_GLYPH_H
 
-#include <2geom/forward.h>
+#include <memory>
+#include <2geom/pathvector.h>
 
-// the info for a glyph in a font. it's totally resolution- and fontsize-independent
-struct font_glyph {
-    double         h_advance, h_width; // width != advance because of kerning adjustements
-    double         v_advance, v_width;
-    double         bbox[4];            // bbox of the path (and the artbpath), not the bbox of the glyph
-																			 // as the fonts sometimes contain
-    Geom::PathVector* pathvector;      // outline as 2geom pathvector, for text->curve stuff (should be unified with livarot)
+// The info for a glyph in a font. It's totally resolution- and fontsize-independent.
+struct FontGlyph
+{
+    double h_advance, h_width; // width != advance because of kerning adjustements
+    double v_advance, v_width;
+    double bbox[4];            // bbox of the path (and the artbpath), not the bbox of the glyph as the fonts sometimes contain outline as a livarot Path
+    Geom::PathVector pathvector; // outline as 2geom pathvector, for text->curve stuff (should be unified with livarot)
 };
 
-
-#endif /* !SEEN_LIBNRTYPE_FONT_GLYPH_H */
+#endif // LIBNRTYPE_FONT_GLYPH_H
 
 /*
   Local Variables:

@@ -37,28 +37,19 @@ namespace Inkscape {
     class Selection;
 }
 
-#define SP_BOX3D_CONTEXT(obj) (dynamic_cast<Inkscape::UI::Tools::Box3dTool*>((Inkscape::UI::Tools::ToolBase*)obj))
-#define SP_IS_BOX3D_CONTEXT(obj) (dynamic_cast<const Inkscape::UI::Tools::Box3dTool*>((const Inkscape::UI::Tools::ToolBase*)obj) != NULL)
-
 namespace Inkscape {
 namespace UI {
 namespace Tools {
 
 class Box3dTool : public ToolBase {
 public:
-	Box3dTool();
-	~Box3dTool() override;
+    Box3dTool(SPDesktop *desktop);
+    ~Box3dTool() override;
 
-	Box3D::VPDrag * _vpdrag;
+    Box3D::VPDrag *_vpdrag;
 
-	static const std::string prefsPath;
-
-	void setup() override;
-	void finish() override;
-	bool root_handler(GdkEvent* event) override;
-	bool item_handler(SPItem* item, GdkEvent* event) override;
-
-	const std::string& getPrefsPath() override;
+    bool root_handler(GdkEvent *event) override;
+    bool item_handler(SPItem *item, GdkEvent *event) override;
 
 private:
     SPBox3D* box3d;

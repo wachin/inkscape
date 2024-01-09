@@ -36,39 +36,25 @@
 #include "desktop.h"
 #include "document-undo.h"
 #include "enums.h"
-#include "graphlayout.h"
+#include "layer-manager.h"
 #include "selection.h"
-#include "verbs.h"
 
+#include "object/algorithms/graphlayout.h"
 #include "object/sp-namedview.h"
 #include "object/sp-path.h"
 
 #include "ui/icon-names.h"
 #include "ui/tools/connector-tool.h"
-#include "ui/uxmanager.h"
 #include "ui/widget/canvas.h"
 #include "ui/widget/spin-button-tool-item.h"
 
-#include "xml/node-event-vector.h"
-
-using Inkscape::UI::UXManager;
 using Inkscape::DocumentUndo;
-
-static Inkscape::XML::NodeEventVector connector_tb_repr_events = {
-    nullptr, /* child_added */
-    nullptr, /* child_removed */
-    Inkscape::UI::Toolbar::ConnectorToolbar::event_attr_changed,
-    nullptr, /* content_changed */
-    nullptr  /* order_changed */
-};
 
 namespace Inkscape {
 namespace UI {
 namespace Toolbar {
 ConnectorToolbar::ConnectorToolbar(SPDesktop *desktop)
-    : Toolbar(desktop),
-    _freeze(false),
-    _repr(nullptr)
+    : Toolbar(desktop)
 {
     Inkscape::Preferences *prefs = Inkscape::Preferences::get();
 
@@ -168,7 +154,7 @@ ConnectorToolbar::ConnectorToolbar(SPDesktop *desktop)
     g_assert(repr != nullptr);
 
     if(_repr) {
-        _repr->removeListenerByData(this);
+        _repr->removeObserver(*this);
         Inkscape::GC::release(_repr);
         _repr = nullptr;
     }
@@ -176,8 +162,8 @@ ConnectorToolbar::ConnectorToolbar(SPDesktop *desktop)
     if (repr) {
         _repr = repr;
         Inkscape::GC::anchor(_repr);
-        _repr->addListener(&connector_tb_repr_events, this);
-        _repr->synthesizeEvents(&connector_tb_repr_events, this);
+        _repr->addObserver(*this);
+        _repr->synthesizeEvents(*this);
     }
 
     show_all();
@@ -241,8 +227,7 @@ ConnectorToolbar::orthogonal_toggled()
         prefs->setBool("/tools/connector/orthogonal", is_orthog);
     } else {
 
-        DocumentUndo::done(doc, SP_VERB_CONTEXT_CONNECTOR,
-                       is_orthog ? _("Set connector type: orthogonal"): _("Set connector type: polyline"));
+        DocumentUndo::done(doc, is_orthog ? _("Set connector type: orthogonal"): _("Set connector type: polyline"), INKSCAPE_ICON("draw-connector"));
     }
 
     _freeze = false;
@@ -287,8 +272,7 @@ ConnectorToolbar::curvature_changed()
         prefs->setDouble(Glib::ustring("/tools/connector/curvature"), newValue);
     }
     else {
-        DocumentUndo::done(doc, SP_VERB_CONTEXT_CONNECTOR,
-                       _("Change connector curvature"));
+        DocumentUndo::done(doc, _("Change connector curvature"), INKSCAPE_ICON("draw-connector"));
     }
 
     _freeze = false;
@@ -325,8 +309,7 @@ ConnectorToolbar::spacing_changed()
     _desktop->namedview->updateRepr();
     bool modmade = false;
 
-    std::vector<SPItem *> items;
-    items = get_avoided_items(items, _desktop->currentRoot(), _desktop);
+    auto items = get_avoided_items(_desktop->layerManager().currentRoot(), _desktop);
     for (auto item : items) {
         Geom::Affine m = Geom::identity();
         avoid_item_move(&m, item);
@@ -334,8 +317,7 @@ ConnectorToolbar::spacing_changed()
     }
 
     if(modmade) {
-        DocumentUndo::done(doc, SP_VERB_CONTEXT_CONNECTOR,
-                       _("Change connector spacing"));
+        DocumentUndo::done(doc, _("Change connector spacing"), INKSCAPE_ICON("draw-connector"));
     }
     _freeze = false;
 }
@@ -359,7 +341,7 @@ ConnectorToolbar::graph_layout()
 
     prefs->setInt("/options/clonecompensation/value", saved_compensation);
 
-    DocumentUndo::done(_desktop->getDocument(), SP_VERB_DIALOG_ALIGN_DISTRIBUTE, _("Arrange connector network"));
+    DocumentUndo::done(_desktop->getDocument(), _("Arrange connector network"), INKSCAPE_ICON("dialog-align-and-distribute"));
 }
 
 void
@@ -380,10 +362,10 @@ void
 ConnectorToolbar::selection_changed(Inkscape::Selection *selection)
 {
     SPItem *item = selection->singleItem();
-    if (SP_IS_PATH(item))
+    if (is<SPPath>(item))
     {
-        gdouble curvature = SP_PATH(item)->connEndPair.getCurvature();
-        bool is_orthog = SP_PATH(item)->connEndPair.isOrthogonal();
+        gdouble curvature = cast<SPPath>(item)->connEndPair.getCurvature();
+        bool is_orthog = cast<SPPath>(item)->connEndPair.isOrthogonal();
         _orthogonal->set_active(is_orthog);
         _curvature_adj->set_value(curvature);
     }
@@ -398,24 +380,18 @@ ConnectorToolbar::nooverlaps_graph_layout_toggled()
                 _overlap_item->get_active());
 }
 
-void
-ConnectorToolbar::event_attr_changed(Inkscape::XML::Node *repr,
-                                     gchar const         *name,
-                                     gchar const         * /*old_value*/,
-                                     gchar const         * /*new_value*/,
-                                     bool                  /*is_interactive*/,
-                                     gpointer             data)
+void ConnectorToolbar::notifyAttributeChanged(Inkscape::XML::Node &repr, GQuark name_,
+                                              Inkscape::Util::ptr_shared,
+                                              Inkscape::Util::ptr_shared)
 {
-    auto toolbar = reinterpret_cast<ConnectorToolbar *>(data);
+    auto const name = g_quark_to_string(name_);
+    if (!_freeze && (strcmp(name, "inkscape:connector-spacing") == 0) ) {
+        gdouble spacing = repr.getAttributeDouble("inkscape:connector-spacing", defaultConnSpacing);
 
-    if ( !toolbar->_freeze
-         && (strcmp(name, "inkscape:connector-spacing") == 0) ) {
-        gdouble spacing = repr->getAttributeDouble("inkscape:connector-spacing", defaultConnSpacing);
+        _spacing_adj->set_value(spacing);
 
-        toolbar->_spacing_adj->set_value(spacing);
-
-        if (toolbar->_desktop->canvas) {
-            toolbar->_desktop->canvas->grab_focus();
+        if (_desktop->canvas) {
+            _desktop->canvas->grab_focus();
         }
     }
 }

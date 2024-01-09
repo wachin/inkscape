@@ -26,10 +26,11 @@
 
 class SPUseReference;
 
-class SPUse : public SPItem, public SPDimensions {
+class SPUse final : public SPItem, public SPDimensions {
 public:
 	SPUse();
 	~SPUse() override;
+    int tag() const override { return tag_of<decltype(*this)>; }
 
     // item built from the original's repr (the visible clone)
     // relative to the SPUse itself, it is treated as a child, similar to a grouped item relative to its group
@@ -56,6 +57,7 @@ public:
 	void modified(unsigned int flags) override;
 
 	Geom::OptRect bbox(Geom::Affine const &transform, SPItem::BBoxType bboxtype) const override;
+    std::optional<Geom::PathVector> documentExactBounds() const override;
         const char* typeName() const override;
         const char* displayName() const override;
 	char* description() const override;
@@ -69,9 +71,11 @@ public:
     int cloneDepth() const;
 
 	SPItem *unlink();
-	SPItem *get_original();
-	Geom::Affine get_parent_transform();
-	Geom::Affine get_root_transform();
+    SPItem *get_original() const;
+    Geom::Affine get_parent_transform() const;
+    Geom::Affine get_root_transform() const;
+    SPItem *trueOriginal() const;
+    bool anyInChain(bool (*predicate)(SPItem const *)) const;
 
 private:
     void href_changed();

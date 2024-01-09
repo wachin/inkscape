@@ -16,9 +16,12 @@
 
 #include <glibmm/ustring.h>
 #include <vector>
+#include <2geom/point.h>
+#include <2geom/rect.h>
 
 // forward declarations
 class SPDesktop;
+class SPDocument;
 namespace Inkscape {
 class ObjectSet;
 namespace XML { class Node; }
@@ -40,8 +43,9 @@ class ClipboardManager {
 public:
     virtual void copy(ObjectSet *set) = 0;
     virtual void copyPathParameter(Inkscape::LivePathEffect::PathParam *) = 0;
-    virtual void copySymbol(Inkscape::XML::Node* symbol, gchar const* style, bool user_symbol = true) = 0;
-    virtual bool paste(SPDesktop *desktop, bool in_place = false) = 0;
+    virtual void copySymbol(Inkscape::XML::Node* symbol, gchar const* style, SPDocument *source, Geom::Rect const &bbox) = 0;
+    virtual void insertSymbol(SPDesktop *desktop, Geom::Point const &shift_dt) = 0;
+    virtual bool paste(SPDesktop *desktop, bool in_place = false, bool on_page = false) = 0;
     virtual bool pasteStyle(ObjectSet *set) = 0;
     virtual bool pasteSize(ObjectSet *set, bool separately, bool apply_x, bool apply_y) = 0;
     virtual bool pastePathEffect(ObjectSet *set) = 0;

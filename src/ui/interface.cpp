@@ -31,8 +31,6 @@
 #include "preferences.h"
 #include "shortcuts.h"
 
-#include "helper/action.h"
-
 #include "io/sys.h"
 
 #include "object/sp-namedview.h"
@@ -66,54 +64,11 @@ sp_ui_new_view()
 void
 sp_ui_close_view(GtkWidget */*widget*/)
 {
-    SPDesktop *dt = SP_ACTIVE_DESKTOP;
-
-    if (dt == nullptr) {
-        return;
-    }
-
     auto *app = InkscapeApplication::instance();
 
-    InkscapeWindow* window = SP_ACTIVE_DESKTOP->getInkscapeWindow();
-
-    // If closing the last document, open a new document so Inkscape doesn't quit.
-    std::list<SPDesktop *> desktops;
-    INKSCAPE.get_all_desktops(desktops);
-    if (desktops.size() == 1) {
-        if (dt->shutdown()) {
-            return; // Shutdown operation has been canceled, so do nothing
-        }
-
-        SPDocument* old_document = window->get_document();
-
-        auto template_path = sp_file_default_template_uri();
-        SPDocument *doc = app->document_new (template_path);
-
-        app->document_swap (window, doc);
-
-        if (app->document_window_count(old_document) == 0) {
-            app->document_close(old_document);
-        }
-
-        // Are these necessary?
-        sp_namedview_window_from_document(dt);
-        sp_namedview_update_layers_from_document(dt);
-
-    } else {
-
-        app->destroy_window (window);
-    }
-}
-
-
-unsigned int
-sp_ui_close_all()
-{
-    auto *app = InkscapeApplication::instance();
-
-    app->destroy_all();
-
-    return true;
+    auto window = app->get_active_window();
+    assert(window);
+    app->destroy_window(window, true); // Keep inkscape alive!
 }
 
 
@@ -176,6 +131,7 @@ sp_ui_error_dialog(gchar const *message)
     dlg = gtk_message_dialog_new(nullptr, GTK_DIALOG_DESTROY_WITH_PARENT, GTK_MESSAGE_ERROR,
                                  GTK_BUTTONS_CLOSE, "%s", safeMsg);
     sp_transientize(dlg);
+    gtk_message_dialog_set_markup(GTK_MESSAGE_DIALOG(dlg),safeMsg);
     gtk_window_set_resizable(GTK_WINDOW(dlg), FALSE);
     gtk_dialog_run(GTK_DIALOG(dlg));
     gtk_widget_destroy(dlg);

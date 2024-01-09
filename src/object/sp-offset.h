@@ -47,10 +47,11 @@ class SPUseReference;
  * points, or more precisely one control point, that's enough to define the
  * radius (look in shape-editor-knotholders).
  */
-class SPOffset : public SPShape {
+class SPOffset final : public SPShape {
 public:
 	SPOffset();
 	~SPOffset() override;
+    int tag() const override { return tag_of<decltype(*this)>; }
 
     void *originalPath; ///< will be a livarot Path, just don't declare it here to please the gcc linker FIXME what?
     char *original;     ///< SVG description of the source path
@@ -81,6 +82,7 @@ public:
 
 	void snappoints(std::vector<Inkscape::SnapCandidatePoint> &p, Inkscape::SnapPreferences const *snapprefs) const override;
         const char* displayName() const override;
+  const char* typeName() const override;
 	char* description() const override;
 
 	void set_shape() override;
@@ -90,8 +92,6 @@ double sp_offset_distance_to_original (SPOffset * offset, Geom::Point px);
 void sp_offset_top_point (SPOffset const *offset, Geom::Point *px);
 
 SPItem *sp_offset_get_source (SPOffset *offset);
-
-MAKE_SP_OBJECT_DOWNCAST_FUNCTIONS(SP_OFFSET, SPOffset)
 
 #endif
 

@@ -33,10 +33,11 @@ enum GenericEllipseArcType {
     SP_GENERIC_ELLIPSE_ARC_TYPE_CHORD
 };
 
-class SPGenericEllipse : public SPShape {
+class SPGenericEllipse final : public SPShape {
 public:
     SPGenericEllipse();
     ~SPGenericEllipse() override;
+    int tag() const override { return tag_of<decltype(*this)>; }
 
     // Regardless of type, the ellipse/circle/arc is stored
     // internally with these variables. (Circle radius is rx).
@@ -52,6 +53,8 @@ public:
     double start, end;
     GenericEllipseType type;
     GenericEllipseArcType arc_type;
+
+    void tag_name_changed(gchar const* oldname, gchar const* newname) override;
 
     void build(SPDocument *document, Inkscape::XML::Node *repr) override;
 
@@ -86,6 +89,8 @@ public:
     double getVisibleRy() const;
     void setVisibleRy(double ry);
 
+    bool is_whole() const { return !_isSlice(); }
+
 protected:
     /**
      * @brief Determines whether the shape is a part of an ellipse.
@@ -95,9 +100,6 @@ protected:
 private:
     static double vectorStretch(Geom::Point p0, Geom::Point p1, Geom::Affine xform);
 };
-
-MAKE_SP_OBJECT_DOWNCAST_FUNCTIONS(SP_GENERICELLIPSE, SPGenericEllipse)
-MAKE_SP_OBJECT_TYPECHECK_FUNCTIONS(SP_IS_GENERICELLIPSE, SPGenericEllipse)
 
 #endif
 

@@ -20,7 +20,7 @@ public:
     ~LPEPowerClip() override;
     void doBeforeEffect (SPLPEItem const* lpeitem) override;
     Geom::PathVector doEffect_path (Geom::PathVector const & path_in) override;
-    void doOnRemove (SPLPEItem const* /*lpeitem*/) override;
+    void doOnRemove(SPLPEItem const* /*lpeitem*/) override;
     void doOnVisibilityToggled(SPLPEItem const* lpeitem) override;
     Glib::ustring getId();
     void add();

@@ -15,6 +15,7 @@
 
 #include "libnrtype/font-lister.h"
 #include "libnrtype/font-instance.h"
+#include "libnrtype/font-factory.h"
 
 // For updating from selection
 #include "inkscape.h"
@@ -36,15 +37,31 @@ FontSelector::FontSelector (bool with_size, bool with_variations)
 {
 
     Inkscape::FontLister* font_lister = Inkscape::FontLister::get_instance();
-
+    Glib::RefPtr<Gtk::TreeModel> model = font_lister->get_font_list();
     // Font family
     family_treecolumn.pack_start (family_cell, false);
+    int total = model->children().size();
+    int height = 30;
+    if (total > 1000) {
+        height = 30000/total;
+        g_warning("You have a huge number of font families (%d), "
+                    "and Cairo is limiting the size of widgets you can draw.\n"
+                    "Your preview cell height is capped to %d.",
+                    total, height);
+        // hope we dont need a forced height because now pango line height 
+        // not add data outside parent rendered expanding it so no naturall cells become over 30 height
+        family_cell.set_fixed_size(-1, height);
+    } else {
+#if !PANGO_VERSION_CHECK(1,50,0)
+    family_cell.set_fixed_size(-1, height);
+#endif
+    }
     family_treecolumn.set_fixed_width (120); // limit minimal width to keep entire dialog narrow; column can still grow
     family_treecolumn.add_attribute (family_cell, "text", 0);
-    family_treecolumn.set_cell_data_func (family_cell, &font_lister_cell_data_func);
-
+    // family_treecolumn.set_cell_data_func (family_cell, &font_lister_cell_data_func);
+    family_treecolumn.set_cell_data_func (family_cell, &font_lister_cell_data_func_markup);
     family_treeview.set_row_separator_func (&font_lister_separator_func);
-    family_treeview.set_model (font_lister->get_font_list());
+    family_treeview.set_model(model);
     family_treeview.set_name ("FontSelector: Family");
     family_treeview.set_headers_visible (false);
     family_treeview.append_column (family_treecolumn);
@@ -108,16 +125,88 @@ FontSelector::FontSelector (bool with_size, bool with_variations)
         attach (font_variations_scroll, 0, 2, 3 + extra, 1);
     }
 
+    // For drag and drop.
+    // Target entries for Drag and Drop.
+    // target_entries.emplace_back(Gtk::TargetEntry("text/uri-list", (Gtk::TargetFlags)0, 0));
+    target_entries.emplace_back("STRING", (Gtk::TargetFlags)0, 0);
+    target_entries.emplace_back("text/plain", (Gtk::TargetFlags)0, 0);
+
+    family_treeview.drag_source_set(target_entries, Gdk::BUTTON1_MASK, Gdk::ACTION_COPY | Gdk::ACTION_DEFAULT);
+    family_treeview.signal_drag_data_get().connect(sigc::mem_fun(*this, &FontSelector::on_drag_data_get));
+    family_treeview.signal_drag_begin().connect(sigc::mem_fun(*this, &FontSelector::on_drag_start), false);
+
     // Add signals
     family_treeview.get_selection()->signal_changed().connect(sigc::mem_fun(*this, &FontSelector::on_family_changed));
     style_treeview.get_selection()->signal_changed().connect(sigc::mem_fun(*this, &FontSelector::on_style_changed));
     size_combobox.signal_changed().connect(sigc::mem_fun(*this, &FontSelector::on_size_changed));
     font_variations.connectChanged(sigc::mem_fun(*this, &FontSelector::on_variations_changed));
-
+    family_treeview.signal_realize().connect(sigc::mem_fun(*this, &FontSelector::on_realize_list));
     show_all_children();
+    font_variations_scroll.set_vexpand(false);
 
     // Initialize font family lists. (May already be done.) Should be done on document change.
     font_lister->update_font_list(SP_ACTIVE_DESKTOP->getDocument());
+   
+}
+
+void FontSelector::on_realize_list() {
+    family_treecolumn.set_cell_data_func (family_cell, &font_lister_cell_data_func);
+    g_idle_add(FontSelector::set_cell_markup, this);
+}
+
+gboolean FontSelector::set_cell_markup(gpointer data)
+{
+    FontSelector *self = static_cast<FontSelector *>(data);
+    self->family_treeview.hide();
+    self->family_treecolumn.set_cell_data_func (self->family_cell, &font_lister_cell_data_func_markup);
+    self->family_treeview.show();
+    return false;
+}
+
+void FontSelector::hide_others()
+{
+    style_frame.set_no_show_all();
+    style_frame.hide();
+    size_label.set_no_show_all();
+    size_label.hide();
+    size_combobox.set_no_show_all();
+    size_combobox.hide();
+    font_variations.set_no_show_all();
+    font_variations_scroll.hide();
+    font_variations_scroll.set_vexpand(false);
+}
+
+// TODO:
+void FontSelector::on_drag_start(const Glib::RefPtr<Gdk::DragContext> &context)
+{
+    // Get the current collection.
+    Glib::RefPtr<Gtk::TreeSelection> selection = family_treeview.get_selection();
+    Gtk::TreeModel::iterator iter = selection->get_selected();
+    Gtk::TreePath path(iter);
+    auto surface = family_treeview.create_row_drag_icon(path);
+
+    context->set_icon(surface);
+    /*
+    Inkscape::FontLister* font_lister = Inkscape::FontLister::get_instance();
+    Glib::ustring family_name = font_lister->get_treeview_drag_selection();
+    // std::cout << "FontSelector::on_drag_start()" << std::endl;
+    auto drag_label = Gtk::manage(new Gtk::Label(family_name));
+
+    gtk_drag_set_icon_widget(context, drag_label, 0, 0);
+    */
+}
+
+void FontSelector::on_drag_data_get(Glib::RefPtr<Gdk::DragContext> const &context, Gtk::SelectionData &selection_data, guint info, guint time)
+{
+    // std::cout << "FontSelector::on_drag_data_get()" << std::endl;
+    Inkscape::FontLister* font_lister = Inkscape::FontLister::get_instance();
+
+    // std::cout << font_lister->get_font_family_row() << ", " << font_lister->get_treeview_selection() << std::endl;
+
+    Glib::ustring family_name = font_lister->get_dragging_family();
+    // std::cout << "Family: " << family_name << std::endl;
+
+    selection_data.set_text(family_name);
 }
 
 void
@@ -172,7 +261,7 @@ FontSelector::update_font ()
         path = font_lister->get_row_for_font (family);
     } catch (...) {
         std::cerr << "FontSelector::update_font: Couldn't find row for font-family: "
-                  << family << std::endl;
+                  << family.raw() << std::endl;
         path.clear();
         path.push_back(0);
     }
@@ -230,6 +319,17 @@ FontSelector::update_size (double size)
     signal_block = false;
 }
 
+void FontSelector::unset_model()
+{
+    family_treeview.unset_model();
+}
+
+void FontSelector::set_model()
+{
+    Inkscape::FontLister* font_lister = Inkscape::FontLister::get_instance();
+    Glib::RefPtr<Gtk::TreeModel> model = font_lister->get_font_list();
+    family_treeview.set_model(model);
+}
 
 // If use_variations is true (default), we get variation values from variations widget otherwise we
 // get values from CSS widget (we need to be able to keep the two widgets synchronized both ways).
@@ -238,7 +338,7 @@ FontSelector::get_fontspec(bool use_variations) {
 
     // Build new fontspec from GUI settings
     Glib::ustring family = "Sans";  // Default...family list may not have been constructed.
-    Gtk::TreeModel::iterator iter = family_treeview.get_selection()->get_selected(); 
+    Gtk::TreeModel::iterator iter = family_treeview.get_selection()->get_selected();
     if (iter) {
         (*iter).get_value(0, family);
     }
@@ -302,7 +402,7 @@ FontSelector::style_cell_data_func (Gtk::CellRenderer *renderer, Gtk::TreeIter c
 
     renderer->set_property("markup", markup);
 }
-   
+
 
 // Callbacks
 
@@ -325,11 +425,13 @@ FontSelector::on_family_changed() {
     Inkscape::FontLister *fontlister = Inkscape::FontLister::get_instance();
     fontlister->ensureRowStyles(model, iter);
 
-    Gtk::TreeModel::Row row = *iter; 
+    Gtk::TreeModel::Row row = *iter;
 
     // Get family name
     Glib::ustring family;
     row.get_value(0, family);
+
+    fontlister->set_dragging_family(family);
 
     // Get style list (TO DO: Get rid of GList)
     GList *styles;
@@ -337,7 +439,7 @@ FontSelector::on_family_changed() {
 
     // Find best style match for selected family with current style (e.g. of selected text).
     Glib::ustring style = fontlister->get_font_style();
-    Glib::ustring best  = fontlister->get_best_style_match (family, style);    
+    Glib::ustring best  = fontlister->get_best_style_match (family, style);
 
     // Create are own store of styles for selected font-family (the font-family selected
     // in the dialog may not be the same as stored in the font-lister class until the
@@ -393,7 +495,7 @@ FontSelector::on_size_changed() {
         size = std::stod (input);
     }
     catch (std::invalid_argument) {
-        std::cerr << "FontSelector::on_size_changed: Invalid input: " << input << std::endl;
+        std::cerr << "FontSelector::on_size_changed: Invalid input: " << input.raw() << std::endl;
         size = -1;
     }
 
@@ -427,6 +529,12 @@ void
 FontSelector::changed_emit() {
     signal_block = true;
     signal_changed.emit (get_fontspec());
+    if (initial) {
+        initial = false;
+        family_treecolumn.unset_cell_data_func (family_cell);
+        family_treecolumn.set_cell_data_func (family_cell, &font_lister_cell_data_func);
+        g_idle_add(FontSelector::set_cell_markup, this);
+    }
     signal_block = false;
 }
 

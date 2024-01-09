@@ -16,7 +16,7 @@
 
 #include <2geom/point.h>
 
-#include <memory>
+#include "display/control/canvas-item-ptr.h"
 
 namespace Inkscape {
 
@@ -35,23 +35,27 @@ class SPCurve;
 
 /// The drawing anchor.
 /// \todo Make this a regular knot, this will allow setting statusbar tips.
-struct SPDrawAnchor { 
-    ~SPDrawAnchor();
+
+// TODO Get rid of this class.
+
+class SPDrawAnchor
+{
+public:
 
     Inkscape::UI::Tools::FreehandBase *dc;
-    std::unique_ptr<SPCurve> curve;
+    std::shared_ptr<SPCurve> curve;
     bool start : 1;
     bool active : 1;
     Geom::Point dp;
-    Inkscape::CanvasItemCtrl *ctrl = nullptr;
+    CanvasItemPtr<Inkscape::CanvasItemCtrl> ctrl;
+
+    SPDrawAnchor(Inkscape::UI::Tools::FreehandBase *dc,
+                 std::shared_ptr<SPCurve> curve, bool start, Geom::Point delta);
+
+    ~SPDrawAnchor();
+
+    SPDrawAnchor *anchorTest(Geom::Point w, bool activate);
 };
-
-
-SPDrawAnchor *sp_draw_anchor_new(Inkscape::UI::Tools::FreehandBase *dc, SPCurve *curve, bool start,
-                                 Geom::Point delta);
-SPDrawAnchor *sp_draw_anchor_destroy(SPDrawAnchor *anchor);
-SPDrawAnchor *sp_draw_anchor_test(SPDrawAnchor *anchor, Geom::Point w, bool activate);
-
 
 #endif /* !SEEN_DRAW_ANCHOR_H */
 

@@ -35,14 +35,12 @@
 #include "desktop.h"
 #include "document-undo.h"
 #include "selection.h"
-#include "verbs.h"
 
 #include "object/sp-namedview.h"
 #include "object/sp-rect.h"
 
 #include "ui/icon-names.h"
 #include "ui/tools/rect-tool.h"
-#include "ui/uxmanager.h"
 #include "ui/widget/canvas.h"
 #include "ui/widget/combo-tool-item.h"
 #include "ui/widget/label-tool-item.h"
@@ -52,46 +50,33 @@
 
 #include "widgets/widget-sizes.h"
 
-#include "xml/node-event-vector.h"
-
 using Inkscape::UI::Widget::UnitTracker;
-using Inkscape::UI::UXManager;
 using Inkscape::DocumentUndo;
 using Inkscape::Util::Unit;
 using Inkscape::Util::Quantity;
 using Inkscape::Util::unit_table;
 
-static Inkscape::XML::NodeEventVector rect_tb_repr_events = {
-    nullptr, /* child_added */
-    nullptr, /* child_removed */
-    Inkscape::UI::Toolbar::RectToolbar::event_attr_changed,
-    nullptr, /* content_changed */
-    nullptr  /* order_changed */
-};
-
-namespace Inkscape {
-namespace UI {
-namespace Toolbar {
+namespace Inkscape::UI::Toolbar {
 
 RectToolbar::RectToolbar(SPDesktop *desktop)
-    : Toolbar(desktop),
-      _tracker(new UnitTracker(Inkscape::Util::UNIT_TYPE_LINEAR)),
-      _freeze(false),
-      _single(true),
-      _repr(nullptr),
-      _mode_item(Gtk::manage(new UI::Widget::LabelToolItem(_("<b>New:</b>"))))
+    : Toolbar(desktop)
+    , _tracker(new UnitTracker(Inkscape::Util::UNIT_TYPE_LINEAR))
+    , _mode_item(Gtk::manage(new UI::Widget::LabelToolItem(_("<b>New:</b>"))))
 {
     Inkscape::Preferences *prefs = Inkscape::Preferences::get();
 
     // rx/ry units menu: create
     //tracker->addUnit( SP_UNIT_PERCENT, 0 );
     // fixme: add % meaning per cent of the width/height
-    _tracker->setActiveUnit(desktop->getNamedView()->display_units);
+    auto init_units = desktop->getNamedView()->display_units;
+    _tracker->setActiveUnit(init_units);
     _mode_item->set_use_markup(true);
 
     /* W */
     {
         auto width_val = prefs->getDouble("/tools/shapes/rect/width", 0);
+        width_val = Quantity::convert(width_val, "px", init_units);
+
         _width_adj = Gtk::Adjustment::create(width_val, 0, 1e6, SPIN_STEP, SPIN_PAGE_STEP);
         _width_item = Gtk::manage(new UI::Widget::SpinButtonToolItem("rect-width", _("W:"), _width_adj));
         _width_item->get_spin_button()->addUnitTracker(_tracker);
@@ -112,6 +97,7 @@ RectToolbar::RectToolbar(SPDesktop *desktop)
     /* H */
     {
         auto height_val = prefs->getDouble("/tools/shapes/rect/height", 0);
+        height_val = Quantity::convert(height_val, "px", init_units);
 
         _height_adj = Gtk::Adjustment::create(height_val, 0, 1e6, SPIN_STEP, SPIN_PAGE_STEP);
         _height_adj->signal_value_changed().connect(sigc::bind(sigc::mem_fun(*this, &RectToolbar::value_changed),
@@ -134,6 +120,8 @@ RectToolbar::RectToolbar(SPDesktop *desktop)
         std::vector<Glib::ustring> labels = {_("not rounded"), "", "", "", "", "", "", "",  ""};
         std::vector<double>        values = {             0.5,  1,  2,  3,  5, 10, 20, 50, 100};
         auto rx_val = prefs->getDouble("/tools/shapes/rect/rx", 0);
+        rx_val = Quantity::convert(rx_val, "px", init_units);
+
         _rx_adj = Gtk::Adjustment::create(rx_val, 0, 1e6, SPIN_STEP, SPIN_PAGE_STEP);
         _rx_adj->signal_value_changed().connect(sigc::bind(sigc::mem_fun(*this, &RectToolbar::value_changed),
                                                            _rx_adj,
@@ -152,6 +140,8 @@ RectToolbar::RectToolbar(SPDesktop *desktop)
         std::vector<Glib::ustring> labels = {_("not rounded"), "", "", "", "", "", "", "",  ""};
         std::vector<double>        values = {             0.5,  1,  2,  3,  5, 10, 20, 50, 100};
         auto ry_val = prefs->getDouble("/tools/shapes/rect/ry", 0);
+        ry_val = Quantity::convert(ry_val, "px", init_units);
+
         _ry_adj = Gtk::Adjustment::create(ry_val, 0, 1e6, SPIN_STEP, SPIN_PAGE_STEP);
         _ry_adj->signal_value_changed().connect(sigc::bind(sigc::mem_fun(*this, &RectToolbar::value_changed),
                                                            _ry_adj,
@@ -195,10 +185,11 @@ RectToolbar::RectToolbar(SPDesktop *desktop)
 RectToolbar::~RectToolbar()
 {
     if (_repr) { // remove old listener
-        _repr->removeListenerByData(this);
+        _repr->removeObserver(*this);
         Inkscape::GC::release(_repr);
         _repr = nullptr;
     }
+    _changed.disconnect();
 }
 
 GtkWidget *
@@ -234,9 +225,9 @@ RectToolbar::value_changed(Glib::RefPtr<Gtk::Adjustment>&  adj,
     Inkscape::Selection *selection = _desktop->getSelection();
     auto itemlist= selection->items();
     for(auto i=itemlist.begin();i!=itemlist.end();++i){
-        if (SP_IS_RECT(*i)) {
+        if (is<SPRect>(*i)) {
             if (adj->get_value() != 0) {
-                (SP_RECT(*i)->*setter)(Quantity::convert(adj->get_value(), unit, "px"));
+                (cast<SPRect>(*i)->*setter)(Quantity::convert(adj->get_value(), unit, "px"));
             } else {
                 (*i)->removeAttribute(value_name);
             }
@@ -247,8 +238,7 @@ RectToolbar::value_changed(Glib::RefPtr<Gtk::Adjustment>&  adj,
     sensitivize();
 
     if (modmade) {
-        DocumentUndo::done(_desktop->getDocument(), SP_VERB_CONTEXT_RECT,
-                           _("Change rectangle"));
+        DocumentUndo::done(_desktop->getDocument(), _("Change rectangle"), INKSCAPE_ICON("draw-rectangle"));
     }
 
     _freeze = false;
@@ -276,23 +266,21 @@ RectToolbar::defaults()
 void
 RectToolbar::watch_ec(SPDesktop* desktop, Inkscape::UI::Tools::ToolBase* ec)
 {
-    static sigc::connection changed;
-
     // use of dynamic_cast<> seems wrong here -- we just need to check the current tool
 
     if (dynamic_cast<Inkscape::UI::Tools::RectTool *>(ec)) {
         Inkscape::Selection *sel = desktop->getSelection();
 
-        changed = sel->connectChanged(sigc::mem_fun(*this, &RectToolbar::selection_changed));
+        _changed = sel->connectChanged(sigc::mem_fun(*this, &RectToolbar::selection_changed));
 
         // Synthesize an emission to trigger the update
         selection_changed(sel);
     } else {
-        if (changed) {
-            changed.disconnect();
+        if (_changed) {
+            _changed.disconnect();
         
             if (_repr) { // remove old listener
-                _repr->removeListenerByData(this);
+                _repr->removeObserver(*this);
                 Inkscape::GC::release(_repr);
                 _repr = nullptr;
             }
@@ -312,14 +300,14 @@ RectToolbar::selection_changed(Inkscape::Selection *selection)
 
     if (_repr) { // remove old listener
         _item = nullptr;
-        _repr->removeListenerByData(this);
+        _repr->removeObserver(*this);
         Inkscape::GC::release(_repr);
         _repr = nullptr;
     }
 
     auto itemlist= selection->items();
     for(auto i=itemlist.begin();i!=itemlist.end();++i){
-        if (SP_IS_RECT(*i)) {
+        if (is<SPRect>(*i)) {
             n_selected++;
             item = *i;
             repr = item->getRepr();
@@ -342,8 +330,8 @@ RectToolbar::selection_changed(Inkscape::Selection *selection)
             _repr = repr;
             _item = item;
             Inkscape::GC::anchor(_repr);
-            _repr->addListener(&rect_tb_repr_events, this);
-            _repr->synthesizeEvents(&rect_tb_repr_events, this);
+            _repr->addObserver(*this);
+            _repr->synthesizeEvents(*this);
         }
     } else {
         // FIXME: implement averaging of all parameters for multiple selected
@@ -353,53 +341,35 @@ RectToolbar::selection_changed(Inkscape::Selection *selection)
     }
 }
 
-void RectToolbar::event_attr_changed(Inkscape::XML::Node * /*repr*/, gchar const * /*name*/,
-                                     gchar const * /*old_value*/, gchar const * /*new_value*/,
-                                     bool /*is_interactive*/, gpointer data)
+void RectToolbar::notifyAttributeChanged(Inkscape::XML::Node &repr, GQuark,
+                                         Inkscape::Util::ptr_shared,
+                                         Inkscape::Util::ptr_shared)
 {
-    auto toolbar = reinterpret_cast<RectToolbar*>(data);
-
     // quit if run by the _changed callbacks
-    if (toolbar->_freeze) {
+    if (_freeze) {
         return;
     }
 
     // in turn, prevent callbacks from responding
-    toolbar->_freeze = true;
+    _freeze = true;
 
-    Unit const *unit = toolbar->_tracker->getActiveUnit();
-    g_return_if_fail(unit != nullptr);
-
-    if (toolbar->_item && SP_IS_RECT(toolbar->_item)) {
-        {
-            gdouble rx = SP_RECT(toolbar->_item)->getVisibleRx();
-            toolbar->_rx_adj->set_value(Quantity::convert(rx, "px", unit));
-        }
-
-        {
-            gdouble ry = SP_RECT(toolbar->_item)->getVisibleRy();
-            toolbar->_ry_adj->set_value(Quantity::convert(ry, "px", unit));
-        }
-
-        {
-            gdouble width = SP_RECT(toolbar->_item)->getVisibleWidth();
-            toolbar->_width_adj->set_value(Quantity::convert(width, "px", unit));
-        }
-
-        {
-            gdouble height = SP_RECT(toolbar->_item)->getVisibleHeight();
-            toolbar->_height_adj->set_value(Quantity::convert(height, "px", unit));
-        }
+    auto unit = _tracker->getActiveUnit();
+    if (!unit) {
+        return;
     }
 
-    toolbar->sensitivize();
-    toolbar->_freeze = false;
+    if (auto rect = cast<SPRect>(_item)) {
+        _rx_adj    ->set_value(Quantity::convert(rect->getVisibleRx(),     "px", unit));
+        _ry_adj    ->set_value(Quantity::convert(rect->getVisibleRy(),     "px", unit));
+        _width_adj ->set_value(Quantity::convert(rect->getVisibleWidth(),  "px", unit));
+        _height_adj->set_value(Quantity::convert(rect->getVisibleHeight(), "px", unit));
+    }
+
+    sensitivize();
+    _freeze = false;
 }
 
-}
-}
-}
-
+} // namespace Inkscape::UI::Toolbar
 
 /*
   Local Variables:

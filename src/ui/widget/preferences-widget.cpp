@@ -27,7 +27,6 @@
 #include "preferences.h"
 #include "selcue.h"
 #include "selection-chemistry.h"
-#include "verbs.h"
 
 #include "include/gtkmm_version.h"
 
@@ -35,6 +34,7 @@
 
 #include "ui/dialog/filedialog.h"
 #include "ui/icon-loader.h"
+#include "ui/util.h"
 #include "ui/widget/preferences-widget.h"
 
 
@@ -83,11 +83,6 @@ void DialogPage::add_line(bool                 indent,
     hb->set_spacing(12);
     hb->set_hexpand(true);
     hb->pack_start(widget, expand_widget, expand_widget);
-        
-    // Pack an additional widget into a box with the widget if desired 
-    if (other_widget)
-        hb->pack_start(*other_widget, expand_widget, expand_widget);
-    
     hb->set_valign(Gtk::ALIGN_CENTER);
     
     // Add a label in the first column if provided
@@ -130,9 +125,12 @@ void DialogPage::add_line(bool                 indent,
         hb->pack_start(*suffix_widget,false,false);
     }
 
+    // Pack an additional widget into a box with the widget if desired
+    if (other_widget)
+        hb->pack_start(*other_widget, expand_widget, expand_widget);
 }
 
-void DialogPage::add_group_header(Glib::ustring name)
+void DialogPage::add_group_header(Glib::ustring name, int columns)
 {
     if (name != "")
     {
@@ -142,6 +140,12 @@ void DialogPage::add_group_header(Glib::ustring name)
         label_widget->set_use_markup(true);
         label_widget->set_valign(Gtk::ALIGN_CENTER);
         add(*label_widget);
+        if (columns > 1) {
+            GValue width = G_VALUE_INIT;
+            g_value_init(&width, G_TYPE_INT);
+            g_value_set_int(&width, columns);
+            gtk_container_child_set_property(GTK_CONTAINER(gobj()), GTK_WIDGET(label_widget->gobj()), "width", &width);
+        }
     }
 }
 
@@ -174,7 +178,8 @@ void PrefCheckButton::init(Glib::ustring const &label, Glib::ustring const &pref
 {
     _prefs_path = prefs_path;
     Inkscape::Preferences *prefs = Inkscape::Preferences::get();
-    this->set_label(label);
+    if (!label.empty())
+        this->set_label(label);
     this->set_active( prefs->getBool(_prefs_path, default_value) );
 }
 
@@ -241,6 +246,21 @@ void PrefRadioButton::on_toggled()
     }
     this->changed_signal.emit(this->get_active());
 }
+
+
+PrefRadioButtons::PrefRadioButtons(const std::vector<PrefItem>& buttons, const Glib::ustring& prefs_path) {
+    set_spacing(2);
+
+    PrefRadioButton* group = nullptr;
+    for (auto&& item : buttons) {
+        auto* btn = Gtk::make_managed<PrefRadioButton>();
+        btn->init(item.label, prefs_path, item.int_value, item.is_default, group);
+        btn->set_tooltip_text(item.tooltip);
+        add(*btn);
+        if (!group) group = btn;
+    }
+}
+
 
 void PrefSpinButton::init(Glib::ustring const &prefs_path,
               double lower, double upper, double step_increment, double /*page_increment*/,
@@ -387,18 +407,33 @@ ZoomCorrRuler::draw_marks(Cairo::RefPtr<Cairo::Context> cr, double dist, int maj
     const double zoomcorr = prefs->getDouble("/options/zoomcorrection/value", 1.0);
     double mark = 0;
     int i = 0;
+    double step = dist * zoomcorr / _unitconv;
+    bool draw_minor = true;
+    if (step <= 0) {
+        return;
+    }
+    else if (step < 2) {
+        // marks too dense
+        draw_minor = false;
+    }
+    int last_pos = -1;
     while (mark <= _drawing_width) {
         cr->move_to(mark, _height);
         if ((i % major_interval) == 0) {
-            // major mark
-            cr->line_to(mark, 0);
-            Geom::Point textpos(mark + 3, ZoomCorrRuler::textsize + ZoomCorrRuler::textpadding);
-            draw_number(cr->cobj(), textpos, dist * i);
-        } else {
+            // don't overcrowd the marks
+            if (static_cast<int>(mark) > last_pos) {
+                // major mark
+                cr->line_to(mark, 0);
+                Geom::Point textpos(mark + 3, ZoomCorrRuler::textsize + ZoomCorrRuler::textpadding);
+                draw_number(cr->cobj(), textpos, dist * i);
+
+                last_pos = static_cast<int>(mark) + 1;
+            }
+        } else if (draw_minor) {
             // minor mark
             cr->line_to(mark, ZoomCorrRuler::textsize + 2 * ZoomCorrRuler::textpadding);
         }
-        mark += dist * zoomcorr / _unitconv;
+        mark += step;
         ++i;
     }
 }
@@ -410,13 +445,13 @@ ZoomCorrRuler::on_draw(const Cairo::RefPtr<Cairo::Context>& cr) {
     int w = window->get_width();
     _drawing_width = w - _border * 2;
 
-    cr->set_source_rgb(1.0, 1.0, 1.0);
-    cr->set_fill_rule(Cairo::FILL_RULE_WINDING);
-    cr->rectangle(0, 0, w, _height + _border*2);
-    cr->fill();
+    auto context = get_style_context();
+    Gdk::RGBA fg = context->get_color(get_state_flags());
 
-    cr->set_source_rgb(0.0, 0.0, 0.0);
-    cr->set_line_width(0.5);
+    context->render_background(cr, 0, 0, w, _height + _border * 2);
+
+    cr->set_line_width(1);
+    cr->set_source_rgb(fg.get_red(), fg.get_green(), fg.get_blue());
 
     cr->translate(_border, _border); // so that we have a small white border around the ruler
     cr->move_to (0, _height);
@@ -552,7 +587,7 @@ PrefSlider::on_slider_value_changed()
         freeze = true;
         Inkscape::Preferences *prefs = Inkscape::Preferences::get();
         prefs->setDouble(_prefs_path, _slider->get_value());
-        _sb->set_value(_slider->get_value());
+        if (_sb) _sb->set_value(_slider->get_value());
         freeze = false;
     }
 }
@@ -564,15 +599,17 @@ PrefSlider::on_spinbutton_value_changed()
     {
         freeze = true;
         Inkscape::Preferences *prefs = Inkscape::Preferences::get();
-        prefs->setDouble(_prefs_path, _sb->get_value());
-        _slider->set_value(_sb->get_value());
+        if (_sb) {
+            prefs->setDouble(_prefs_path, _sb->get_value());
+            _slider->set_value(_sb->get_value());
+        }
         freeze = false;
     }
 }
 
 bool PrefSlider::on_mnemonic_activate ( bool group_cycling )
 {
-    return _sb->mnemonic_activate ( group_cycling );
+    return _sb ? _sb->mnemonic_activate ( group_cycling ) : false;
 }
 
 void
@@ -593,25 +630,27 @@ PrefSlider::init(Glib::ustring const &prefs_path,
     _slider->set_value (value);
     _slider->set_digits(digits);
     _slider->signal_value_changed().connect(sigc::mem_fun(*this, &PrefSlider::on_slider_value_changed));
-    _sb = Gtk::manage(new Inkscape::UI::Widget::SpinButton());
-    _sb->signal_value_changed().connect(sigc::mem_fun(*this, &PrefSlider::on_spinbutton_value_changed));
-    _sb->set_range (lower, upper);
-    _sb->set_increments (step_increment, 0);
-    _sb->set_value (value);
-    _sb->set_digits(digits);
-    _sb->set_halign(Gtk::ALIGN_CENTER);
-    _sb->set_valign(Gtk::ALIGN_END);
+    if (_spin) {
+        _sb = Gtk::manage(new Inkscape::UI::Widget::SpinButton());
+        _sb->signal_value_changed().connect(sigc::mem_fun(*this, &PrefSlider::on_spinbutton_value_changed));
+        _sb->set_range (lower, upper);
+        _sb->set_increments (step_increment, 0);
+        _sb->set_value (value);
+        _sb->set_digits(digits);
+        _sb->set_halign(Gtk::ALIGN_CENTER);
+        _sb->set_valign(Gtk::ALIGN_END);
+    }
 
     auto table = Gtk::manage(new Gtk::Grid());
     _slider->set_hexpand();
     table->attach(*_slider, 0, 0, 1, 1);
-    table->attach(*_sb,     1, 0, 1, 1);
+    if (_sb) table->attach(*_sb, 1, 0, 1, 1);
 
     this->pack_start(*table, Gtk::PACK_EXPAND_WIDGET);
 }
 
 void PrefCombo::init(Glib::ustring const &prefs_path,
-                     Glib::ustring labels[], int values[], int num_items, int default_value)
+                     Glib::ustring const labels[], int const values[], int num_items, int default_value)
 {
     _prefs_path = prefs_path;
     Inkscape::Preferences *prefs = Inkscape::Preferences::get();
@@ -656,8 +695,8 @@ void PrefCombo::init(Glib::ustring const &prefs_path, std::vector<Glib::ustring>
     size_t labels_size = labels.size();
     size_t values_size = values.size();
     if (values_size != labels_size) {
-        std::cout << "PrefCombo::"
-                  << "Different number of values/labels in " << prefs_path << std::endl;
+        std::cerr << "PrefCombo::"
+                  << "Different number of values/labels in " << prefs_path.raw() << std::endl;
         return;
     }
     _prefs_path = prefs_path;
@@ -680,8 +719,8 @@ void PrefCombo::init(Glib::ustring const &prefs_path, std::vector<Glib::ustring>
     size_t labels_size = labels.size();
     size_t values_size = values.size();
     if (values_size != labels_size) {
-        std::cout << "PrefCombo::"
-                  << "Different number of values/labels in " << prefs_path << std::endl;
+        std::cerr << "PrefCombo::"
+                  << "Different number of values/labels in " << prefs_path.raw() << std::endl;
         return;
     }
     _prefs_path = prefs_path;
@@ -986,6 +1025,15 @@ void PrefEntry::on_changed()
     {
         Inkscape::Preferences *prefs = Inkscape::Preferences::get();
         prefs->setString(_prefs_path, this->get_text());
+    }
+}
+
+void PrefEntryFile::on_changed()
+{
+    if (this->get_visible()) //only take action if user changed value
+    {
+        Inkscape::Preferences *prefs = Inkscape::Preferences::get();
+        prefs->setString(_prefs_path, Glib::filename_to_utf8(this->get_text()));
     }
 }
 

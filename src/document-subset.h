@@ -12,19 +12,16 @@
 #define SEEN_INKSCAPE_DOCUMENT_SUBSET_H
 
 #include <cstddef>
+#include <memory>
 #include <sigc++/connection.h>
 #include <sigc++/functors/slot.h>
-
-#include "inkgc/gc-managed.h"
-#include "gc-anchored.h"
 
 class SPObject;
 class SPDocument;
 
 namespace Inkscape {
 
-class DocumentSubset : public GC::Managed<>,
-                       public GC::Anchored
+class DocumentSubset
 {
 public:
     bool includes(SPObject *obj) const;
@@ -34,12 +31,13 @@ public:
     unsigned indexOf(SPObject *obj) const;
     SPObject *nthChildOf(SPObject *obj, unsigned n) const;
 
-    sigc::connection connectChanged(sigc::slot<void> slot) const;
-    sigc::connection connectAdded(sigc::slot<void, SPObject *> slot) const;
-    sigc::connection connectRemoved(sigc::slot<void, SPObject *> slot) const;
+    sigc::connection connectChanged(sigc::slot<void ()> slot) const;
+    sigc::connection connectAdded(sigc::slot<void (SPObject *)> slot) const;
+    sigc::connection connectRemoved(sigc::slot<void (SPObject *)> slot) const;
 
 protected:
     DocumentSubset();
+    ~DocumentSubset();
 
     void _addOne(SPObject *obj);
     void _removeOne(SPObject *obj) { _remove(obj, false); }
@@ -54,7 +52,7 @@ private:
 
     struct Relations;
 
-    Relations *_relations;
+    std::unique_ptr<Relations> _relations;
 };
 
 }

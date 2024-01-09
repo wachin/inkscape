@@ -56,11 +56,11 @@ PrefDialog::PrefDialog (Glib::ustring name, Gtk::Widget * controls, Effect * eff
     Gtk::Box *hbox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL));
     if (controls == nullptr) {
         if (_effect == nullptr) {
-            std::cout << "AH!!!  No controls and no effect!!!" << std::endl;
+            std::cerr << "AH!!!  No controls and no effect!!!" << std::endl;
             return;
         }
         controls = _effect->get_imp()->prefs_effect(_effect, SP_ACTIVE_DESKTOP, &_signal_param_change, nullptr);
-        _signal_param_change.connect(sigc::mem_fun(this, &PrefDialog::param_change));
+        _signal_param_change.connect(sigc::mem_fun(*this, &PrefDialog::param_change));
     }
 
     hbox->pack_start(*controls, true, true, 0);
@@ -77,7 +77,7 @@ PrefDialog::PrefDialog (Glib::ustring name, Gtk::Widget * controls, Effect * eff
         if (_param_preview == nullptr) {
             XML::Document * doc = sp_repr_read_mem(live_param_xml, strlen(live_param_xml), nullptr);
             if (doc == nullptr) {
-                std::cout << "Error encountered loading live parameter XML !!!" << std::endl;
+                std::cerr << "Error encountered loading live parameter XML !!!" << std::endl;
                 return;
             }
             _param_preview = InxParameter::make(doc->root(), _effect);
@@ -103,7 +103,7 @@ PrefDialog::PrefDialog (Glib::ustring name, Gtk::Widget * controls, Effect * eff
         }
 
         preview_toggle();
-        _signal_preview.connect(sigc::mem_fun(this, &PrefDialog::preview_toggle));
+        _signal_preview.connect(sigc::mem_fun(*this, &PrefDialog::preview_toggle));
     }
 
     // Set window modality for effects that don't use live preview
@@ -136,6 +136,9 @@ PrefDialog::~PrefDialog ( )
 
 void
 PrefDialog::preview_toggle () {
+    // This wrap prevent crashes on fast click
+    // We are on 2 mains process so can triger a crash if you check too fast
+    _button_preview->set_sensitive(false);
     SPDocument *document = SP_ACTIVE_DOCUMENT;
     bool modified = document->isModifiedSinceSave();
     if(_param_preview->get_bool()) {
@@ -157,6 +160,7 @@ PrefDialog::preview_toggle () {
         }
     }
     document->setModifiedSinceSave(modified);
+    _button_preview->set_sensitive(true);
 }
 
 void
@@ -166,7 +170,7 @@ PrefDialog::param_change () {
             _effect->set_state(Extension::STATE_LOADED);
         }
         _timersig.disconnect();
-        _timersig = Glib::signal_timeout().connect(sigc::mem_fun(this, &PrefDialog::param_timer_expire),
+        _timersig = Glib::signal_timeout().connect(sigc::mem_fun(*this, &PrefDialog::param_timer_expire),
                                                    250, /* ms */
                                                    Glib::PRIORITY_DEFAULT_IDLE);
     }

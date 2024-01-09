@@ -28,9 +28,10 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
+#include "axis-manip.h"
 #include "toolbar.h"
 
-#include "axis-manip.h"
+#include "xml/node-observer.h"
 
 namespace Gtk {
 class Adjustment;
@@ -56,7 +57,10 @@ class ToolBase;
 }
 
 namespace Toolbar {
-class Box3DToolbar : public Toolbar {
+class Box3DToolbar
+	: public Toolbar
+	, private XML::NodeObserver
+{
 private:
     UI::Widget::SpinButtonToolItem *_angle_x_item;
     UI::Widget::SpinButtonToolItem *_angle_y_item;
@@ -70,8 +74,8 @@ private:
     Gtk::ToggleToolButton *_vp_y_state_item;
     Gtk::ToggleToolButton *_vp_z_state_item;
 
-    XML::Node *_repr;
-    bool _freeze;
+    XML::Node *_repr{nullptr};
+    bool _freeze{false};
 
     void angle_value_changed(Glib::RefPtr<Gtk::Adjustment> &adj,
                              Proj::Axis                     axis);
@@ -88,20 +92,18 @@ private:
 
     sigc::connection _changed;
 
+	void notifyAttributeChanged(Inkscape::XML::Node &node, GQuark name,
+								Inkscape::Util::ptr_shared old_value,
+								Inkscape::Util::ptr_shared new_value) final;
+
 protected:
     Box3DToolbar(SPDesktop *desktop);
     ~Box3DToolbar() override;
 
 public:
     static GtkWidget * create(SPDesktop *desktop);
-    static void event_attr_changed(Inkscape::XML::Node *repr,
-                                   gchar const         *name,
-                                   gchar const         *old_value,
-                                   gchar const         *new_value,
-                                   bool                 is_interactive,
-                                   gpointer             data);
-
 };
+
 }
 }
 }

@@ -31,8 +31,7 @@ LPEExtrude::LPEExtrude(LivePathEffectObject *lpeobject) :
     registerParameter(&extrude_vector);
 }
 
-LPEExtrude::~LPEExtrude()
-= default;
+LPEExtrude::~LPEExtrude() = default;
 
 static bool are_colinear(Geom::Point a, Geom::Point b) {
     return Geom::are_near(cross(a,b), 0., 0.5);

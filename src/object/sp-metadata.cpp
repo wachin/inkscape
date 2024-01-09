@@ -111,7 +111,7 @@ void SPMetadata::set(SPAttr key, const gchar* value) {
 
 void SPMetadata::update(SPCtx* /*ctx*/, unsigned int flags) {
     debug("0x%08x",(unsigned int)this);
-    //SPMetadata *metadata = SP_METADATA(object);
+    //auto metadata = cast<SPMetadata>(object);
 
     if (flags & (SP_OBJECT_MODIFIED_FLAG | SP_OBJECT_STYLE_MODIFIED_FLAG |
                  SP_OBJECT_VIEWPORT_MODIFIED_FLAG)) {
@@ -120,7 +120,7 @@ void SPMetadata::update(SPCtx* /*ctx*/, unsigned int flags) {
 
         // Detect CorelDraw layers
         if (is_corel_layer_metadata(*this)) {
-            auto layer = dynamic_cast<SPGroup *>(parent);
+            auto layer = cast<SPGroup>(parent);
             if (layer && layer->layerMode() == SPGroup::GROUP) {
                 layer->setLayerMode(SPGroup::LAYER);
                 if (!layer->label()) {

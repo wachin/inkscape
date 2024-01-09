@@ -1490,15 +1490,20 @@ Shape::SortEdges ()
   }
   _need_edges_sorting = false;
 
+  // allocate the edge_list array as it's needed by SortEdgesList
   edge_list *list = (edge_list *) g_malloc(numberOfEdges() * sizeof (edge_list));
+  // for each point
   for (int p = 0; p < numberOfPoints(); p++)
     {
       int const d = getPoint(p).totalDegree();
+      // if degree is greater than 1
       if (d > 1)
         {
           int cb;
+          // get the first edge
           cb = getPoint(p).incidentEdge[FIRST];
           int nb = 0;
+          // for all the edges connected at this point, form the list
           while (cb >= 0)
             {
               int n = nb++;
@@ -1515,7 +1520,9 @@ Shape::SortEdges ()
                 }
               cb = NextAt (p, cb);
             }
+          // sort the list
           SortEdgesList (list, 0, nb - 1);
+          // recreate the linked list with the sorted edges
           _pts[p].incidentEdge[FIRST] = list[0].no;
           _pts[p].incidentEdge[LAST] = list[nb - 1].no;
           for (int i = 0; i < nb; i++)
@@ -1567,6 +1574,8 @@ Shape::SortEdges ()
 int
 Shape::CmpToVert (Geom::Point ax, Geom::Point bx,bool as,bool bs)
 {
+  // these tst variables store the sign of the x and y coordinates of each of the vectors
+  // + is +1, - is -1 and 0 is 0
   int tstAX = 0;
   int tstAY = 0;
   int tstBX = 0;
@@ -1588,6 +1597,9 @@ Shape::CmpToVert (Geom::Point ax, Geom::Point bx,bool as,bool bs)
   if (bx[1] < 0)
     tstBY = -1;
 
+  // calcuate quadrant for both a and b edge vectors
+  // for quadrant numbers, see the figure in header file documentation of this
+  // function
   int quadA = 0, quadB = 0;
   if (tstAX < 0)
     {
@@ -1679,22 +1691,40 @@ Shape::CmpToVert (Geom::Point ax, Geom::Point bx,bool as,bool bs)
           quadB = 3;
         }
     }
+
+
+  // B should have a smaller quadrant number, if the opposite is true, we need to swap
   if (quadA < quadB)
     return 1;
   if (quadA > quadB)
     return -1;
 
+  // if the quadrants are same, we need to do more maths to figure out their relative orientation
+
   Geom::Point av, bv;
   av = ax;
   bv = bx;
+
+  // take cross from av to bv
+  // cross product in SVG coordinates is different visually. With your right hand, let index finger point to vector
+  // av, and let middle finger point to vector bv, if thumb is out of page, cross is negative, if into the page, it's
+  // positive
   double si = cross(av, bv);
+  // if the angle that bv makes from -y axis is smaller than the one av makes, our arrangement is good and needs no swap
+  // this ideal orientation will give a negative cross product (thumb out of page)
   int tstSi = 0;
-  if (si > 0.000001) tstSi = 1;
-  if (si < -0.000001) tstSi = -1;
+  if (si > 0.000001) tstSi = 1; // if positive cross product, swap needed
+  if (si < -0.000001) tstSi = -1; // if negative cross product, we are good
+
+  // if the edges are kinda on top of each other
+  // I have no idea if there is a reason behind these two rules below
   if ( tstSi == 0 ) {
-    if ( as && !bs ) return -1;
-    if ( !as && bs ) return 1;
+    if ( as && !bs ) return -1; // if b ends at point and a starts, we are good
+    if ( !as && bs ) return 1; // if b starts at point and a ends, swap
   }
+
+  // if we stil can't decide whether a swap is needed or not (both edges on top of each other and both starting
+  // from the point) or ending at the point, we return 0
   return tstSi;
 }
 

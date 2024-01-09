@@ -13,19 +13,20 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
-#include "ui/widget/object-composite-settings.h"
+#include "object-composite-settings.h"
+
+#include <utility>
 
 #include "desktop.h"
-
 #include "desktop-style.h"
 #include "document.h"
 #include "document-undo.h"
 #include "filter-chemistry.h"
 #include "inkscape.h"
 #include "style.h"
-#include "svg/css-ostringstream.h"
-#include "verbs.h"
+
 #include "object/filters/blend.h"
+#include "svg/css-ostringstream.h"
 #include "ui/widget/style-subject.h"
 
 constexpr double BLUR_MULTIPLIER = 4.0;
@@ -34,9 +35,9 @@ namespace Inkscape {
 namespace UI {
 namespace Widget {
 
-ObjectCompositeSettings::ObjectCompositeSettings(unsigned int verb_code, char const *history_prefix, int flags)
+ObjectCompositeSettings::ObjectCompositeSettings(Glib::ustring icon_name, char const *history_prefix, int flags)
 : Gtk::Box(Gtk::ORIENTATION_VERTICAL),
-  _verb_code(verb_code),
+  _icon_name(std::move(icon_name)),
   _blend_tag(Glib::ustring(history_prefix) + ":blend"),
   _blur_tag(Glib::ustring(history_prefix) + ":blur"),
   _opacity_tag(Glib::ustring(history_prefix) + ":opacity"),
@@ -106,25 +107,15 @@ ObjectCompositeSettings::_blendBlurValueChanged()
     //apply created filter to every selected item
     std::vector<SPObject*> sel = _subject->list();
     for (auto i : sel) {
-        if (!SP_IS_ITEM(i)) {
+        if (!is<SPItem>(i)) {
             continue;
         }
-        SPItem * item = SP_ITEM(i);
+        auto item = cast<SPItem>(i);
         SPStyle *style = item->style;
         g_assert(style != nullptr);
-        bool change_blend = (item->style->mix_blend_mode.set ? item->style->mix_blend_mode.value : SP_CSS_BLEND_NORMAL) != _filter_modifier.get_blend_mode();
-        // < 1.0 filter based blend removal
-        if (!item->style->mix_blend_mode.set && item->style->filter.set && item->style->getFilter()) {
-            remove_filter_legacy_blend(item);
-        }
-        item->style->mix_blend_mode.set = TRUE;
-        if (item->style->isolation.value == SP_CSS_ISOLATION_ISOLATE) {
-            item->style->mix_blend_mode.value = SP_CSS_BLEND_NORMAL;
-        } else { 
-            item->style->mix_blend_mode.value = _filter_modifier.get_blend_mode();
-        }
+        bool change_blend = set_blend_mode(item, _filter_modifier.get_blend_mode());
 
-        if (radius == 0 && item->style->filter.set
+        if (radius == 0 && item->style->filter.set && item->style->getFilter()
             && filter_is_single_gaussian_blur(item->style->getFilter())) {
             remove_filter(item, false);
         } else if (radius != 0) {
@@ -132,15 +123,14 @@ ObjectCompositeSettings::_blendBlurValueChanged()
             filter->update_filter_region(item);
             sp_style_set_property_url(item, "filter", filter, false);
         } 
-        if (change_blend) { //we do blend so we need update display style
-            item->updateRepr(SP_OBJECT_WRITE_NO_CHILDREN | SP_OBJECT_WRITE_EXT);
+        if (change_blend) {
+            ; // update done already
         } else {
             item->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG | SP_OBJECT_STYLE_MODIFIED_FLAG);
         }
     }
 
-    DocumentUndo::maybeDone(document, _blur_tag.c_str(), _verb_code,
-                            _("Change blur/blend filter"));
+    DocumentUndo::maybeDone(document, _blur_tag.c_str(), _("Change blur/blend filter"), _icon_name);
 
     _blocked = false;
 }
@@ -171,8 +161,7 @@ ObjectCompositeSettings::_opacityValueChanged()
 
     sp_repr_css_attr_unref (css);
 
-    DocumentUndo::maybeDone(desktop->getDocument(), _opacity_tag.c_str(), _verb_code,
-                            _("Change opacity"));
+    DocumentUndo::maybeDone(desktop->getDocument(), _opacity_tag.c_str(), _("Change opacity"), _icon_name);
 
     _blocked = false;
 }
@@ -202,7 +191,7 @@ void ObjectCompositeSettings::_isolationValueChanged()
         item->updateRepr(SP_OBJECT_WRITE_NO_CHILDREN | SP_OBJECT_WRITE_EXT);
     }
 
-    DocumentUndo::maybeDone(desktop->getDocument(), _isolation_tag.c_str(), _verb_code, _("Change isolation"));
+    DocumentUndo::maybeDone(desktop->getDocument(), _isolation_tag.c_str(), _("Change isolation"), _icon_name);
 
     _blocked = false;
 }

@@ -62,21 +62,17 @@ namespace Dialog {
 class StyleDialog : public DialogBase
 {
 public:
-    // No default constructor, noncopyable, nonassignable
     StyleDialog();
     ~StyleDialog() override;
-    StyleDialog(StyleDialog const &d) = delete;
-    StyleDialog operator=(StyleDialog const &d) = delete;
 
     void documentReplaced() override;
     void selectionChanged(Selection *selection) override;
 
-    static StyleDialog &getInstance() { return *new StyleDialog(); }
     void setCurrentSelector(Glib::ustring current_selector);
     Gtk::TreeView *_current_css_tree;
     Gtk::TreeViewColumn *_current_value_col;
     Gtk::TreeModel::Path _current_path;
-    bool _deletion;
+    bool _deletion{false};
     Glib::ustring fixCSSSelectors(Glib::ustring selector);
     void readStyleElement();
 
@@ -125,7 +121,7 @@ public:
         Gtk::TreeModelColumn<Glib::ustring> _colCSSData; // Name of the property.
     };
     CSSData _mCSSData;
-    guint _deleted_pos;
+    guint _deleted_pos{0};
     // Widgets
     Gtk::ScrolledWindow _scrolledWindow;
     Glib::RefPtr<Gtk::Adjustment> _vadj;
@@ -159,9 +155,9 @@ public:
     void _setAutocompletion(Gtk::Entry *entry, Glib::ustring name);
     bool _on_foreach_iter(const Gtk::TreeModel::iterator &iter);
     void _reload();
-    void _vscrool();
-    bool _scroollock;
-    double _scroolpos;
+    void _vscroll();
+    bool _scrollock;
+    double _scrollpos{0};
     Glib::ustring _current_selector;
 
     // Update watchers
@@ -174,9 +170,9 @@ public:
     std::map<Glib::ustring, Glib::ustring> _owner_style;
     void _addOwnerStyle(Glib::ustring name, Glib::ustring selector);
     // Variables
-    Inkscape::XML::Node *m_root = nullptr;
-    Inkscape::XML::Node *_textNode; // Track so we know when to add a NodeObserver.
-    bool _updating;                 // Prevent cyclic actions: read <-> write, select via dialog <-> via desktop
+    Inkscape::XML::Node *m_root{nullptr};
+    Inkscape::XML::Node *_textNode{nullptr}; // Track so we know when to add a NodeObserver.
+    bool _updating{false};                   // Prevent cyclic actions: read <-> write, select via dialog <-> via desktop
 
     void _closeDialog(Gtk::Dialog *textDialogPtr);
 };

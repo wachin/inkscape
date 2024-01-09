@@ -16,30 +16,27 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
+#include "sp-guide.h"
+
 #include <cstring>
-#include <vector>
 #include <glibmm/i18n.h>
+#include <vector>
 
 #include "attributes.h"
-#include "desktop.h"
 #include "desktop-events.h"
+#include "desktop.h"
+#include "display/control/canvas-item-guideline.h"
 #include "document-undo.h"
-#include "helper-fns.h"
 #include "inkscape.h"
-#include "verbs.h"
-
-#include "sp-guide.h"
+#include "object/sp-page.h"
+#include "page-manager.h"
 #include "sp-namedview.h"
 #include "sp-root.h"
-
-#include "display/control/canvas-item-guideline.h"
-
 #include "svg/stringstream.h"
 #include "svg/svg-color.h"
 #include "svg/svg.h"
-
 #include "ui/widget/canvas.h" // Should really be here
-
+#include "util/numeric/converters.h"
 #include "xml/repr.h"
 
 using Inkscape::DocumentUndo;
@@ -51,14 +48,14 @@ SPGuide::SPGuide()
     , locked(false)
     , normal_to_line(Geom::Point(0.,1.))
     , point_on_line(Geom::Point(0.,0.))
-    , color(0x0000ff7f)
+    , color(0x0086e599)
     , hicolor(0xff00007f)
 {}
 
 void SPGuide::setColor(guint32 color)
 {
     this->color = color;
-    for (auto view : views) {
+    for (auto &view : views) {
         view->set_stroke(color);
     }
 }
@@ -79,10 +76,7 @@ void SPGuide::build(SPDocument *document, Inkscape::XML::Node *repr)
 
 void SPGuide::release()
 {
-    for(auto view : views) {
-        delete view;
-    }
-    this->views.clear();
+    views.clear();
 
     if (this->document) {
         // Unregister ourselves
@@ -112,7 +106,7 @@ void SPGuide::set(SPAttr key, const gchar *value) {
         break;
     case SPAttr::INKSCAPE_LOCKED:
         if (value) {
-            this->set_locked(helperfns_read_bool(value, false), false);
+            this->set_locked(Inkscape::Util::read_bool(value, false), false);
         }
         break;
     case SPAttr::ORIENTATION:
@@ -237,7 +231,7 @@ SPGuide *SPGuide::createSPGuide(SPDocument *doc, Geom::Point const &pt1, Geom::P
     repr->setAttributePoint("position", Geom::Point( newx, newy ));
     repr->setAttributePoint("orientation", n);
 
-    SPNamedView *namedview = sp_document_namedview(doc, nullptr);
+    SPNamedView *namedview = doc->getNamedView();
     if (namedview) {
         if (namedview->lockguides) {
             repr->setAttribute("inkscape:locked", "true");
@@ -246,7 +240,7 @@ SPGuide *SPGuide::createSPGuide(SPDocument *doc, Geom::Point const &pt1, Geom::P
     }
     Inkscape::GC::release(repr);
 
-    SPGuide *guide= SP_GUIDE(doc->getObjectByRepr(repr));
+    auto guide = cast<SPGuide>(doc->getObjectByRepr(repr));
     return guide;
 }
 
@@ -268,37 +262,31 @@ void sp_guide_pt_pairs_to_guides(SPDocument *doc, std::list<std::pair<Geom::Poin
     }
 }
 
-void sp_guide_create_guides_around_page(SPDesktop *dt)
+void sp_guide_create_guides_around_page(SPDocument *doc)
 {
-    SPDocument *doc=dt->getDocument();
     std::list<std::pair<Geom::Point, Geom::Point> > pts;
 
-    Geom::Point A(0, 0);
-    Geom::Point C(doc->getWidth().value("px"), doc->getHeight().value("px"));
-    Geom::Point B(C[Geom::X], 0);
-    Geom::Point D(0, C[Geom::Y]);
+    Geom::Rect bounds = doc->getPageManager().getSelectedPageRect();
 
-    pts.emplace_back(A, B);
-    pts.emplace_back(B, C);
-    pts.emplace_back(C, D);
-    pts.emplace_back(D, A);
+    pts.emplace_back(bounds.corner(0), bounds.corner(1));
+    pts.emplace_back(bounds.corner(1), bounds.corner(2));
+    pts.emplace_back(bounds.corner(2), bounds.corner(3));
+    pts.emplace_back(bounds.corner(3), bounds.corner(0));
 
     sp_guide_pt_pairs_to_guides(doc, pts);
-
-    DocumentUndo::done(doc, SP_VERB_NONE, _("Create Guides Around the Page"));
+    DocumentUndo::done(doc, _("Create Guides Around the Current Page"), "");
 }
 
-void sp_guide_delete_all_guides(SPDesktop *dt)
+void sp_guide_delete_all_guides(SPDocument *doc)
 {
-    SPDocument *doc=dt->getDocument();
     std::vector<SPObject *> current = doc->getResourceList("guide");
     while (!current.empty()){
-        SPGuide* guide = SP_GUIDE(*(current.begin()));
-        sp_guide_remove(guide);
+        auto guide = cast<SPGuide>(*(current.begin()));
+        guide->remove(true);
         current = doc->getResourceList("guide");
     }
 
-    DocumentUndo::done(doc, SP_VERB_NONE, _("Delete All Guides"));
+    DocumentUndo::done(doc, _("Delete All Guides"),"");
 }
 
 // Actually, create a new guide.
@@ -311,12 +299,17 @@ void SPGuide::showSPGuide(Inkscape::CanvasItemGroup *group)
 
     item->connect_event(sigc::bind(sigc::ptr_fun(&sp_dt_guide_event), item, this));
 
-    views.push_back(item);
+    // Ensure event forwarding by the guide handle ("the dot") to the corresponding line
+    auto dot = item->dot();
+    auto dot_handler = [=](GdkEvent *ev) { return sp_dt_guide_event(ev, item, this); };
+    dot->connect_event(dot_handler);
+
+    views.emplace_back(item);
 }
 
 void SPGuide::showSPGuide()
 {
-    for (auto view : views) {
+    for (auto &view : views) {
         view->show();
     }
 }
@@ -327,7 +320,6 @@ void SPGuide::hideSPGuide(Inkscape::UI::Widget::Canvas *canvas)
     g_assert(canvas != nullptr);
     for (auto it = views.begin(); it != views.end(); ++it) {
         if (canvas == (*it)->get_canvas()) { // A guide can be displayed on more than one desktop with the same document.
-            delete (*it);
             views.erase(it);
             return;
         }
@@ -338,7 +330,7 @@ void SPGuide::hideSPGuide(Inkscape::UI::Widget::Canvas *canvas)
 
 void SPGuide::hideSPGuide()
 {
-    for(auto view : views) {
+    for (auto &view : views) {
         view->hide();
     }
 }
@@ -347,9 +339,9 @@ void SPGuide::sensitize(Inkscape::UI::Widget::Canvas *canvas, bool sensitive)
 {
     g_assert(canvas != nullptr);
 
-    for (auto view : views) {
+    for (auto &view : views) {
         if (canvas == view->get_canvas()) {
-            view->set_sensitive(sensitive);
+            view->set_pickable(sensitive);
             return;
         }
     }
@@ -368,7 +360,7 @@ void SPGuide::moveto(Geom::Point const point_on_line, bool const commit)
         return;
     }
 
-    for(auto view : this->views) {
+    for (auto &view : views) {
         view->set_origin(point_on_line);
     }
 
@@ -412,7 +404,7 @@ void SPGuide::set_normal(Geom::Point const normal_to_line, bool const commit)
     if(this->locked) {
         return;
     }
-    for(auto view : this->views) {
+    for (auto &view : views) {
         view->set_normal(normal_to_line);
     }
 
@@ -462,7 +454,7 @@ void SPGuide::set_locked(const bool locked, bool const commit)
 void SPGuide::set_label(const char* label, bool const commit)
 {
     if (!views.empty()) {
-        views[0]->set_label(label);
+        views[0]->set_label(label ? label : "");
     }
 
     if (commit) {
@@ -487,7 +479,7 @@ char* SPGuide::description(bool const verbose) const
         // Guide has probably been deleted and no longer has an attached namedview.
         descr = g_strdup(_("Deleted"));
     } else {
-        SPNamedView *namedview = sp_document_namedview(this->document, nullptr);
+        SPNamedView *namedview = this->document->getNamedView();
 
         Inkscape::Util::Quantity x_q = Inkscape::Util::Quantity(this->point_on_line[X], "px");
         Inkscape::Util::Quantity y_q = Inkscape::Util::Quantity(this->point_on_line[Y], "px");
@@ -522,12 +514,15 @@ char* SPGuide::description(bool const verbose) const
     return descr;
 }
 
-void sp_guide_remove(SPGuide *guide)
+bool SPGuide::remove(bool force)
 {
-    g_assert(SP_IS_GUIDE(guide));
+    if (this->locked && !force)
+        return false;
 
     //XML Tree being used directly while it shouldn't be.
-    sp_repr_unparent(guide->getRepr());
+    sp_repr_unparent(this->getRepr());
+
+    return true;
 }
 
 /*

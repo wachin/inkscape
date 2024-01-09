@@ -16,8 +16,8 @@
  */
 
 #include <map>
-#include "display/nr-filter-types.h"
-#include "display/nr-filter-units.h"
+#include "nr-filter-types.h"
+#include "nr-filter-units.h"
 
 extern "C" {
 typedef struct _cairo cairo_t;
@@ -27,16 +27,18 @@ typedef struct _cairo_surface cairo_surface_t;
 namespace Inkscape {
 class DrawingContext;
 class DrawingItem;
+class RenderContext;
 
 namespace Filters {
 
-class FilterSlot {
+class FilterSlot final
+{
 public:
     /** Creates a new FilterSlot object. */
-    FilterSlot(DrawingItem *item, DrawingContext *bgdc,
-        DrawingContext &graphic, FilterUnits const &u);
+    FilterSlot(DrawingContext *bgdc, DrawingContext &graphic, FilterUnits const &units, RenderContext &rc, int blurquality);
+
     /** Destroys the FilterSlot object and all its contents */
-    virtual ~FilterSlot();
+    ~FilterSlot();
 
     /** Returns the pixblock in specified slot.
      * Parameter 'slot' may be either an positive integer or one of
@@ -56,44 +58,29 @@ public:
     cairo_surface_t *get_result(int slot_nr);
 
     void set_primitive_area(int slot, Geom::Rect &area);
-    Geom::Rect get_primitive_area(int slot);
+    Geom::Rect get_primitive_area(int slot) const;
     
     /** Returns the number of slots in use. */
-    int get_slot_count();
-
-    /** Sets the unit system to be used for the internal images. */
-    //void set_units(FilterUnits const &units);
-
-    /** Sets the filtering quality. Affects used interpolation methods */
-    void set_quality(FilterQuality const q);
-
-    /** Sets the gaussian filtering quality. Affects used interpolation methods */
-    void set_blurquality(int const q);
+    int get_slot_count() const { return _slots.size(); }
 
     /** Gets the gaussian filtering quality. Affects used interpolation methods */
-    int get_blurquality();
-
-    /** Sets the device scale; for high DPI monitors. */
-    void set_device_scale(int const s);
+    int get_blurquality() const { return _blurquality; }
 
     /** Gets the device scale; for high DPI monitors. */
-    int get_device_scale();
+    int get_device_scale() const { return device_scale; }
 
     FilterUnits const &get_units() const { return _units; }
     Geom::Rect get_slot_area() const;
 
+    RenderContext &get_rendercontext() const { return rc; }
+
 private:
-    typedef std::map<int, cairo_surface_t *> SlotMap;
+    using SlotMap = std::map<int, cairo_surface_t *>;
     SlotMap _slots;
 
     // We need to keep track of the primitive area as this is needed in feTile
-    typedef std::map<int, Geom::Rect> PrimitiveAreaMap;
+    using PrimitiveAreaMap = std::map<int, Geom::Rect>;
     PrimitiveAreaMap _primitiveAreas;
-
-    DrawingItem *_item;
-
-    //Geom::Rect _source_bbox; ///< bounding box of source graphic surface
-    //Geom::Rect _intermediate_bbox; ///< bounding box of intermediate surfaces
 
     int _slot_w, _slot_h;
     double _slot_x, _slot_y;
@@ -103,22 +90,22 @@ private:
     Geom::IntRect _background_area; ///< needed to extract background
     FilterUnits const &_units;
     int _last_out;
-    FilterQuality filterquality;
-    int blurquality;
+    int _blurquality;
     int device_scale;
+    RenderContext &rc;
 
-    cairo_surface_t *_get_transformed_source_graphic();
-    cairo_surface_t *_get_transformed_background();
-    cairo_surface_t *_get_fill_paint();
-    cairo_surface_t *_get_stroke_paint();
+    cairo_surface_t *_get_transformed_source_graphic() const;
+    cairo_surface_t *_get_transformed_background() const;
+    cairo_surface_t *_get_fill_paint() const;
+    cairo_surface_t *_get_stroke_paint() const;
 
     void _set_internal(int slot, cairo_surface_t *s);
 };
 
-} /* namespace Filters */
-} /* namespace Inkscape */
+} // namespace Filters
+} // namespace Inkscape
 
-#endif // __NR_FILTER_SLOT_H__
+#endif // SEEN_NR_FILTER_SLOT_H
 /*
   Local Variables:
   mode:c++

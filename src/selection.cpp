@@ -22,14 +22,19 @@
 #ifdef HAVE_CONFIG_H
 #endif
 
+#include <cmath>
+
 #include "inkscape.h"
 #include "preferences.h"
 #include "desktop.h"
 #include "document.h"
+#include "document-undo.h"
 #include "ui/tools/node-tool.h"
 #include "ui/tool/multi-path-manipulator.h"
 #include "ui/tool/path-manipulator.h"
 #include "ui/tool/control-point-selection.h"
+#include "layer-manager.h"
+#include "page-manager.h"
 #include "object/sp-path.h"
 #include "object/sp-defs.h"
 #include "object/sp-shape.h"
@@ -39,9 +44,18 @@
 
 namespace Inkscape {
 
-Selection::Selection(LayerModel *layers, SPDesktop *desktop):
+Selection::Selection(SPDesktop *desktop):
     ObjectSet(desktop),
-    _layers(layers),
+    _selection_context(nullptr),
+    _flags(0),
+    _idle(0),
+    anchor_x(0.0),
+    anchor_y(0.0)
+{
+}
+
+Selection::Selection(SPDocument *document):
+    ObjectSet(document),
     _selection_context(nullptr),
     _flags(0),
     _idle(0),
@@ -51,7 +65,6 @@ Selection::Selection(LayerModel *layers, SPDesktop *desktop):
 }
 
 Selection::~Selection() {
-    _layers = nullptr;
     if (_idle) {
         g_source_remove(_idle);
         _idle = 0;
@@ -87,15 +100,26 @@ gboolean Selection::_emit_modified(Selection *selection)
     return FALSE;
 }
 
-void Selection::_emitModified(guint flags) {
-    INKSCAPE.selection_modified(this, flags);
-    _modified_signal.emit(this, flags);
+void Selection::_emitModified(guint flags)
+{
+    for (auto it = _modified_signals.begin(); it != _modified_signals.end(); ) {
+        it->emit(this, flags);
+        if (it->empty()) it = _modified_signals.erase(it); else ++it;
+    }
+
+    if (_desktop) {
+        if (auto item = singleItem()) {
+            // If the selected items have been moved to a new page...
+            _desktop->getDocument()->getPageManager().selectPage(item, false);
+        }
+    }
 }
 
 void Selection::_emitChanged(bool persist_selection_context/* = false */) {
+    ObjectSet::_emitChanged();
     if (persist_selection_context) {
         if (nullptr == _selection_context) {
-            _selection_context = _layers->currentLayer();
+            _selection_context = _desktop->layerManager().currentLayer();
             sp_object_ref(_selection_context, nullptr);
             _context_release_connection = _selection_context->connectRelease(sigc::mem_fun(*this, &Selection::_releaseContext));
         }
@@ -103,8 +127,25 @@ void Selection::_emitChanged(bool persist_selection_context/* = false */) {
         _releaseContext(_selection_context);
     }
 
-    INKSCAPE.selection_changed(this);
-    _changed_signal.emit(this);
+    /** Change the layer selection to the item selection
+      * TODO: Should it only change if there's a single object?
+      */
+    if (_document && _desktop) {
+        if (auto item = singleItem()) {
+            auto layer = _desktop->layerManager().layerForObject(item);
+            if (layer && layer != _selection_context) {
+                _desktop->layerManager().setCurrentLayer(layer);
+            }
+            // This could be more complex if we want to be smarter.
+            _document->getPageManager().selectPage(item, false);
+        }
+        DocumentUndo::resetKey(_document);
+    }
+
+    for (auto it = _changed_signals.begin(); it != _changed_signals.end(); ) {
+        it->emit(this);
+        if (it->empty()) it = _changed_signals.erase(it); else ++it;
+    }
 }
 
 void Selection::_releaseContext(SPObject *obj)
@@ -121,7 +162,7 @@ void Selection::_releaseContext(SPObject *obj)
 SPObject *Selection::activeContext() {
     if (nullptr != _selection_context)
         return _selection_context;
-    return _layers->currentLayer();
+    return _desktop->layerManager().currentLayer();
 }
 
 std::vector<Inkscape::SnapCandidatePoint> Selection::getSnapPoints(SnapPreferences const *snapprefs) const {
@@ -146,10 +187,45 @@ std::vector<Inkscape::SnapCandidatePoint> Selection::getSnapPoints(SnapPreferenc
     return p;
 }
 
+sigc::connection Selection::connectChanged(sigc::slot<void (Selection *)> const &slot)
+{
+    if (_changed_signals.empty()) _changed_signals.emplace_back();
+    return _changed_signals.back().connect(slot);
+}
+
+sigc::connection Selection::connectChangedFirst(sigc::slot<void (Selection *)> const &slot)
+{
+    _changed_signals.emplace_front();
+    return _changed_signals.front().connect(slot);
+}
+
+void Selection::setAnchor(double x, double y, bool set)
+{
+    double const epsilon = 1e-12;
+    if (std::fabs(anchor_x - x) > epsilon || std::fabs(anchor_y - y) > epsilon || set != has_anchor) {
+        anchor_x = x;
+        anchor_y = y;
+        has_anchor = set;
+        this->_emitModified(SP_OBJECT_MODIFIED_FLAG);
+    }
+}
+
+sigc::connection Selection::connectModified(sigc::slot<void (Selection *, unsigned)> const &slot)
+{
+    if (_modified_signals.empty()) _modified_signals.emplace_back();
+    return _modified_signals.back().connect(slot);
+}
+
+sigc::connection Selection::connectModifiedFirst(sigc::slot<void (Selection *, unsigned)> const &slot)
+{
+    _modified_signals.emplace_front();
+    return _modified_signals.front().connect(slot);
+}
+
 SPObject *Selection::_objectForXMLNode(Inkscape::XML::Node *repr) const {
     g_return_val_if_fail(repr != nullptr, NULL);
-    SPObject *object = _layers->getDocument()->getObjectByRepr(repr);
-    assert(object == _layers->getDocument()->getObjectById(repr->attribute("id")));
+    SPObject *object = _desktop->getDocument()->getObjectByRepr(repr);
+    assert(object == _desktop->getDocument()->getObjectById(repr->attribute("id")));
     return object;
 }
 
@@ -157,7 +233,7 @@ size_t Selection::numberOfLayers() {
     auto items = this->items();
     std::set<SPObject*> layers;
     for (auto iter = items.begin(); iter != items.end(); ++iter) {
-        SPObject *layer = _layers->layerForObject(*iter);
+        SPObject *layer = _desktop->layerManager().layerForObject(*iter);
         layers.insert(layer);
     }
 
@@ -267,15 +343,20 @@ Selection::restoreBackup()
             tool = static_cast<Inkscape::UI::Tools::NodeTool*>(ec);
         }
     }
-    clear();
+
+    // update selection
     std::vector<std::string>::iterator it = _selected_ids.begin();
+    std::vector<SPItem*> new_selection;
     for (; it!= _selected_ids.end(); ++it){
-        SPItem * item = dynamic_cast<SPItem *>(document->getObjectById(it->c_str()));
+        auto item = cast<SPItem>(document->getObjectById(it->c_str()));
         SPDefs * defs = document->getDefs();
         if (item && !defs->isAncestorOf(item)) {
-            add(item);
+            new_selection.push_back(item);
         }
     }
+    clear();
+    add(new_selection.begin(), new_selection.end());
+
     if (tool) {
         Inkscape::UI::ControlPointSelection *cps = tool->_selected_nodes;
         cps->selectAll();

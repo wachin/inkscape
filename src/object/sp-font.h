@@ -14,11 +14,13 @@
  */
 
 #include "sp-object.h"
+class SPGlyph;
 
-class SPFont : public SPObject {
+class SPFont final : public SPObject {
 public:
 	SPFont();
 	~SPFont() override;
+    int tag() const override { return tag_of<decltype(*this)>; }
 
     double horiz_origin_x;
     double horiz_origin_y;
@@ -26,6 +28,12 @@ public:
     double vert_origin_x;
     double vert_origin_y;
     double vert_adv_y;
+
+    // add new glyph to the font with optional name and given unicode string (code point, or code points for the glyph)
+    SPGlyph* create_new_glyph(const char* name, const char* unicode);
+
+    // sort glyphs in the font by "unicode" attribute (code points)
+    void sort_glyphs();
 
 protected:
 	void build(SPDocument* doc, Inkscape::XML::Node* repr) override;
@@ -39,9 +47,9 @@ protected:
 	void update(SPCtx* ctx, unsigned int flags) override;
 
 	Inkscape::XML::Node* write(Inkscape::XML::Document* doc, Inkscape::XML::Node* repr, unsigned int flags) override;
-};
 
-MAKE_SP_OBJECT_DOWNCAST_FUNCTIONS(SP_FONT, SPFont)
-MAKE_SP_OBJECT_TYPECHECK_FUNCTIONS(SP_IS_FONT, SPFont)
+private:
+    bool _block = false;
+};
 
 #endif //#ifndef SP_FONT_H_SEEN

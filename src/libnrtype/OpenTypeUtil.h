@@ -14,6 +14,7 @@
 #ifndef USE_PANGO_WIN32
 
 #include <map>
+#include <memory>
 
 #include <ft2build.h>
 #include FT_FREETYPE_H
@@ -80,11 +81,11 @@ inline FT_Fixed FTDoubleToFixed (double value) {
 
 namespace Inkscape { class Pixbuf; }
 
-class SVGTableEntry {
-public:
-    SVGTableEntry() : pixbuf(nullptr) {};
+struct SVGTableEntry
+{
     std::string svg;
-    Inkscape::Pixbuf* pixbuf;
+    std::unique_ptr<Inkscape::Pixbuf const> pixbuf;
+    ~SVGTableEntry();
 };
 
 // This would be better if one had std::vector<OTSubstitution> instead of OTSubstitution where each

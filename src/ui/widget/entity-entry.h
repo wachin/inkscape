@@ -11,6 +11,7 @@
 #ifndef INKSCAPE_UI_WIDGET_ENTITY_ENTRY__H
 #define INKSCAPE_UI_WIDGET_ENTITY_ENTRY__H
 
+#include <glibmm/ustring.h>
 #include <gtkmm/textview.h>
 
 struct rdf_work_entity_t;
@@ -30,9 +31,10 @@ class EntityEntry {
 public:
     static EntityEntry* create (rdf_work_entity_t* ent, Registry& wr);
     virtual ~EntityEntry() = 0;
-    virtual void update (SPDocument *doc) = 0;
+    virtual void update(SPDocument* doc, bool read_only) = 0;
     virtual void on_changed() = 0;
     virtual void load_from_preferences() = 0;
+    virtual Glib::ustring content() const = 0;
     void save_to_preferences(SPDocument *doc);
     Gtk::Label _label;
     Gtk::Widget *_packable;
@@ -48,8 +50,9 @@ class EntityLineEntry : public EntityEntry {
 public:
     EntityLineEntry (rdf_work_entity_t* ent, Registry& wr);
     ~EntityLineEntry() override;
-    void update (SPDocument *doc) override;
+    void update(SPDocument* doc, bool read_only) override;
     void load_from_preferences() override;
+    Glib::ustring content() const override;
 
 protected:
     void on_changed() override;
@@ -59,8 +62,9 @@ class EntityMultiLineEntry : public EntityEntry {
 public:
     EntityMultiLineEntry (rdf_work_entity_t* ent, Registry& wr);
     ~EntityMultiLineEntry() override;
-    void update (SPDocument *doc) override;
+    void update(SPDocument* doc, bool read_only) override;
     void load_from_preferences() override;
+    Glib::ustring content() const override;
 
 protected: 
     void on_changed() override;

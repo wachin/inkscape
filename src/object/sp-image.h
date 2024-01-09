@@ -24,18 +24,18 @@
 #include "sp-item.h"
 #include "viewbox.h"
 #include "sp-dimensions.h"
-
-class SPCurve;
+#include "display/curve.h"
 
 #include <memory>
 
 #define SP_IMAGE_HREF_MODIFIED_FLAG SP_OBJECT_USER_MODIFIED_FLAG_A
 
 namespace Inkscape { class Pixbuf; }
-class SPImage : public SPItem, public SPViewBox, public SPDimensions {
+class SPImage final : public SPItem, public SPViewBox, public SPDimensions {
 public:
     SPImage();
     ~SPImage() override;
+    int tag() const override { return tag_of<decltype(*this)>; }
 
     Geom::Rect clipbox;
     double sx, sy;
@@ -43,12 +43,13 @@ public:
     double dpi;
     double prev_width, prev_height;
 
-    std::unique_ptr<SPCurve> curve; // This curve is at the image's boundary for snapping
+    std::optional<SPCurve> curve; // This curve is at the image's boundary for snapping
 
     char *href;
     char *color_profile;
 
-    Inkscape::Pixbuf *pixbuf;
+    std::shared_ptr<Inkscape::Pixbuf const> pixbuf;
+    bool missing = true;
 
     void build(SPDocument *document, Inkscape::XML::Node *repr) override;
     void release() override;
@@ -68,15 +69,17 @@ public:
 
     void apply_profile(Inkscape::Pixbuf *pixbuf);
 
-    std::unique_ptr<SPCurve> get_curve() const;
+    SPCurve const *get_curve() const;
     void refresh_if_outdated();
+    bool cropToArea(Geom::Rect area);
+    bool cropToArea(const Geom::IntRect &area);
+private:
+    static Inkscape::Pixbuf *readImage(gchar const *href, gchar const *absref, gchar const *base, double svgdpi = 0);
+    static Inkscape::Pixbuf *getBrokenImage(double width, double height);
 };
 
 /* Return duplicate of curve or NULL */
 void sp_embed_image(Inkscape::XML::Node *imgnode, Inkscape::Pixbuf *pb);
 void sp_embed_svg(Inkscape::XML::Node *image_node, std::string const &fn);
-
-MAKE_SP_OBJECT_DOWNCAST_FUNCTIONS(SP_IMAGE, SPImage)
-MAKE_SP_OBJECT_TYPECHECK_FUNCTIONS(SP_IS_IMAGE, SPImage)
 
 #endif

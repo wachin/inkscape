@@ -9,22 +9,23 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
+#include "text.h"
+
 #include <glibmm/i18n.h>
 #include <gtkmm/alignment.h>
 
 #include <2geom/sbasis-geometric.h>
 
 #include "inkscape.h"
-#include "verbs.h"
 
 #include "display/control/canvas-item-text.h"
 
 #include "live_effects/effect.h"
-#include "live_effects/parameter/text.h"
 
 #include "svg/stringstream.h"
 #include "svg/svg.h"
 
+#include "ui/icon-names.h"
 #include "ui/widget/registered-widget.h"
 
 
@@ -40,16 +41,11 @@ TextParam::TextParam( const Glib::ustring& label, const Glib::ustring& tip,
     , defvalue(default_value)
 {
     if (SPDesktop *desktop = SP_ACTIVE_DESKTOP) { // FIXME: we shouldn't use this!
-        canvas_text = new Inkscape::CanvasItemText(desktop->getCanvasTemp(), Geom::Point(0, 0), default_value);
+        canvas_text = make_canvasitem<CanvasItemText>(desktop->getCanvasTemp(), Geom::Point(0, 0), default_value);
     }
 }
 
-TextParam::~TextParam()
-{
-    if (canvas_text) {
-        delete canvas_text;
-    }
-}
+TextParam::~TextParam() = default;
 
 void
 TextParam::param_set_default()
@@ -67,10 +63,7 @@ TextParam::param_update_default(const gchar * default_value)
 void
 TextParam::param_hide_canvas_text()
 {
-    if (canvas_text) {
-        delete canvas_text;
-        canvas_text = nullptr;
-    }
+    canvas_text.reset();
 }
 
 void
@@ -143,7 +136,7 @@ TextParam::param_newWidget()
         param_label, param_tooltip, param_key, *param_wr, param_effect->getRepr(), param_effect->getSPDoc()));
     rsu->setText(value);
     rsu->setProgrammatically = false;
-    rsu->set_undo_parameters(SP_VERB_DIALOG_LIVE_PATH_EFFECT, _("Change text parameter"));
+    rsu->set_undo_parameters(_("Change text parameter"), INKSCAPE_ICON("dialog-path-effects"));
     Gtk::Box *text_container = Gtk::manage(new Gtk::Box());
     Gtk::Button *set =  Gtk::manage(new Gtk::Button(Glib::ustring("✔")));
     set->signal_clicked()
@@ -155,20 +148,18 @@ TextParam::param_newWidget()
     return return_widg;
 }
 
-void
-TextParam::param_setValue(const Glib::ustring newvalue)
+void TextParam::param_setValue(Glib::ustring newvalue)
 {
     if (value != newvalue) {
         param_effect->refresh_widgets = true;
     }
-    value = newvalue;
+    value = std::move(newvalue);
     if (canvas_text) {
-        canvas_text->set_text(newvalue);
+        canvas_text->set_text(value);
     }
 }
 
 } /* namespace LivePathEffect */
-
 } /* namespace Inkscape */
 
 /*

@@ -16,6 +16,7 @@
 #include <glibmm/i18n.h>
 
 #include <libnrtype/font-instance.h>
+#include "libnrtype/font-factory.h"
 
 #include "font-variations.h"
 
@@ -27,8 +28,8 @@ namespace Inkscape {
 namespace UI {
 namespace Widget {
 
-FontVariationAxis::FontVariationAxis (Glib::ustring name, OTVarAxis& axis)
-    : name (name)
+FontVariationAxis::FontVariationAxis(Glib::ustring name_, OTVarAxis const &axis)
+    : name(std::move(name_))
 {
 
     // std::cout << "FontVariationAxis::FontVariationAxis:: "
@@ -38,8 +39,8 @@ FontVariationAxis::FontVariationAxis (Glib::ustring name, OTVarAxis& axis)
     //           << " max:  " << axis.maximum
     //           << " val:  " << axis.set_val << std::endl;
 
-    label = Gtk::manage( new Gtk::Label( name ) );
-    add( *label );
+    label = Gtk::make_managed<Gtk::Label>(name);
+    add(*label);
 
     precision = 2 - int( log10(axis.maximum - axis.minimum));
     if (precision < 0) precision = 0;
@@ -69,20 +70,19 @@ FontVariations::FontVariations () :
 
 
 // Update GUI based on query.
-void
-FontVariations::update (const Glib::ustring& font_spec) {
-
-    font_instance* res = font_factory::Default()->FaceFromFontSpecification (font_spec.c_str());
+void FontVariations::update(Glib::ustring const &font_spec)
+{
+    auto res = FontFactory::get().FaceFromFontSpecification(font_spec.c_str());
 
     auto children = get_children();
-    for (auto child: children) {
-        remove ( *child );
+    for (auto child : children) {
+        remove(*child);
     }
     axes.clear();
 
-    for (auto a: res->openTypeVarAxes) {
+    for (auto &a : res->get_opentype_varaxes()) {
         // std::cout << "Creating axis: " << a.first << std::endl;
-        FontVariationAxis* axis = Gtk::manage( new FontVariationAxis( a.first, a.second ));
+        auto axis = Gtk::make_managed<FontVariationAxis>(a.first, a.second);
         axes.push_back( axis );
         add( *axis );
         size_group->add_widget( *(axis->get_label()) ); // Keep labels the same width

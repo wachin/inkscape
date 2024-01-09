@@ -27,7 +27,7 @@
 #include <cerrno>
 
 #include "filedialog.h"
-
+#include "document.h"
 
 namespace Gtk {
 class Expander;
@@ -63,18 +63,18 @@ public:
 
     bool setDocument(SPDocument *doc);
 
-    bool setFileName(Glib::ustring &fileName);
+    bool setFileName(Glib::ustring const &fileName);
 
     bool setFromMem(char const *xmlBuffer);
 
-    bool set(Glib::ustring &fileName, int dialogType);
+    bool set(Glib::ustring const &fileName, int dialogType);
 
     bool setURI(URI &uri);
 
     /**
      * Show image embedded in SVG
      */
-    void showImage(Glib::ustring &fileName);
+    void showImage(Glib::ustring const &fileName);
 
     /**
      * Show the "No preview" image
@@ -90,12 +90,12 @@ private:
     /**
      * The svg document we are currently showing
      */
-    SPDocument *document;
+    std::unique_ptr<SPDocument> document;
 
     /**
      * The sp_svg_view widget
      */
-    Inkscape::UI::View::SVGViewWidget *viewer;
+    std::unique_ptr<Inkscape::UI::View::SVGViewWidget> viewer;
 
     /**
      * are we currently showing the "no preview" image?

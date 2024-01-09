@@ -135,8 +135,6 @@ unsigned int PrintWmf::begin(Inkscape::Extension::Print *mod, SPDocument *doc)
 
     // WMF header the only things that can be set are the page size in inches (w,h) and the dpi
     // width and height in px
-    _width  = doc->getWidth().value("px");
-    _height = doc->getHeight().value("px");
 
     // initialize a few global variables
     hbrush = hpen = 0;
@@ -162,7 +160,7 @@ unsigned int PrintWmf::begin(Inkscape::Extension::Print *mod, SPDocument *doc)
 
     Geom::Rect d;
     if (pageBoundingBox) {
-        d = Geom::Rect::from_xywh(0, 0, _width, _height);
+        d = *(doc->preferredBounds());
     } else {
         SPItem *doc_item = doc->getRoot();
         Geom::OptRect bbox = doc_item->desktopVisualBounds();
@@ -334,7 +332,7 @@ int PrintWmf::create_brush(SPStyle const *style, U_COLORREF *fcolor)
     U_WLOGBRUSH   lb;
     uint32_t      brush, fmode;
     MFDrawMode    fill_mode;
-    Inkscape::Pixbuf *pixbuf;
+    Inkscape::Pixbuf const *pixbuf;
     uint32_t      brushStyle;
     int           hatchType;
     U_COLORREF    hatchColor;
@@ -371,9 +369,9 @@ int PrintWmf::create_brush(SPStyle const *style, U_COLORREF *fcolor)
             hatchColor = U_RGB(255 * rgb[0], 255 * rgb[1], 255 * rgb[2]);
 
             fmode = style->fill_rule.computed == 0 ? U_WINDING : (style->fill_rule.computed == 2 ? U_ALTERNATE : U_ALTERNATE);
-        } else if (SP_IS_PATTERN(SP_STYLE_FILL_SERVER(style))) { // must be paint-server
+        } else if (is<SPPattern>(SP_STYLE_FILL_SERVER(style))) { // must be paint-server
             SPPaintServer *paintserver = style->fill.value.href->getObject();
-            SPPattern *pat = SP_PATTERN(paintserver);
+            auto pat = cast<SPPattern>(paintserver);
             double dwidth  = pat->width();
             double dheight = pat->height();
             width  = dwidth;
@@ -396,18 +394,18 @@ int PrintWmf::create_brush(SPStyle const *style, U_COLORREF *fcolor)
                 }
             }
             brushStyle = U_BS_HATCHED;
-        } else if (SP_IS_GRADIENT(SP_STYLE_FILL_SERVER(style))) { // must be a gradient
+        } else if (is<SPGradient>(SP_STYLE_FILL_SERVER(style))) { // must be a gradient
             // currently we do not do anything with gradients, the code below just sets the color to the average of the stops
             SPPaintServer *paintserver = style->fill.value.href->getObject();
             SPLinearGradient *lg = nullptr;
             SPRadialGradient *rg = nullptr;
 
-            if (SP_IS_LINEARGRADIENT(paintserver)) {
-                lg = SP_LINEARGRADIENT(paintserver);
+            if (is<SPLinearGradient>(paintserver)) {
+                lg = cast<SPLinearGradient>(paintserver);
                 lg->ensureVector(); // when exporting from commandline, vector is not built
                 fill_mode = DRAW_LINEAR_GRADIENT;
-            } else if (SP_IS_RADIALGRADIENT(paintserver)) {
-                rg = SP_RADIALGRADIENT(paintserver);
+            } else if (is<SPRadialGradient>(paintserver)) {
+                rg = cast<SPRadialGradient>(paintserver);
                 rg->ensureVector(); // when exporting from commandline, vector is not built
                 fill_mode = DRAW_RADIAL_GRADIENT;
             } else {
@@ -456,14 +454,14 @@ int PrintWmf::create_brush(SPStyle const *style, U_COLORREF *fcolor)
         break;
     case DRAW_IMAGE:
         char                *px;
-        char                *rgba_px;
+        char const          *rgba_px;
         uint32_t             cbPx;
         uint32_t             colortype;
         U_RGBQUAD           *ct;
         int                  numCt;
         U_BITMAPINFOHEADER   Bmih;
         U_BITMAPINFO        *Bmi;
-        rgba_px = (char *) pixbuf->pixels(); // Do NOT free this!!!
+        rgba_px = (char const*)pixbuf->pixels(); // Do NOT free this!!!
         colortype = U_BCBM_COLOR32;
         (void) RGBA_to_DIB(&px, &cbPx, &ct, &numCt,  rgba_px,  width, height, width * 4, colortype, 0, 1);
         // pixbuf can be either PF_CAIRO or PF_GDK, and these have R and B bytes swapped

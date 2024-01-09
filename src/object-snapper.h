@@ -17,7 +17,6 @@
 
 class SPDesktop;
 class SPNamedView;
-class SPItem;
 class SPObject;
 class SPPath;
 class SPDesktop;
@@ -50,14 +49,14 @@ public:
     void freeSnap(IntermSnapResults &isr,
                   Inkscape::SnapCandidatePoint const &p,
                   Geom::OptRect const &bbox_to_snap,
-                  std::vector<SPItem const *> const *it,
+                  std::vector<SPObject const *> const *it,
                   std::vector<SnapCandidatePoint> *unselected_nodes) const override;
 
     void constrainedSnap(IntermSnapResults &isr,
                   Inkscape::SnapCandidatePoint const &p,
                   Geom::OptRect const &bbox_to_snap,
                   SnapConstraint const &c,
-                  std::vector<SPItem const *> const *it,
+                  std::vector<SPObject const *> const *it,
                   std::vector<SnapCandidatePoint> *unselected_nodes) const override;
 
 private:
@@ -85,7 +84,9 @@ private:
     void _snapPathsConstrained(IntermSnapResults &isr,
                  Inkscape::SnapCandidatePoint const &p, // in desktop coordinates
                  SnapConstraint const &c,
-                 Geom::Point const &p_proj_on_constraint) const;
+                 Geom::Point const &p_proj_on_constraint,
+				 std::vector<SnapCandidatePoint> *unselected_nodes,
+				 SPPath const *selected_path) const;
 
     void _snapPathsTangPerp(bool snap_tang,
                             bool snap_perp,
@@ -104,14 +105,17 @@ private:
                       bool const &first_point) const;
 
     void _clear_paths() const;
-    Geom::PathVector* _getBorderPathv() const;
-    Geom::PathVector* _getPathvFromRect(Geom::Rect const rect) const;
-    void _getBorderNodes(std::vector<SnapCandidatePoint> *points) const;
+    Geom::PathVector _getBorderPathv() const;
+    Geom::PathVector _getPathvFromRect(Geom::Rect const rect) const;
     bool _allowSourceToSnapToTarget(SnapSourceType source, SnapTargetType target, bool strict_snapping) const;
 
 }; // end of ObjectSnapper class
 
-void getBBoxPoints(Geom::OptRect const bbox, std::vector<SnapCandidatePoint> *points, bool const isTarget, bool const includeCorners, bool const includeLineMidpoints, bool const includeObjectMidpoints, bool const isAlignment = false);
+void getBBoxPoints(Geom::OptRect const bbox, std::vector<SnapCandidatePoint> *points, bool const isTarget, bool const corners, bool const edges, bool const midpoint);
+void getBBoxPoints(Geom::OptRect const bbox, std::vector<SnapCandidatePoint> *points, bool const isTarget,
+                   Inkscape::SnapSourceType corners, Inkscape::SnapTargetType cornert,
+                   Inkscape::SnapSourceType edges, Inkscape::SnapTargetType edget,
+                   Inkscape::SnapSourceType midpoints, Inkscape::SnapTargetType midpointt);
 
 } // end of namespace Inkscape
 

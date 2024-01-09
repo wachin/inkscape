@@ -26,15 +26,24 @@ namespace Inkscape {
     }
 }
 
-#include <2geom/point.h>
+#define Operator Operator_Gfx
+#include <Gfx.h>
+#undef Operator
+
 #include <2geom/affine.h>
+#include <2geom/point.h>
+#include <cairo-ft.h>
 #include <glibmm/ustring.h>
+#include <lcms2.h>
 
 #include "CharTypes.h"
+#include "enums.h"
+#include "poppler-utils.h"
 class Function;
 class GfxState;
 struct GfxColor;
 class GfxColorSpace;
+enum GfxClipType;
 struct GfxRGB;
 class GfxPath;
 class GfxPattern;
@@ -45,44 +54,39 @@ class GfxImageColorMap;
 class Stream;
 class XRef;
 
+class CairoFont;
 class SPCSSAttr;
+class ClipHistoryEntry;
 
-#include <vector>
 #include <glib.h>
+#include <map>
+#include <memory>
+#include <vector>
 
 namespace Inkscape {
 namespace Extension {
 namespace Internal {
-
-struct SvgTransparencyGroup;
-
-/**
- * Holds information about the current softmask and group depth for use of libpoppler.
- * Could be later used to store other graphics state parameters so that we could
- * emit only the differences in style settings from the parent state.
- */
-struct SvgGraphicsState {
-    Inkscape::XML::Node *softmask; // Points to current softmask node
-    int group_depth;    // Depth of nesting groups at this level
-};
 
 /**
  * Holds information about glyphs added by PdfParser which haven't been added
  * to the document yet.
  */
 struct SvgGlyph {
-    Geom::Point position;    // Absolute glyph coords
+    Geom::Point position;      // Absolute glyph coords
     Geom::Point text_position; // Absolute glyph coords in text space
-    double dx;  // X advance value
-    double dy;  // Y advance value
-    double rise;    // Text rise parameter
-    Glib::ustring code;   // UTF-8 coded character
+    Geom::Point delta;         // X, Y advance values
+    double rise;               // Text rise parameter
+    Glib::ustring code;        // UTF-8 coded character
     bool is_space;
 
-    bool style_changed;  // Set to true if style has to be reset
-    SPCSSAttr *style;
-    int render_mode;    // Text render mode
-    const char *font_specification;   // Pointer to current font specification
+    bool style_changed;        // Set to true if style has to be reset
+    GfxState *state;           // A promise of the future text style
+    double text_size;          // Text size
+
+    const char *font_specification;        // Pointer to current font specification
+    SPCSSAttr *css_font;                   // The font style as a css style
+    unsigned int cairo_index;              // The index into the selected cairo font
+    std::shared_ptr<CairoFont> cairo_font; // A pointer to the selected cairo font
 };
 
 /**
@@ -96,20 +100,22 @@ public:
 
     // Property setting
     void setDocumentSize(double width, double height);  // Document size in px
-    void setAsLayer(char *layer_name=nullptr);
+    void setMargins(const Geom::Rect &page, const Geom::Rect &margins, const Geom::Rect &bleed);
+    void cropPage(const Geom::Rect &bbox);
+    void setAsLayer(const char *layer_name = nullptr, bool visible = true);
     void setGroupOpacity(double opacity);
     Inkscape::XML::Node *getPreferences() {
         return _preferences;
     }
-
-    // Handling the node stack
-    Inkscape::XML::Node *pushGroup();
-    Inkscape::XML::Node *popGroup();
-    Inkscape::XML::Node *getContainer();    // Returns current group node
+    void pushPage(const std::string &label, GfxState *state);
 
     // Path adding
+    bool shouldMergePath(bool is_fill, const std::string &path);
+    bool mergePath(GfxState *state, bool is_fill, const std::string &path, bool even_odd = false);
     void addPath(GfxState *state, bool fill, bool stroke, bool even_odd=false);
-    void addShadedFill(GfxShading *shading, double *matrix, GfxPath *path, bool even_odd=false);
+    void addClippedFill(GfxShading *shading, const Geom::Affine shading_tr);
+    void addShadedFill(GfxShading *shading, const Geom::Affine shading_tr, GfxPath *path, const Geom::Affine tr,
+                       bool even_odd = false);
 
     // Image handling
     void addImage(GfxState *state, Stream *str, int width, int height,
@@ -124,20 +130,16 @@ public:
                             GfxImageColorMap *color_map, bool interpolate,
                             Stream *mask_str, int mask_width, int mask_height,
                             GfxImageColorMap *mask_color_map, bool mask_interpolate);
+    void applyOptionalMask(Inkscape::XML::Node *mask, Inkscape::XML::Node *target);
 
-    // Transparency group and soft mask handling
-    void pushTransparencyGroup(GfxState *state, double *bbox,
-                               GfxColorSpace *blending_color_space,
-                               bool isolated, bool knockout,
-                               bool for_softmask);
-    void popTransparencyGroup(GfxState *state);
-    void paintTransparencyGroup(GfxState *state, double *bbox);
-    void setSoftMask(GfxState *state, double *bbox, bool alpha,
-                     Function *transfer_func, GfxColor *backdrop_color);
-    void clearSoftMask(GfxState *state);
+    // Groups, Transparency group and soft mask handling
+    void startGroup(GfxState *state, double *bbox, GfxColorSpace *blending_color_space, bool isolated, bool knockout,
+                   bool for_softmask);
+    void finishGroup(GfxState *state, bool for_softmask);
+    void popGroup(GfxState *state);
 
     // Text handling
-    void beginString(GfxState *state);
+    void beginString(GfxState *state, int len);
     void endString(GfxState *state);
     void addChar(GfxState *state, double x, double y,
                  double dx, double dy,
@@ -147,34 +149,37 @@ public:
     void endTextObject(GfxState *state);
 
     bool isPatternTypeSupported(GfxPattern *pattern);
+    void setFontStrategies(FontStrategies fs) { _font_strategies = fs; }
+    static FontStrategies autoFontStrategies(FontStrategy s, FontList fonts);
 
     // State manipulation
-    void saveState();
-    void restoreState();
+    void saveState(GfxState *state);
+    void restoreState(GfxState *state);
     void updateStyle(GfxState *state);
-    void updateFont(GfxState *state);
+    void updateFont(GfxState *state, std::shared_ptr<CairoFont> cairo_font, bool flip);
     void updateTextPosition(double tx, double ty);
     void updateTextShift(GfxState *state, double shift);
-    void updateTextMatrix(GfxState *state);
+    void updateTextMatrix(GfxState *state, bool flip);
+    void beforeStateChange(GfxState *old_state);
 
     // Clipping
-    void clip(GfxState *state, bool even_odd=false);
-    void setClipPath(GfxState *state, bool even_odd=false);
+    void setClip(GfxState *state, GfxClipType clip, bool is_bbox = false);
 
-    // Transforming
-    void setTransform(double c0, double c1, double c2, double c3, double c4,
-                      double c5);
-    void setTransform(double const *transform);
-    bool getTransform(double *transform);
+    // Layers i.e Optional Groups
+    void addOptionalGroup(const std::string &oc, const std::string &label, bool visible = true);
+    void beginMarkedContent(const char *name = nullptr, const char *group = nullptr);
+    void endMarkedContent();
+
+    void addColorProfile(unsigned char *profBuf, int length);
 
 private:
     void _init();
 
     // Pattern creation
     gchar *_createPattern(GfxPattern *pattern, GfxState *state, bool is_stroke=false);
-    gchar *_createGradient(GfxShading *shading, double *matrix, bool for_shading=false);
-    void _addStopToGradient(Inkscape::XML::Node *gradient, double offset,
-                            GfxRGB *color, double opacity);
+    gchar *_createGradient(GfxShading *shading, const Geom::Affine pat_matrix, bool for_shading = false);
+    void _addStopToGradient(Inkscape::XML::Node *gradient, double offset, GfxColor *color, GfxColorSpace *space,
+                            double opacity);
     bool _addGradientStops(Inkscape::XML::Node *gradient, GfxShading *shading,
                            _POPPLER_CONST Function *func);
     gchar *_createTilingPattern(GfxTilingPattern *tiling_pattern, GfxState *state,
@@ -185,35 +190,63 @@ private:
                                       int *mask_colors, bool alpha_only=false,
                                       bool invert_alpha=false);
     Inkscape::XML::Node *_createMask(double width, double height);
+    Inkscape::XML::Node *_createClip(const std::string &d, const Geom::Affine tr, bool even_odd);
+
     // Style setting
     SPCSSAttr *_setStyle(GfxState *state, bool fill, bool stroke, bool even_odd=false);
     void _setStrokeStyle(SPCSSAttr *css, GfxState *state);
     void _setFillStyle(SPCSSAttr *css, GfxState *state, bool even_odd);
+    void _setTextStyle(Inkscape::XML::Node *node, GfxState *state, SPCSSAttr *font_style, Geom::Affine text_affine);
     void _setBlendMode(Inkscape::XML::Node *node, GfxState *state);
-    void _flushText();    // Write buffered text into doc
-
-    std::string _BestMatchingFont(std::string PDFname);
+    void _setTransform(Inkscape::XML::Node *node, GfxState *state, Geom::Affine extra = Geom::identity());
+    // Write buffered text into doc
+    void _flushText(GfxState *state);
+    std::string _aria_label;
+    bool _aria_space = false;
 
     // Handling of node stack
-    Inkscape::XML::Node *pushNode(const char* name);
-    Inkscape::XML::Node *popNode();
+    Inkscape::XML::Node *_pushGroup();
+    Inkscape::XML::Node *_popGroup();
+    Inkscape::XML::Node *_pushContainer(const char *name);
+    Inkscape::XML::Node *_pushContainer(Inkscape::XML::Node *node);
+    Inkscape::XML::Node *_popContainer();
     std::vector<Inkscape::XML::Node *> _node_stack;
-    std::vector<int> _group_depth;    // Depth of nesting groups
-    SvgTransparencyGroup *_transp_group_stack;  // Transparency group stack
-    std::vector<SvgGraphicsState> _state_stack;
+    std::vector<GfxState *> _mask_groups;
+    int _clip_groups = 0;
 
-    SPCSSAttr *_font_style;          // Current font style
-    GfxFont *_current_font;
+    Inkscape::XML::Node *_getClip(const Geom::Affine &node_tr);
+    Inkscape::XML::Node *_addToContainer(const char *name);
+    Inkscape::XML::Node *_renderText(std::shared_ptr<CairoFont> cairo_font, double font_size,
+                                     const Geom::Affine &transform,
+                                     cairo_glyph_t *cairo_glyphs, unsigned int count);
+
+    void _setClipPath(Inkscape::XML::Node *node);
+    void _addToContainer(Inkscape::XML::Node *node, bool release = true);
+
+    Inkscape::XML::Node *_getGradientNode(Inkscape::XML::Node *node, bool is_fill);
+    static bool _attrEqual(Inkscape::XML::Node *a, Inkscape::XML::Node *b, char const *attr);
+
+    // Colors
+    std::string convertGfxColor(const GfxColor *color, GfxColorSpace *space);
+    std::string _getColorProfile(cmsHPROFILE hp);
+
+    // The calculated font style, if not set, the text must be rendered with cairo instead.
+    FontStrategies _font_strategies;
+    double _css_font_size = 1.0;
+    SPCSSAttr *_css_font;
     const char *_font_specification;
-    double _font_scaling;
-    bool _need_font_update;
+    double _text_size;
     Geom::Affine _text_matrix;
     Geom::Point _text_position;
     std::vector<SvgGlyph> _glyphs;   // Added characters
+
+    // The font when drawing the text into vector glyphs instead of text elements.
+    std::shared_ptr<CairoFont> _cairo_font;
+
     bool _in_text_object;   // Whether we are inside a text object
     bool _invalidated_style;
-    GfxState *_current_state;
-    std::vector<std::string> _availableFontNames; // Full names, used for matching font names (Bug LP #179589).
+    bool _invalidated_strategy = false;
+    bool _for_softmask = false;
 
     bool _is_top_level;  // Whether this SvgBuilder is the top-level one
     SPDocument *_doc;
@@ -225,8 +258,22 @@ private:
     Inkscape::XML::Node *_preferences;  // Preferences container node
     double _width;       // Document size in px
     double _height;       // Document size in px
-    double _ttm[6]; ///< temporary transform matrix
-    bool _ttm_is_set;
+
+    Inkscape::XML::Node *_page = nullptr; // XML Page definition
+    int _page_num = 0; // Are we on a page
+    double _page_left = 0 ; // Move to the left for more pages
+    double _page_top = 0 ; // Move to the top (maybe)
+    bool _page_offset = false;
+    Geom::Affine _page_affine = Geom::identity();
+
+    std::map<std::string, std::pair<std::string, bool>> _ocgs;
+
+    std::string _icc_profile;
+    std::map<cmsHPROFILE, std::string> _icc_profiles;
+
+    ClipHistoryEntry *_clip_history; // clip path stack
+    Inkscape::XML::Node *_clip_text = nullptr;
+    Inkscape::XML::Node *_clip_text_group = nullptr;
 };
 
 

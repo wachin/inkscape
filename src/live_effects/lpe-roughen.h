@@ -55,9 +55,9 @@ public:
     Gtk::Widget *newWidget() override;
 
 private:
-    std::unique_ptr<SPCurve> addNodesAndJitter(Geom::Curve const *A, Geom::Point &prev, Geom::Point &last_move,
-                                               double t, bool last);
-    std::unique_ptr<SPCurve> jitter(Geom::Curve const *A, Geom::Point &prev, Geom::Point &last_move);
+    SPCurve addNodesAndJitter(Geom::Curve const *A, Geom::Point &prev, Geom::Point &last_move,
+                              double t, bool last);
+    SPCurve jitter(Geom::Curve const *A, Geom::Point &prev, Geom::Point &last_move);
 
     EnumParam<DivisionMethod> method;
     ScalarParam max_segment_size;

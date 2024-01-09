@@ -11,7 +11,8 @@ _inkscape()
 
     if [[ "$cur" == -* ]]; then
         COMPREPLY=( $( compgen -W '-? --help --usage -V --version \
-            -z --without-gui -g --with-gui -f --file= -p --print= \
+            -z --without-gui -g --with-gui -q --active-window -f --file= -p --print= \
+            --actions= --actions-list  --actions-file= \
             -e --export-png= -d --export-dpi= -a --export-area= \
             -w --export-width= -h --export-height= -i --export-id= \
             -j --export-id-only  -t --export-use-hints -b --export-background= \

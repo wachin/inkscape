@@ -31,7 +31,8 @@ class LPEEnvelope : public Effect, GroupBBoxEffect {
 public:
     LPEEnvelope(LivePathEffectObject *lpeobject);
     ~LPEEnvelope() override;
-
+    
+    bool doOnOpen(SPLPEItem const *lpeitem) override;
     void doBeforeEffect (SPLPEItem const* lpeitem) override;
     void transform_multiply(Geom::Affine const &postmul, bool set) override;
 

@@ -42,9 +42,13 @@ namespace Inkscape {
 namespace UI {
 class SimplePrefPusher;
 
+namespace Tools {
+enum class EraserToolMode;
+} // namespace Tools
+
 namespace Widget {
 class SpinButtonToolItem;
-}
+} // namespace Widget
 
 namespace Toolbar {
 class EraserToolbar : public Toolbar {
@@ -70,6 +74,7 @@ private:
 
     bool _freeze;
 
+    static guint _modeAsInt(Inkscape::UI::Tools::EraserToolMode mode);
     void mode_changed(int mode);
     void set_eraser_mode_visibility(const guint eraser_mode);
     void width_value_changed();

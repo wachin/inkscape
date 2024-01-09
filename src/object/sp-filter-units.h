@@ -15,7 +15,6 @@ enum SPFilterUnits {
     SP_FILTER_UNITS_USERSPACEONUSE
 };
 
-
 #endif /* !SEEN_SP_FILTER_UNITS_H */
 
 /*

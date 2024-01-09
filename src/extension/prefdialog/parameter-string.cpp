@@ -92,27 +92,30 @@ std::string ParamString::value_to_string() const
     return _value.raw();
 }
 
-
+void ParamString::string_to_value(const std::string &in)
+{
+    _value = in;
+}
 
 /** A special type of Gtk::Entry to handle string parameters. */
 class ParamStringEntry : public Gtk::Entry {
 private:
     ParamString *_pref;
-    sigc::signal<void> *_changeSignal;
+    sigc::signal<void ()> *_changeSignal;
 public:
     /**
      * Build a string preference for the given parameter.
      * @param  pref  Where to get the string from, and where to put it
      *                when it changes.
      */
-    ParamStringEntry(ParamString *pref, sigc::signal<void> *changeSignal)
+    ParamStringEntry(ParamString *pref, sigc::signal<void ()> *changeSignal)
         : Gtk::Entry()
         , _pref(pref)
         , _changeSignal(changeSignal)
     {
         this->set_text(_pref->get());
         this->set_max_length(_pref->getMaxLength()); //Set the max length - default zero means no maximum
-        this->signal_changed().connect(sigc::mem_fun(this, &ParamStringEntry::changed_text));
+        this->signal_changed().connect(sigc::mem_fun(*this, &ParamStringEntry::changed_text));
     };
     void changed_text();
 };
@@ -139,14 +142,14 @@ void ParamStringEntry::changed_text()
 class ParamMultilineStringEntry : public Gtk::TextView {
 private:
     ParamString *_pref;
-    sigc::signal<void> *_changeSignal;
+    sigc::signal<void ()> *_changeSignal;
 public:
     /**
      * Build a string preference for the given parameter.
      * @param  pref  Where to get the string from, and where to put it
      *                when it changes.
      */
-    ParamMultilineStringEntry(ParamString *pref, sigc::signal<void> *changeSignal)
+    ParamMultilineStringEntry(ParamString *pref, sigc::signal<void ()> *changeSignal)
         : Gtk::TextView()
         , _pref(pref)
         , _changeSignal(changeSignal)
@@ -155,7 +158,7 @@ public:
         Glib::ustring value = Glib::Regex::create("\\\\n")->replace_literal(_pref->get(), 0, "\n", (Glib::RegexMatchFlags)0);
 
         this->get_buffer()->set_text(value);
-        this->get_buffer()->signal_changed().connect(sigc::mem_fun(this, &ParamMultilineStringEntry::changed_text));
+        this->get_buffer()->signal_changed().connect(sigc::mem_fun(*this, &ParamMultilineStringEntry::changed_text));
     };
     void changed_text();
 };
@@ -186,7 +189,7 @@ void ParamMultilineStringEntry::changed_text()
  *
  * Builds a hbox with a label and a text box in it.
  */
-Gtk::Widget *ParamString::get_widget(sigc::signal<void> *changeSignal)
+Gtk::Widget *ParamString::get_widget(sigc::signal<void ()> *changeSignal)
 {
     if (_hidden) {
         return nullptr;

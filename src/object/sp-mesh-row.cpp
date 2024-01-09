@@ -23,8 +23,8 @@ SPMeshrow* SPMeshrow::getNextMeshrow()
     SPMeshrow *result = nullptr;
 
     for (SPObject* obj = getNext(); obj && !result; obj = obj->getNext()) {
-        if (SP_IS_MESHROW(obj)) {
-            result = SP_MESHROW(obj);
+        if (is<SPMeshrow>(obj)) {
+            result = cast<SPMeshrow>(obj);
         }
     }
 
@@ -37,8 +37,8 @@ SPMeshrow* SPMeshrow::getPrevMeshrow()
 
     for (SPObject* obj = getPrev(); obj; obj = obj->getPrev()) {
         // The closest previous SPObject that is an SPMeshrow *should* be ourself.
-        if (SP_IS_MESHROW(obj)) {
-            SPMeshrow* meshrow = SP_MESHROW(obj);
+        if (is<SPMeshrow>(obj)) {
+            auto meshrow = cast<SPMeshrow>(obj);
             // Sanity check to ensure we have a proper sibling structure.
             if (meshrow->getNextMeshrow() == this) {
                 result = meshrow;

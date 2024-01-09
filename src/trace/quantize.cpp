@@ -9,23 +9,24 @@
  *
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
-
+#include <memory>
 #include <cassert>
 #include <cstdio>
-#include <cstdlib>
-#include <new>
 #include <glib.h>
 
 #include "pool.h"
 #include "imagemap.h"
 #include "quantize.h"
 
-typedef struct Ocnode_def Ocnode;
+namespace Inkscape {
+namespace Trace {
+
+namespace {
 
 /**
  * an octree node datastructure
  */
-struct Ocnode_def
+struct Ocnode
 {
     Ocnode *parent;           // parent node
     Ocnode **ref;             // node's reference
@@ -93,15 +94,15 @@ struct Ocnode_def
   deletion of a node A below a node with only two children is done as
   follows :
 
-  - when the brother is a leaf, the brother is deleted as well, both nodes
-    are then represented by their father.
+  - when the sibling is a leaf, the sibling is deleted as well, both nodes
+    are then represented by their parent.
 
      |               |
      .       ==>     .
     / \
    A   .
 
-  - otherwise the deletion of A deletes also his father, which plays no
+  - otherwise the deletion of A deletes also its parent, which plays no
     role anymore:
 
      |                |
@@ -145,49 +146,55 @@ struct Ocnode_def
 
 */
 
-inline RGB operator>>(RGB rgb, int s)
+RGB operator>>(RGB rgb, int s)
 {
-  RGB res;
-  res.r = rgb.r >> s; res.g = rgb.g >> s; res.b = rgb.b >> s;
-  return res;
-}
-inline bool operator==(RGB rgb1, RGB rgb2)
-{
-  return (rgb1.r == rgb2.r && rgb1.g == rgb2.g && rgb1.b == rgb2.b);
+    RGB res;
+    res.r = rgb.r >> s;
+    res.g = rgb.g >> s;
+    res.b = rgb.b >> s;
+    return res;
 }
 
-inline int childIndex(RGB rgb)
+bool operator==(RGB rgb1, RGB rgb2)
 {
-    return (((rgb.r)&1)<<2) | (((rgb.g)&1)<<1) | (((rgb.b)&1));
+    return rgb1.r == rgb2.r && rgb1.g == rgb2.g && rgb1.b == rgb2.b;
+}
+
+int childIndex(RGB rgb)
+{
+    return ((rgb.r & 1) << 2) | ((rgb.g & 1) << 1) | (rgb.b & 1);
 }
 
 /**
  * allocate a new node
  */
-inline Ocnode *ocnodeNew(pool<Ocnode> *pool)
+Ocnode *ocnodeNew(Pool<Ocnode> &pool)
 {
-    Ocnode *node = pool->draw();
+    Ocnode *node = pool.draw();
     node->ref = nullptr;
     node->parent = nullptr;
     node->nchild = 0;
-    for (auto & i : node->child) i = nullptr;
+    for (auto &i : node->child) {
+        i = nullptr;
+    }
     node->mi = 0;
     return node;
 }
 
-inline void ocnodeFree(pool<Ocnode> *pool, Ocnode *node) {
-    pool->drop(node);
+void ocnodeFree(Pool<Ocnode> &pool, Ocnode *node)
+{
+    pool.drop(node);
 }
-
 
 /**
  * free a full octree
  */
-static void octreeDelete(pool<Ocnode> *pool, Ocnode *node)
+void octreeDelete(Pool<Ocnode> &pool, Ocnode *node)
 {
     if (!node) return;
-    for (auto & i : node->child)
+    for (auto &i : node->child) {
         octreeDelete(pool, i);
+    }
     ocnodeFree(pool, node);
 }
 
@@ -195,7 +202,7 @@ static void octreeDelete(pool<Ocnode> *pool, Ocnode *node)
  *  pretty-print an octree, debugging purposes
  */
 #if 0
-static void ocnodePrint(Ocnode *node, int indent)
+void ocnodePrint(Ocnode *node, int indent)
 {
     if (!node) return;
     printf("width:%d weight:%lu rgb:%6x nleaf:%d mi:%lu\n",
@@ -226,7 +233,7 @@ void octreePrint(Ocnode *node)
 /**
  * builds a single <rgb> color leaf at location <ref>
  */
-static void ocnodeLeaf(pool<Ocnode> *pool, Ocnode **ref, RGB rgb)
+void ocnodeLeaf(Pool<Ocnode> &pool, Ocnode **ref, RGB rgb)
 {
     assert(ref);
     Ocnode *node = ocnodeNew(pool);
@@ -243,89 +250,80 @@ static void ocnodeLeaf(pool<Ocnode> *pool, Ocnode **ref, RGB rgb)
 /**
  *  merge nodes <node1> and <node2> at location <ref> with parent <parent>
  */
-static int octreeMerge(pool<Ocnode> *pool, Ocnode *parent, Ocnode **ref, Ocnode *node1, Ocnode *node2)
+int octreeMerge(Pool<Ocnode> &pool, Ocnode *parent, Ocnode **ref, Ocnode *node1, Ocnode *node2)
 {
     assert(ref);
     if (!node1 && !node2) return 0;
     assert(node1 != node2);
     if (parent && !*ref) parent->nchild++;
-    if (!node1)
-        {
+    if (!node1) {
         *ref = node2; node2->ref = ref; node2->parent = parent;
         return node2->nleaf;
-        }
-    if (!node2)
-        {
+    }
+    if (!node2) {
         *ref = node1; node1->ref = ref; node1->parent = parent;
         return node1->nleaf;
-        }
+    }
     int dwitdth = node1->width - node2->width;
-    if (dwitdth > 0 && node1->rgb == node2->rgb >> dwitdth)
-        {
-        //place node2 below node1
-        { *ref = node1; node1->ref = ref; node1->parent = parent; }
+    if (dwitdth > 0 && node1->rgb == node2->rgb >> dwitdth) {
+        // place node2 below node1
+        *ref = node1; node1->ref = ref; node1->parent = parent;
         int i = childIndex(node2->rgb >> (dwitdth - 1));
         node1->rs += node2->rs; node1->gs += node2->gs; node1->bs += node2->bs;
         node1->weight += node2->weight;
-	node1->mi = 0;
+        node1->mi = 0;
         if (node1->child[i]) node1->nleaf -= node1->child[i]->nleaf;
-        node1->nleaf +=
-          octreeMerge(pool, node1, &node1->child[i], node1->child[i], node2);
+        node1->nleaf += octreeMerge(pool, node1, &node1->child[i], node1->child[i], node2);
         return node1->nleaf;
-        }
-    else if (dwitdth < 0 && node2->rgb == node1->rgb >> (-dwitdth))
-        {
-        //place node1 below node2
-        { *ref = node2; node2->ref = ref; node2->parent = parent; }
+    } else if (dwitdth < 0 && node2->rgb == node1->rgb >> (-dwitdth)) {
+        // place node1 below node2
+        *ref = node2; node2->ref = ref; node2->parent = parent;
         int i = childIndex(node1->rgb >> (-dwitdth - 1));
         node2->rs += node1->rs; node2->gs += node1->gs; node2->bs += node1->bs;
         node2->weight += node1->weight;
-	node2->mi = 0;
+        node2->mi = 0;
         if (node2->child[i]) node2->nleaf -= node2->child[i]->nleaf;
-        node2->nleaf +=
-          octreeMerge(pool, node2, &node2->child[i], node2->child[i], node1);
+        node2->nleaf += octreeMerge(pool, node2, &node2->child[i], node2->child[i], node1);
         return node2->nleaf;
-        }
-    else
-        {
-        //nodes have either no intersection or the same root
+    } else {
+        // nodes have either no intersection or the same root
         Ocnode *newnode;
         newnode = ocnodeNew(pool);
         newnode->rs = node1->rs + node2->rs;
         newnode->gs = node1->gs + node2->gs;
         newnode->bs = node1->bs + node2->bs;
         newnode->weight = node1->weight + node2->weight;
-        { *ref = newnode; newnode->ref = ref; newnode->parent = parent; }
-        if (dwitdth == 0 && node1->rgb == node2->rgb)
-            {
-            //merge the nodes in <newnode>
+        *ref = newnode; newnode->ref = ref; newnode->parent = parent;
+        if (dwitdth == 0 && node1->rgb == node2->rgb) {
+            // merge the nodes in <newnode>
             newnode->width = node1->width; // == node2->width
             newnode->rgb = node1->rgb;     // == node2->rgb
             newnode->nchild = 0;
             newnode->nleaf = 0;
-            if (node1->nchild == 0 && node2->nchild == 0)
+            if (node1->nchild == 0 && node2->nchild == 0) {
                 newnode->nleaf = 1;
-            else
-                for (int i = 0; i < 8; i++)
-		  if (node1->child[i] || node2->child[i])
-                    newnode->nleaf +=
-		      octreeMerge(pool, newnode, &newnode->child[i],
-				  node1->child[i], node2->child[i]);
+            } else {
+                for (int i = 0; i < 8; i++) {
+                    if (node1->child[i] || node2->child[i]) {
+                        newnode->nleaf += octreeMerge(pool, newnode, &newnode->child[i], node1->child[i], node2->child[i]);
+                    }
+                }
+            }
             ocnodeFree(pool, node1); ocnodeFree(pool, node2);
             return newnode->nleaf;
-            }
-        else
-            {
-            //use <newnode> as a fork node with children <node1> and <node2>
-            int newwidth =
-              node1->width > node2->width ? node1->width : node2->width;
+        } else {
+            // use <newnode> as a fork node with children <node1> and <node2>
+            int newwidth = std::max(node1->width, node2->width);
             RGB rgb1 = node1->rgb >> (newwidth - node1->width);
             RGB rgb2 = node2->rgb >> (newwidth - node2->width);
-            //according to the previous tests <rgb1> != <rgb2> before the loop
-            while (!(rgb1 == rgb2))
-              { rgb1 = rgb1 >> 1; rgb2 = rgb2 >> 1; newwidth++; };
+            // according to the previous tests <rgb1> != <rgb2> before the loop
+            while (!(rgb1 == rgb2)) {
+                rgb1 = rgb1 >> 1;
+                rgb2 = rgb2 >> 1;
+                newwidth++;
+            }
             newnode->width = newwidth;
-            newnode->rgb = rgb1;  // == rgb2
+            newnode->rgb = rgb1; // == rgb2
             newnode->nchild = 2;
             newnode->nleaf = node1->nleaf + node2->nleaf;
             int i1 = childIndex(node1->rgb >> (newwidth - node1->width - 1));
@@ -337,17 +335,16 @@ static int octreeMerge(pool<Ocnode> *pool, Ocnode *parent, Ocnode **ref, Ocnode 
             node2->ref = &newnode->child[i2];
             newnode->child[i2] = node2;
             return newnode->nleaf;
-            }
         }
+    }
 }
 
 /**
  * upatade mi value for leaves
  */
-static inline void ocnodeMi(Ocnode *node)
+void ocnodeMi(Ocnode *node)
 {
-    node->mi = node->parent ?
-       node->weight << (2 * node->parent->width) : 0;
+    node->mi = node->parent ? node->weight << (2 * node->parent->width) : 0;
 }
 
 /**
@@ -355,135 +352,114 @@ static inline void ocnodeMi(Ocnode *node)
  * <count> leaves are removed, and <count> is decreased on each removal.
  * all parameters including minimal impact values are regenerated.
  */
-static void ocnodeStrip(pool<Ocnode> *pool, Ocnode **ref, int *count, unsigned long lvl)
+void ocnodeStrip(Pool<Ocnode> &pool, Ocnode **ref, int &count, unsigned long lvl)
 {
     Ocnode *node = *ref;
-    if (!count || !node) return;
+    if (!node) return;
     assert(ref == node->ref);
-    if (node->nchild == 0) // leaf node
-        {
-        if (!node->mi) ocnodeMi(node); //mi generation may be required
-	if (node->mi > lvl) return; //leaf is above strip level
+    if (node->nchild == 0) { // leaf node
+        if (!node->mi) ocnodeMi(node); // mi generation may be required
+        if (node->mi > lvl) return; // leaf is above strip level
         ocnodeFree(pool, node);
         *ref = nullptr;
-        (*count)--;
-        }
-    else
-        {
-	if (node->mi && node->mi > lvl) //node is above strip level
-            return;
+        count--;
+    } else {
+        if (node->mi && node->mi > lvl) return; // node is above strip level
         node->nchild = 0;
         node->nleaf = 0;
         node->mi = 0;
         Ocnode **lonelychild = nullptr;
-        for (auto & i : node->child) if (i)
-            {
-            ocnodeStrip(pool, &i, count, lvl);
-            if (i)
-                {
-                lonelychild = &i;
-                node->nchild++;
-                node->nleaf += i->nleaf;
-                if (!node->mi || node->mi > i->mi)
-                    node->mi = i->mi;
+        for (auto & i : node->child) {
+            if (i) {
+                ocnodeStrip(pool, &i, count, lvl);
+                if (i) {
+                    lonelychild = &i;
+                    node->nchild++;
+                    node->nleaf += i->nleaf;
+                    if (!node->mi || node->mi > i->mi) {
+                        node->mi = i->mi;
+                    }
                 }
             }
-      // tree adjustments
-        if (node->nchild == 0)
-            {
-            (*count)++;
+        }
+        // tree adjustments
+        if (node->nchild == 0) {
+            count++;
             node->nleaf = 1;
-	    ocnodeMi(node);
-            }
-        else if (node->nchild == 1)
-            {
-            if ((*lonelychild)->nchild == 0)
-                {
-                //remove the <lonelychild> leaf under a 1 child node
+            ocnodeMi(node);
+        } else if (node->nchild == 1) {
+            if ((*lonelychild)->nchild == 0) {
+                // remove the <lonelychild> leaf under a 1 child node
                 node->nchild = 0;
                 node->nleaf = 1;
-		ocnodeMi(node);
+                ocnodeMi(node);
                 ocnodeFree(pool, *lonelychild);
                 *lonelychild = nullptr;
-                }
-            else
-                {
-                //make a bridge to <lonelychild> over a 1 child node
+            } else {
+                // make a bridge to <lonelychild> over a 1 child node
                 (*lonelychild)->parent = node->parent;
                 (*lonelychild)->ref = ref;
                 ocnodeFree(pool, node);
                 *ref = *lonelychild;
-                }
             }
         }
+    }
 }
 
 /**
  * reduce the leaves of an octree to a given number
  */
-static void octreePrune(pool<Ocnode> *pool, Ocnode **ref, int ncolor)
+void octreePrune(Pool<Ocnode> &pool, Ocnode **ref, int ncolor)
 {
-  assert(ref);
-  assert(ncolor > 0);
-  //printf("pruning down to %d colors:\n", ncolor);//debug
-  int n = (*ref)->nleaf - ncolor;
-  if (!*ref || n <= 0) return;
-  while (n > 0)
-      {
-      //printf("removals to go: %10d\t", n);//debug
-      //printf("current prune impact: %10lu\n", (*ref)->mi);//debug
-      //calling strip with global minimum impact of the tree
-      ocnodeStrip(pool, ref, &n, (*ref)->mi);
-      }
+    assert(ref);
+    assert(ncolor > 0);
+    int n = (*ref)->nleaf - ncolor;
+    if (!*ref || n <= 0) return;
+    while (n > 0) {
+        ocnodeStrip(pool, ref, n, (*ref)->mi);
+    }
 }
 
 /**
  * build an octree associated to the area of a color map <rgbmap>,
  * included in the specified (x1,y1)--(x2,y2) rectangle.
  */
-static void octreeBuildArea(pool<Ocnode> *pool, RgbMap *rgbmap, Ocnode **ref,
-                            int x1, int y1, int x2, int y2, int ncolor)
+void octreeBuildArea(Pool<Ocnode> &pool, RgbMap const &rgbmap, Ocnode **ref, int x1, int y1, int x2, int y2, int ncolor)
 {
     int dx = x2 - x1, dy = y2 - y1;
-    int xm = x1 + dx/2, ym = y1 + dy/2;
+    int xm = x1 + dx / 2, ym = y1 + dy / 2;
     Ocnode *ref1 = nullptr;
     Ocnode *ref2 = nullptr;
-    if (dx == 1 && dy == 1)
-        ocnodeLeaf(pool, ref, rgbmap->getPixel(rgbmap, x1, y1));
-    else if (dx > dy)
-        {
-	octreeBuildArea(pool, rgbmap, &ref1, x1, y1, xm, y2, ncolor);
-	octreeBuildArea(pool, rgbmap, &ref2, xm, y1, x2, y2, ncolor);
-	octreeMerge(pool, nullptr, ref, ref1, ref2);
-	}
-    else
-        {
-	octreeBuildArea(pool, rgbmap, &ref1, x1, y1, x2, ym, ncolor);
-	octreeBuildArea(pool, rgbmap, &ref2, x1, ym, x2, y2, ncolor);
-	octreeMerge(pool, nullptr, ref, ref1, ref2);
+    if (dx == 1 && dy == 1) {
+        ocnodeLeaf(pool, ref, rgbmap.getPixel(x1, y1));
+    } else if (dx > dy) {
+        octreeBuildArea(pool, rgbmap, &ref1, x1, y1, xm, y2, ncolor);
+        octreeBuildArea(pool, rgbmap, &ref2, xm, y1, x2, y2, ncolor);
+        octreeMerge(pool, nullptr, ref, ref1, ref2);
+    } else {
+        octreeBuildArea(pool, rgbmap, &ref1, x1, y1, x2, ym, ncolor);
+        octreeBuildArea(pool, rgbmap, &ref2, x1, ym, x2, y2, ncolor);
+        octreeMerge(pool, nullptr, ref, ref1, ref2);
 	}
 
-    //octreePrune(ref, 2*ncolor);
-    //affects result quality for almost same performance :/
+    // octreePrune(ref, 2 * ncolor);
+    // affects result quality for almost same performance :/
 }
 
 /**
  * build an octree associated to the <rgbmap> color map,
  * pruned to <ncolor> colors.
  */
-static Ocnode *octreeBuild(pool<Ocnode> *pool, RgbMap *rgbmap, int ncolor)
+Ocnode *octreeBuild(Pool<Ocnode> &pool, RgbMap const &rgbmap, int ncolor)
 {
-    //create the octree
+    // create the octree
     Ocnode *node = nullptr;
     octreeBuildArea(pool,
                     rgbmap, &node,
-                    0, 0, rgbmap->width, rgbmap->height, ncolor
-                    );
+                    0, 0, rgbmap.width, rgbmap.height, ncolor);
 
-    //prune the octree
+    // prune the octree
     octreePrune(pool, &node, ncolor);
-
-    //octreePrint(node);//debug
 
     return node;
 }
@@ -491,109 +467,89 @@ static Ocnode *octreeBuild(pool<Ocnode> *pool, RgbMap *rgbmap, int ncolor)
 /**
  * compute the color palette associated to an octree.
  */
-static void octreeIndex(Ocnode *node, RGB *rgbpal, int *index)
+void octreeIndex(Ocnode *node, RGB *rgbpal, int &index)
 {
     if (!node) return;
-    if (node->nchild == 0)
-        {
-        rgbpal[*index].r = node->rs / node->weight;
-        rgbpal[*index].g = node->gs / node->weight;
-        rgbpal[*index].b = node->bs / node->weight;
-        (*index)++;
-        }
-    else
-        for (auto & i : node->child)
-            if (i)
+    if (node->nchild == 0) {
+        rgbpal[index].r = node->rs / node->weight;
+        rgbpal[index].g = node->gs / node->weight;
+        rgbpal[index].b = node->bs / node->weight;
+        index++;
+    } else {
+        for (auto &i : node->child) {
+            if (i) {
                 octreeIndex(i, rgbpal, index);
+            }
+        }
+    }
 }
 
 /**
  * compute the squared distance between two colors
  */
-static int distRGB(RGB rgb1, RGB rgb2)
+int distRGB(RGB rgb1, RGB rgb2)
 {
-    return
-      (rgb1.r - rgb2.r) * (rgb1.r - rgb2.r)
-    + (rgb1.g - rgb2.g) * (rgb1.g - rgb2.g)
-    + (rgb1.b - rgb2.b) * (rgb1.b - rgb2.b);
+    return (rgb1.r - rgb2.r) * (rgb1.r - rgb2.r)
+         + (rgb1.g - rgb2.g) * (rgb1.g - rgb2.g)
+         + (rgb1.b - rgb2.b) * (rgb1.b - rgb2.b);
 }
 
 /**
  * find the index of closest color in a palette
  */
-static int findRGB(RGB *rgbpal, int ncolor, RGB rgb)
+int findRGB(RGB const *rgbs, int ncolor, RGB rgb)
 {
-    //assert(ncolor > 0);
-    //assert(rgbpal);
     int index = -1, dist = 0;
-    for (int k = 0; k < ncolor; k++)
-        {
-        int d = distRGB(rgbpal[k], rgb);
+    for (int k = 0; k < ncolor; k++) {
+        int d = distRGB(rgbs[k], rgb);
         if (index == -1 || d < dist) { dist = d; index = k; }
-        }
+    }
     return index;
 }
 
-/**
- * (qsort) compare two colors for brightness
- */
-static int compRGB(const void *a, const void *b)
-{
-    RGB *ra = (RGB *)a, *rb = (RGB *)b;
-    return (ra->r + ra->g + ra->b) - (rb->r + rb->g + rb->b);
-}
+} // namespace
 
 /**
  * quantize an RGB image to a reduced number of colors.
  */
-IndexedMap *rgbMapQuantize(RgbMap *rgbmap, int ncolor)
+IndexedMap rgbMapQuantize(RgbMap const &rgbmap, int ncolor)
 {
-    assert(rgbmap);
     assert(ncolor > 0);
 
-    IndexedMap *newmap = nullptr;
+    auto imap = IndexedMap(rgbmap.width, rgbmap.height);
 
-    pool<Ocnode> pool;
+    Pool<Ocnode> pool;
+    auto tree = octreeBuild(pool, rgbmap, ncolor);
 
-    Ocnode *tree = nullptr;
-    try {
-        tree = octreeBuild(&pool, rgbmap, ncolor);
+    auto rgbs = std::make_unique<RGB[]>(ncolor);
+    int index = 0;
+    octreeIndex(tree, rgbs.get(), index);
+
+    octreeDelete(pool, tree);
+
+    // stacking with increasing contrasts
+    std::sort(rgbs.get(), rgbs.get() + ncolor, [] (auto &ra, auto &rb) {
+        return (ra.r + ra.g + ra.b) < (rb.r + rb.g + rb.b);
+    });
+
+    // make the new map
+    // fill in the color lookup table
+    for (int i = 0; i < index; i++) {
+        imap.clut[i] = rgbs[i];
     }
-    catch (std::bad_alloc &ex) {
-        //should do smthg else?
-        g_warning("rgbMapQuantize: Failed to allocate enough memory to during octreeBuild");
-    }
+    imap.nrColors = index;
 
-    if (tree) {
-        RGB *rgbpal = new RGB[ncolor];
-        int indexes = 0;
-        octreeIndex(tree, rgbpal, &indexes);
-
-        octreeDelete(&pool, tree);
-
-        // stacking with increasing contrasts
-        qsort((void *)rgbpal, indexes, sizeof(RGB), compRGB);
-
-        // make the new map
-        newmap = IndexedMapCreate(rgbmap->width, rgbmap->height);
-        if (newmap) {
-            // fill in the color lookup table
-            for (int i = 0; i < indexes; i++) {
-                newmap->clut[i] = rgbpal[i];
-            }
-            newmap->nrColors = indexes;
-
-            // fill in new map pixels
-            for (int y = 0; y < rgbmap->height; y++) {
-                for (int x = 0; x < rgbmap->width; x++) {
-                    RGB rgb = rgbmap->getPixel(rgbmap, x, y);
-                    int index = findRGB(rgbpal, ncolor, rgb);
-                    newmap->setPixel(newmap, x, y, index);
-                }
-            }
+    // fill in new map pixels
+    for (int y = 0; y < rgbmap.height; y++) {
+        for (int x = 0; x < rgbmap.width; x++) {
+            auto rgb = rgbmap.getPixel(x, y);
+            int index = findRGB(rgbs.get(), ncolor, rgb);
+            imap.setPixel(x, y, index);
         }
-        delete[] rgbpal;
     }
 
-    return newmap;
+    return imap;
 }
+
+} // namespace Trace
+} // namespace Inkscape

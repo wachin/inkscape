@@ -10,181 +10,287 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
-#include "display/cairo-utils.h"
-#include "display/drawing-context.h"
-#include "display/drawing-pattern.h"
-#include "display/drawing-surface.h"
+#include <cairomm/region.h>
+#include "cairo-utils.h"
+#include "drawing-context.h"
+#include "drawing-pattern.h"
+#include "drawing-surface.h"
+#include "drawing.h"
+#include "helper/geom.h"
+#include "ui/util.h"
 
 namespace Inkscape {
 
-DrawingPattern::DrawingPattern(Drawing &drawing, bool debug)
+DrawingPattern::Surface::Surface(Geom::IntRect const &rect, int device_scale)
+    : rect(rect)
+    , surface(Cairo::ImageSurface::create(Cairo::FORMAT_ARGB32, rect.width() * device_scale, rect.height() * device_scale))
+{
+    cairo_surface_set_device_scale(surface->cobj(), device_scale, device_scale);
+}
+
+DrawingPattern::DrawingPattern(Drawing &drawing)
     : DrawingGroup(drawing)
-    , _pattern_to_user(nullptr)
     , _overflow_steps(1)
-    , _debug(debug)
 {
 }
 
-DrawingPattern::~DrawingPattern()
+void DrawingPattern::setPatternToUserTransform(Geom::Affine const &transform)
 {
-    delete _pattern_to_user; // delete NULL; is safe
-}
-
-void
-DrawingPattern::setPatternToUserTransform(Geom::Affine const &new_trans) {
-    Geom::Affine current;
-    if (_pattern_to_user) {
-        current = *_pattern_to_user;
-    }
-
-    if (!Geom::are_near(current, new_trans, 1e-18)) {
-        // mark the area where the object was for redraw.
+    defer([=] {
+        auto constexpr EPS = 1e-18;
+        auto current = _pattern_to_user ? *_pattern_to_user : Geom::identity();
+        if (Geom::are_near(transform, current, EPS)) return;
         _markForRendering();
-        if (new_trans.isIdentity()) {
-            delete _pattern_to_user; // delete NULL; is safe
-            _pattern_to_user = nullptr;
-        } else {
-            _pattern_to_user = new Geom::Affine(new_trans);
-        }
+        _pattern_to_user = transform.isIdentity(EPS) ? nullptr : std::make_unique<Geom::Affine>(transform);
         _markForUpdate(STATE_ALL, true);
-    }
+    });
 }
 
-void
-DrawingPattern::setTileRect(Geom::Rect const &tile_rect) {
-    _tile_rect = tile_rect;
+void DrawingPattern::setTileRect(Geom::Rect const &tile_rect)
+{
+    defer([=] {
+        _tile_rect = tile_rect;
+        _markForUpdate(STATE_ALL, true);
+    });
 }
 
-void
-DrawingPattern::setOverflow(Geom::Affine initial_transform, int steps, Geom::Affine step_transform) {
-    _overflow_initial_transform = initial_transform;
-    _overflow_steps = steps;
-    _overflow_step_transform = step_transform;
+void DrawingPattern::setOverflow(Geom::Affine const &initial_transform, int steps, Geom::Affine const &step_transform)
+{
+    defer([=] {
+        _overflow_initial_transform = initial_transform;
+        _overflow_steps = steps;
+        _overflow_step_transform = step_transform;
+    });
 }
 
-cairo_pattern_t *
-DrawingPattern::renderPattern(float opacity) {
-    bool needs_opacity = (1.0 - opacity) >= 1e-3;
-    bool visible = opacity >= 1e-3;
-
-    if (!visible) {
+cairo_pattern_t *DrawingPattern::renderPattern(RenderContext &rc, Geom::IntRect const &area, float opacity, int device_scale) const
+{
+    if (opacity < 1e-3) {
+        // Invisible.
         return nullptr;
     }
 
-    if (!_tile_rect || (_tile_rect->area() == 0)) {
+    if (!_tile_rect || _tile_rect->hasZeroArea()) {
+        // Empty.
         return nullptr;
     }
-    Geom::Rect pattern_tile = *_tile_rect;
 
-    //TODO: If pattern_to_user set it to identity transform
+    // Calculate various transforms.
+    auto const dt = Geom::Translate(-_tile_rect->min()) * Geom::Scale(_pattern_resolution / _tile_rect->dimensions()); // AKA user_to_tile.
+    auto const idt = dt.inverse();
+    auto const pattern_to_tile = _pattern_to_user ? _pattern_to_user->inverse() * dt : dt;
+    auto const screen_to_tile = _ctm.inverse() * pattern_to_tile;
 
-    // The DrawingSurface class handles the mapping from "logical space"
-    // (coordinates in the rendering) to "physical space" (surface pixels).
-    // An oversampling is done as the pattern may not pixel align with the final surface.
-    // The cairo surface is created when the DrawingContext is declared.
-    // Create drawing surface with size of pattern tile (in pattern space) but with number of pixels
-    // based on required resolution (c).
-    Inkscape::DrawingSurface pattern_surface(pattern_tile, _pattern_resolution);
-    Inkscape::DrawingContext dc(pattern_surface);
-    dc.transform( pattern_surface.drawingTransform().inverse() );
-
-    pattern_tile *= pattern_surface.drawingTransform();
-    Geom::IntRect one_tile = pattern_tile.roundOutwards();
-
-    // Render pattern.
-    if (needs_opacity) {
-        dc.pushGroup(); // this group is for pattern + opacity
-    }
-
-    if (_debug) {
-        dc.setSource(0.8, 0.0, 0.8);
-        dc.paint();
-    }
-
-    //FIXME: What flags to choose?
-    if (_overflow_steps == 1) {
-        render(dc, one_tile, RENDER_DEFAULT);
-    } else {
-        //Overflow transforms need to be transformed to the new coordinate system
-        //introduced by dc.transform( pattern_surface.drawingTransform().inverse() );
-        Geom::Affine dt = pattern_surface.drawingTransform();
-        Geom::Affine idt = pattern_surface.drawingTransform().inverse();
-        Geom::Affine initial_transform = idt * _overflow_initial_transform * dt;
-        Geom::Affine step_transform = idt * _overflow_step_transform * dt;
-        dc.transform(initial_transform);
-        for (int i = 0; i < _overflow_steps; i++) {
-            // render() fails to handle transforms applied here when using cache.
-            render(dc, one_tile, RENDER_BYPASS_CACHE);
-            dc.transform(step_transform);
-            // cairo_surface_t* raw = pattern_surface.raw();
-            // std::string filename = "drawing-pattern" + std::to_string(i) + ".png";
-            // cairo_surface_write_to_png( pattern_surface.raw(), filename.c_str() );
+    // Return a canonical choice of rectangle with the same periodic tiling as rect.
+    auto canonicalised = [&, this] (Geom::IntRect rect) {
+        for (int i = 0; i < 2; i++) {
+            if (rect.dimensions()[i] >= _pattern_resolution[i]) {
+                rect[i] = {0, _pattern_resolution[i]};
+            } else {
+                rect[i] -= Util::rounddown(rect[i].min(), _pattern_resolution[i]);
+            }
         }
+        return rect;
+    };
+
+    // Return whether the periodic tiling of a contains the periodic tiling of b.
+    auto wrapped_contains = [&] (Geom::IntRect const &a, Geom::IntRect const &b) {
+        auto check = [&] (int i) {
+            int const period = _pattern_resolution[i];
+            if (a[i].extent() >= period) return true;
+            if (b[i].extent() > a[i].extent()) return false;
+            return Util::rounddown(b[i].min() - a[i].min(), period) >= b[i].max() - a[i].max();
+        };
+        return check(0) && check(1);
+    };
+
+    // Return whether the periodic tiling of a intersects with or touches the periodic tiling of b.
+    auto wrapped_touches = [&] (Geom::IntRect const &a, Geom::IntRect const &b) {
+        auto check = [&] (int i) {
+            int const period = _pattern_resolution[i];
+            if (a[i].extent() >= period) return true;
+            if (b[i].extent() >= period) return true;
+            return Util::rounddown(b[i].max() - a[i].min(), period) >= b[i].min() - a[i].max();
+        };
+        return check(0) && check(1);
+    };
+
+    // Calculate the minimum and maximum translates of a that overlap with b.
+    auto overlapping_translates = [&, this] (Geom::IntRect const &a, Geom::IntRect const &b) {
+        Geom::IntPoint min, max;
+        for (int i = 0; i < 2; i++) {
+            min[i] = Util::roundup  (b[i].min() - a[i].max() + 1, _pattern_resolution[i]);
+            max[i] = Util::rounddown(b[i].max() - a[i].min() - 1, _pattern_resolution[i]);
+        }
+        return std::make_pair(min, max);
+    };
+
+    // Paint the periodic tiling of a into b, and remove the painted region from dirty.
+    auto wrapped_paint = [&, this] (Surface const &a, Geom::IntRect &b, Cairo::RefPtr<Cairo::Context> const &cr, Cairo::RefPtr<Cairo::Region> const &dirty) {
+        auto const [min, max] = overlapping_translates(a.rect, b);
+        for (int x = min.x(); x <= max.x(); x += _pattern_resolution.x()) {
+            for (int y = min.y(); y <= max.y(); y += _pattern_resolution.y()) {
+                auto const rect = a.rect + Geom::IntPoint(x, y);
+                dirty->subtract(geom_to_cairo(rect));
+                cr->set_source(a.surface, rect.left(), rect.top());
+                cr->paint();
+            }
+        }
+    };
+
+    // Calculate the requested area to draw within tile rasterisation space.
+    auto const area_orig = (Geom::Rect(area) * screen_to_tile).roundOutwards();
+    auto const area_tile = canonicalised(area_orig);
+
+    // Simplest solution for now to protecting pattern cache is a mutex. This makes all
+    // pattern rendering single-threaded, however patterns are typically not the bottleneck.
+    auto lock = std::lock_guard(mutables);
+
+    auto get_surface = [&, this] () -> std::pair<Surface*, Cairo::RefPtr<Cairo::Region>> {
+        // If there is a rectangle containing the requested area, just use that.
+        for (auto &s : surfaces) {
+            if (wrapped_contains(s.rect, area_tile)) {
+                return { &s, {} };
+            }
+        }
+
+        // Otherwise, recursively merge the requested area with all overlapping or touching rectangles, and paint the missing part.
+        std::vector<Surface> merged;
+        auto expanded = area_tile;
+
+        while (true) {
+            bool modified = false;
+
+            for (auto it = surfaces.begin(); it != surfaces.end(); ) {
+                if (wrapped_touches(expanded, it->rect)) {
+                    expanded.unionWith(it->rect + rounddown(expanded.max() - it->rect.min(), _pattern_resolution));
+                    merged.emplace_back(std::move(*it));
+                    *it = std::move(surfaces.back());
+                    surfaces.pop_back();
+                    modified = true;
+                } else {
+                    ++it;
+                }
+            }
+
+            if (!modified) break;
+        }
+
+        // Canonicalise the expanded rectangle. (Stops Cairo's coordinates overflowing and the pattern disappearing.)
+        expanded = canonicalised(expanded);
+
+        // Create a new surface covering the expanded rectangle.
+        auto surface = Surface(expanded, device_scale);
+        auto cr = Cairo::Context::create(surface.surface);
+        cr->translate(-surface.rect.left(), -surface.rect.top());
+
+        // Paste all the old surfaces into the new surface, tracking the remaining dirty region.
+        auto dirty = Cairo::Region::create(geom_to_cairo(expanded));
+
+        for (auto &m : merged) {
+            wrapped_paint(m, expanded, cr, dirty);
+        }
+
+        // Emplace the surface, and return it along with the remaining dirty region.
+        surfaces.emplace_back(std::move(surface));
+        return std::make_pair(&surfaces.back(), std::move(dirty));
+    };
+
+    // Find an already-drawn surface containing the requested area, or create if it none exists.
+    auto [surface, dirty] = get_surface();
+
+    // Draw the pattern contents to the dirty areas of the surface, taking care of possible wrapping.
+    Inkscape::DrawingContext dc(surface->surface->cobj(), surface->rect.min());
+
+    auto paint = [&, this] (Geom::IntRect const &rect) {
+        if (_overflow_steps == 1) {
+            render(dc, rc, rect);
+        } else {
+            // Overflow transforms need to be transformed to the old coordinate system
+            // before stretching to the pattern resolution.
+            auto const initial_transform = idt * _overflow_initial_transform * dt;
+            auto const step_transform    = idt * _overflow_step_transform    * dt;
+            dc.transform(initial_transform);
+            for (int i = 0; i < _overflow_steps; i++) {
+                // render() fails to handle transforms applied here when using cache.
+                render(dc, rc, rect, RENDER_BYPASS_CACHE);
+                dc.transform(step_transform);
+                // auto raw = pattern_surface.raw();
+                // auto filename = "drawing-pattern" + std::to_string(i) + ".png";
+                // cairo_surface_write_to_png(pattern_surface.raw(), filename.c_str());
+            }
+        }
+    };
+
+    if (dirty) {
+        for (int i = 0; i < dirty->get_num_rectangles(); i++) {
+            auto const rect = cairo_to_geom(dirty->get_rectangle(i));
+            for (int x = 0; x <= 1; x++) {
+                for (int y = 0; y <= 1; y++) {
+                    auto const wrap = _pattern_resolution * Geom::IntPoint(x, y);
+                    auto const rect2 = rect & Geom::IntRect(wrap, wrap + _pattern_resolution);
+                    if (!rect2) continue;
+                    auto save = DrawingContext::Save(dc);
+                    // Clip to rectangle to be drawn.
+                    dc.rectangle(*rect2);
+                    dc.clip();
+                    // Draw the pattern.
+                    dc.translate(wrap);
+                    paint(*rect2 - wrap);
+                    // Apply opacity, if necessary.
+                    if (opacity < 1.0 - 1e-3) {
+                        dc.setOperator(CAIRO_OPERATOR_DEST_IN);
+                        dc.setSource(0.0, 0.0, 0.0, opacity);
+                        dc.paint();
+                    }
+                }
+            }
+        }
+        dirty.clear();
     }
 
-    // Uncomment to debug
-    // cairo_surface_t* raw = pattern_surface.raw();
-    // std::cout << "  cairo_surface (sp-pattern): "
-    //           << " width: "  << cairo_image_surface_get_width( raw )
-    //           << " height: " << cairo_image_surface_get_height( raw )
-    //           << std::endl;
-    // std::string filename = "drawing-pattern.png";
-    // cairo_surface_write_to_png( pattern_surface.raw(), filename.c_str() );
+    // Debug: Show pattern tile.
+    // surface->surface->write_to_png("/tmp/patternsurface.png");
 
-    if (needs_opacity) {
-        dc.popGroupToSource(); // pop raw pattern
-        dc.paint(opacity); // apply opacity
-    }
-
-    cairo_pattern_t *cp = cairo_pattern_create_for_surface(pattern_surface.raw());
-    // Apply transformation to user space. Also compensate for oversampling.
-    if (_pattern_to_user) {
-        ink_cairo_pattern_set_matrix(cp, _pattern_to_user->inverse() * pattern_surface.drawingTransform());
-    } else {
-        ink_cairo_pattern_set_matrix(cp, pattern_surface.drawingTransform());
-    }
-
-    if (_debug) {
-        cairo_pattern_set_extend(cp, CAIRO_EXTEND_NONE);
-    } else {
-        cairo_pattern_set_extend(cp, CAIRO_EXTEND_REPEAT);
-    }
-
+    // Create and return pattern.
+    auto cp = cairo_pattern_create_for_surface(surface->surface->cobj());
+    auto const shift = surface->rect.min() + rounddown(area_orig.min() - surface->rect.min(), _pattern_resolution);
+    ink_cairo_pattern_set_matrix(cp, pattern_to_tile * Geom::Translate(-shift));
+    cairo_pattern_set_extend(cp, CAIRO_EXTEND_REPEAT);
     return cp;
 }
 
-// TODO investigate if area should be used.
 unsigned DrawingPattern::_updateItem(Geom::IntRect const &area, UpdateContext const &ctx, unsigned flags, unsigned reset)
 {
-    UpdateContext pattern_ctx;
+    _dropPatternCache();
 
-    if (!_tile_rect || (_tile_rect->area() == 0)) {
+    if (!_tile_rect || _tile_rect->hasZeroArea()) {
         return STATE_NONE;
     }
 
-    Geom::Rect pattern_tile = *_tile_rect;
-    Geom::Coord det_ctm = ctx.ctm.descrim();
-    Geom::Coord det_ps2user = _pattern_to_user ? _pattern_to_user->descrim() : 1.0;
-    Geom::Coord det_child_transform = _child_transform ? _child_transform->descrim() : 1.0;
-    const double oversampling = 2.0;
-    double scale = det_ctm*det_ps2user*det_child_transform * oversampling;
-    //FIXME: When scale is too big (zooming in a hatch), cairo doesn't render the pattern
-    //More precisely it fails when setting pattern matrix in DrawingPattern::renderPattern
-    //Fully correct solution should make use of visible area bbox and change hatch tile rect
-    //accordingly
-    if (scale > 25) {
-        scale = 25;
-    }
-    Geom::Point c(pattern_tile.dimensions()*scale*oversampling);
+    // Calculate the desired resolution of a pattern tile.
+    double const det_ctm = ctx.ctm.det();
+    double const det_ps2user = _pattern_to_user ? _pattern_to_user->det() : 1.0;
+    double scale = std::sqrt(std::abs(det_ctm * det_ps2user));
+    // Fixme: When scale is too big (zooming in a pattern), Cairo doesn't render the pattern.
+    // More precisely it fails when setting pattern matrix in DrawingPattern::renderPattern.
+    // Correct solution should make use of visible area and change pattern tile rect accordingly.
+    auto const c = _tile_rect->dimensions() * scale;
     _pattern_resolution = c.ceil();
 
-    Inkscape::DrawingSurface pattern_surface(pattern_tile, _pattern_resolution);
+    // Map tile rect to the origin and stretch it to the desired resolution.
+    auto const dt = Geom::Translate(-_tile_rect->min()) * Geom::Scale(_pattern_resolution / _tile_rect->dimensions());
 
-    pattern_ctx.ctm = pattern_surface.drawingTransform();
-    return DrawingGroup::_updateItem(Geom::IntRect::infinite(), pattern_ctx, flags, reset);
+    // Apply this transform to the actual pattern tree.
+    return DrawingGroup::_updateItem(Geom::IntRect::infinite(), { dt }, flags, reset);
 }
 
-} // end namespace Inkscape
+void DrawingPattern::_dropPatternCache()
+{
+    surfaces.clear();
+}
+
+} // namespace Inkscape
 
 /*
   Local Variables:

@@ -16,36 +16,31 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
-#include "../sp-object.h"
+#include "object/sp-object.h"
 
-#define SP_FEDISTANTLIGHT(obj) (dynamic_cast<SPFeDistantLight*>((SPObject*)obj))
-#define SP_IS_FEDISTANTLIGHT(obj) (dynamic_cast<const SPFeDistantLight*>((SPObject*)obj) != NULL)
-
-/* Distant light class */
-class SPFeDistantLight : public SPObject {
+class SPFeDistantLight final
+    : public SPObject
+{
 public:
 	SPFeDistantLight();
 	~SPFeDistantLight() override;
+    int tag() const override { return tag_of<decltype(*this)>; }
 
-    /** azimuth attribute */
+    /// azimuth attribute
     float azimuth;
-    unsigned int azimuth_set : 1;
-    /** elevation attribute */
+    bool azimuth_set : 1;
+    /// elevation attribute
     float elevation;
-    unsigned int elevation_set : 1;
+    bool elevation_set : 1;
 
 protected:
-	void build(SPDocument* doc, Inkscape::XML::Node* repr) override;
+    void build(SPDocument *doc, Inkscape::XML::Node *repr) override;
 	void release() override;
-
-	void set(SPAttr key, char const* value) override;
-
-	void update(SPCtx* ctx, unsigned int flags) override;
-
-	Inkscape::XML::Node* write(Inkscape::XML::Document* doc, Inkscape::XML::Node* repr, unsigned int flags) override;
+    void set(SPAttr key, char const *value) override;
+    Inkscape::XML::Node *write(Inkscape::XML::Document *doc, Inkscape::XML::Node *repr, unsigned flags) override;
 };
 
-#endif /* !SP_FEDISTANTLIGHT_H_SEEN */
+#endif // SP_FEDISTANTLIGHT_H_SEEN
 
 /*
   Local Variables:

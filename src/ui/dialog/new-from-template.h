@@ -15,12 +15,11 @@
 #include <gtkmm/dialog.h>
 #include <gtkmm/button.h>
 
-#include "template-load-tab.h"
-
-
 namespace Inkscape {
 namespace UI {
-    
+namespace Widget {
+class TemplateList;
+}
 
 class NewFromTemplate : public Gtk::Dialog
 {
@@ -28,14 +27,13 @@ class NewFromTemplate : public Gtk::Dialog
 friend class TemplateLoadTab;
 public:
     static void load_new_from_template();
-    void setCreateButtonSensitive(bool value);
-    ~NewFromTemplate() override;
+    ~NewFromTemplate() override{};
 
 private:
     NewFromTemplate();
     Gtk::Button _create_template_button;
-    TemplateLoadTab* _main_widget;
-    
+    Inkscape::UI::Widget::TemplateList *templates;
+
     void _createFromTemplate();
     void _onClose();
 };

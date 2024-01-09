@@ -38,11 +38,10 @@
 #include "document-undo.h"
 #include "inkscape.h"
 #include "selection-chemistry.h"
-#include "verbs.h"
-
-#include "helper/action.h"
 
 #include "object/sp-namedview.h"
+
+#include "page-manager.h"
 
 #include "ui/icon-names.h"
 #include "ui/simple-pref-pusher.h"
@@ -226,7 +225,7 @@ NodeToolbar::NodeToolbar(SPDesktop *desktop)
 
     {
         auto line_item = Gtk::manage(new Gtk::ToolButton(_("Node Line")));
-        line_item->set_tooltip_text(_("Make selected segments lines"));
+        line_item->set_tooltip_text(_("Straighten lines"));
         line_item->set_icon_name(INKSCAPE_ICON("node-segment-line"));
         line_item->signal_clicked().connect(sigc::mem_fun(*this, &NodeToolbar::edit_toline));
         add(*line_item);
@@ -234,7 +233,7 @@ NodeToolbar::NodeToolbar(SPDesktop *desktop)
 
     {
         auto curve_item = Gtk::manage(new Gtk::ToolButton(_("Node Curve")));
-        curve_item->set_tooltip_text(_("Make selected segments curves"));
+        curve_item->set_tooltip_text(_("Add curve handles"));
         curve_item->set_icon_name(INKSCAPE_ICON("node-segment-curve"));
         curve_item->signal_clicked().connect(sigc::mem_fun(*this, &NodeToolbar::edit_tocurve));
         add(*curve_item);
@@ -242,15 +241,32 @@ NodeToolbar::NodeToolbar(SPDesktop *desktop)
 
     add(* Gtk::manage(new Gtk::SeparatorToolItem()));
 
-    auto context = Inkscape::ActionContext(_desktop);
+    {
+        auto lpe_corners_item = Gtk::manage(new Gtk::ToolButton(_("_Add corners")));
+        lpe_corners_item->set_tooltip_text(_("Add corners live path effect"));
+        lpe_corners_item->set_icon_name(INKSCAPE_ICON("corners"));
+        // Must use C API until GTK4.
+        gtk_actionable_set_action_name(GTK_ACTIONABLE(lpe_corners_item->gobj()), "app.object-add-corners-lpe");
+        add(*lpe_corners_item);
+    }
+
+    add(* Gtk::manage(new Gtk::SeparatorToolItem()));
 
     {
-        auto object_to_path_item = SPAction::create_toolbutton_for_verb(SP_VERB_OBJECT_TO_CURVE, context);
+        auto object_to_path_item = Gtk::manage(new Gtk::ToolButton(_("_Object to Path")));
+        object_to_path_item->set_tooltip_text(_("Convert selected object to path"));
+        object_to_path_item->set_icon_name(INKSCAPE_ICON("object-to-path"));
+        // Must use C API until GTK4.
+        gtk_actionable_set_action_name(GTK_ACTIONABLE(object_to_path_item->gobj()), "app.object-to-path");
         add(*object_to_path_item);
     }
 
     {
-        auto stroke_to_path_item = SPAction::create_toolbutton_for_verb(SP_VERB_SELECTION_OUTLINE, context);
+        auto stroke_to_path_item = Gtk::manage(new Gtk::ToolButton(_("_Stroke to Path")));
+        stroke_to_path_item->set_tooltip_text(_("Convert selected object's stroke to paths"));
+        stroke_to_path_item->set_icon_name(INKSCAPE_ICON("stroke-to-path"));
+        // Must use C API until GTK4.
+        gtk_actionable_set_action_name(GTK_ACTIONABLE(stroke_to_path_item->gobj()), "app.object-stroke-to-path");
         add(*stroke_to_path_item);
     }
 
@@ -317,7 +333,11 @@ NodeToolbar::NodeToolbar(SPDesktop *desktop)
     }
 
     {
-        _nodes_lpeedit_item = SPAction::create_toolbutton_for_verb(SP_VERB_EDIT_NEXT_PATHEFFECT_PARAMETER, context);
+        _nodes_lpeedit_item = Gtk::manage(new Gtk::ToolButton(N_("Next path effect parameter")));
+        _nodes_lpeedit_item->set_tooltip_text(N_("Show next editable path effect parameter"));
+        _nodes_lpeedit_item->set_icon_name(INKSCAPE_ICON("path-effect-parameter-next"));
+        // Must use C API until GTK4.
+        gtk_actionable_set_action_name(GTK_ACTIONABLE(_nodes_lpeedit_item->gobj()), "win.path-effect-parameter-next");
         add(*_nodes_lpeedit_item);
     }
 
@@ -396,6 +416,14 @@ NodeToolbar::value_changed(Geom::Dim2 d)
     if (nt && !nt->_selected_nodes->empty()) {
         double val = Quantity::convert(adj->get_value(), unit, "px");
         double oldval = nt->_selected_nodes->pointwiseBounds()->midpoint()[d];
+
+        // Adjust the coordinate to the current page, if needed
+        auto &pm = _desktop->getDocument()->getPageManager();
+        if (prefs->getBool("/options/origincorrection/page", true)) {
+            auto page = pm.getSelectedPageRect();
+            oldval -= page.corner(0)[d];
+        }
+
         Geom::Point delta(0,0);
         delta[d] = val - oldval;
         nt->_multipath->move(delta);
@@ -408,8 +436,8 @@ void
 NodeToolbar::sel_changed(Inkscape::Selection *selection)
 {
     SPItem *item = selection->singleItem();
-    if (item && SP_IS_LPE_ITEM(item)) {
-       if (SP_LPE_ITEM(item)->hasPathEffect()) {
+    if (item && is<SPLPEItem>(item)) {
+       if (cast_unsafe<SPLPEItem>(item)->hasPathEffect()) {
            _nodes_lpeedit_item->set_sensitive(true);
        } else {
            _nodes_lpeedit_item->set_sensitive(false);
@@ -475,6 +503,13 @@ NodeToolbar::coord_changed(Inkscape::UI::ControlPointSelection* selected_nodes) 
         Geom::Coord oldx = Quantity::convert(_nodes_x_adj->get_value(), unit, "px");
         Geom::Coord oldy = Quantity::convert(_nodes_y_adj->get_value(), unit, "px");
         Geom::Point mid = selected_nodes->pointwiseBounds()->midpoint();
+
+        // Adjust shown coordinate according to the selected page
+        auto prefs = Inkscape::Preferences::get();
+        if (prefs->getBool("/options/origincorrection/page", true)) {
+            auto &pm = _desktop->getDocument()->getPageManager();
+            mid *= pm.getSelectedPageAffine().inverse();
+        }
 
         if (oldx != mid[Geom::X]) {
             _nodes_x_adj->set_value(Quantity::convert(mid[Geom::X], "px", unit));

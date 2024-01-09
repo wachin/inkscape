@@ -178,47 +178,54 @@ bool GzipInputStream::load()
         *p++ = *iter;
 	}
 
-    int headerLen = 10;
+    size_t headerLen = 10;
 
-    //Magic
-    //int val = (int)srcBuf[0];
-    ////printf("val:%x\n", val);
-    //val = (int)srcBuf[1];
-    ////printf("val:%x\n", val);
-
-    ////Method
-    //val = (int)srcBuf[2];
-    ////printf("val:%x\n", val);
-
-    //flags
     int flags = static_cast<int>(srcBuf[3]);
 
-    ////time
-    //val = (int)srcBuf[4];
-    //val = (int)srcBuf[5];
-    //val = (int)srcBuf[6];
-    //val = (int)srcBuf[7];
+    constexpr size_t size_XLEN = 2;
+    constexpr size_t size_CRC16 = 2;
+    constexpr size_t size_CRC32 = 4;
+    constexpr size_t size_ISIZE = 4;
 
-    ////xflags
-    //val = (int)srcBuf[8];
-    ////OS
-    //val = (int)srcBuf[9];
+    auto const check_not_truncated = [&] { return headerLen + size_CRC32 + size_ISIZE <= srcLen; };
 
-//     if ( flags & FEXTRA ) {
-//         headerLen += 2;
-//         int xlen = 
-//         TODO deal with optional header parts
-//     }
-    if ( flags & FNAME ) {
-        int cur = 10;
-        while ( srcBuf[cur] )
-        {
-            cur++;
-            headerLen++;
+    auto const skip_n = [&](size_t n) {
+        headerLen += n;
+        return check_not_truncated();
+    };
+
+    auto const skip_zero_terminated = [&] {
+        while (headerLen < srcLen && srcBuf[headerLen++]) {
         }
-        headerLen++;
+        return check_not_truncated();
+    };
+
+    if (flags & FEXTRA) {
+        if (!skip_n(size_XLEN)) {
+            return false;
+        }
+        auto const xlen = size_t(srcBuf[headerLen - 2]) | //
+                          size_t(srcBuf[headerLen - 1] << 8);
+        if (!skip_n(xlen)) {
+            return false;
+        }
     }
 
+    if ((flags & FNAME) && !skip_zero_terminated()) {
+        return false;
+    }
+
+    if ((flags & FCOMMENT) && !skip_zero_terminated()) {
+        return false;
+    }
+
+    if ((flags & FHCRC) && !skip_n(size_CRC16)) {
+        return false;
+    }
+
+    if (!check_not_truncated()) {
+        return false;
+    }
 
     srcCrc = ((0x0ff & srcBuf[srcLen - 5]) << 24)
            | ((0x0ff & srcBuf[srcLen - 6]) << 16)

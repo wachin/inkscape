@@ -95,13 +95,11 @@ void SPBox3D::release() {
         delete box->persp_ref;
         box->persp_ref = nullptr;
     }
-
     if (persp) {
         persp->remove_box (box);
 
         if (persp->perspective_impl->boxes.empty()) {
             SPDocument *doc = box->document;
-            persp->deleteObject();
             doc->setCurrentPersp3D(Persp3D::document_first_persp(doc));
         }
     }
@@ -168,13 +166,12 @@ static void
 box3d_ref_changed(SPObject *old_ref, SPObject *ref, SPBox3D *box)
 {
     if (old_ref) {
-        sp_signal_disconnect_by_data(old_ref, box);
-        Persp3D *oldPersp = dynamic_cast<Persp3D *>(old_ref);
+        auto oldPersp = cast<Persp3D>(old_ref);
         if (oldPersp) {
             oldPersp->remove_box(box);
         }
     }
-    Persp3D *persp = dynamic_cast<Persp3D *>(ref);
+    auto persp = cast<Persp3D>(ref);
     if ( persp && (ref != box) ) // FIXME: Comparisons sane?
     {
         persp->add_box(box);
@@ -249,7 +246,7 @@ void SPBox3D::position_set()
     /* This draws the curve and calls requestDisplayUpdate() for each side (the latter is done in
        Box3DSide::position_set() to avoid update conflicts with the parent box) */
     for (auto& obj: this->children) {
-        Box3DSide *side = dynamic_cast<Box3DSide *>(&obj);
+        auto side = cast<Box3DSide>(&obj);
         if (side) {
             side->position_set();
         }
@@ -265,7 +262,7 @@ Geom::Affine SPBox3D::set_transform(Geom::Affine const &xform) {
     gdouble const sh = hypot(ret[2], ret[3]);
 
     for (auto& child: children) {
-        SPItem *childitem = dynamic_cast<SPItem *>(&child);
+        auto childitem = cast<SPItem>(&child);
         if (childitem) {
             // Adjust stroke width
             childitem->adjust_stroke(sqrt(fabs(sw * sh)));
@@ -357,7 +354,7 @@ box3d_snap (SPBox3D *box, int id, Proj::Pt3 const &pt_proj, Proj::Pt3 const &sta
     Proj::Pt3 D_proj (x_coord,          y_coord + diff_y, z_coord, 1.0);
     Proj::Pt3 E_proj (x_coord - diff_x, y_coord + diff_y, z_coord, 1.0);
 
-    Persp3DImpl *persp_impl = box->get_perspective()->perspective_impl;
+    auto persp_impl = box->get_perspective()->perspective_impl.get();
     Geom::Point A = persp_impl->tmat.image(A_proj).affine();
     Geom::Point B = persp_impl->tmat.image(B_proj).affine();
     Geom::Point C = persp_impl->tmat.image(C_proj).affine();
@@ -441,7 +438,7 @@ SPBox3D::set_corner (const guint id, Geom::Point const &new_pos, const Box3D::Ax
 
     /* update corners 0 and 7 according to which handle was moved and to the axes of movement */
     if (!(movement & Box3D::Z)) {
-        Persp3DImpl *persp_impl = this->get_perspective()->perspective_impl;
+        auto persp_impl = get_perspective()->perspective_impl.get();
         Proj::Pt3 pt_proj (persp_impl->tmat.preimage (new_pos, (id < 4) ? this->orig_corner0[Proj::Z] :
                                                       this->orig_corner7[Proj::Z], Proj::Z));
         if (constrained) {
@@ -460,7 +457,7 @@ SPBox3D::set_corner (const guint id, Geom::Point const &new_pos, const Box3D::Ax
                                        1.0);
     } else {
         Persp3D *persp = this->get_perspective();
-        Persp3DImpl *persp_impl = this->get_perspective()->perspective_impl;
+        auto persp_impl = persp->perspective_impl.get();
         Box3D::PerspectiveLine pl(persp_impl->tmat.image(
                                       box3d_get_proj_corner (id, this->save_corner0, this->save_corner7)).affine(),
                                   Proj::Z, persp);
@@ -544,7 +541,7 @@ void SPBox3D::corners_for_PLs (Proj::Axis axis,
 {
     Persp3D *persp = this->get_perspective();
     g_return_if_fail (persp);
-    Persp3DImpl *persp_impl = persp->perspective_impl;
+    auto persp_impl = persp->perspective_impl.get();
     //this->orig_corner0.normalize();
     //this->orig_corner7.normalize();
     double coord = (this->orig_corner0[axis] > this->orig_corner7[axis]) ?
@@ -926,7 +923,7 @@ SPBox3D::recompute_z_orders () {
     Geom::Point dirs[3];
     for (int i = 0; i < 3; ++i) {
         dirs[i] = persp->get_PL_dir_from_pt(c3, Box3D::toProj(Box3D::axes[i]));
-        if (Persp3D::VP_is_finite(persp->perspective_impl, Proj::axes[i])) {
+        if (Persp3D::VP_is_finite(persp->perspective_impl.get(), Proj::axes[i])) {
             num_finite++;
             axis_finite = Box3D::axes[i];
         } else {
@@ -1068,7 +1065,7 @@ static std::map<int, Box3DSide *> box3d_get_sides(SPBox3D *box)
 {
     std::map<int, Box3DSide *> sides;
     for (auto& obj: box->children) {
-        Box3DSide *side = dynamic_cast<Box3DSide *>(&obj);
+        auto side = cast<Box3DSide>(&obj);
         if (side) {
             sides[Box3D::face_to_int(side->getFaceId())] = side;
         }
@@ -1115,7 +1112,7 @@ SPBox3D::pt_lies_in_PL_sector (Geom::Point const &pt, int id1, int id2, Box3D::A
     Geom::Point c2(this->get_corner_screen(id2, false));
 
     int ret = 0;
-    if (Persp3D::VP_is_finite(persp->perspective_impl, Box3D::toProj(axis))) {
+    if (Persp3D::VP_is_finite(persp->perspective_impl.get(), Box3D::toProj(axis))) {
         Geom::Point vp(persp->get_VP(Box3D::toProj(axis)).affine());
         Geom::Point v1(c1 - vp);
         Geom::Point v2(c2 - vp);
@@ -1142,7 +1139,7 @@ int
 SPBox3D::VP_lies_in_PL_sector (Proj::Axis vpdir, int id1, int id2, Box3D::Axis axis) const {
     Persp3D *persp = this->get_perspective();
 
-    if (!Persp3D::VP_is_finite(persp->perspective_impl, vpdir)) {
+    if (!Persp3D::VP_is_finite(persp->perspective_impl.get(), vpdir)) {
         return 0;
     } else {
         return this->pt_lies_in_PL_sector(persp->get_VP(vpdir).affine(), id1, id2, axis);
@@ -1206,10 +1203,10 @@ SPBox3D::check_for_swapped_coords() {
 }
 
 static void box3d_extract_boxes_rec(SPObject *obj, std::list<SPBox3D *> &boxes) {
-    SPBox3D *box = dynamic_cast<SPBox3D *>(obj);
+    auto box = cast<SPBox3D>(obj);
     if (box) {
         boxes.push_back(box);
-    } else if (dynamic_cast<SPGroup *>(obj)) {
+    } else if (is<SPGroup>(obj)) {
         for (auto& child: obj->children) {
             box3d_extract_boxes_rec(&child, boxes);
         }
@@ -1225,7 +1222,10 @@ SPBox3D::extract_boxes(SPObject *obj) {
 
 Persp3D *
 SPBox3D::get_perspective() const {
-    return this->persp_ref->getObject();
+    if(this->persp_ref) {
+        return this->persp_ref->getObject();
+    }
+    return nullptr;
 }
 
 void
@@ -1270,7 +1270,7 @@ SPGroup *SPBox3D::convert_to_group()
     Inkscape::XML::Node *grepr = xml_doc->createElement("svg:g");
 
     for (auto& obj: this->children) {
-        Box3DSide *side = dynamic_cast<Box3DSide *>(&obj);
+        auto side = cast<Box3DSide>(&obj);
         if (side) {
             Inkscape::XML::Node *repr = side->convert_to_path();
             grepr->appendChild(repr);
@@ -1291,7 +1291,7 @@ SPGroup *SPBox3D::convert_to_group()
 
     grepr->setAttribute("id", id);
 
-    SPGroup *group = dynamic_cast<SPGroup *>(doc->getObjectByRepr(grepr));
+    auto group = cast<SPGroup>(doc->getObjectByRepr(grepr));
     g_assert(group != nullptr);
     return group;
 }

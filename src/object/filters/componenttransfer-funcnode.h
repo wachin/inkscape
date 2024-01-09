@@ -16,41 +16,38 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
-#include "../sp-object.h"
+#include "object/sp-object.h"
 #include "display/nr-filter-component-transfer.h"
 
-#define SP_FEFUNCNODE(obj) (dynamic_cast<SPFeFuncNode*>((SPObject*)obj))
-
-class SPFeFuncNode : public SPObject {
+class SPFeFuncNode final
+    : public SPObject
+{
 public:
-    enum Channel {
+    enum Channel
+    {
         R, G, B, A
     };
 
-	SPFeFuncNode(Channel channel);
-	~SPFeFuncNode() override;
+    SPFeFuncNode(Channel channel)
+        : channel(channel) {}
+    int tag() const override { return tag_of<decltype(*this)>; }
 
-    Inkscape::Filters::FilterComponentTransferType type;
+    Inkscape::Filters::FilterComponentTransferType type = Inkscape::Filters::COMPONENTTRANSFER_TYPE_IDENTITY;
     std::vector<double> tableValues;
-    double slope;
-    double intercept;
-    double amplitude;
-    double exponent;
-    double offset;
+    double slope = 1;
+    double intercept = 0;
+    double amplitude = 1;
+    double exponent = 1;
+    double offset = 0;
     Channel channel;
 
 protected:
-	void build(SPDocument* doc, Inkscape::XML::Node* repr) override;
+    void build(SPDocument *doc, Inkscape::XML::Node *repr) override;
 	void release() override;
-
-	void set(SPAttr key, const gchar* value) override;
-
-	void update(SPCtx* ctx, unsigned int flags) override;
-
-	Inkscape::XML::Node* write(Inkscape::XML::Document* doc, Inkscape::XML::Node* repr, guint flags) override;
+    void set(SPAttr key, char const *value) override;
 };
 
-#endif /* !SP_FECOMPONENTTRANSFER_FUNCNODE_H_SEEN */
+#endif // SP_FECOMPONENTTRANSFER_FUNCNODE_H_SEEN
 
 /*
   Local Variables:

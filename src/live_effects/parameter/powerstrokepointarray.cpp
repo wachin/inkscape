@@ -16,6 +16,8 @@
 
 #include "ui/knot/knot-holder.h"
 
+#include "helper/geom.h"
+
 #include "live_effects/effect.h"
 #include "live_effects/lpe-powerstroke.h"
 
@@ -38,8 +40,7 @@ PowerStrokePointArrayParam::PowerStrokePointArrayParam( const Glib::ustring& lab
 {
 }
 
-PowerStrokePointArrayParam::~PowerStrokePointArrayParam()
-= default;
+PowerStrokePointArrayParam::~PowerStrokePointArrayParam() = default;
 
 Gtk::Widget *
 PowerStrokePointArrayParam::param_newWidget()
@@ -67,29 +68,59 @@ void PowerStrokePointArrayParam::param_transform_multiply(Geom::Affine const &po
 
 /** call this method to recalculate the controlpoints such that they stay at the same location relative to the new path. Useful after adding/deleting nodes to the path.*/
 void
-PowerStrokePointArrayParam::recalculate_controlpoints_for_new_pwd2(Geom::Piecewise<Geom::D2<Geom::SBasis> > const & pwd2_in)
+PowerStrokePointArrayParam::recalculate_controlpoints(Geom::PathVector pv)
 {
     Inkscape::LivePathEffect::LPEPowerStroke *lpe = dynamic_cast<Inkscape::LivePathEffect::LPEPowerStroke *>(param_effect);
+    Geom::PathVector prev_pv = path_from_piecewise(last_pwd2, 0.01);
     if (lpe) {
-        if (last_pwd2.size() > pwd2_in.size()) {
-            double factor = (double)pwd2_in.size() / (double)last_pwd2.size();
-            for (auto & i : _vector) {
-                i[Geom::X] *= factor;
-            }
-        } else if (last_pwd2.size() < pwd2_in.size()) {
-            // Path has become longer: probably node added, maintain position of knots
-            Geom::Piecewise<Geom::D2<Geom::SBasis> > normal = rot90(unitVector(derivative(pwd2_in)));
-            for (auto & i : _vector) {
-                Geom::Point pt = i;
-                Geom::Point position = last_pwd2.valueAt(pt[Geom::X]) + pt[Geom::Y] * last_pwd2_normal.valueAt(pt[Geom::X]);
-                double t = nearest_time(position, pwd2_in);
-                i[Geom::X] = t;
-            }
+        std::vector<Geom::Point> points;
+        for (size_t index = 0; index < _vector.size(); index++) {
+            knot_reposition(index, pv);
         }
         write_to_SVG();
     }
 }
 
+Geom::Point
+PowerStrokePointArrayParam::knot_get(size_t index)
+{   
+    using namespace Geom;
+
+    Piecewise<D2<SBasis> > pwd2 = get_pwd2();
+    Piecewise<D2<SBasis> > n = get_pwd2_normal();
+    Point offset_point = _vector.at(index);
+    if (pwd2.empty() || n.empty() || offset_point[X] > path_from_piecewise(pwd2,0.1).curveCount() || offset_point[X] < 0) {
+        g_warning("Broken powerstroke point at %f, I won't try to add that", offset_point[X]);
+        return Point(infinity(), infinity());
+    }
+    Point canvas_point = pwd2.valueAt(offset_point[X]) + (offset_point[Y] * _scale_width) * n.valueAt(offset_point[X]);
+    return canvas_point;
+}
+
+size_t sp_calculate_origin(size_t i, Geom::PathVector pathv) {
+    size_t pos = 0;
+    size_t origin = 0;
+    for (auto path : pathv) {
+        if (pos == i) {
+            break;
+        }
+        size_t psize = count_pathvector_curves(path);
+        origin += psize;
+        pos ++;
+    }
+    return origin;
+}
+
+Geom::Point
+PowerStrokePointArrayParam::knot_reposition(size_t index, Geom::PathVector pathv) {
+    Geom::Point p = knot_get(index);
+    std::optional<Geom::PathVectorTime> pos = pathv.nearestTime(p);
+    if (pos) {
+        _vector.at(index)[Geom::X] = (double)sp_calculate_origin((*pos).path_index, pathv) + (double)(*pos).curve_index + (*pos).t;
+    }
+    return p;
+}
+ 
 /** call this method to recalculate the controlpoints when path is reversed.*/
 std::vector<Geom::Point>
 PowerStrokePointArrayParam::reverse_controlpoints(bool write)
@@ -183,76 +214,93 @@ PowerStrokePointArrayParamKnotHolderEntity::knot_set(Geom::Point const &p, Geom:
     if (!valid_index(_index)) {
         return;
     }
+    _pparam->current_path  = true;
+    LPEPowerStroke *ps = dynamic_cast<LPEPowerStroke *>(_pparam->param_effect);
+    ps->knotdragging = true;
     static gint prev_index = 0;
     Piecewise<D2<SBasis> > const & pwd2 = _pparam->get_pwd2();
     Piecewise<D2<SBasis> > pwd2port = _pparam->get_pwd2();
     Geom::Point s = snap_knot_position(p, state);    
-    double t2 = 0;
-    LPEPowerStroke *ps = dynamic_cast<LPEPowerStroke *>(_pparam->param_effect);
-    if (ps && ps->not_jump) {
-        s = p;
-        t2 = _pparam->_vector.at(_index)[Geom::X];
-        Geom::PathVector pathv = path_from_piecewise(pwd2port, 0.001);
-        pathv[0] = pathv[0].portion(std::max(std::floor(t2) - 1, 0.0), std::min(std::ceil(t2) + 1, (double)pathv[0].size()));
-        pwd2port = paths_to_pw(pathv);
+    double t2 = _pparam->_vector.at(_index)[Geom::X];
+    Geom::PathVector pathv = path_from_piecewise(pwd2port, 0.001);
+    Geom::Path pathin = pathv.pathAt(t2);
+    Geom::Coord begin = 0;
+    Geom::Coord end = 0;
+    // TODO: add this to 2Geom
+    size_t psize = 0;
+    size_t i = 0;
+    for (auto path : pathv) {
+        psize = count_pathvector_curves(path);
+        if (pathin == path) {
+            end = begin + psize;
+            _pparam->current_path = i;
+            break;
+        }
+        i++;
+        if (path.closed()) {
+            i++;
+        }
+        begin += psize;
     }
     /// @todo how about item transforms???
     
     Piecewise<D2<SBasis> > const & n = _pparam->get_pwd2_normal();
-    gint index = std::floor(nearest_time(s, pwd2));
+    double pos = 0;
+    if (_pparam->unplaced ) {
+        pos = nearest_time(s, pwd2);
+    } else {
+        pos = nearest_time(s, pwd2, begin, end);
+    }
+    gint index = std::floor(pos);
+    if (pos == begin || pos == end) {
+        if (pathv.size() > 1 && knot->is_grabbed()) {
+            _pparam->unplaced  = true;
+        }
+    }
     bool bigjump = false;
-    if (std::abs(prev_index - index) > 1) {
+    if (std::abs(prev_index - index) > 1 && pathv.pathAt(prev_index) == pathv.pathAt(index)) {
         bigjump = true;
     } else {
         prev_index = index;
     }
-    double t = nearest_time(s, pwd2port);
-    double offset = 0.0;
-    if (ps && ps->not_jump) {
-        double tpos = t + std::max(std::floor(t2) - 1, 0.0);
-        double prevpos = _pparam->_vector.at(_index)[Geom::X];
-        if (bigjump) {
-            tpos = prevpos;
-        }
-        offset = dot(s - pwd2.valueAt(tpos), n.valueAt(tpos));
-        _pparam->_vector.at(_index) = Geom::Point(tpos, offset/_pparam->_scale_width);
+    
+    double t = 0;
+    if (_pparam->unplaced ) {
+        t = nearest_time(s, pwd2port);
     } else {
-        offset = dot(s - pwd2.valueAt(t), n.valueAt(t));
-        _pparam->_vector.at(_index) = Geom::Point(t, offset/_pparam->_scale_width);
+        t = nearest_time(s, pwd2port, begin, end);
     }
+    double offset = 0.0;
+    if (ps && ps->not_jump && bigjump) {
+        t = _pparam->_vector.at(_index)[Geom::X];
+    }
+    offset = dot(s - pwd2.valueAt(t), n.valueAt(t));
+    _pparam->_vector.at(_index) = Geom::Point(t, offset/_pparam->_scale_width);
     if (_pparam->_vector.size() == 1 ) {
         Inkscape::Preferences *prefs = Inkscape::Preferences::get();
         prefs->setDouble("/live_effects/powerstroke/width", offset);
     }
-    sp_lpe_item_update_patheffect(SP_LPE_ITEM(item), false, false);
+    sp_lpe_item_update_patheffect(cast<SPLPEItem>(item), false, false);
 }
 
 Geom::Point
 PowerStrokePointArrayParamKnotHolderEntity::knot_get() const
 {
-    using namespace Geom;
-
     if (!valid_index(_index)) {
         return Geom::Point(Geom::infinity(), Geom::infinity());
     }
-
-    Piecewise<D2<SBasis> > const & pwd2 = _pparam->get_pwd2();
-    Piecewise<D2<SBasis> > const & n = _pparam->get_pwd2_normal();
-
-    Point offset_point = _pparam->_vector.at(_index);
-    if (offset_point[X] > pwd2.size() || offset_point[X] < 0) {
-        g_warning("Broken powerstroke point at %f, I won't try to add that", offset_point[X]);
-        return Geom::Point(Geom::infinity(), Geom::infinity());
-    }
-    Point canvas_point = pwd2.valueAt(offset_point[X]) + (offset_point[Y] * _pparam->_scale_width) * n.valueAt(offset_point[X]);
-    return canvas_point;
+    return _pparam->knot_get(_index);
 }
 
 void
 PowerStrokePointArrayParamKnotHolderEntity::knot_ungrabbed(Geom::Point const &p, Geom::Point const &origin, guint state)
 {
-    _pparam->param_effect->refresh_widgets = true;
-    _pparam->write_to_SVG();
+    if (_pparam->unplaced ) {
+        _pparam->unplaced  = false;
+        _pparam->current_path = Glib::ustring::npos;
+    }
+    dynamic_cast<LPEPowerStroke *>(_pparam->param_effect)->knotdragging = false;
+    _pparam->param_effect->makeUndoDone(_("Move handle"));
 }
 
 void PowerStrokePointArrayParamKnotHolderEntity::knot_set_offset(Geom::Point offset)

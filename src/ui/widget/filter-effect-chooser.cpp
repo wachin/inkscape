@@ -17,26 +17,34 @@
 
 namespace Inkscape {
 
-const EnumData<SPBlendMode> SPBlendModeData[SP_CSS_BLEND_ENDMODE] = {
-    { SP_CSS_BLEND_NORMAL, _("Normal"), "normal" },
-    { SP_CSS_BLEND_MULTIPLY, _("Multiply"), "multiply" },
-    { SP_CSS_BLEND_SCREEN, _("Screen"), "screen" },
-    { SP_CSS_BLEND_DARKEN, _("Darken"), "darken" },
-    { SP_CSS_BLEND_LIGHTEN, _("Lighten"), "lighten" },
-    // New in Compositing and Blending Level 1
-    { SP_CSS_BLEND_OVERLAY, _("Overlay"), "overlay" },
-    { SP_CSS_BLEND_COLORDODGE, _("Color Dodge"), "color-dodge" },
-    { SP_CSS_BLEND_COLORBURN, _("Color Burn"), "color-burn" },
-    { SP_CSS_BLEND_HARDLIGHT, _("Hard Light"), "hard-light" },
-    { SP_CSS_BLEND_SOFTLIGHT, _("Soft Light"), "soft-light" },
-    { SP_CSS_BLEND_DIFFERENCE, _("Difference"), "difference" },
-    { SP_CSS_BLEND_EXCLUSION, _("Exclusion"), "exclusion" },
-    { SP_CSS_BLEND_HUE, _("Hue"), "hue" },
-    { SP_CSS_BLEND_SATURATION, _("Saturation"), "saturation" },
-    { SP_CSS_BLEND_COLOR, _("Color"), "color" },
-    { SP_CSS_BLEND_LUMINOSITY, _("Luminosity"), "luminosity" }
+// Blend modes are in six groups according to the types of changes they make to luminosity
+// See: https://typefully.com/DanHollick/blending-modes-KrBa0JP
+// Add 5 to ENDMODE for the five additional separators in the list
+const int SP_CSS_BLEND_COUNT = SP_CSS_BLEND_ENDMODE + 5;
+const EnumData<SPBlendMode> SPBlendModeData[SP_CSS_BLEND_COUNT] = {
+    { SP_CSS_BLEND_NORMAL,     NC_("BlendMode", "Normal"), "normal" },
+    { SP_CSS_BLEND_ENDMODE, "-", "-" },
+    { SP_CSS_BLEND_DARKEN,     NC_("BlendMode", "Darken"), "darken" },
+    { SP_CSS_BLEND_MULTIPLY,   NC_("BlendMode", "Multiply"), "multiply" },
+    { SP_CSS_BLEND_COLORBURN,  NC_("BlendMode", "Color Burn"), "color-burn" },
+    { SP_CSS_BLEND_ENDMODE, "-", "-" },
+    { SP_CSS_BLEND_LIGHTEN,    NC_("BlendMode", "Lighten"), "lighten" },
+    { SP_CSS_BLEND_SCREEN,     NC_("BlendMode", "Screen"), "screen" },
+    { SP_CSS_BLEND_COLORDODGE, NC_("BlendMode", "Color Dodge"), "color-dodge" },
+    { SP_CSS_BLEND_ENDMODE, "-", "-" },
+    { SP_CSS_BLEND_OVERLAY,    NC_("BlendMode", "Overlay"), "overlay" },
+    { SP_CSS_BLEND_SOFTLIGHT,  NC_("BlendMode", "Soft Light"), "soft-light" },
+    { SP_CSS_BLEND_HARDLIGHT,  NC_("BlendMode", "Hard Light"), "hard-light" },
+    { SP_CSS_BLEND_ENDMODE, "-", "-" },
+    { SP_CSS_BLEND_DIFFERENCE, NC_("BlendMode", "Difference"), "difference" },
+    { SP_CSS_BLEND_EXCLUSION,  NC_("BlendMode", "Exclusion"), "exclusion" },
+    { SP_CSS_BLEND_ENDMODE, "-", "-" },
+    { SP_CSS_BLEND_HUE,        NC_("BlendMode", "Hue"), "hue" },
+    { SP_CSS_BLEND_SATURATION, NC_("BlendMode", "Saturation"), "saturation" },
+    { SP_CSS_BLEND_COLOR,      NC_("BlendMode", "Color"), "color" },
+    { SP_CSS_BLEND_LUMINOSITY, NC_("BlendMode", "Luminosity"), "luminosity" }
 };
-const EnumDataConverter<SPBlendMode> SPBlendModeConverter(SPBlendModeData, SP_CSS_BLEND_ENDMODE);
+const EnumDataConverter<SPBlendMode> SPBlendModeConverter(SPBlendModeData, SP_CSS_BLEND_COUNT);
 
 
 namespace UI {
@@ -47,13 +55,23 @@ SimpleFilterModifier::SimpleFilterModifier(int flags)
     , _flags(flags)
     , _lb_blend(_("Blend mode:"))
     , _lb_isolation("Isolate") // Translate for 1.1
-    , _blend(SPBlendModeConverter, SPAttr::INVALID, false)
+    , _blend(SPBlendModeConverter, SPAttr::INVALID, false, "BlendMode")
     , _blur(_("Blur (%)"), 0, 0, 100, 1, 0.1, 1)
     , _opacity(_("Opacity (%)"), 0, 0, 100, 1, 0.1, 1)
     , _notify(true)
     , _hb_blend(Gtk::ORIENTATION_HORIZONTAL)
 {
     set_name("SimpleFilterModifier");
+
+    /* "More options" expander --------
+    _extras.set_visible();
+    _extras.set_label(_("More options"));
+    auto box = Gtk::make_managed<Gtk::Box>(Gtk::ORIENTATION_VERTICAL);
+    _extras.add(*box);
+    if (flags & (BLEND | BLUR)) {
+        add(_extras);
+    }
+    */
 
     _flags = flags;
 
@@ -62,18 +80,19 @@ SimpleFilterModifier::SimpleFilterModifier(int flags)
         _lb_blend.set_use_underline();
         _hb_blend.set_halign(Gtk::ALIGN_END);
         _hb_blend.set_valign(Gtk::ALIGN_CENTER);
-        _hb_blend.set_margin_top(3);
-        _hb_blend.set_margin_end(5);
+        _hb_blend.set_margin_top(0);
+        _hb_blend.set_margin_bottom(1);
+        _hb_blend.set_margin_end(2);
         _lb_blend.set_mnemonic_widget(_blend);
-        _hb_blend.pack_start(_lb_blend, false, false, 5);
-        _hb_blend.pack_start(_blend, false, false, 5);
+        _hb_blend.pack_start(_lb_blend, false, false, 0);
+        _hb_blend.pack_start(_blend, false, false, 0);
         /*
-        * For best fit inkscape-browsers with no GUI to isolation we need all groups, 
-        * clones and symbols with isolation == isolate to not show to the user of
-        * Inkscape a "strange" behabiour from the designer point of view. 
-        * Is strange because only happends when object not has clip, mask, 
-        * filter, blending or opacity .
-        * Anyway the feature is a no-gui feature and render as spected.
+        * For best fit inkscape-browsers with no GUI to isolation we need all groups,
+        * clones, and symbols with isolation == isolate to not show to the Inkscape
+        * user "strange" behaviour from the designer point of view.
+        * It's strange because it only happens when object doesn't have: clip, mask,
+        * filter, blending, or opacity.
+        * Anyway the feature is a no-gui feature and renders as expected.
         */
         /* if (flags & ISOLATION) {
             _isolation.property_active() = false;
@@ -82,14 +101,10 @@ SimpleFilterModifier::SimpleFilterModifier(int flags)
             _isolation.set_tooltip_text("Don't blend childrens with objects behind");
             _lb_isolation.set_tooltip_text("Don't blend childrens with objects behind");
         } */
-        Gtk::Separator *separator = Gtk::manage(new Gtk::Separator());  
-        separator->set_margin_top(8);
-        separator->set_margin_bottom(8);
-        add(*separator);
     }
 
     if (flags & BLUR) {
-        add(_blur);
+       add(_blur);
     }
 
     if (flags & OPACITY) {
@@ -103,7 +118,7 @@ SimpleFilterModifier::SimpleFilterModifier(int flags)
     _isolation.signal_toggled().connect(signal_isolation_changed());
 }
 
-sigc::signal<void> &SimpleFilterModifier::signal_isolation_changed()
+sigc::signal<void ()> &SimpleFilterModifier::signal_isolation_changed()
 {
     if (_notify) {
         return _signal_isolation_changed;
@@ -112,7 +127,7 @@ sigc::signal<void> &SimpleFilterModifier::signal_isolation_changed()
     return _signal_null;
 }
 
-sigc::signal<void>& SimpleFilterModifier::signal_blend_changed()
+sigc::signal<void ()>& SimpleFilterModifier::signal_blend_changed()
 {
     if (_notify) {
         return _signal_blend_changed;
@@ -121,13 +136,13 @@ sigc::signal<void>& SimpleFilterModifier::signal_blend_changed()
     return _signal_null;
 }
 
-sigc::signal<void>& SimpleFilterModifier::signal_blur_changed()
+sigc::signal<void ()>& SimpleFilterModifier::signal_blur_changed()
 {
     // we dont use notifi to block use aberaje for multiple
     return _signal_blur_changed;
 }
 
-sigc::signal<void>& SimpleFilterModifier::signal_opacity_changed()
+sigc::signal<void ()>& SimpleFilterModifier::signal_opacity_changed()
 {
     // we dont use notifi to block use averaje for multiple
     return _signal_opacity_changed;
@@ -157,7 +172,7 @@ SPBlendMode SimpleFilterModifier::get_blend_mode()
 void SimpleFilterModifier::set_blend_mode(const SPBlendMode val, bool notify)
 {
     _notify = notify;
-    _blend.set_active(val);
+    _blend.set_active_by_id(val);
 }
 
 double SimpleFilterModifier::get_blur_value() const

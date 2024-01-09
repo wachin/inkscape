@@ -53,6 +53,10 @@ decltype(Modifier::_modifiers) Modifier::_modifiers {
     {Type::TRANS_SNAPPING, new Modifier("trans-snapping", _("No Transform Snapping"), _("Disable snapping when transforming object."), SHIFT, TRANSFORM, DRAG)},
     // Center handle click: seltrans.cpp:734 SHIFT
     // Align handle click: seltrans.cpp:1365 SHIFT
+    {Type::BOOL_SHIFT, new Modifier("bool-shift", _("Switch mode"), _("Change shape builder mode temporarily by holding a modifier key."), SHIFT, BOOLEANS_TOOL, DRAG)},
+
+    {Type::NODE_GROW_LINEAR, new Modifier("node-grow-linear", _("Linear node selection"), _("Select the next nodes with scroll wheel or keyboard"), CTRL, NODE_TOOL, SCROLL)},
+    {Type::NODE_GROW_SPATIAL, new Modifier("node-grow-spatial", _("Spatial node selection"), _("Select more nodes with scroll wheel or keyboard"), ALWAYS, NODE_TOOL, SCROLL)},
 };
 
 decltype(Modifier::_category_names) Modifier::_category_names {
@@ -61,6 +65,8 @@ decltype(Modifier::_category_names) Modifier::_category_names {
     {SELECT, _("Selection")},
     {MOVE, _("Movement")},
     {TRANSFORM, _("Transformations")},
+    {NODE_TOOL, _("Node Tool")},
+    {BOOLEANS_TOOL, _("Shape Builder")},
 };
 
 
@@ -114,19 +120,34 @@ Modifier::getList () {
 /**
  * Test if this modifier is currently active.
  *
- * @param  button_state - The GDK button state from an event
+ * @param  state - The GDK button state from an event
  * @return a boolean, true if the modifiers for this action are active.
  */
-bool Modifier::active(int button_state)
+bool Modifier::active(int state)
 {
     // TODO:
     //  * ALT key is sometimes MOD1, MOD2 etc, if we find other ALT keys, set the ALT bit
     //  * SUPER key could be HYPER or META, these cases need to be considered.
     auto and_mask = get_and_mask();
     auto not_mask = get_not_mask();
-    auto active = Key::ALL_MODS & button_state;
+    auto active = Key::ALL_MODS & state;
     // Check that all keys in AND mask are pressed, and NONE of the NOT mask are.
     return and_mask != NEVER && ((active & and_mask) == and_mask) && (not_mask == NOT_SET || (active & not_mask) == 0);
+}
+
+/**
+ * Test if this modifier is currently active, adding or subtracting keyval
+ * during a key press or key release operation.
+ *
+ * @param state - The GDK button state from an event
+ * @param keyval - The GDK keyval from a key press/release event
+ * @param release - Boolean, if true the keyval is removed instead
+ *
+ * @return a boolean, true if the modifiers for this action are active.
+ */
+bool Modifier::active(int state, int keyval, bool release)
+{
+    return active(add_keyval(state, keyval, release));
 }
 
 /**
@@ -203,7 +224,7 @@ void responsive_tooltip(Inkscape::MessageContext *message_context, GdkEvent *eve
     va_start(args, num_args);
     for(int i = 0; i < num_args; i++) {
         auto modifier = Modifier::get(va_arg(args, Type));
-        auto name = std::string(modifier->get_name());
+        auto name = std::string(_(modifier->get_name()));
         switch (modifier->get_and_mask()) {
             case CTRL:
                 ctrl_msg += name + ", ";
@@ -225,6 +246,38 @@ void responsive_tooltip(Inkscape::MessageContext *message_context, GdkEvent *eve
 
     Inkscape::UI::Tools::sp_event_show_modifier_tip(message_context, event,
         ctrl_msg.c_str(), shift_msg.c_str(), alt_msg.c_str());
+}
+
+static const std::map<int, int> key_map = {
+    {GDK_KEY_Alt_L, GDK_MOD1_MASK},
+    {GDK_KEY_Alt_R, GDK_MOD1_MASK},
+    {GDK_KEY_Control_L, GDK_CONTROL_MASK},
+    {GDK_KEY_Control_R, GDK_CONTROL_MASK},
+    {GDK_KEY_Shift_L, GDK_SHIFT_MASK},
+    {GDK_KEY_Shift_R, GDK_SHIFT_MASK},
+    {GDK_KEY_Meta_L, GDK_META_MASK},
+    {GDK_KEY_Meta_R, GDK_META_MASK},
+};
+
+/**
+ * Add or remove the GDK keyval to the button state if it's one of the
+ * keys that define the key mask. Useful for PRESS and RELEASE events.
+ *
+ * @param state - The GDK button state from an event
+ * @param keyval - The GDK keyval from a key press/release event
+ * @param release - Boolean, if true the keyval is removed instead
+ *
+ * @return a new state including the requested change.
+ */
+int add_keyval(int state, int keyval, bool release)
+{
+    if (auto it = key_map.find(keyval); it != key_map.end()) {
+        if (release)
+            state &= ~it->second;
+        else
+            state |= it->second;
+    }
+    return state;
 }
 
 } // namespace Modifiers

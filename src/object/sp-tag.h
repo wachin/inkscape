@@ -17,15 +17,11 @@
 
 /* Skeleton base class */
 
-#define SP_TAG(o) (dynamic_cast<SPTag*>(o))
-#define SP_IS_TAG(o) (dynamic_cast<SPTag*>(o) != NULL)
-
-class SPTag;
-
-class SPTag : public SPObject {
+class SPTag final : public SPObject {
 public:
     SPTag() = default;
     ~SPTag() override = default;
+    int tag() const override { return tag_of<decltype(*this)>; }
 
     void build(SPDocument * doc, Inkscape::XML::Node *repr) override;
     //virtual void release();
@@ -42,7 +38,6 @@ public:
 private:
     bool _expanded;
 };
-
 
 #endif /* !SP_SKELETON_H_SEEN */
 

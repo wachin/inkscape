@@ -216,27 +216,28 @@ static Piecewise<D2<SBasis> > bend(Piecewise<D2<SBasis> > const &f, Piecewise<SB
 LPERoughHatches::LPERoughHatches(LivePathEffectObject *lpeobject) :
     Effect(lpeobject),
     hatch_dist(0),
-    dist_rdm(_("Frequency randomness:"), _("Variation of distance between hatches, in %."), "dist_rdm", &wr, this, 75),
-    growth(_("Growth:"), _("Growth of distance between hatches."), "growth", &wr, this, 0.),
-//FIXME: top/bottom names are inverted in the UI/svg and in the code!!
-    scale_tf(_("Half-turns smoothness: 1st side, in:"), _("Set smoothness/sharpness of path when reaching a 'bottom' half-turn. 0=sharp, 1=default"), "scale_bf", &wr, this, 1.),
-    scale_tb(_("1st side, out:"), _("Set smoothness/sharpness of path when leaving a 'bottom' half-turn. 0=sharp, 1=default"), "scale_bb", &wr, this, 1.),
-    scale_bf(_("2nd side, in:"), _("Set smoothness/sharpness of path when reaching a 'top' half-turn. 0=sharp, 1=default"), "scale_tf", &wr, this, 1.),
-    scale_bb(_("2nd side, out:"), _("Set smoothness/sharpness of path when leaving a 'top' half-turn. 0=sharp, 1=default"), "scale_tb", &wr, this, 1.),
-    top_edge_variation(_("Magnitude jitter: 1st side:"), _("Randomly moves 'bottom' half-turns to produce magnitude variations."), "bottom_edge_variation", &wr, this, 0),
-    bot_edge_variation(_("2nd side:"), _("Randomly moves 'top' half-turns to produce magnitude variations."), "top_edge_variation", &wr, this, 0),
-    top_tgt_variation(_("Parallelism jitter: 1st side:"), _("Add direction randomness by moving 'bottom' half-turns tangentially to the boundary."), "bottom_tgt_variation", &wr, this, 0),
-    bot_tgt_variation(_("2nd side:"), _("Add direction randomness by randomly moving 'top' half-turns tangentially to the boundary."), "top_tgt_variation", &wr, this, 0),
-    top_smth_variation(_("Variance: 1st side:"), _("Randomness of 'bottom' half-turns smoothness"), "top_smth_variation", &wr, this, 0),
-    bot_smth_variation(_("2nd side:"), _("Randomness of 'top' half-turns smoothness"), "bottom_smth_variation", &wr, this, 0),
+    dist_rdm(_("Randomness"), _("Global variation of distance between hatches, in %."), "dist_rdm", &wr, this, 75),
+    growth(_("Growth"), _("Growth of distance between hatches."), "growth", &wr, this, 0.),
+//FIXME:  top/bottom names are inverted in the UI/svg and in the code!! 
+//FIXME2: This needs to be fixed in code not a in tooltips
+    scale_tf(_("Smooth: Bottom ←"), _("Set smoothness/sharpness of path when reaching a 'bottom' half-turn. 0=sharp, 1=default"), "scale_bf", &wr, this, 1.),
+    scale_tb(_("Smooth: Bottom →"), _("Set smoothness/sharpness of path when leaving a 'bottom' half-turn. 0=sharp, 1=default"), "scale_bb", &wr, this, 1.),
+    scale_bf(_("Smooth: Top ←"), _("Set smoothness/sharpness of path when reaching a 'top' half-turn. 0=sharp, 1=default"), "scale_tf", &wr, this, 1.),
+    scale_bb(_("Smooth: Top →"), _("Set smoothness/sharpness of path when leaving a 'top' half-turn. 0=sharp, 1=default"), "scale_tb", &wr, this, 1.),
+    top_edge_variation(_("↑↓ Random: Bottom"), _("Randomly moves 'bottom' half-turns up and down to produce magnitude variations."), "bottom_edge_variation", &wr, this, 0),
+    bot_edge_variation(_("↑↓ Random: Top"), _("Randomly moves 'top' half-turns up and down to produce magnitude variations."), "top_edge_variation", &wr, this, 0),
+    top_tgt_variation(_("←→ Random: Bottom"), _("Add direction randomness by moving 'bottom' half-turns tangentially to the boundary."), "bottom_tgt_variation", &wr, this, 0),
+    bot_tgt_variation(_("←→ Random: Top"), _("Add direction randomness by randomly moving 'top' half-turns tangentially to the boundary."), "top_tgt_variation", &wr, this, 0),
+    top_smth_variation(_("Rand. Smooth: Bottom"), _("Randomness of 'bottom' half-turns' smoothness"), "top_smth_variation", &wr, this, 0),
+    bot_smth_variation(_("Rand. Smooth: Top"), _("Randomness of 'top' half-turns' smoothness"), "bottom_smth_variation", &wr, this, 0),
 //
-    fat_output(_("Generate thick/thin path"), _("Simulate a stroke of varying width"), "fat_output", &wr, this, true),
-    do_bend(_("Bend hatches"), _("Add a global bend to the hatches (slower)"), "do_bend", &wr, this, true),
-    stroke_width_top(_("Thickness: at 1st side:"), _("Width at 'bottom' half-turns"), "stroke_width_top", &wr, this, 1.),
-    stroke_width_bot(_("At 2nd side:"), _("Width at 'top' half-turns"), "stroke_width_bottom", &wr, this, 1.),
+    fat_output(_("Vary stroke width"), _("Simulate a stroke of varying width"), "fat_output", &wr, this, true),
+    do_bend(_("Bend hatches"), _("Add a global bending to the hatches (slower)"), "do_bend", &wr, this, true),
+    stroke_width_top(_("↓ Width"), _("Width at 'bottom' half-turns"), "stroke_width_top", &wr, this, 1.),
+    stroke_width_bot(_("↑ Width"), _("Width at 'top' half-turns"), "stroke_width_bottom", &wr, this, 1.),
 //
-    front_thickness(_("From 2nd to 1st side:"), _("Width from 'top' to 'bottom'"), "front_thickness", &wr, this, 1.),
-    back_thickness(_("From 1st to 2nd side:"), _("Width from 'bottom' to 'top'"), "back_thickness", &wr, this, .25),
+    front_thickness(_("← Width"), _("Width of line from 'top' to 'bottom'"), "front_thickness", &wr, this, 1.),
+    back_thickness(_("→ Width"), _("Width of line from 'bottom' to 'top'"), "back_thickness", &wr, this, .25),
 
     direction(_("Hatches width and dir"), _("Defines hatches frequency and direction"), "direction", &wr, this, Geom::Point(50,0)),
 //
@@ -282,8 +283,12 @@ LPERoughHatches::LPERoughHatches(LivePathEffectObject *lpeobject) :
     show_orig_path = true;
 }
 
-LPERoughHatches::~LPERoughHatches()
-= default;
+LPERoughHatches::~LPERoughHatches() = default;
+
+void LPERoughHatches::doOnApply(SPLPEItem const *lpeitem)
+{
+    lpeversion.param_setValue("1.2", true);
+}
 
 Geom::Piecewise<Geom::D2<Geom::SBasis> >
 LPERoughHatches::doEffect_pwd2 (Geom::Piecewise<Geom::D2<Geom::SBasis> > const & pwd2_in){

@@ -10,83 +10,43 @@
  * is provided by the generosity of Peter Selinger, to whom we are grateful.
  *
  */
+#ifndef INKSCAPE_TRACE_DEPIXELIZE_H
+#define INKSCAPE_TRACE_DEPIXELIZE_H
 
-#ifndef __INKSCAPE_DEPIXTRACE_H__
-#define __INKSCAPE_DEPIXTRACE_H__
-
-#include <trace/trace.h>
-#include "3rdparty/libdepixelize/kopftracer2011.h"
-
-struct GrayMap_def;
-typedef GrayMap_def GrayMap;
+#include "trace/trace.h"
+#include "3rdparty/libdepixelize/kopftracer2011.h" // Cannot move to source file due to nested class.
 
 namespace Inkscape {
-
 namespace Trace {
-
 namespace Depixelize {
 
-enum TraceType
-    {
-    TRACE_VORONOI,
-    TRACE_BSPLINES
-    };
-
-
-class DepixelizeTracingEngine : public TracingEngine
+enum class TraceType
 {
+    VORONOI,
+    BSPLINES
+};
 
-    public:
-
-    /**
-     *
-     */
-    DepixelizeTracingEngine();
+class DepixelizeTracingEngine final
+    : public TracingEngine
+{
+public:
+    DepixelizeTracingEngine() = default;
     DepixelizeTracingEngine(TraceType traceType, double curves, int islands, int sparsePixels, double sparseMultiplier, bool optimize);
 
-    /**
-     *
-     */
-    ~DepixelizeTracingEngine() override;
+    TraceResult trace(Glib::RefPtr<Gdk::Pixbuf> const &pixbuf, Async::Progress<double> &progress) override;
+    Glib::RefPtr<Gdk::Pixbuf> preview(Glib::RefPtr<Gdk::Pixbuf> const &pixbuf) override;
+    bool check_image_size(Geom::IntPoint const &size) const override;
 
-    /**
-     *  This is the working method of this implementing class, and all
-     *  implementing classes.  Take a GdkPixbuf, trace it, and
-     *  return the path data that is compatible with the d="" attribute
-     *  of an SVG <path> element.
-     */
-    std::vector<TracingEngineResult> trace(
-                        Glib::RefPtr<Gdk::Pixbuf> pixbuf) override;
+private:
+    ::Tracer::Kopf2011::Options params;
+    TraceType traceType = TraceType::VORONOI;
+};
 
-    /**
-     *  Abort the thread that is executing getPathDataFromPixbuf()
-     */
-    void abort() override;
+} // namespace Depixelize
+} // namespace Trace
+} // namespace Inkscape
 
-    /**
-     *
-     */
-    Glib::RefPtr<Gdk::Pixbuf> preview(Glib::RefPtr<Gdk::Pixbuf> pixbuf);
-
-    /**
-     *
-     */
-    int keepGoing;
-
-    ::Tracer::Kopf2011::Options *params;
-    TraceType traceType;
-
-};//class PotraceTracingEngine
-
-
-
-}  // namespace Depixelize
-}  // namespace Trace
-}  // namespace Inkscape
-
-
-#endif  //__INKSCAPE_TRACE_H__
-
+#endif // INKSCAPE_TRACE_DEPIXELIZE_H
 
 /*
   Local Variables:

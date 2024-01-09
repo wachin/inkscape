@@ -52,7 +52,7 @@ Inkscape::XML::Document *sp_repr_document_new(char const *rootname);
 
 /* IO */
 
-Inkscape::XML::Document *sp_repr_read_file(char const *filename, char const *default_ns);
+Inkscape::XML::Document *sp_repr_read_file(char const *filename, char const *default_ns, bool xinclude = false);
 Inkscape::XML::Document *sp_repr_read_mem(char const *buffer, int length, char const *default_ns);
 void sp_repr_write_stream(Inkscape::XML::Node *repr, Inkscape::IO::Writer &out,
                           int indent_level,  bool add_whitespace, Glib::QueryQuark elide_prefix,
@@ -88,6 +88,7 @@ void sp_repr_css_set_property(SPCSSAttr *css, char const *name, char const *valu
 void sp_repr_css_unset_property(SPCSSAttr *css, char const *name);
 bool sp_repr_css_property_is_unset(SPCSSAttr *css, char const *name);
 double sp_repr_css_double_property(SPCSSAttr *css, char const *name, double defval);
+void sp_repr_css_set_property_double(SPCSSAttr *css, char const *name, double value);
 
 void sp_repr_css_write_string(SPCSSAttr *css, Glib::ustring &str);
 void sp_repr_css_set(Inkscape::XML::Node *repr, SPCSSAttr *css, char const *key);
@@ -134,6 +135,8 @@ Inkscape::XML::Node *sp_repr_lookup_name(Inkscape::XML::Node *repr,
 Inkscape::XML::Node const *sp_repr_lookup_name(Inkscape::XML::Node const *repr,
                                                char const *name,
                                                int maxdepth = -1);
+
+Glib::ustring sp_repr_lookup_content(Inkscape::XML::Node const *repr, gchar const *name, Glib::ustring otherwise = {});
 
 std::vector<Inkscape::XML::Node const *> sp_repr_lookup_name_many(Inkscape::XML::Node const *repr,
                                                                   char const *name,

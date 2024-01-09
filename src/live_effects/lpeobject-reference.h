@@ -10,7 +10,7 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
-#include <sigc++/sigc++.h>
+#include "helper/auto-connection.h"
 
 #include "object/uri-references.h"
 
@@ -39,16 +39,15 @@ public:
     Inkscape::XML::Node  *lpeobject_repr;
     LivePathEffectObject *lpeobject;
 
-    sigc::connection _modified_connection;
-    sigc::connection _delete_connection;
-    sigc::connection _changed_connection;
+    Inkscape::auto_connection _release_connection;
+    Inkscape::auto_connection _changed_connection;
+    Inkscape::auto_connection _modified_connection;
+    Inkscape::auto_connection _owner_release_connection;
 
     void            link(const char* to);
     void            unlink();
     void            start_listening(LivePathEffectObject* to);
     void            quit_listening();
-
-    void (*user_unlink) (LPEObjectReference *me, SPObject *user);
 
 protected:
     bool _acceptObject(SPObject * const obj) const override;

@@ -64,8 +64,7 @@ LPEPerspectiveEnvelope::LPEPerspectiveEnvelope(LivePathEffectObject *lpeobject) 
     apply_to_clippath_and_mask = true;
 }
 
-LPEPerspectiveEnvelope::~LPEPerspectiveEnvelope()
-= default;
+LPEPerspectiveEnvelope::~LPEPerspectiveEnvelope() = default;
 
 void LPEPerspectiveEnvelope::transform_multiply(Geom::Affine const &postmul, bool /*set*/)
 {
@@ -166,7 +165,7 @@ void LPEPerspectiveEnvelope::doEffect(SPCurve *curve)
         if (path_it.empty())
             continue;
         //Itreadores
-        auto nCurve = std::make_unique<SPCurve>();
+        SPCurve nCurve;
         Geom::Path::const_iterator curve_it1 = path_it.begin();
         Geom::Path::const_iterator curve_endit = path_it.end_default();
 
@@ -177,9 +176,9 @@ void LPEPerspectiveEnvelope::doEffect(SPCurve *curve)
             }
         }
         if(deform_type == DEFORMATION_PERSPECTIVE) {
-            nCurve->moveto(projectPoint(curve_it1->initialPoint(), projmatrix));
+            nCurve.moveto(projectPoint(curve_it1->initialPoint(), projmatrix));
         } else {
-            nCurve->moveto(projectPoint(curve_it1->initialPoint()));
+            nCurve.moveto(projectPoint(curve_it1->initialPoint()));
         }
         while (curve_it1 != curve_endit) {
             cubic = dynamic_cast<Geom::CubicBezier const *>(&*curve_it1);
@@ -201,18 +200,18 @@ void LPEPerspectiveEnvelope::doEffect(SPCurve *curve)
                 point_at3 = projectPoint(point_at3);
             }
             if (cubic) {
-                nCurve->curveto(point_at1, point_at2, point_at3);
+                nCurve.curveto(point_at1, point_at2, point_at3);
             } else {
-                nCurve->lineto(point_at3);
+                nCurve.lineto(point_at3);
             }
             ++curve_it1;
         }
         //y cerramos la curva
         if (path_it.closed()) {
-            nCurve->move_endpoints(point_at3, point_at3);
-            nCurve->closepath_current();
+            nCurve.move_endpoints(point_at3, point_at3);
+            nCurve.closepath_current();
         }
-        curve->append(*nCurve);
+        curve->append(std::move(nCurve));
     }
 }
 
@@ -309,7 +308,7 @@ LPEPerspectiveEnvelope::newWidget()
                 if (widg) {
                     vbox->pack_start(*widg, true, true, 2);
                     if (tip) {
-                        widg->set_tooltip_text(*tip);
+                        widg->set_tooltip_markup(*tip);
                     } else {
                         widg->set_tooltip_text("");
                         widg->set_has_tooltip(false);
@@ -333,9 +332,6 @@ LPEPerspectiveEnvelope::newWidget()
     reset_button->set_size_request(140,30);
     vbox->pack_start(*hbox, true,true,2);
     hbox->pack_start(*reset_button, false, false,2);
-    if(Gtk::Widget* widg = defaultParamSet()) {
-        vbox->pack_start(*widg, true, true, 2);
-    }
     return dynamic_cast<Gtk::Widget *>(vbox);
 }
 
@@ -388,7 +384,7 @@ LPEPerspectiveEnvelope::doBeforeEffect (SPLPEItem const* lpeitem)
     if (Geom::are_near(boundingbox_X.min(),boundingbox_X.max()) || 
         Geom::are_near(boundingbox_Y.min(),boundingbox_Y.max())) 
     {
-        g_warning("Coulden`t appy perspective/envelope to a element with geometric width or height equal 0 we add a temporary bounding box to allow handle");
+        g_warning("Couldn`t apply perspective/envelope to a element with geometric width or height equal 0 we add a temporary bounding box to allow handle");
         if (Geom::are_near(boundingbox_X.min(), boundingbox_X.max())) {
             boundingbox_X = Geom::Interval(boundingbox_X.min() - 3, boundingbox_X.max() + 3);
         }
@@ -556,7 +552,7 @@ void
 LPEPerspectiveEnvelope::resetDefaults(SPItem const* item)
 {
     Effect::resetDefaults(item);
-    original_bbox(SP_LPE_ITEM(item), false, true);
+    original_bbox(cast<SPLPEItem>(item), false, true);
     setDefaults();
     resetGrid();
 }
@@ -566,13 +562,13 @@ LPEPerspectiveEnvelope::addCanvasIndicators(SPLPEItem const */*lpeitem*/, std::v
 {
     hp_vec.clear();
 
-    auto c = std::make_unique<SPCurve>();
-    c->moveto(up_left_point);
-    c->lineto(up_right_point);
-    c->lineto(down_right_point);
-    c->lineto(down_left_point);
-    c->lineto(up_left_point);
-    hp_vec.push_back(c->get_pathvector());
+    SPCurve c;
+    c.moveto(up_left_point);
+    c.lineto(up_right_point);
+    c.lineto(down_right_point);
+    c.lineto(down_left_point);
+    c.lineto(up_left_point);
+    hp_vec.push_back(c.get_pathvector());
 }
 
 

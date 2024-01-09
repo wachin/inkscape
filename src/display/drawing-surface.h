@@ -10,13 +10,14 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
-#ifndef SEEN_INKSCAPE_DISPLAY_DRAWING_SURFACE_H
-#define SEEN_INKSCAPE_DISPLAY_DRAWING_SURFACE_H
+#ifndef INKSCAPE_DISPLAY_DRAWING_SURFACE_H
+#define INKSCAPE_DISPLAY_DRAWING_SURFACE_H
 
 #include <cairo.h>
 #include <2geom/affine.h>
 #include <2geom/rect.h>
 #include <2geom/transforms.h>
+#include "helper/geom.h"
 
 extern "C" {
 typedef struct _cairo cairo_t;
@@ -35,14 +36,13 @@ public:
     DrawingSurface(cairo_surface_t *surface, Geom::Point const &origin);
     virtual ~DrawingSurface();
 
-    Geom::Rect area() const;
-    Geom::IntPoint pixels() const;
-    Geom::Point dimensions() const;
-    Geom::Point origin() const;
-    Geom::Scale scale() const;
-    int device_scale() const;
-    Geom::Affine drawingTransform() const;
-    cairo_surface_type_t type() const;
+    Geom::Rect area() const { return Geom::Rect::from_xywh(_origin, dimensions()); } ///< Get the logical extents of the surface.
+    Geom::IntPoint pixels() const { return _pixels; } ///< Get the pixel dimensions of the surface
+    Geom::Point dimensions() const { return _pixels / _scale.vector(); } ///< Get the logical width and weight of the surface as a point.
+    Geom::Point origin() const { return _origin; }
+    Geom::Scale scale() const { return _scale; }
+    int device_scale() const { return _device_scale; }
+    Geom::Affine drawingTransform() const { return Geom::Translate(-_origin) * _scale; } ///< Get the transformation applied to the drawing context on construction.
     void dropContents();
 
     cairo_surface_t *raw() { return _surface; }
@@ -55,7 +55,7 @@ protected:
     Geom::Point _origin;
     Geom::Scale _scale;
     Geom::IntPoint _pixels;
-    int _device_scale; // To support HiDPI screens
+    int _device_scale;
     bool _has_context;
 
     friend class DrawingContext;
@@ -74,19 +74,18 @@ public:
     void prepare();
     void paintFromCache(DrawingContext &dc, Geom::OptIntRect &area, bool is_filter);
 
-  protected:
+protected:
     cairo_region_t *_clean_region;
     Geom::IntRect _pending_area;
     Geom::Affine _pending_transform;
+
 private:
     void _dumpCache(Geom::OptIntRect const &area);
-    static cairo_rectangle_int_t _convertRect(Geom::IntRect const &r);
-    static Geom::IntRect _convertRect(cairo_rectangle_int_t const &r);
 };
 
-} // end namespace Inkscape
+} // namespace Inkscape
 
-#endif // !SEEN_INKSCAPE_DISPLAY_DRAWING_ITEM_H
+#endif // INKSCAPE_DISPLAY_DRAWING_SURFACE_H
 
 /*
   Local Variables:

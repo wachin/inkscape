@@ -187,11 +187,11 @@ void ToleranceSlider::update (double val)
     _wr->setUpdating (true);
 
     SPDocument *doc = dt->getDocument();
-    bool saved = DocumentUndo::getUndoSensitive(doc);
-    DocumentUndo::setUndoSensitive(doc, false);
-    Inkscape::XML::Node *repr = dt->getNamedView()->getRepr();
-    repr->setAttribute(_key, os.str());
-    DocumentUndo::setUndoSensitive(doc, saved);
+    {
+        DocumentUndo::ScopedInsensitive _no_undo(doc);
+        Inkscape::XML::Node *repr = dt->getNamedView()->getRepr();
+        repr->setAttribute(_key, os.str());
+    }
 
     doc->setModifiedSinceSave();
     

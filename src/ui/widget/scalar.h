@@ -154,6 +154,17 @@ public:
     void    addSlider();
 
     /**
+     * remove leading zeros fron widget.
+     */
+    void setNoLeadingZeros();
+    bool setNoLeadingZerosOutput();
+
+    /**
+     * Set the number of set width chars of entry.
+     */
+    void setWidthChars(gint width_chars);
+
+    /**
      * Signal raised when the spin button's value changes.
      */
     Glib::SignalProxy0<void> signal_value_changed();

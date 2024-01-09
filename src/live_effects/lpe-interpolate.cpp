@@ -11,11 +11,8 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 #include "live_effects/lpe-interpolate.h"
-
 #include <2geom/sbasis-to-bezier.h>
-
 #include "display/curve.h"
-
 #include "object/sp-path.h"
 
 // TODO due to internal breakage in glibmm headers, this must be last:
@@ -47,6 +44,18 @@ LPEInterpolate::LPEInterpolate(LivePathEffectObject *lpeobject)
 
 LPEInterpolate::~LPEInterpolate() = default;
 
+
+bool 
+LPEInterpolate::doOnOpen(SPLPEItem const *lpeitem)
+{
+    if (!is_load || is_applied) {
+        return false;
+    }
+    trajectory_path.reload();
+    return false;
+}
+
+
 void LPEInterpolate::transform_multiply(Geom::Affine const &postmul, bool /*set*/)
 {
     if (sp_lpe_item && sp_lpe_item->pathEffectsEnabled() && sp_lpe_item->optimizeTransforms()) {
@@ -65,6 +74,9 @@ Geom::PathVector LPEInterpolate::doEffect_path(Geom::PathVector const &path_in)
     // Don't allow empty path parameter:
     if (trajectory_path.get_pathvector().empty()) {
         return path_in;
+    }
+    if (is_load) {
+        trajectory_path.reload();
     }
 
     Geom::PathVector path_out;
@@ -111,7 +123,8 @@ Geom::PathVector LPEInterpolate::doEffect_path(Geom::PathVector const &path_in)
 Geom::Piecewise<Geom::D2<Geom::SBasis> > LPEInterpolate::calculate_trajectory(Geom::OptRect bounds_A,
                                                                               Geom::OptRect bounds_B)
 {
-    Geom::Piecewise<Geom::D2<Geom::SBasis> > trajectory = trajectory_path.get_pathvector()[0].toPwSb();
+    Geom::Affine affine = trajectory_path.get_relative_affine();
+    Geom::Piecewise<Geom::D2<Geom::SBasis> > trajectory = trajectory_path.get_pathvector()[0].toPwSb() * affine;
 
     if (equidistant_spacing) {
         trajectory = Geom::arc_length_parametrization(trajectory);
@@ -148,10 +161,10 @@ void LPEInterpolate::resetDefaults(SPItem const *item)
 {
     Effect::resetDefaults(item);
 
-    if (!SP_IS_PATH(item))
+    if (!is<SPPath>(item))
         return;
 
-    SPCurve const *crv = SP_PATH(item)->curveForEdit();
+    SPCurve const *crv = cast<SPPath>(item)->curveForEdit();
     Geom::PathVector const &pathv = crv->get_pathvector();
     if ((pathv.size() < 2))
         return;

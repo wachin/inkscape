@@ -77,8 +77,7 @@ LPEDynastroke::LPEDynastroke(LivePathEffectObject *lpeobject) :
     show_orig_path = true;
 }
 
-LPEDynastroke::~LPEDynastroke()
-= default;
+LPEDynastroke::~LPEDynastroke() = default;
 
 Geom::Piecewise<Geom::D2<Geom::SBasis> >
 LPEDynastroke::doEffect_pwd2 (Geom::Piecewise<Geom::D2<Geom::SBasis> > const & pwd2_in)

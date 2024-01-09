@@ -25,6 +25,7 @@
 
 #include "display/control/canvas-temporary-item.h"
 #include "display/control/canvas-item-enums.h"
+#include "display/control/canvas-item-ptr.h"
 
 class SPKnot;
 
@@ -37,12 +38,9 @@ namespace Tools {
 
 class MeasureTool : public ToolBase {
 public:
-    MeasureTool();
+    MeasureTool(SPDesktop *desktop);
     ~MeasureTool() override;
 
-    static const std::string prefsPath;
-
-    void finish() override;
     bool root_handler(GdkEvent* event) override;
     virtual void showCanvasItems(bool to_guides = false, bool to_item = false, bool to_phantom = false, Inkscape::XML::Node *measure_repr = nullptr);
     virtual void reverseKnots();
@@ -53,7 +51,6 @@ public:
     virtual void reset();
     virtual void setMarkers();
     virtual void setMarker(bool isStart);
-    const std::string& getPrefsPath() override;
     Geom::Point readMeasurePoint(bool is_start);
 
     void showInfoBox(Geom::Point cursor, bool into_groups);
@@ -65,7 +62,7 @@ public:
                  Inkscape::XML::Node *measure_repr = nullptr);
     void setMeasureCanvasText(bool is_angle, double precision, double amount, double fontsize,
                               Glib::ustring unit_name, Geom::Point position, guint32 background,
-                              Inkscape::CanvasItemTextAnchor text_anchor, bool to_item, bool to_phantom,
+                              bool to_left, bool to_item, bool to_phantom,
                               Inkscape::XML::Node *measure_repr);
     void setMeasureCanvasItem(Geom::Point position, bool to_item, bool to_phantom,
                               Inkscape::XML::Node *measure_repr);
@@ -73,13 +70,16 @@ public:
                                      Inkscape::CanvasItemColor color, Inkscape::XML::Node *measure_repr);
     void setLabelText(Glib::ustring const &value, Geom::Point pos, double fontsize, Geom::Coord angle,
                       guint32 background,
-                      Inkscape::XML::Node *measure_repr = nullptr,
-                      Inkscape::CanvasItemTextAnchor text_anchor = Inkscape::CANVAS_ITEM_TEXT_ANCHOR_CENTER);
+                      Inkscape::XML::Node *measure_repr = nullptr);
 
     void knotStartMovedHandler(SPKnot */*knot*/, Geom::Point const &ppointer, guint state);
     void knotEndMovedHandler(SPKnot */*knot*/, Geom::Point const &ppointer, guint state);
     void knotClickHandler(SPKnot *knot, guint state);
     void knotUngrabbedHandler(SPKnot */*knot*/,  unsigned int /*state*/);
+    void setMeasureItem(Geom::PathVector pathv, bool is_curve, bool markers, guint32 color, Inkscape::XML::Node *measure_repr);
+    void createAngleDisplayCurve(Geom::Point const &center, Geom::Point const &end, Geom::Point const &anchor,
+                                 double angle, bool to_phantom,
+                                 Inkscape::XML::Node *measure_repr = nullptr);
 
 private:
     std::optional<Geom::Point> explicit_base;
@@ -91,9 +91,9 @@ private:
     Geom::Point end_p;
     Geom::Point last_pos;
 
-    std::vector<Inkscape::CanvasItem *> measure_tmp_items;
-    std::vector<Inkscape::CanvasItem *> measure_phantom_items;
-    std::vector<Inkscape::CanvasItem *> measure_item;
+    std::vector<CanvasItemPtr<CanvasItem>> measure_tmp_items;
+    std::vector<CanvasItemPtr<CanvasItem>> measure_phantom_items;
+    std::vector<CanvasItemPtr<CanvasItem>> measure_item;
 
     double item_width;
     double item_height;

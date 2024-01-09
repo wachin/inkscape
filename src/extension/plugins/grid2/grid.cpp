@@ -45,7 +45,7 @@ namespace Internal {
 bool
 Grid::load (Inkscape::Extension::Extension */*module*/)
 {
-    // std::cout << "Hey, I'm Grid, I'm loading!" << std::endl;
+    // std::cerr << "Hey, I'm Grid, I'm loading!" << std::endl;
     return TRUE;
 }
 
@@ -55,7 +55,7 @@ Glib::ustring build_lines(Geom::Rect bounding_area,
                           Geom::Point const &offset, Geom::Point const &spacing)
 {
 
-    std::cout << "Building lines" << std::endl;
+    std::cerr << "Building lines" << std::endl;
 
     Geom::Point point_offset(0.0, 0.0);
 
@@ -74,7 +74,7 @@ Glib::ustring build_lines(Geom::Rect bounding_area,
                 .lineTo(end_point + point_offset);
         }
     }
-    std::cout << "Path data:" << path_data.c_str() << std::endl;
+    std::cerr << "Path data:" << path_data.c_str() << std::endl;
     return path_data;
 }
 
@@ -89,16 +89,15 @@ void
 Grid::effect (Inkscape::Extension::Effect *module, Inkscape::UI::View::View *document, Inkscape::Extension::Implementation::ImplementationDocumentCache * /*docCache*/)
 {
 
-    std::cout << "Executing effect" << std::endl;
+    std::cerr << "Executing effect" << std::endl;
 
-    Inkscape::Selection * selection     = ((SPDesktop *)document)->selection;
+    Inkscape::Selection *selection = static_cast<SPDocument *>(document)->getSelection();
 
     Geom::Rect bounding_area = Geom::Rect(Geom::Point(0,0), Geom::Point(100,100));
     if (selection->isEmpty()) {
         /* get page size */
         SPDocument * doc = document->doc();
-        bounding_area = Geom::Rect(  Geom::Point(0,0),
-                                     Geom::Point(doc->getWidth().value("px"), doc->getHeight().value("px"))  );
+        bounding_area = *(doc->preferredBounds());
     } else {
         Geom::OptRect bounds = selection->visualBounds();
         if (bounds) {
@@ -152,7 +151,7 @@ public:
     PrefAdjustment(Inkscape::Extension::Extension * ext, char * pref) :
             Gtk::Adjustment(0.0, 0.0, 10.0, 0.1), _ext(ext), _pref(pref) {
         this->set_value(_ext->get_param_float(_pref));
-        this->signal_value_changed().connect(sigc::mem_fun(this, &PrefAdjustment::val_changed));
+        this->signal_value_changed().connect(sigc::mem_fun(*this, &PrefAdjustment::val_changed));
         return;
     };
 
@@ -168,23 +167,23 @@ public:
 void
 PrefAdjustment::val_changed ()
 {
-    // std::cout << "Value Changed to: " << this->get_value() << std::endl;
+    // std::cerr << "Value Changed to: " << this->get_value() << std::endl;
     _ext->set_param_float(_pref, this->get_value());
     return;
 }
 
-/** \brief  A function to get the prefences for the grid
+/** \brief  A function to get the preferences for the grid
     \param  module  Module which holds the params
     \param  view     Unused today - may get style information in the future.
 
     Uses AutoGUI for creating the GUI.
 */
 Gtk::Widget *
-Grid::prefs_effect(Inkscape::Extension::Effect *module, Inkscape::UI::View::View * view, sigc::signal<void> * changeSignal, Inkscape::Extension::Implementation::ImplementationDocumentCache * /*docCache*/)
+Grid::prefs_effect(Inkscape::Extension::Effect *module, Inkscape::UI::View::View * view, sigc::signal<void ()> * changeSignal, Inkscape::Extension::Implementation::ImplementationDocumentCache * /*docCache*/)
 {
     SPDocument * current_document = view->doc();
 
-    auto selected = ((SPDesktop *) view)->getSelection()->items();
+    auto selected = static_cast<SPDocument *>(view)->getSelection()->items();
     Inkscape::XML::Node * first_select = nullptr;
     if (!selected.empty()) {
         first_select = selected.front()->getRepr();

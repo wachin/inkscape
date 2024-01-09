@@ -25,7 +25,8 @@ namespace Filters {
 
 class FilterSlot;
 
-enum FilterColorMatrixType {
+enum FilterColorMatrixType
+{
     COLORMATRIX_MATRIX,
     COLORMATRIX_SATURATE,
     COLORMATRIX_HUEROTATE,
@@ -33,24 +34,25 @@ enum FilterColorMatrixType {
     COLORMATRIX_ENDTYPE
 };
 
-class FilterColorMatrix : public FilterPrimitive {
+class FilterColorMatrix : public FilterPrimitive
+{
 public:
     FilterColorMatrix();
-    static FilterPrimitive *create();
     ~FilterColorMatrix() override;
 
-    void render_cairo(FilterSlot &slot) override;
-    bool can_handle_affine(Geom::Affine const &) override;
-    double complexity(Geom::Affine const &ctm) override;
+    void render_cairo(FilterSlot &slot) const override;
+    bool can_handle_affine(Geom::Affine const &) const override;
+    double complexity(Geom::Affine const &ctm) const override;
 
     virtual void set_type(FilterColorMatrixType type);
     virtual void set_value(double value);
     virtual void set_values(std::vector<double> const &values);
 
-    Glib::ustring name() override { return Glib::ustring("Color Matrix"); }
+    Glib::ustring name() const override { return Glib::ustring("Color Matrix"); }
 
 public:
-    struct ColorMatrixMatrix {
+    struct ColorMatrixMatrix
+    {
         ColorMatrixMatrix(std::vector<double> const &values);
         guint32 operator()(guint32 in);
     private:
@@ -63,10 +65,10 @@ private:
     FilterColorMatrixType type;
 };
 
-} /* namespace Filters */
-} /* namespace Inkscape */
+} // namespace Filters
+} // namespace Inkscape
 
-#endif /* __NR_FILTER_COLOR_MATRIX_H__ */
+#endif // SEEN_NR_FILTER_COLOR_MATRIX_H
 /*
   Local Variables:
   mode:c++

@@ -17,31 +17,30 @@
 #include "sp-filter-primitive.h"
 #include "display/nr-filter-blend.h"
 
-#define SP_FEBLEND(obj) (dynamic_cast<SPFeBlend*>((SPObject*)obj))
-#define SP_IS_FEBLEND(obj) (dynamic_cast<const SPFeBlend*>((SPObject*)obj) != NULL)
-
-class SPFeBlend : public SPFilterPrimitive {
+class SPFeBlend final
+    : public SPFilterPrimitive
+{
 public:
-	SPFeBlend();
-	~SPFeBlend() override;
-
-    SPBlendMode blend_mode;
-    int in2;
+    SPBlendMode get_blend_mode() const { return blend_mode; }
+    int get_in2() const { return in2_slot; }
+    int tag() const override { return tag_of<decltype(*this)>; }
 
 protected:
-	void build(SPDocument* doc, Inkscape::XML::Node* repr) override;
-	void release() override;
+    void build(SPDocument *doc, Inkscape::XML::Node *repr) override;
+    void set(SPAttr key, char const *value) override;
+    Inkscape::XML::Node *write(Inkscape::XML::Document *doc, Inkscape::XML::Node *repr, unsigned flags) override;
 
-	void set(SPAttr key, const gchar* value) override;
+    void resolve_slots(SlotResolver &) override;
+    std::unique_ptr<Inkscape::Filters::FilterPrimitive> build_renderer(Inkscape::DrawingItem *item) const override;
 
-	void update(SPCtx* ctx, unsigned int flags) override;
+private:
+    SPBlendMode blend_mode = SP_CSS_BLEND_NORMAL;
 
-	Inkscape::XML::Node* write(Inkscape::XML::Document* doc, Inkscape::XML::Node* repr, guint flags) override;
-
-	void build_renderer(Inkscape::Filters::Filter* filter) override;
+    std::optional<std::string> in2_name;
+    int in2_slot = Inkscape::Filters::NR_FILTER_SLOT_NOT_SET;
 };
 
-#endif /* !SP_FEBLEND_H_SEEN */
+#endif // SP_FEBLEND_H_SEEN
 
 /*
   Local Variables:

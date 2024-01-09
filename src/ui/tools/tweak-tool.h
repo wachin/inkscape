@@ -13,8 +13,10 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
-#include "ui/tools/tool-base.h"
 #include <2geom/point.h>
+#include "ui/tools/tool-base.h"
+#include "display/control/canvas-item-ptr.h"
+#include "helper/auto-connection.h"
 
 #define SAMPLING_SIZE 8        /* fixme: ?? */
 
@@ -45,13 +47,14 @@ enum {
     TWEAK_MODE_BLUR
 };
 
-class TweakTool : public ToolBase {
+class TweakTool : public ToolBase
+{
 public:
-	TweakTool();
-	~TweakTool() override;
+    TweakTool(SPDesktop *desktop);
+    ~TweakTool() override;
 
     /* extended input data */
-    gdouble pressure;
+    double pressure;
 
     /* attributes */
     bool dragging;           /* mouse state: mouse is dragging */
@@ -62,34 +65,28 @@ public:
     double force;
     double fidelity;
 
-    gint mode;
+    int mode;
 
     bool is_drawing;
 
     bool is_dilating;
     bool has_dilated;
     Geom::Point last_push;
-    Inkscape::CanvasItemBpath *dilate_area;
+    CanvasItemPtr<CanvasItemBpath> dilate_area;
 
     bool do_h;
     bool do_s;
     bool do_l;
     bool do_o;
 
-  	sigc::connection style_set_connection;
+    auto_connection style_set_connection;
 
-	static const std::string prefsPath;
-
-	void setup() override;
-	void set(const Inkscape::Preferences::Entry& val) override;
-	bool root_handler(GdkEvent* event) override;
-
-	const std::string& getPrefsPath() override;
-
-	void update_cursor(bool with_shift);
+    void set(const Inkscape::Preferences::Entry &val) override;
+    bool root_handler(GdkEvent *event) override;
+    void update_cursor(bool with_shift);
 
 private:
-	bool set_style(const SPCSSAttr* css);
+    bool set_style(const SPCSSAttr *css);
 };
 
 }

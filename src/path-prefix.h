@@ -16,5 +16,8 @@
 char const *get_inkscape_datadir();
 char const *get_program_name();
 char const *get_program_dir();
+char const *get_user_config_dir();
+
+void set_xdg_env();
 
 #endif /* _PATH_PREFIX_H_ */

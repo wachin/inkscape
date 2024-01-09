@@ -10,48 +10,30 @@
  *
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
-
-#ifndef __FILTERSET_H__
-#define __FILTERSET_H__
-
-#include "imagemap.h"
+#ifndef INKSCAPE_TRACE_FILTERSET_H
+#define INKSCAPE_TRACE_FILTERSET_H
 
 #include <gdk-pixbuf/gdk-pixbuf.h>
+#include "imagemap.h"
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-/**
- *  Apply gaussian blur to an GrayMap
- */
-GrayMap *grayMapGaussian(GrayMap *gmap);
+namespace Inkscape {
+namespace Trace {
 
 /**
- *  Apply gaussian bluf to an RgbMap
+ * Apply gaussian blur to an GrayMap.
  */
-RgbMap *rgbMapGaussian(RgbMap *rgbmap);
+GrayMap grayMapGaussian(GrayMap const &gmap);
 
 /**
- *
+ * Apply gaussian blur to an RgbMap.
  */
-GrayMap *grayMapCanny(GrayMap *gmap,
-             double lowThreshold, double highThreshold);
+RgbMap rgbMapGaussian(RgbMap const &rgbmap);
 
-/**
- *
- */
-GrayMap *quantizeBand(RgbMap *rgbmap, int nrColors);
+GrayMap grayMapCanny(GrayMap const &gmap, double lowThreshold, double highThreshold);
 
+GrayMap quantizeBand(RgbMap const &rgbmap, int nrColors);
 
+} // namespace Trace
+} // namespace Inkscape
 
-#ifdef __cplusplus
-}
-#endif
-
-
-#endif /* __FILTERSET_H__ */
-
-/*#########################################################################
-### E N D    O F    F I L E
-#########################################################################*/
+#endif // INKSCAPE_TRACE_FILTERSET_H

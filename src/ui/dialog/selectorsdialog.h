@@ -49,12 +49,8 @@ namespace Dialog {
 class SelectorsDialog : public DialogBase
 {
 public:
-    // No default constructor, noncopyable, nonassignable
     SelectorsDialog();
     ~SelectorsDialog() override;
-    SelectorsDialog(SelectorsDialog const &d) = delete;
-    SelectorsDialog operator=(SelectorsDialog const &d) = delete;
-    static SelectorsDialog &getInstance() { return *new SelectorsDialog(); }
 
     void update() override;
     void desktopReplaced() override;
@@ -152,17 +148,14 @@ public:
     void _removeClass(SPObject *obj, const Glib::ustring &className, bool all = false);
     void _toggleDirection(Gtk::RadioButton *vertical);
     void _showWidgets();
-    void _resized();
-    void _childresized();
-    void _panedresized(Gtk::Allocation allocation);
 
     void _selectObjects(int, int);
     // Variables
-    double _scroolpos;
-    bool _scroollock;
-    bool _updating;                 // Prevent cyclic actions: read <-> write, select via dialog <-> via desktop
-    Inkscape::XML::Node *m_root = nullptr;
-    Inkscape::XML::Node *_textNode; // Track so we know when to add a NodeObserver.
+    double _scrollpos{0.0};
+    bool _scrollock{false};
+    bool _updating{false};          // Prevent cyclic actions: read <-> write, select via dialog <-> via desktop
+    Inkscape::XML::Node *m_root{nullptr};
+    Inkscape::XML::Node *_textNode{nullptr}; // Track so we know when to add a NodeObserver.
 
     void _rowExpand(const Gtk::TreeModel::iterator &iter, const Gtk::TreeModel::Path &path);
     void _rowCollapse(const Gtk::TreeModel::iterator &iter, const Gtk::TreeModel::Path &path);
@@ -173,16 +166,17 @@ public:
     // Signal and handlers - Internal
     void _addSelector();
     void _delSelector();
+    static Glib::ustring _getSelectorClasses(Glib::ustring selector);
     bool _handleButtonEvent(GdkEventButton *event);
     void _buttonEventsSelectObjs(GdkEventButton *event);
     void _selectRow(); // Select row in tree when selection changed.
-    void _vscrool();
+    void _vscroll();
 
     // GUI
     void _styleButton(Gtk::Button& btn, char const* iconName, char const* tooltip);
 };
 
-} // namespace Dialogc
+} // namespace Dialog
 } // namespace UI
 } // namespace Inkscape
 

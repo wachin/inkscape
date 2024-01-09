@@ -54,14 +54,15 @@
 
 /* Black */
 
+@import url("highlight-colors.css");
 
 /* Inkscape CSS helper
     * to add a class to a widget do some thing like
     * widget->get_style_context()->add_class("mycoolclass");
     * we define a bunch of helper CSS styles
     * Each Inkscape desktop has some classes in top level window
-    * called "dark|bright" (syncked with dark or brighrt themes) and "symbolic|regular" (defined by the user in themes preferences) 
-    * so you can style using this clases 
+    * called "dark|bright" (syncked with dark or brighrt themes) and "symbolic|regular" (defined by the user in themes preferences)
+    * so you can style using this clases
     * by this way you can always know if the UI is in dark mode or using symbolic icons
     * Also added some helper clases:
     * ".inverted" invert colors fon widhet and childs
@@ -95,6 +96,10 @@
     -gtk-icon-style: symbolic;
 }
 
+.titlebutton > image {
+    -gtk-icon-style: requested;
+}
+
 .inverted,
 .dark .forcebright,
 .bright .forcedark {
@@ -114,21 +119,29 @@
     -gtk-secondary-caret-color: @theme_fg_color;
 }
 
+.noborder{
+    border-width:0;
+}
 
-/* blinking animation for dialogs */
+/* blinking animation for dialogs reopen*/
 @keyframes blink_border {
-  from { border-color: @theme_selected_fg_color; }
-  to   { border-color: @theme_selected_bg_color; }
+  0% { border-color: @theme_selected_fg_color;}
+  90%   { border-color: @theme_selected_bg_color; }
+  100%   { border-color: @theme_selected_fg_color;  }
 }
 @keyframes blink_background {
-  from { background-color: @theme_bg_color; }
-  to   { background-color: @theme_selected_bg_color; }
+  0% { background-color: @theme_bg_color;  }
+  90%   { background-color: @theme_selected_bg_color; }
+  100%   { background-color: @theme_bg_color;  }
 }
+
+
 notebook.blink {
-  animation: blink_border 333ms ease-in-out infinite;
+  animation: 0.5s blink_border 0.1s ease 1;
 }
+
 notebook.blink > header > tabs > tab:checked {
-  animation: blink_background 333ms ease-in-out infinite;
+  animation: 0.5s blink_background 0.1s ease 1;
 }
 
 
@@ -155,12 +168,17 @@ notebook.blink > header > tabs > tab:checked {
     color: inherit;
 }
 
-/* attribute dialog popup size */
+
+/* atribute dialog popup size */
 .attrpop textview {
-    font-size: 13px;
+    font-size: 1em;
 }
 
-/* 
+.mono-font {
+    /* note: monospaced font is set by ThemeContext::adjust_global_font_scale() */
+}
+
+/*
 *to get system default colors
 * with Gdk::RGBA success =_symbolic_error_color.get_stseparatole_context()->get_color();
 * _symbolic_error_color has one of this classes applied
@@ -200,13 +218,40 @@ iconview *:hover {
     border-width:0;
 }
 
-.inksmall {
-    font-size: 11px;
+#start-screen-window .combo {
+    padding:1px 10px;
+
+}
+#start-screen-window .combo * {
+    padding:2px;
 }
 
-/* Tool Toolbox */
-#ToolToolbox button {
-    min-height: 16px; /* By default this is 24px which adds too much space when using "Smaller" icons. */
+#start-screen-window grid label {
+    font-size:small;
+    margin:12px;
+}
+
+#start-screen-window * {
+    outline:0;
+}
+
+.inksmall {
+    font-size: 0.8em;
+}
+
+.menu-category {
+    font-size: smaller;
+    font-weight: bold;
+}
+
+.small-heading {
+    font-size: smaller;
+    font-weight: bold;
+    opacity: 0.5;
+}
+
+.halfrem-vert-space {
+    margin-top: 0.5rem;
 }
 
 #CommandPaletteBase {
@@ -219,7 +264,480 @@ iconview *:hover {
     border-bottom: 1px solid @bg_color5;
 }
 
+
+/* Selector dialog */
+#SelectorsAndStyleDialog button {
+    padding: 4px;
+    min-height: 16px;
+    margin: 2px;
+    padding: 2px;
+}
+
+#SelectorsAndStyleDialog .toggle {
+    min-width: 18px;
+    padding-left: 6px;
+    padding-right: 6px;
+    padding-top: 0;
+    padding-bottom: 0;
+}
+
+#SelectorsAndStyleDialog .radio.image-button {
+    margin: 0;
+    padding: 0px;
+    border-radius: 2px 0 0 2px;
+}
+
+#SelectorsAndStyleDialog .radio.image-button:last-child {
+    border-radius: 0 2px 2px 0;
+    border-left-width: 0;
+}
+
+#SelectorsAndStyleDialog treeview button {
+    border-width: 0;
+    margin: 0 0 1px 0;
+}
+
+#SelectorsAndStyleDialog treeview button:nth-child(3),
+#SelectorsAndStyleDialog treeview.style_sheet button:nth-child(4) {
+    border-width: 0 0 0 2px;
+    border-color: @theme_fg_color;
+    border-style: solid;
+    opacity: 0.5;
+}
+
+#SelectorsAndStyleDialog treeview.style_sheet button:nth-child(3) {
+    border-width: 0;
+}
+
+#SelectorsAndStyleDialog #StyleDialog treeview button *{
+    font-size:5px;
+    min-height:1px;
+    padding:0;
+    margin:0;
+}
+
+#SelectorsAndStyleDialog #StyleDialog treeview button {
+    padding:0;
+    min-height:1px;
+    border-left-width:4px;
+    border-color:@success_color;
+}
+
+#InkRuler {
+    /* make size relative */
+    font-size: smaller;
+    color: alpha(@theme_fg_color, 0.6);
+    min-height: 2em;
+}
+
+.bright #InkRuler {
+    /* increase contrast between background and page area */
+    background-color: shade(@theme_bg_color, 0.94);
+}
+
+.bright #InkRuler.shadow {
+    border-color: rgba(0,0,0,0.3);
+}
+.dark #InkRuler.shadow {
+    border-color: rgba(0,0,0,0.5);
+}
+
+.dark #InkRuler.page {
+    background-color: #1d1e1e;
+}
+.bright #InkRuler.page {
+    background-color: #fff;
+}
+#InkRuler.selection {
+    border-color: rgba(22, 169, 249, 0.8);
+    background-color: transparent;
+}
+
+/* The actual canvas (Inkscape's drawing area). */
+SPCanvas {
+    background-color: white;
+}
+
+#TextFontFamilyAction_combobox {
+    -GtkComboBox-appears-as-list: true;
+}
+
+#QuickActions,
+#StickyZoom ,#StickyZoom *,
+#LockGuides, #LockGuides *,
+#PreviewMode,#PreviewMode  *,
+#CMS_Adjust, #CMS_Adjust * {
+    padding: 0;
+    min-height:3px;
+    font-size:16px;
+}
+#QuickActions {
+    padding: 2px 0;
+}
+
+/* Keep palette scrollbar from generating warnings. */
+#PreviewHolderScroller .vertical slider {
+    min-height: 15px;
+}
+
+/* Override minimum size of container children for palette. */
+#ColorItemPreview {
+    min-height: 5px;
+    min-width: 5px;
+}
+
+/* Reduce width of Fill and Stroke dialog */
+#ColorModeButton {
+    padding-left: 0;
+    padding-right: 0;
+}
+
+/* InkSpinScale */
+#InkSpinScale {
+    padding: 0px;
+}
+
+#InkSpinScale trough,
+#InkSpinScale slider,
+#InkSpinScale highlight {
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
+}
+
+/* Hide slider */
+#InkSpinScale slider {
+    background: none;
+    border: none;
+    outline: none;
+    min-width: 0px;
+    min-height: 0px;
+    padding: 0px;
+    margin: 0px;
+}
+
+#InkSpinScale scale {
+    padding: 0px;
+    margin:0;
+}
+
+#InkSpinScale trough {
+    min-height: 25px;
+    padding: 0; /* remove padding to make inkspinscale the same height as spinbutton */
+}
+#InkSpinScale trough highlight {
+    margin: 0;
+}
+
+#InkSpinScale box.active {
+    box-shadow: 0 0 0 1px rgb(74, 144, 217);
+}
+
+#InkSpinScale spinbutton {
+    box-shadow: none;
+    min-height: 10px;
+    border-left:0;
+    border-top-left-radius: 0;
+    border-bottom-left-radius: 0;
+}
+
+#InkSpinScale spinbutton entry {
+    min-height: 25px;
+    outline-style: none;
+}
+
+#UnicodeIconView {
+    font-size: 1.2em;
+}
+
+#ObjectsTreeView.view:focus {
+    outline-style: double;
+    outline-width: 5px;
+    outline-color: alpha (@theme_fg_color, 0.1);
+    -gtk-outline-radius: 50%;
+}
+#ObjectsTreeView.view:hover {
+    border-color: alpha (@theme_fg_color, 0.1);
+    border-style: solid;
+    border-width: 1px 0px;
+}
+#ObjectsTreeView {
+    -GtkTreeView-expander-size: 12;
+    -GtkTreeView-horizontal-separator: 2;
+    -GtkTreeView-vertical-separator: 2;
+}
+#Objects .search {
+  padding: 2px 4px;
+  min-height: 16px;
+  font-size: smaller;
+}
+
+#SimpleFilterModifier #InkSpinScale {
+    padding: 2px 4px;
+}
+
+/* GtkTreeView: clarify drop locations (especially important for XML editor) */
+treeview.view:drop(active) {
+    border-style: solid;
+    border-width: 2px;
+}
+
+treeview.view:drop(active).after {
+    border-style: none none solid none;
+}
+
+treeview.view:drop(active).before {
+    border-style: solid none none none;
+}
+
+treeview.view:drop(active).after,
+treeview.view:drop(active).before {
+    border-width: 4px;
+    border-radius: 10px;
+}
+
+button.close-button{
+    background-image: none;
+    padding: 0px;
+    min-height: 1px;
+    min-width: 1px;
+    border: none;
+    opacity: 0.5;
+    box-shadow: none;
+}
+
+button.close-button:hover{
+    box-shadow: none;
+    opacity: 1;
+}
+
+button.link:hover image {
+    -gtk-icon-effect: dim;
+}
+
+.marker-item.box {
+    padding: 4px;
+}
+.marker-separator {
+    padding: 0;
+}
+
+.tight-button {
+    padding: 5px 3px;
+}
+
+.small-button {
+    /* small button in-line with spinbuttons, made small not to inflate height of spinbutton */
+    padding: 1px 3px;
+}
+
+.link-edit-button {
+    padding: 5px 3px;
+    min-width: 0.5em;
+}
+
+/* In some themes stack switcher buttons are extra wide forcing dialogs too wide */
+stackswitcher button {
+    padding-left: 1px;
+    padding-right: 1px;
+    min-width: 40px;
+}
+
+/*removes dashed line (scrolling indicator) on color palette for all themes */
+.color-palette-main-box scrolledwindow undershoot.top,
+.color-palette-main-box scrolledwindow undershoot.right,
+.color-palette-main-box scrolledwindow undershoot.bottom,
+.color-palette-main-box scrolledwindow undershoot.left {
+    background-image: none;
+}
+
+.backgnd-passive {
+    background-color: @theme_bg_color;
+    opacity: 0.5;
+    transition: background-color 300ms linear;
+}
+
+@keyframes pulse {
+  0% {
+    opacity: 0.3;
+  }
+  50% {
+    opacity: 0.9;
+  }
+  100% {
+    opacity: 0.3;
+  }
+}
+
+.backgnd-active {
+  animation-name: pulse;
+  background-color: @theme_selected_bg_color;
+  animation-duration: 1s;
+  animation-timing-function: ease;
+  animation-iteration-count: infinite;
+}
+
+.nb-highlight > header.top {
+  background-color: @theme_selected_bg_color;
+}
+
+.tight-flowbox flowboxchild {
+    margin: 0;
+    padding: 0px;
+}
+.tight-flowbox button {
+    margin: 0;
+    padding: 4px;
+}
+
+/* slider with tighter margins */
+scale.tight-slider {
+    padding: 8px 4px 7px 4px;
+}
+
+/* add .small-marks class to Gtk::Scale to have smaller font used, since markup didn't work there */
+scale.small-marks.marks-after {
+    font-size: smaller;
+}
+
+/* Square toolbar buttons: request square buttons for all toolbars. */
+button.square-button {
+    padding: 3px;
+}
+
+button.square-button image {
+    padding: 0;
+    min-width: 16px;
+    min-height: 16px;
+}
+
+/* Give layer selector button label a highlight color */
+#LayerSelector label
+{
+    padding-left: 6px;
+    border-left: 3px solid white;
+}
+
+#DialogNotebook #Swatches {
+    padding-left: 10px;
+    padding-top: 10px;
+}
+
+#DialogNotebook #Swatches box {
+    margin-bottom: 5px
+}
+
+#DialogNotebook #Swatches box label {
+    padding-left: 7px;
+}
+
+#StyleSwatch label {
+    font-size: smaller;
+}
+
+#DocumentProperties #NotebookPage {
+    margin-left: 4px;
+    margin-right: 4px;
+}
+
+.dialog-heading {
+    font-weight: bold;
+}
+
+/* heading label in dialogs */
+.heading {
+    font-weight: bold;
+    font-size: 1.1em; /* make it optically comparable with non-bold */
+    margin-top: 0.5em;
+}
+/* topmost heading in dialogs */
+.heading.top {
+    margin-top: 0.2em;
+}
+
+/* single-level indentation for labels in a dialog */
+.indent {
+    margin-left: 1em;
+}
+
+.small-font {
+    font-size: smaller;
+}
+
+.toolbar-separator {
+    margin: 7px 3px;
+}
+
+/* for dialogs with "Apply" button (or equivalent) - larger hit target */
+.wide-apply-button {
+    min-width: 150px;
+}
+
+button.menu-btn-tight {
+    padding-left: 0;
+    padding-right: 0;
+}
+
+#DockedDialogNotebook {
+    border: none;
+}
+
+#DialogMenuButton {
+    padding: 3px;
+    border: none;
+    opacity: 0.5;
+}
+
+#DialogMenuButton:hover {
+    opacity: 1;
+}
+
+#DesktopStatusBar {
+    margin-right: 1em;
+}
+/*
+ * Inkscape Export Dialog
+ */
+#ExportDialog #export_selection{
+    border-radius: 0px;
+}
+#ExportDialog #export_preview_single {
+    border: 1px solid;
+}
+#ExportDialog #export_preview_batch {
+    border: 1px solid;
+}
+
+.key {
+    border-radius: 3px;
+    background-color: alpha(@theme_fg_color, 0.15);
+    padding: 2px;
+}
+
+combobox.flat-combobox button {
+    border: none;
+    background-color: transparent;
+    background-image: image(transparent);
+}
+
+.filter-effects, .effects-params {
+    min-height: 50px;
+}
+
+.dark .symbolsoverlay iconview:not(:selected) {
+    background-color: #f0f0f0; /* bright background color for typically black symbols */
+    /* background-color: @theme_fg_color; - this doesn't work for some themes (like MonoThemeDark) */
+    color:@theme_bg_color; /* symbol text labels */
+}
+
+.dark .symbolsoverlay {
+    color: @theme_bg_color; /* this is for overlay widget's children */
+}
+
 /* LPE Dialog add */
+#LPEScrolled {
+    border:none;
+}
+
 #LPESelectorFlowBox GtkFlowBoxChild,
 #LPESelectorFlowBox flowboxchild {
     border-width: 0px;
@@ -252,12 +770,10 @@ iconview *:hover {
 }
 
 #LPESelectorFlowBox .lpename {
-    font-size: 16px;
     margin-bottom: 5px;
 }
 
 #LPESelectorFlowBox .lpeinfo {
-    font-size: 16px;
     padding: 20px;
 }
 
@@ -306,13 +822,6 @@ margin:5px 1px 0px;
 padding:3px 3px 10px 3px;
 }
 
-#LPEDialogSelector.LPEPackMore flowboxchild label {
-font-size:14px;
-}
-
-#LPEDialogSelector.LPEPackMore #LPESelectorEffectInfoPop label{
-font-size:13px;
-}
 
 #LPEDialogSelector.LPEList .lpename {
     margin-bottom: 1px;
@@ -339,203 +848,185 @@ font-size:13px;
     opacity: 1;
 }
 
-/* Selector and XML dialog */
-#SelectorsAndStyleDialog button {
-    padding: 4px;
-    min-height: 16px;
-    margin: 2px;
-    padding: 2px;
+#LivePathEffect {
+    padding-top:5px;
 }
 
-#XMLAndAttributesDialog .toggle,
-#SelectorsAndStyleDialog .toggle {
-    min-width: 18px;
-    padding-left: 6px;
-    padding-right: 6px;
-    padding-top: 0;
-    padding-bottom: 0;
+#LivePathEffect expander:focus, #LivePathEffect expander > label:focus{
+    outline-width:0;
 }
 
-#XMLAndAttributesDialog .radio.image-button,
-#SelectorsAndStyleDialog .radio.image-button {
-    margin: 0;
-    padding: 0px;
-    border-radius: 2px 0 0 2px;
+#LivePathEffect list{
+    margin:5px 5px 0 5px;
 }
 
-#XMLAndAttributesDialog .radio.image-button:last-child,
-#SelectorsAndStyleDialog .radio.image-button:last-child {
-    border-radius: 0 2px 2px 0;
-    border-left-width: 0;
+#LivePathEffect list row{
+    margin:0;
+    padding:0;
+    border-width:0;
+    border-style:none;
+    outline-width:0;
+}
+#LivePathEffect list row > box{
+    margin:0;
+    padding:1px;
+    border-width:1px;
+    border-radius:4px;
+    margin-bottom:5px;
+    border-style:solid;
+    border-color:@borders;
+    outline-width:0;
 }
 
-#SelectorsAndStyleDialog treeview button {
-    border-width: 0;
-    margin: 0 0 1px 0;
+#LivePathEffect list row:last-child  > box{
+    margin-bottom:0px;
 }
 
-#SelectorsAndStyleDialog treeview button:nth-child(3),
-#SelectorsAndStyleDialog treeview.style_sheet button:nth-child(4) {
-    border-width: 0 0 0 2px;
-    border-color: @theme_fg_color;
-    border-style: solid;
-    opacity: 0.5;
+#LPEEffectItem{
+    border-radius:3px;
+    padding:2px;
+    outline:0;
 }
 
-#SelectorsAndStyleDialog treeview.style_sheet button:nth-child(3) {
-    border-width: 0;
+#LPEEffectItem .minbutton {
+    padding:0;
+    margin:0;
+    outline:0;
+    border-color:@borders;
 }
 
-#SelectorsAndStyleDialog treeview button {
-    min-height: 3px;
-    font-size: 1px;
+#LPEEffectItem expander title label {
+    min-height:26px;
 }
 
-#InkRuler {
-    font-size: 7pt;
+#LPEEffectItem expander, 
+#LPEEffectItem expander *,
+#LPEEffectItem expander:focus, 
+#LPEEffectItem expander *:focus {
+    outline:0;
 }
 
-/* The actual canvas (Inkscape's drawing area). */
-SPCanvas {
-    background-color: white;
+.LPEDrag,.LPEDrag:active,.LPEDrag:focus,.LPEDrag:hover {
+    margin:0;
+    padding:0;
+    border-style:none;
+    opacity:0.7;
+    background-color:transparent;
+    background-image:none;
+    outline:0;
 }
 
-#TextFontFamilyAction_combobox {
-    -GtkComboBox-appears-as-list: true;
+.LPEDrag:hover {
+    opacity:1;
+    background-color:transparent;
+    background-image:none;
 }
 
-#LockGuides,
-#StickyZoom,
-#CMS_Adjust {
-    padding: 0;
+#LivePathEffect list#LPEParentBox row{
+    border-style:none;
+    outline:0;
 }
 
-/* Keep palette scrollbar from generating warnings. */
-#PreviewHolderScroller .vertical slider {
-    min-height: 15px;
+#LivePathEffect list#LPEParentBox row > button {
+    padding:2px;
+    margin:0;
 }
 
-/* Override minimum size of container children for palette. */
-#ColorItemPreview {
-    min-height: 5px;
-    min-width: 5px;
+#LPEContainer:drop(active) {
+    box-shadow:none;
 }
 
-/* Reduce width of Fill and Stroke dialog */
-#ColorModeButton {
-    padding-left: 0;
-    padding-right: 0;
+#LPECurrentItem *{
+    color:@theme_fg_color;
 }
 
-/* InkSpinScale */
-#InkSpinScale {
-    background: @theme_bg_color;
-    border: 1px black;
-    border-radius: 3px;
-    padding: 0px;
+#LPEContainer #LPEListBox{
+    border-style: solid none solid none;
+    border-color: @theme_base_color;
+    border-width:0;
+    padding:0;
+}
+#LPEListBox row:drop(active){
+    box-shadow:none;
+}
+#LPEContainer:drop(active).before row:first-child > box,
+#LPEListBox row:drop(active).before > box{
+    border-width:6px 1px 1px 1px;
+    border-color: @theme_selected_bg_color @borders @borders @borders;
+    box-shadow:none;
+    border-radius:6px 6px 0 0;
 }
 
-#InkSpinScale spinbutton {
-    border-color: #eee;
-    border-width: 0 0 0 0;
-    border-radius: 0 3px 3px 0;
-    box-shadow: none;
-    padding: 0 0 0 1px;
-    min-height: 10px;
+#LPEContainer:drop(active).after row:last-child > box,
+#LPEListBox row:drop(active).after > box{
+    border-width:1px 1px 6px 1px;
+    border-color: @borders @borders @theme_selected_bg_color @borders;
+    border-radius:0 0 6px 6px;
+    box-shadow:none;
+}
+
+#LPEEffectItem expander title label {
+    min-height:34px;
+}
+
+#LPEMenu menuitem:not(.menu-category):disabled {
+    color:alpha(@theme_text_color,0.4);
+}
+
+#LPEListBox row > *:disabled * {
+    color:@theme_text_color;
 }
 
 
-/* Hide slider */
-#InkSpinScale slider {
-    background: none;
-    border: none;
-    outline: none;
-    min-width: 0px;
-    min-height: 0px;
-    padding: 0px;
-    margin: 0px;
+#LivePathEffect list row,
+#LPEListBox row.activatable:hover {
+    background-color: transparent;
 }
 
-#InkSpinScale slider,
-#InkSpinScale highlight {
-    border-top-right-radius: 0;
-    border-bottom-right-radius: 0;
+#LivePathEffect list row .drag-icon,
+#LPEListBox row.activatable .drag-icon:hover {
+    background-color: @theme_base_color;
+    border-width:1px;
+    border-radius:0;
+    margin:0;
+    padding:5px;
+    border-style:solid;
+    border-color:@borders;
+    outline-width:0;
 }
 
-#InkSpinScale scale {
-    padding: 0px;
+#LivePathEffect list row .drag-icon * {
+    outline:0;
 }
 
-#InkSpinScale trough {
-    min-height: 30px;
+#LPEActionButtons #eventbutton:nth-child(1) button{
+    border-radius:3px 0 0 3px;
+    border-width:1px 0 1px 1px;
 }
 
-#InkSpinScale box.active {
-    box-shadow: 0 0 0 1px rgb(74, 144, 217);
+#LPEActionButtons #eventbutton:nth-child(2) button{
+    border-radius:0;
+    border-width:1px 0 1px 1px;
 }
-
-#InkSpinScale spinbutton entry {
-    padding: 0;
-    outline-style: none;
+#LPECurrentItem * {
+    border-width:0;
+    border-style:none;
 }
-
-#UnicodeIconView {
-    font-size: 16px;
+#LPECurrentItem {
+    margin-top:0;
 }
-
-/* GtkTreeView: clarify drop locations (especially important for XML editor) */
-treeview.view:drop(active) {
-    border-style: solid;
-    border-width: 2px;
+#LPECurrentItem image{
+    margin-right:6px;
 }
-
-treeview.view:drop(active).after {
-    border-style: none none solid none;
+#LPECurrentItem {
+    margin-top:0;
 }
-
-treeview.view:drop(active).before {
-    border-style: solid none none none;
+#LPEParentBox{
+    margin:10px 4px;
+    padding:0;
 }
-
-treeview.view:drop(active).after,
-treeview.view:drop(active).before {
-    border-width: 4px;
-    border-radius: 10px;
+/*we dont want higlight with tab order only want checked ones */
+#tool-toolbar flowboxchild:selected { 
+    background-color:transparent;
+    background-image:image(@theme_bg_color);
 }
-
-button.close-button{
-    background-image: none;
-    padding: 0px;
-    min-height: 1px;
-    min-width: 1px;
-    border: none;
-    opacity: 0.5;
-    box-shadow: none;
-}
-
-button.close-button:hover{
-    box-shadow: none;
-    opacity: 1;
-}
-
-/*
- * Inkscape start dialog styles
- */
-button.primary {
-    background-image: linear-gradient(to bottom, rgba(22, 169, 249, 1), rgba(2, 135, 204, 1));
-    box-shadow: 0 1px rgba(255, 255, 255, 0.3) inset;
-    text-shadow: none;
-}
-button.primary:hover {
-    background-image: linear-gradient(to bottom, rgba(32, 179, 255, 1), rgba(12, 145, 214, 1));
-}
-button.primary:active {
-    background-image: linear-gradient(to top, rgba(12, 149, 219, 1), rgba(0, 115, 184, 1));
-}
-button.primary label {
-    color: white;
-}
-button.link:hover image {
-    -gtk-icon-effect: dim;
-}
-

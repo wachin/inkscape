@@ -13,6 +13,14 @@
 //#define LPE_ENABLE_TEST_EFFECTS //uncomment for toy effects
 
 // include effects:
+#include <cstdio>
+#include <cstring>
+#include <gtkmm/expander.h>
+#include <pangomm/layout.h>
+
+#include "display/curve.h"
+#include "inkscape.h"
+#include "live_effects/effect.h"
 #include "live_effects/lpe-angle_bisector.h"
 #include "live_effects/lpe-attach-path.h"
 #include "live_effects/lpe-bendpath.h"
@@ -67,29 +75,19 @@
 #include "live_effects/lpe-taperstroke.h"
 #include "live_effects/lpe-test-doEffect-stack.h"
 #include "live_effects/lpe-text_label.h"
+#include "live_effects/lpe-tiling.h"
 #include "live_effects/lpe-transform_2pts.h"
 #include "live_effects/lpe-vonkoch.h"
-
 #include "live_effects/lpeobject.h"
-
-#include "xml/node-event-vector.h"
-#include "xml/sp-css-attr.h"
-
-#include "display/curve.h"
 #include "message-stack.h"
+#include "object/sp-defs.h"
+#include "object/sp-root.h"
+#include "object/sp-shape.h"
 #include "path-chemistry.h"
 #include "ui/icon-loader.h"
 #include "ui/tools/node-tool.h"
 #include "ui/tools/pen-tool.h"
-
-#include "object/sp-defs.h"
-#include "object/sp-root.h"
-#include "object/sp-shape.h"
-
-#include <cstdio>
-#include <cstring>
-#include <pangomm/layout.h>
-#include <gtkmm/expander.h>
+#include "xml/sp-css-attr.h"
 
 namespace Inkscape {
 
@@ -105,6 +103,7 @@ const EnumEffectData<EffectType> LPETypeData[] = {
         "bend_path" ,//key
         "bend-path" ,//icon
         N_("Bend an object along the curvature of another path") ,//description
+        LPECategory::Distort ,//category
         true  ,//on_path
         true  ,//on_shape
         true  ,//on_group
@@ -118,6 +117,7 @@ const EnumEffectData<EffectType> LPETypeData[] = {
         "gears" ,//key
         "gears" ,//icon
         N_("Create interlocking, configurable gears based on the nodes of a path") ,//description
+        LPECategory::Convert ,//category
         true  ,//on_path
         true  ,//on_shape
         true  ,//on_group
@@ -131,6 +131,7 @@ const EnumEffectData<EffectType> LPETypeData[] = {
         "skeletal" ,//key
         "skeletal" ,//icon
         N_("Place one or more copies of another path along the path") ,//description
+        LPECategory::Distort ,//category
         true  ,//on_path
         true  ,//on_shape
         true  ,//on_group
@@ -144,6 +145,7 @@ const EnumEffectData<EffectType> LPETypeData[] = {
         "curvestitching" ,//key
         "curvestitching" ,//icon
         N_("Draw perpendicular lines between subpaths of a path, like rungs of a ladder") ,//description
+        LPECategory::Generate ,//category
         true  ,//on_path
         false ,//on_shape
         true ,//on_group
@@ -158,6 +160,7 @@ const EnumEffectData<EffectType> LPETypeData[] = {
         "vonkoch" ,//key
         "vonkoch" ,//icon
         N_("Create VonKoch fractal") ,//description
+        LPECategory::Generate ,//category
         true  ,//on_path
         true  ,//on_shape
         true  ,//on_group
@@ -171,6 +174,7 @@ const EnumEffectData<EffectType> LPETypeData[] = {
         "knot" ,//key
         "knot" ,//icon
         N_("Create gaps in self-intersections, as in Celtic knots") ,//description
+        LPECategory::EditTools ,//category
         true  ,//on_path
         true  ,//on_shape
         true  ,//on_group
@@ -184,6 +188,7 @@ const EnumEffectData<EffectType> LPETypeData[] = {
         "construct_grid" ,//key
         "construct-grid" ,//icon
         N_("Create a (perspective) grid from a 3-node path") ,//description
+        LPECategory::Convert ,//category
         true  ,//on_path
         true  ,//on_shape
         true  ,//on_group
@@ -197,6 +202,7 @@ const EnumEffectData<EffectType> LPETypeData[] = {
         "spiro" ,//key
         "spiro" ,//icon
         N_("Make the path curl like wire, using Spiro B-Splines. This effect is usually used directly on the canvas with the Spiro mode of the drawing tools.") ,//description
+        LPECategory::Convert ,//category
         true  ,//on_path
         false ,//on_shape
         false ,//on_group
@@ -210,6 +216,7 @@ const EnumEffectData<EffectType> LPETypeData[] = {
         "envelope" ,//key
         "envelope" ,//icon
         N_("Adjust the shape of an object by transforming paths on its four sides") ,//description
+        LPECategory::Distort ,//category
         true  ,//on_path
         true  ,//on_shape
         true  ,//on_group
@@ -223,6 +230,7 @@ const EnumEffectData<EffectType> LPETypeData[] = {
         "interpolate" ,//key
         "interpolate" ,//icon
         N_("Create a stepwise transition between the 2 subpaths of a path") ,//description
+        LPECategory::Generate ,//category
         true  ,//on_path
         false ,//on_shape
         false ,//on_group
@@ -236,6 +244,7 @@ const EnumEffectData<EffectType> LPETypeData[] = {
         "rough_hatches" ,//key
         "rough-hatches" ,//icon
         N_("Fill the object with adjustable hatching") ,//description
+        LPECategory::Generate ,//category
         true  ,//on_path
         true  ,//on_shape
         true  ,//on_group
@@ -249,6 +258,7 @@ const EnumEffectData<EffectType> LPETypeData[] = {
         "sketch" ,//key
         "sketch" ,//icon
         N_("Draw multiple short strokes along the path, as in a pencil sketch") ,//description
+        LPECategory::Generate ,//category
         true  ,//on_path
         true  ,//on_shape
         true  ,//on_group
@@ -262,6 +272,7 @@ const EnumEffectData<EffectType> LPETypeData[] = {
         "ruler" ,//key
         "ruler" ,//icon
         N_("Add ruler marks to the object in adjustable intervals, using the object's stroke style.") ,//description
+        LPECategory::Convert ,//category
         true  ,//on_path
         true  ,//on_shape
         true  ,//on_group
@@ -276,6 +287,7 @@ const EnumEffectData<EffectType> LPETypeData[] = {
         "powerstroke" ,//key
         "powerstroke" ,//icon
         N_("Create calligraphic strokes and control their variable width and curvature. This effect can also be used directly on the canvas with a pressure sensitive stylus and the Pencil tool.") ,//description
+        LPECategory::EditTools ,//category
         true  ,//on_path
         true  ,//on_shape
         false ,//on_group
@@ -289,6 +301,7 @@ const EnumEffectData<EffectType> LPETypeData[] = {
         "clone_original" ,//key
         "clone-original" ,//icon
         N_("Let an object take on the shape, fill, stroke and/or other attributes of another object.") ,//description
+        LPECategory::Generate ,//category
         true  ,//on_path
         true  ,//on_shape
         true  ,//on_group
@@ -303,6 +316,7 @@ const EnumEffectData<EffectType> LPETypeData[] = {
         "simplify" ,//key
         "simplify" ,//icon
         N_("Smoothen and simplify a object. This effect is also available in the Pencil tool's tool controls.") ,//description
+        LPECategory::EditTools ,//category
         true  ,//on_path
         true  ,//on_shape
         true  ,//on_group
@@ -312,10 +326,11 @@ const EnumEffectData<EffectType> LPETypeData[] = {
     },
     {
         LATTICE2,
-        NC_("path effect", "Lattice Deformation 2") ,//label
+        NC_("path effect", "Lattice Deformation") ,//label
         "lattice2" ,//key
         "lattice2" ,//icon
         N_("Warp an object's shape based on a 5x5 grid") ,//description
+        LPECategory::Distort ,//category
         true  ,//on_path
         true  ,//on_shape
         true  ,//on_group
@@ -329,6 +344,7 @@ const EnumEffectData<EffectType> LPETypeData[] = {
         "perspective-envelope" ,//key wrong key with "-" retain because historic
         "perspective-envelope" ,//icon
         N_("Transform the object to fit into a shape with four corners, either by stretching it or creating the illusion of a 3D-perspective") ,//description
+        LPECategory::Distort ,//category
         true  ,//on_path
         true  ,//on_shape
         true  ,//on_group
@@ -342,6 +358,7 @@ const EnumEffectData<EffectType> LPETypeData[] = {
         "interpolate_points" ,//key
         "interpolate-points" ,//icon
         N_("Connect the nodes of the object (e.g. corresponding to data points) by different types of lines.") ,//description
+        LPECategory::Convert ,//category
         true  ,//on_path
         true  ,//on_shape
         true  ,//on_group
@@ -355,6 +372,7 @@ const EnumEffectData<EffectType> LPETypeData[] = {
         "transform_2pts" ,//key
         "transform-2pts" ,//icon
         N_("Scale, stretch and rotate an object by two handles") ,//description
+        LPECategory::Distort ,//category
         true  ,//on_path
         true  ,//on_shape
         true  ,//on_group
@@ -368,6 +386,7 @@ const EnumEffectData<EffectType> LPETypeData[] = {
         "show_handles" ,//key
         "show-handles" ,//icon
         N_("Draw the handles and nodes of objects (replaces the original styling with a black stroke)") ,//description
+        LPECategory::Convert ,//category
         true  ,//on_path
         true  ,//on_shape
         true  ,//on_group
@@ -381,6 +400,7 @@ const EnumEffectData<EffectType> LPETypeData[] = {
         "roughen" ,//key
         "roughen" ,//icon
         N_("Roughen an object by adding and randomly shifting new nodes") ,//description
+        LPECategory::Distort ,//category
         true  ,//on_path
         true  ,//on_shape
         true  ,//on_group
@@ -394,6 +414,7 @@ const EnumEffectData<EffectType> LPETypeData[] = {
         "bspline" ,//key
         "bspline" ,//icon
         N_("Create a BSpline that molds into the path's corners. This effect is usually used directly on the canvas with the BSpline mode of the drawing tools.") ,//description
+        LPECategory::Convert ,//category
         true  ,//on_path
         false ,//on_shape
         false ,//on_group
@@ -407,6 +428,7 @@ const EnumEffectData<EffectType> LPETypeData[] = {
         "join_type" ,//key
         "join-type" ,//icon
         N_("Select among various join types for a object's corner nodes (mitre, rounded, extrapolated arc, ...)") ,//description
+        LPECategory::Convert ,//category
         true  ,//on_path
         true  ,//on_shape
         true  ,//on_group
@@ -420,6 +442,7 @@ const EnumEffectData<EffectType> LPETypeData[] = {
         "taper_stroke" ,//key
         "taper-stroke" ,//icon
         N_("Let the path's ends narrow down to a tip") ,//description
+        LPECategory::EditTools ,//category
         true  ,//on_path
         true  ,//on_shape
         false ,//on_group
@@ -433,6 +456,7 @@ const EnumEffectData<EffectType> LPETypeData[] = {
         "mirror_symmetry" ,//key
         "mirror-symmetry" ,//icon
         N_("Mirror an object along a movable axis, or around the page center. The mirrored copy can be styled independently.") ,//description
+        LPECategory::Generate ,//category
         true  ,//on_path
         true  ,//on_shape
         true  ,//on_group
@@ -446,6 +470,7 @@ const EnumEffectData<EffectType> LPETypeData[] = {
         "copy_rotate" ,//key
         "copy-rotate" ,//icon
         N_("Create multiple rotated copies of an object, as in a kaleidoscope. The copies can be styled independently.") ,//description
+        LPECategory::Generate ,//category
         true  ,//on_path
         true  ,//on_shape
         true  ,//on_group
@@ -460,6 +485,7 @@ const EnumEffectData<EffectType> LPETypeData[] = {
         "attach_path" ,//key
         "attach-path" ,//icon
         N_("Glue the current path's ends to a specific position on one or two other paths") ,//description
+        LPECategory::Convert ,//category
         true  ,//on_path
         true  ,//on_shape
         true  ,//on_group
@@ -467,25 +493,14 @@ const EnumEffectData<EffectType> LPETypeData[] = {
         false ,//on_text
         false ,//experimental
     },
-    {
-        FILL_BETWEEN_STROKES,
-        NC_("path effect", "Fill between strokes") ,//label
-        "fill_between_strokes" ,//key
-        "fill-between-strokes" ,//icon
-        N_("Turn the path into a fill between two other open paths (e.g. between two paths with PowerStroke applied to them)") ,//description
-        true  ,//on_path
-        true  ,//on_shape
-        true  ,//on_group
-        false ,//on_image
-        false ,//on_text
-        false ,//experimental
-    },
+    
     {
         FILL_BETWEEN_MANY,
         NC_("path effect", "Fill between many") ,//label
         "fill_between_many" ,//key
         "fill-between-many" ,//icon
         N_("Turn the path into a fill between multiple other open paths (e.g. between paths with PowerStroke applied to them)") ,//description
+        LPECategory::Generate ,//category
         true  ,//on_path
         true  ,//on_shape
         true  ,//on_group
@@ -499,6 +514,7 @@ const EnumEffectData<EffectType> LPETypeData[] = {
         "ellipse_5pts" ,//key
         "ellipse-5pts" ,//icon
         N_("Create an ellipse from 5 nodes on its circumference") ,//description
+        LPECategory::Convert ,//category
         true  ,//on_path
         true  ,//on_shape
         false ,//on_group
@@ -512,6 +528,7 @@ const EnumEffectData<EffectType> LPETypeData[] = {
         "bounding_box" ,//key
         "bounding-box" ,//icon
         N_("Turn the path into a bounding box that entirely encompasses another path") ,//description
+        LPECategory::Convert ,//category
         true  ,//on_path
         true  ,//on_shape
         true  ,//on_group
@@ -526,6 +543,7 @@ const EnumEffectData<EffectType> LPETypeData[] = {
         "measure_segments" ,//key
         "measure-segments" ,//icon
         N_("Add dimensioning for distances between nodes, optionally with projection and many other configuration options") ,//description
+        LPECategory::Convert ,//category
         true  ,//on_path
         true  ,//on_shape
         false ,//on_group
@@ -535,10 +553,11 @@ const EnumEffectData<EffectType> LPETypeData[] = {
     },
     {
         FILLET_CHAMFER,
-        NC_("path effect", "Corners (Fillet/Chamfer)") ,//label
+        NC_("path effect", "Corners") ,//label
         "fillet_chamfer" ,//key
         "fillet-chamfer" ,//icon
-        N_("Adjust the shape of a path's corners, rounding them to a specified radius, or cutting them off") ,//description
+        N_("Fillet/Chamfer: Adjust the shape of a path's corners, rounding them to a specified radius, or cutting them off") ,//description
+        LPECategory::EditTools ,//category
         true  ,//on_path
         true  ,//on_shape
         false ,//on_group
@@ -552,6 +571,7 @@ const EnumEffectData<EffectType> LPETypeData[] = {
         "powerclip" ,//key
         "powerclip" ,//icon
         N_("Invert, hide or flatten a clip (apply like a Boolean operation)") ,//description
+        LPECategory::Generate ,//category
         true  ,//on_path
         true  ,//on_shape
         true  ,//on_group
@@ -565,6 +585,7 @@ const EnumEffectData<EffectType> LPETypeData[] = {
         "powermask" ,//key
         "powermask" ,//icon
         N_("Invert or hide a mask, or use its negative") ,//description
+        LPECategory::Generate ,//category
         true  ,//on_path
         true  ,//on_shape
         true  ,//on_group
@@ -578,6 +599,7 @@ const EnumEffectData<EffectType> LPETypeData[] = {
         "pts2ellipse" ,//key
         "pts2ellipse" ,//icon
         N_("Draw a circle, ellipse, arc or slice based on the nodes of a path") ,//description
+        LPECategory::Convert ,//category
         true  ,//on_path
         true  ,//on_shape
         true  ,//on_group
@@ -591,6 +613,7 @@ const EnumEffectData<EffectType> LPETypeData[] = {
         "offset" ,//key
         "offset" ,//icon
         N_("Offset the path, optionally keeping cusp corners cusp") ,//description
+        LPECategory::EditTools ,//category
         true  ,//on_path
         true  ,//on_shape
         true ,//on_group
@@ -604,6 +627,7 @@ const EnumEffectData<EffectType> LPETypeData[] = {
         "dashed_stroke" ,//key
         "dashed-stroke" ,//icon
         N_("Add a dashed stroke whose dashes end exactly on a node, optionally with the same number of dashes per path segment") ,//description
+        LPECategory::Convert ,//category
         true  ,//on_path
         true  ,//on_shape
         true  ,//on_group
@@ -618,6 +642,7 @@ const EnumEffectData<EffectType> LPETypeData[] = {
         "bool_op" ,//key
         "bool-op" ,//icon
         N_("Cut, union, subtract, intersect and divide a path non-destructively with another path") ,//description
+        LPECategory::Generate ,//category
         true  ,//on_path
         true  ,//on_shape
         true ,//on_group
@@ -631,6 +656,7 @@ const EnumEffectData<EffectType> LPETypeData[] = {
         "slice" ,//key
         "slice" ,//icon
         N_("Slices the item into parts. It can also be applied multiple times.") ,//description
+        LPECategory::Generate ,//category
         true  ,//on_path
         true  ,//on_shape
         true ,//on_group
@@ -638,13 +664,29 @@ const EnumEffectData<EffectType> LPETypeData[] = {
         false ,//on_text
         false ,//experimental
     },
-    // VISIBLE experimental LPE
+    /* 1.2 */
+    {
+        TILING,
+        NC_("path effect", "Tiling") ,//label
+        "tiling" ,//key
+        "tiling" ,//icon
+        N_("Create multiple copies of an object following a grid layout. Customize size, rotation, distances, style and tiling symmetry.") ,//description
+        LPECategory::Generate ,//category
+        true  ,//on_path
+        true  ,//on_shape
+        true  ,//on_group
+        false ,//on_image
+        false ,//on_text
+        false ,//experimental
+    },
+    // VISIBLE experimental LPEs
     {
         ANGLE_BISECTOR,
         NC_("path effect", "Angle bisector") ,//label
         "angle_bisector" ,//key
         "experimental" ,//icon
         N_("Draw a line that halves the angle between the first three nodes of the path") ,//description
+        LPECategory::Experimental ,//category
         true  ,//on_path
         true  ,//on_shape
         true  ,//on_group
@@ -654,10 +696,11 @@ const EnumEffectData<EffectType> LPETypeData[] = {
     },
     {
         CIRCLE_WITH_RADIUS,
-        NC_("path effect", "Circle (by center and radius)") ,//label
+        NC_("path effect", "Circle") ,//label
         "circle_with_radius" ,//key
         "experimental" ,//icon
-        N_("Draw a circle, where the first node of the path is the center, and the last determines its radius") ,//description
+        N_("Draw a circle by center and radius, where the first node of the path is the center, and the last determines its radius") ,//description
+        LPECategory::Experimental ,//category
         true  ,//on_path
         true  ,//on_shape
         true  ,//on_group
@@ -671,6 +714,7 @@ const EnumEffectData<EffectType> LPETypeData[] = {
         "circle_3pts" ,//key
         "experimental" ,//icon
         N_("Draw a circle whose circumference passes through the first three nodes of the path") ,//description
+        LPECategory::Experimental ,//category
         true  ,//on_path
         true  ,//on_shape
         true  ,//on_group
@@ -684,6 +728,7 @@ const EnumEffectData<EffectType> LPETypeData[] = {
         "extrude" ,//key
         "experimental" ,//icon
         N_("Extrude the path, creating a face for each path segment") ,//description
+        LPECategory::Experimental ,//category
         true  ,//on_path
         true  ,//on_shape
         true  ,//on_group
@@ -697,6 +742,7 @@ const EnumEffectData<EffectType> LPETypeData[] = {
         "line_segment" ,//key
         "experimental" ,//icon
         N_("Draw a straight line that connects the first and last node of a path") ,//description
+        LPECategory::Experimental ,//category
         true  ,//on_path
         true  ,//on_shape
         true  ,//on_group
@@ -710,6 +756,7 @@ const EnumEffectData<EffectType> LPETypeData[] = {
         "parallel" ,//key
         "experimental" ,//icon
         N_("Create a draggable line that will always be parallel to a two-node path") ,//description
+        LPECategory::Experimental ,//category
         true  ,//on_path
         true  ,//on_shape
         true  ,//on_group
@@ -723,6 +770,7 @@ const EnumEffectData<EffectType> LPETypeData[] = {
         "perp_bisector" ,//key
         "experimental" ,//icon
         N_("Draw a perpendicular line in the middle of the (imaginary) line that connects the start and end nodes") ,//description
+        LPECategory::Experimental ,//category
         true  ,//on_path
         true  ,//on_shape
         true  ,//on_group
@@ -736,6 +784,22 @@ const EnumEffectData<EffectType> LPETypeData[] = {
         "tangent_to_curve" ,//key
         "experimental" ,//icon
         N_("Draw a tangent with variable length and additional angle that can be moved along the path") ,//description
+        LPECategory::Experimental ,//category
+        true  ,//on_path
+        true  ,//on_shape
+        true  ,//on_group
+        false ,//on_image
+        false ,//on_text
+        true ,//experimental
+    },
+    {
+        //moved to esperimental on 1.3
+        FILL_BETWEEN_STROKES,
+        NC_("path effect", "Fill between strokes") ,//label
+        "fill_between_strokes" ,//key
+        "experimental" ,//icon
+        N_("Turn the path into a fill between two other open paths (e.g. between two paths with PowerStroke applied to them)") ,//description
+        LPECategory::Experimental ,//category
         true  ,//on_path
         true  ,//on_shape
         true  ,//on_group
@@ -750,6 +814,7 @@ const EnumEffectData<EffectType> LPETypeData[] = {
         "doeffectstacktest" ,//key
         "experimental" ,//icon
         N_("Test LPE") ,//description
+        LPECategory::Experimental ,//category
         true  ,//on_path
         true  ,//on_shape
         true  ,//on_group
@@ -763,6 +828,7 @@ const EnumEffectData<EffectType> LPETypeData[] = {
         "dynastroke" ,//key
         "experimental" ,//icon
         N_("Create calligraphic strokes with variably shaped ends, making use of a parameter for the brush angle") ,//description
+        LPECategory::Experimental ,//category
         true  ,//on_path
         true  ,//on_shape
         true  ,//on_group
@@ -772,10 +838,11 @@ const EnumEffectData<EffectType> LPETypeData[] = {
     },
     {
         LATTICE,
-        NC_("path effect", "Lattice Deformation") ,//label
+        NC_("path effect", "Lattice Deformation Legacy") ,//label
         "lattice" ,//key
         "experimental" ,//icon
         N_("Deform an object using a 4x4 grid") ,//description
+        LPECategory::Experimental ,//category
         true  ,//on_path
         true  ,//on_shape
         true  ,//on_group
@@ -789,6 +856,7 @@ const EnumEffectData<EffectType> LPETypeData[] = {
         "path_length" ,//key
         "experimental" ,//icon
         N_("Display the total length of a (curved) path") ,//description
+        LPECategory::Experimental ,//category
         true  ,//on_path
         true  ,//on_shape
         true  ,//on_group
@@ -802,6 +870,7 @@ const EnumEffectData<EffectType> LPETypeData[] = {
         "recursive_skeleton" ,//key
         "experimental" ,//icon
         N_("Draw a path recursively") ,//description
+        LPECategory::Experimental ,//category
         true  ,//on_path
         true  ,//on_shape
         true  ,//on_group
@@ -815,6 +884,7 @@ const EnumEffectData<EffectType> LPETypeData[] = {
         "text_label" ,//key
         "experimental" ,//icon
         N_("Add a label for the object") ,//description
+        LPECategory::Experimental ,//category
         true  ,//on_path
         true  ,//on_shape
         true  ,//on_group
@@ -828,6 +898,7 @@ const EnumEffectData<EffectType> LPETypeData[] = {
         "embrodery_stitch" ,//key
         "embrodery-stitch" ,//icon
         N_("Embroidery stitch") ,//description
+        LPECategory::Experimental ,//category
         true  ,//on_path
         true  ,//on_shape
         true  ,//on_group
@@ -1027,6 +1098,9 @@ Effect::New(EffectType lpenr, LivePathEffectObject *lpeobj)
         case SLICE:
             neweffect = static_cast<Effect *>(new LPESlice(lpeobj));
             break;
+        case TILING:
+            neweffect = static_cast<Effect*> ( new LPETiling(lpeobj) );
+            break;
         default:
             g_warning("LivePathEffect::Effect::New called with invalid patheffect type (%d)", lpenr);
             neweffect = nullptr;
@@ -1052,7 +1126,7 @@ void Effect::createAndApply(const char* name, SPDocument *doc, SPItem *item)
     Inkscape::GC::release(repr);
 
     gchar *href = g_strdup_printf("#%s", repr_id);
-    SP_LPE_ITEM(item)->addPathEffect(href, true);
+    cast<SPLPEItem>(item)->addPathEffect(href, true);
     g_free(href);
 }
 
@@ -1083,12 +1157,16 @@ Effect::Effect(LivePathEffectObject *lpeobject)
       is_ready(false),
       is_applied(false)
 {
-    registerParameter( dynamic_cast<Parameter *>(&is_visible) );
-    registerParameter( dynamic_cast<Parameter *>(&lpeversion) );
+    registerParameter(&is_visible);
+    registerParameter(&lpeversion);
     is_visible.widget_is_visible = false;
+    _before_commit_connection = lpeobj->document->connectBeforeCommit(sigc::mem_fun(*this, &Effect::doOnBeforeCommit));
 }
 
-Effect::~Effect() = default;
+Effect::~Effect()
+{
+    _before_commit_connection.disconnect();
+}
 
 Glib::ustring
 Effect::getName() const
@@ -1108,10 +1186,11 @@ std::vector<SPLPEItem *>
 Effect::getCurrrentLPEItems() const {
     std::vector<SPLPEItem *> result;
     auto hreflist = getLPEObj()->hrefList;
-    for (auto item : hreflist) {
-        SPLPEItem * lpeitem = dynamic_cast<SPLPEItem *>(item);
-        if (lpeitem) {
-            result.push_back(lpeitem);
+    if (!getLPEObj()->deleted) {
+        for (auto item : hreflist) {
+            if (auto lpeitem = cast<SPLPEItem>(item)) {
+                result.push_back(lpeitem);
+            }
         }
     }
     return result;
@@ -1144,11 +1223,11 @@ void Effect::transform_multiply(Geom::Affine const &postmul, bool /*set*/) {}
  * FIXME Probably only makes sense if this effect is referenced by exactly one
  * item (`this->lpeobj->hrefList` contains exactly one element)?
  */
-void Effect::transform_multiply(Geom::Affine const &postmul, SPLPEItem *lpeitem)
+void Effect::transform_multiply_impl(Geom::Affine const &postmul, SPLPEItem *lpeitem)
 {
     assert("pre: effect is referenced by lpeitem" &&
            std::any_of(lpeobj->hrefList.begin(), lpeobj->hrefList.end(),
-                       [lpeitem](SPObject *obj) { return lpeitem == dynamic_cast<SPLPEItem *>(obj); }));
+                       [lpeitem](SPObject *obj) { return lpeitem == cast<SPLPEItem>(obj); }));
 
     // FIXME Is there a way to eliminate the raw Effect::sp_lpe_item pointer?
     sp_lpe_item = lpeitem;
@@ -1167,13 +1246,11 @@ Effect::setSelectedNodePoints(std::vector<Geom::Point> sNP)
  */
 bool Effect::isOnClipboard()
 {
-    SPDocument *document = getSPDoc();
-    if (!document) {
-        return false;
+    if (auto lpeobj = getLPEObj()) {
+        return lpeobj->isOnClipboard();
     }
-    Inkscape::XML::Node *root = document->getReprRoot();
-    Inkscape::XML::Node *clipnode = sp_repr_lookup_name(root, "inkscape:clipboard", 1);
-    return clipnode != nullptr;
+    assert(lpeobj != nullptr);
+    return false;
 }
 
 bool
@@ -1194,67 +1271,170 @@ Effect::isNodePointSelected(Geom::Point const &nodePoint) const
     return false;
 }
 
-void
-Effect::processObjects(LPEAction lpe_action)
+// this is done in each action committed to undo and allow do things when all operations pending are done in this undo
+// stack
+void Effect::doOnBeforeCommit()
 {
     SPDocument *document = getSPDoc();
-    if (!document) {
+    if (!document || getLPEObj()->hrefList.empty() || _lpe_action == LPE_NONE) {
+        _lpe_action = LPE_NONE;
         return;
     }
-    sp_lpe_item = dynamic_cast<SPLPEItem *>(*getLPEObj()->hrefList.begin());
-    if (!document || !sp_lpe_item) {
+    if (!sp_lpe_item || !sp_lpe_item->document) {
+        sp_lpe_item = cast<SPLPEItem>(*getLPEObj()->hrefList.begin());
+        if (!sp_lpe_item) {
+            _lpe_action = LPE_NONE;
+            return;
+        }
+    }
+    if (sp_lpe_item && _lpe_action == LPE_UPDATE) {
+        if (sp_lpe_item->getCurrentLPE() == this) {
+            DocumentUndo::ScopedInsensitive _no_undo(sp_lpe_item->document);
+            sp_lpe_item_update_patheffect(sp_lpe_item, false, true);
+        }
+        _lpe_action = LPE_NONE;
         return;
     }
-    sp_lpe_item_enable_path_effects(sp_lpe_item, false);
-    for (auto id : items) {
-        SPObject *elemref = nullptr;
-        if ((elemref = document->getObjectById(id.c_str()))) {
-            Inkscape::XML::Node * elemnode = elemref->getRepr();
-            std::vector<SPItem*> item_list;
-            auto item = dynamic_cast<SPItem *>(elemref);
-            item_list.push_back(item);
-            std::vector<Inkscape::XML::Node*> item_to_select;
-            std::vector<SPItem*> item_selected;
-            SPCSSAttr *css;
-            Glib::ustring css_str;
-            switch (lpe_action){
-            case LPE_TO_OBJECTS:
-                if (item->isHidden()) {
-                    item->deleteObject(true);
-                } else {
-                    elemnode->removeAttribute("sodipodi:insensitive");
-                    if (!SP_IS_DEFS(item->parent)) {
-                        item->moveTo(sp_lpe_item, false);
-                    }
+    LPEAction lpe_action = _lpe_action;
+    _lpe_action = LPE_NONE;
+    Inkscape::LivePathEffect::SatelliteArrayParam *lpesatellites = nullptr;
+    Inkscape::LivePathEffect::OriginalSatelliteParam *lpesatellite = nullptr;
+    std::vector<Inkscape::LivePathEffect::Parameter *>::iterator p;
+    for (auto &p : param_vector) {
+
+        lpesatellites = dynamic_cast<SatelliteArrayParam *>(p);
+        lpesatellite = dynamic_cast<OriginalSatelliteParam *>(p);
+        if (lpesatellites || lpesatellite) {
+            break;
+        }
+    }
+    if (!lpesatellites && !lpesatellite) {
+        return;
+    }
+    
+    if (sp_lpe_item) {
+        sp_lpe_item_enable_path_effects(sp_lpe_item, false);
+    }
+    std::vector<std::shared_ptr<SatelliteReference> > satelltelist;
+    if (lpesatellites) {
+        lpesatellites->read_from_SVG();
+        satelltelist = lpesatellites->data();
+    } else {
+        lpesatellite->read_from_SVG();
+        satelltelist.push_back(lpesatellite->lperef);
+    }
+    for (auto &iter : satelltelist) {
+        SPObject *elemref;
+        if (iter && iter->isAttached() && (elemref = iter->getObject())) {
+            if (auto *item = cast<SPItem>(elemref)) {
+                Inkscape::XML::Node *elemnode = elemref->getRepr();
+                SPCSSAttr *css;
+                Glib::ustring css_str;
+                switch (lpe_action) {
+                    case LPE_TO_OBJECTS:
+                        if (item->isHidden()) {
+                            // We set updating because item signal fire a deletion that reset whole parameter satellites
+                            if (lpesatellites) {
+                                lpesatellites->setUpdating(true);
+                                item->deleteObject(true);
+                                lpesatellites->setUpdating(false);
+                            } else {
+                                lpesatellite->setUpdating(true);
+                                item->deleteObject(true);
+                                lpesatellite->setUpdating(false);
+                            }
+                        } else {
+                            elemnode->removeAttribute("sodipodi:insensitive");
+                            auto defs = cast<SPDefs>(elemref->parent);
+                            if (!defs && sp_lpe_item) {
+                                item->moveTo(sp_lpe_item, false);
+                            }
+                        }
+                        break;
+
+                    case LPE_ERASE:
+                        // We set updating because item signal fire a deletion that reset whole parameter satellites
+                        if (lpesatellites) {
+                            lpesatellites->setUpdating(true);
+                            item->deleteObject(true);
+                            lpesatellites->setUpdating(false);
+                        } else {
+                            lpesatellite->setUpdating(true);
+                            item->deleteObject(true);
+                            lpesatellite->setUpdating(false);
+                        }
+                        break;
+
+                    case LPE_VISIBILITY:
+                        css = sp_repr_css_attr_new();
+                        sp_repr_css_attr_add_from_string(css, elemref->getRepr()->attribute("style"));
+                        if (!isVisible() /* && std::strcmp(elemref->getId(),sp_lpe_item->getId()) != 0*/) {
+                            css->setAttribute("display", "none");
+                        } else {
+                            css->removeAttribute("display");
+                        }
+                        sp_repr_css_write_string(css, css_str);
+                        elemnode->setAttributeOrRemoveIfEmpty("style", css_str);
+                        if (sp_lpe_item) {
+                            sp_lpe_item_enable_path_effects(sp_lpe_item, true);
+                            sp_lpe_item_update_patheffect(sp_lpe_item, false, false);
+                            sp_lpe_item_enable_path_effects(sp_lpe_item, false);
+                        }
+                        sp_repr_css_attr_unref( css );
+                        break;
+                    default:
+                        break;
                 }
-                break;
-
-            case LPE_ERASE:
-                item->deleteObject(true);
-                break;
-
-            case LPE_VISIBILITY:
-                css = sp_repr_css_attr_new();
-                sp_repr_css_attr_add_from_string(css, elemref->getRepr()->attribute("style"));
-                if (!this->isVisible()/* && std::strcmp(elemref->getId(),sp_lpe_item->getId()) != 0*/) {
-                    css->setAttribute("display", "none");
-                } else {
-                    css->removeAttribute("display");
-                }
-                sp_repr_css_write_string(css,css_str);
-                elemnode->setAttributeOrRemoveIfEmpty("style", css_str);
-                break;
-
-            default:
-                break;
             }
         }
     }
     if (lpe_action == LPE_ERASE || lpe_action == LPE_TO_OBJECTS) {
-        items.clear();
+        Inkscape::LivePathEffect::SatelliteArrayParam *lpesatellites = nullptr;
+        Inkscape::LivePathEffect::OriginalSatelliteParam *lpesatellite = nullptr;
+        std::vector<Inkscape::LivePathEffect::Parameter *>::iterator p;
+        for (auto &p : param_vector) {
+
+            lpesatellites = dynamic_cast<SatelliteArrayParam *>(p);
+            lpesatellite = dynamic_cast<OriginalSatelliteParam *>(p);
+            if (lpesatellites) {
+                lpesatellites->clear();
+                lpesatellites->write_to_SVG();
+            }
+            if (lpesatellite) {
+                lpesatellite->unlink();
+                lpesatellite->write_to_SVG();
+            }
+        }
     }
-    sp_lpe_item_enable_path_effects(sp_lpe_item, true);
+    if (sp_lpe_item) {
+        sp_lpe_item_enable_path_effects(sp_lpe_item, true);
+    }
 }
+
+// we delay till current operation is done to aboid deleted items crashes
+void Effect::processObjects(LPEAction lpe_action) {
+    _lpe_action = lpe_action;
+}
+
+/**
+ * Is performed on load document or revert
+ * If the item is fixed legacy return true
+ */
+bool Effect::doOnOpen(SPLPEItem const * /*lpeitem*/)
+{
+    // Do nothing for simple effects
+    update_satellites();
+    return false;
+}
+
+void
+Effect::update_satellites() {
+    std::vector<Inkscape::LivePathEffect::Parameter *>::iterator p;
+    for (auto &p : param_vector) {
+        p->update_satellites();
+    }
+}
+
 
 /**
  * Is performed each time before the effect is updated.
@@ -1276,6 +1456,7 @@ Effect::doBeforeEffect (SPLPEItem const*/*lpeitem*/)
 void Effect::doAfterEffect (SPLPEItem const* /*lpeitem*/, SPCurve *curve)
 {
     //Do nothing for simple effects
+    update_satellites();
 }
 
 void Effect::doOnException(SPLPEItem const * /*lpeitem*/)
@@ -1298,6 +1479,48 @@ void Effect::doAfterEffect_impl(SPLPEItem const *lpeitem, SPCurve *curve)
     is_load = false;
     is_applied = false;
 }
+
+void Effect::doOnRemove_impl(SPLPEItem const* lpeitem)
+{
+    SPDocument *document = getSPDoc();
+    if (!document) {
+        return;
+    }
+    if (!sp_lpe_item || !sp_lpe_item->document) {
+        sp_lpe_item = cast<SPLPEItem>(*getLPEObj()->hrefList.begin());
+        if (!sp_lpe_item || !sp_lpe_item->document) {
+            sp_lpe_item = nullptr;
+        }
+    }
+    doOnRemove(sp_lpe_item);
+    getLPEObj()->deleted = true;
+}
+
+/**
+ * Is performed on document open allow things like fix legacy LPE in a undo insensitive way
+ */
+void Effect::doOnOpen_impl()
+{
+    std::vector<SPLPEItem *> lpeitems = getCurrrentLPEItems();
+    if (lpeitems.size() == 1 && !isReady()) {
+        is_load = true;
+        doOnOpen(lpeitems[0]);
+        setReady(true);
+    }
+}
+
+void 
+Effect::makeUndoDone(Glib::ustring message) {
+    std::vector<SPLPEItem *> lpeitems = getCurrrentLPEItems();
+    if (lpeitems.size() == 1) {
+        refresh_widgets = true;
+        sp_lpe_item = lpeitems[0];
+        writeParamsToSVG(); // if the value change the LPEs become updated
+        DocumentUndo::done(getSPDoc(), message.c_str(), INKSCAPE_ICON(LPETypeConverter.get_icon(effectType()).c_str()));
+    }
+    setReady();
+}
+
 void Effect::doOnApply_impl(SPLPEItem const* lpeitem)
 {
     sp_lpe_item = const_cast<SPLPEItem *>(lpeitem);
@@ -1318,15 +1541,39 @@ void Effect::doBeforeEffect_impl(SPLPEItem const* lpeitem)
 {
     sp_lpe_item = const_cast<SPLPEItem *>(lpeitem);
     doBeforeEffect(lpeitem);
+    if (is_load) {
+        update_satellites();
+    }
     update_helperpath();
 }
 
 void
 Effect::writeParamsToSVG() {
     std::vector<Inkscape::LivePathEffect::Parameter *>::iterator p;
-    for (p = param_vector.begin(); p != param_vector.end(); ++p) {
-        (*p)->write_to_SVG();
+    for (auto &p : param_vector) {
+        p->write_to_SVG();
     }
+}
+void 
+Effect::read_from_SVG() {
+    std::vector<Inkscape::LivePathEffect::Parameter *>::iterator p;
+    for (auto &p : param_vector) {
+        p->read_from_SVG();
+    }
+}
+
+std::vector<SPObject *> Effect::effect_get_satellites(bool force)
+{
+    std::vector<SPObject *> satellites;
+    if (!force && !satellitestoclipboard) {
+        return satellites;
+    }
+    std::vector<Inkscape::LivePathEffect::Parameter *>::iterator p;
+    for (auto &p : param_vector) {
+        std::vector<SPObject *> tmp = p->param_get_satellites();
+        satellites.insert(satellites.begin(), tmp.begin(), tmp.end());
+    }
+    return satellites;
 }
 
 /**
@@ -1456,9 +1703,9 @@ Effect::addHandles(KnotHolder *knotholder, SPItem *item) {
     // add handles provided by the effect's parameters (if any)
     for (auto & p : param_vector) {
         p->addKnotHolderEntities(knotholder, item);
-    }    
+    }
     if (is_load) {
-        SPLPEItem *lpeitem = dynamic_cast<SPLPEItem *>(item);
+        auto lpeitem = cast<SPLPEItem>(item);
         if (lpeitem) {
             sp_lpe_item_update_patheffect(lpeitem, false, false);
         }
@@ -1538,7 +1785,7 @@ Effect::newWidget()
                 }
                 vbox->pack_start(*widg, true, true, 2);
                 if (tip) {
-                    widg->set_tooltip_text(*tip);
+                    widg->set_tooltip_markup(*tip);
                 } else {
                     widg->set_tooltip_text("");
                     widg->set_has_tooltip(false);
@@ -1547,9 +1794,6 @@ Effect::newWidget()
         }
 
         ++it;
-    }
-    if(Gtk::Widget* widg = defaultParamSet()) {
-        vbox->pack_start(*widg, true, true, 2);
     }
     return dynamic_cast<Gtk::Widget *>(vbox);
 }
@@ -1561,15 +1805,12 @@ bool sp_enter_tooltip(GdkEventCrossing *evt, Gtk::Widget *widg)
 }
 
 /**
- * This *creates* a new widget, with default values setter
+ * Set this LPE defaults
  */
-Gtk::Widget *
-Effect::defaultParamSet()
+void
+Effect::setDefaultParameters()
 {
-    // use manage here, because after deletion of Effect object, others might still be pointing to this widget.
-    Inkscape::Preferences *prefs = Inkscape::Preferences::get();
-    Gtk::Box * vbox_expander = Gtk::manage( new Gtk::Box(Gtk::ORIENTATION_VERTICAL) );
-    Glib::ustring effectname = (Glib::ustring)Inkscape::LivePathEffect::LPETypeConverter.get_label(effectType());
+    Glib::ustring effectname = _(Inkscape::LivePathEffect::LPETypeConverter.get_label(effectType()).c_str());
     Glib::ustring effectkey = (Glib::ustring)Inkscape::LivePathEffect::LPETypeConverter.get_key(effectType());
     std::vector<Parameter *>::iterator it = param_vector.begin();
     bool has_params = false;
@@ -1582,106 +1823,94 @@ Effect::defaultParamSet()
                 ++it;
                 continue;
             }
-            const gchar * label = param->param_label.c_str();
             Glib::ustring value = param->param_getSVGValue();
             Glib::ustring defvalue  = param->param_getDefaultSVGValue();
             Glib::ustring pref_path = "/live_effects/";
             pref_path += effectkey;
             pref_path +="/";
             pref_path += key;
-            bool valid = prefs->getEntry(pref_path).isValid();
-            const gchar * set_or_upd;
-            Glib::ustring def = Glib::ustring(_("<b>Default value:</b> ")) + defvalue;
-            Glib::ustring ove = Glib::ustring(_("<b>Default value overridden:</b> "));
-            if (valid) {
-                set_or_upd = _("Update");
-                def = "";
-            } else {
-                set_or_upd = _("Set");
-                ove = "";
-            }
-            Gtk::Box * vbox_param = Gtk::manage( new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL) );
-            Gtk::Box *namedicon = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL));
-            Gtk::Label *parameter_label = Gtk::manage(new Gtk::Label(label, Gtk::ALIGN_START));
-            parameter_label->set_use_markup(true);
-            parameter_label->set_use_underline(true);
-            parameter_label->set_ellipsize(Pango::ELLIPSIZE_END);
-            Glib::ustring tooltip = Glib::ustring("<b>") + parameter_label->get_text() + Glib::ustring("</b>\n") +
-                                    param->param_tooltip + Glib::ustring("\n");
-            Gtk::Image *info = sp_get_icon_image("info", 20);
-            Gtk::EventBox *infoeventbox = Gtk::manage(new Gtk::EventBox());
-            infoeventbox->add(*info);
-            infoeventbox->set_tooltip_markup((tooltip + def + ove).c_str());
-            namedicon->pack_start(*infoeventbox, false, false, 2);
-            namedicon->pack_start(*parameter_label, true, true, 2);
-            namedicon->set_homogeneous(false);
-            vbox_param->pack_start(*namedicon, true, true, 2);
-            Gtk::Button *set = Gtk::manage(new Gtk::Button((Glib::ustring)set_or_upd));
-            Gtk::Button *unset = Gtk::manage(new Gtk::Button(Glib::ustring(_("Unset"))));
-            unset->signal_clicked().connect(sigc::bind(sigc::mem_fun(*this, &Effect::unsetDefaultParam), pref_path,
-                                                       tooltip, param, info, set, unset));
-            set->signal_clicked().connect(sigc::bind(sigc::mem_fun(*this, &Effect::setDefaultParam), pref_path, tooltip,
-                                                     param, info, set, unset));
-            if (!valid) {
-                unset->set_sensitive(false);
-            }
-            unset->set_size_request (90, -1);
-            set->set_size_request (90, -1);
-            vbox_param->pack_end(*unset, false, true, 2);
-            vbox_param->pack_end(*set, false, true, 2);
-
-            vbox_expander->pack_start(*vbox_param, true, true, 2);
+            setDefaultParam(pref_path, param);
         }
         ++it;
     }
-    Glib::ustring tip = "<b>" + effectname + (Glib::ustring)_("</b>: Set default parameters");
-    Gtk::Expander * expander = Gtk::manage(new Gtk::Expander(tip));
-    expander->set_use_markup(true);
-    expander->add(*vbox_expander);
-    expander->set_expanded(defaultsopen);
-    expander->property_expanded().signal_changed().connect(sigc::bind<0>(sigc::mem_fun(*this, &Effect::onDefaultsExpanderChanged), expander ));
-    if (has_params) {
-        Gtk::Widget *vboxwidg = dynamic_cast<Gtk::Widget *>(expander);
-        vboxwidg->set_margin_bottom(5);
-        vboxwidg->set_margin_top(5);
-        return vboxwidg;
-    } else {
-        return nullptr;
+}
+
+/**
+ * Get LPE has defaults
+ */
+bool
+Effect::hasDefaultParameters()
+{
+    Glib::ustring effectname = _(Inkscape::LivePathEffect::LPETypeConverter.get_label(effectType()).c_str());
+    Glib::ustring effectkey = (Glib::ustring)Inkscape::LivePathEffect::LPETypeConverter.get_key(effectType());
+    std::vector<Parameter *>::iterator it = param_vector.begin();
+    Inkscape::Preferences *prefs = Inkscape::Preferences::get();
+    while (it != param_vector.end()) {
+        Parameter * param = *it;
+        const gchar * key   = param->param_key.c_str();
+        if (g_strcmp0(key, "lpeversion") == 0) {
+            ++it;
+            continue;
+        }
+        Glib::ustring pref_path = "/live_effects/";
+        pref_path += effectkey;
+        pref_path +="/";
+        pref_path += key;
+        if (prefs->getEntry(pref_path).isValid()) {
+            return true;
+        }
+        ++it;
+    }
+    return false;
+}
+
+/**
+ * Reset this LPE defaults
+ */
+void
+Effect::resetDefaultParameters()
+{
+    Glib::ustring effectname = _(Inkscape::LivePathEffect::LPETypeConverter.get_label(effectType()).c_str());
+    Glib::ustring effectkey = (Glib::ustring)Inkscape::LivePathEffect::LPETypeConverter.get_key(effectType());
+    std::vector<Parameter *>::iterator it = param_vector.begin();
+    bool has_params = false;
+    while (it != param_vector.end()) {
+        if ((*it)->widget_is_visible) {
+            has_params = true;
+            Parameter * param = *it;
+            const gchar * key   = param->param_key.c_str();
+            if (g_strcmp0(key, "lpeversion") == 0) {
+                ++it;
+                continue;
+            }
+            Glib::ustring value = param->param_getSVGValue();
+            Glib::ustring defvalue  = param->param_getDefaultSVGValue();
+            Glib::ustring pref_path = "/live_effects/";
+            pref_path += effectkey;
+            pref_path +="/";
+            pref_path += key;
+            unsetDefaultParam(pref_path, param);
+        }
+        ++it;
     }
 }
 
-void
-Effect::onDefaultsExpanderChanged(Gtk::Expander * expander)
-{
-    defaultsopen = expander->get_expanded();
-}
-
-void Effect::setDefaultParam(Glib::ustring pref_path, Glib::ustring tooltip, Parameter *param, Gtk::Image *info,
-                             Gtk::Button *set, Gtk::Button *unset)
+void Effect::setDefaultParam(Glib::ustring pref_path, Parameter *param)
 {
     Glib::ustring value = param->param_getSVGValue();
     Glib::ustring defvalue  = param->param_getDefaultSVGValue();
     Inkscape::Preferences *prefs = Inkscape::Preferences::get();
     prefs->setString(pref_path, value);
-    gchar * label = _("Update");
-    set->set_label((Glib::ustring)label);
-    unset->set_sensitive(true);
-    Glib::ustring ove = Glib::ustring(_("<b>Default value overridden:</b> ")) + value;
-    info->set_tooltip_markup((tooltip + ove).c_str());
 }
 
-void Effect::unsetDefaultParam(Glib::ustring pref_path, Glib::ustring tooltip, Parameter *param, Gtk::Image *info,
-                               Gtk::Button *set, Gtk::Button *unset)
+void Effect::unsetDefaultParam(Glib::ustring pref_path,Parameter *param)
 {
     Glib::ustring value = param->param_getSVGValue();
     Glib::ustring defvalue  = param->param_getDefaultSVGValue();
     Inkscape::Preferences *prefs = Inkscape::Preferences::get();
-    prefs->remove(pref_path);
-    gchar * label = _("Set");
-    set->set_label((Glib::ustring)label);
-    unset->set_sensitive(false);
-    Glib::ustring def = Glib::ustring(_("<b>Default value:</b> Default"));
-    info->set_tooltip_markup((tooltip + def).c_str());
+    if (prefs->getEntry(pref_path).isValid()) {
+        prefs->remove(pref_path);
+    }
 }
 
 Inkscape::XML::Node *Effect::getRepr()
@@ -1767,9 +1996,9 @@ void
 Effect::resetDefaults(SPItem const* /*item*/)
 {
     std::vector<Inkscape::LivePathEffect::Parameter *>::iterator p;
-    for (p = param_vector.begin(); p != param_vector.end(); ++p) {
-        (*p)->param_set_default();
-        (*p)->write_to_SVG();
+    for (auto &p : param_vector) {
+        p->param_set_default();
+        p->write_to_SVG();
     }
 }
 

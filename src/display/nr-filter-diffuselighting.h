@@ -14,50 +14,52 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
+#include <optional>
 #include "display/nr-light-types.h"
 #include "display/nr-filter-primitive.h"
 #include "display/nr-filter-slot.h"
 #include "display/nr-filter-units.h"
+#include "svg/svg-icc-color.h"
 
 class SPFeDistantLight;
 class SPFePointLight;
 class SPFeSpotLight;
 struct SVGICCColor;
-typedef unsigned int guint32;
 
 namespace Inkscape {
 namespace Filters {
 
-class FilterDiffuseLighting : public FilterPrimitive {
+class FilterDiffuseLighting : public FilterPrimitive
+{
 public:
     FilterDiffuseLighting();
-    static FilterPrimitive *create();
     ~FilterDiffuseLighting() override;
-    void render_cairo(FilterSlot &slot) override;
-    virtual void set_icc(SVGICCColor *icc_color);
-    void area_enlarge(Geom::IntRect &area, Geom::Affine const &trans) override;
-    double complexity(Geom::Affine const &ctm) override;
+
+    void render_cairo(FilterSlot &slot) const override;
+    void set_icc(SVGICCColor const &icc_) { icc = icc_; }
+    void area_enlarge(Geom::IntRect &area, Geom::Affine const &trans) const override;
+    double complexity(Geom::Affine const &ctm) const override;
 
     union {
-        SPFeDistantLight *distant;
-        SPFePointLight *point;
-        SPFeSpotLight *spot;
+        DistantLightData distant;
+        PointLightData point;
+        SpotLightData spot;
     } light;
     LightType light_type;
     double diffuseConstant;
     double surfaceScale;
     guint32 lighting_color;
 
-    Glib::ustring name() override { return Glib::ustring("Diffuse Lighting"); }
+    Glib::ustring name() const override { return "Diffuse Lighting"; }
 
 private:
-    SVGICCColor *icc;
+    std::optional<SVGICCColor> icc;
 };
 
-} /* namespace Filters */
-} /* namespace Inkscape */
+} // namespace Filters
+} // namespace Inkscape
 
-#endif /* SEEN_NR_FILTER_DIFFUSELIGHTING_H */
+#endif // SEEN_NR_FILTER_DIFFUSELIGHTING_H
 /*
   Local Variables:
   mode:c++

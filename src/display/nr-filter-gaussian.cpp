@@ -34,7 +34,6 @@
 #include "display/nr-filter-slot.h"
 #include <2geom/affine.h>
 #include "util/fixed_point.h"
-#include "preferences.h"
 
 #ifndef INK_UNUSED
 #define INK_UNUSED(x) ((void)(x))
@@ -129,14 +128,8 @@ FilterGaussian::FilterGaussian()
     _deviation_x = _deviation_y = 0.0;
 }
 
-FilterPrimitive *FilterGaussian::create()
-{
-    return new FilterGaussian();
-}
-
 FilterGaussian::~FilterGaussian()
 {
-    // Nothing to do here
 }
 
 static int
@@ -553,7 +546,7 @@ gaussian_pass_FIR(Geom::Dim2 d, double deviation, cairo_surface_t *src, cairo_su
     };
 }
 
-void FilterGaussian::render_cairo(FilterSlot &slot)
+void FilterGaussian::render_cairo(FilterSlot &slot) const
 {
     cairo_surface_t *in = slot.getcairo(_input);
     if (!(in && ink_cairo_surface_get_width(in) && ink_cairo_surface_get_height(in))) {
@@ -563,11 +556,7 @@ void FilterGaussian::render_cairo(FilterSlot &slot)
     // We may need to transform input surface to correct color interpolation space. The input surface
     // might be used as input to another primitive but it is likely that all the primitives in a given
     // filter use the same color interpolation space so we don't copy the input before converting.
-    SPColorInterpolation ci_fp = SP_CSS_COLOR_INTERPOLATION_AUTO;
-    if( _style ) {
-        ci_fp = (SPColorInterpolation)_style->color_interpolation_filters.computed;
-    }
-    set_cairo_surface_ci( in, ci_fp );
+    set_cairo_surface_ci(in, color_interpolation);
 
     // zero deviation = no change in output
     if (_deviation_x <= 0 && _deviation_y <= 0) {
@@ -608,14 +597,8 @@ void FilterGaussian::render_cairo(FilterSlot &slot)
             bytes_per_pixel = 4; break;
     }
 
-#if HAVE_OPENMP
-    Inkscape::Preferences *prefs = Inkscape::Preferences::get();
-    int threads = prefs->getIntLimited("/options/threading/numthreads", omp_get_num_procs(), 1, 256);
-#else
-    int threads = 1;
-#endif
-
     int quality = slot.get_blurquality();
+    int threads = get_num_filter_threads();
     int x_step = 1 << _effect_subsample_step_log2(deviation_x_orig, quality);
     int y_step = 1 << _effect_subsample_step_log2(deviation_y_orig, quality);
     bool resampling = x_step > 1 || y_step > 1;
@@ -688,27 +671,27 @@ void FilterGaussian::render_cairo(FilterSlot &slot)
     cairo_surface_mark_dirty(downsampled);
     if (resampling) {
         cairo_surface_t *upsampled = cairo_surface_create_similar(downsampled, cairo_surface_get_content(downsampled),
-            w_orig/device_scale, h_orig/device_scale);
+                                                                  w_orig / device_scale, h_orig / device_scale);
         cairo_t *ct = cairo_create(upsampled);
-        cairo_scale(ct, static_cast<double>(w_orig)/w_downsampled, static_cast<double>(h_orig)/h_downsampled);
+        cairo_scale(ct, static_cast<double>(w_orig) / w_downsampled, static_cast<double>(h_orig) / h_downsampled);
         cairo_set_source_surface(ct, downsampled, 0, 0);
         cairo_paint(ct);
         cairo_destroy(ct);
 
-        set_cairo_surface_ci( upsampled, ci_fp );
+        set_cairo_surface_ci(upsampled, color_interpolation);
 
         slot.set(_output, upsampled);
         cairo_surface_destroy(upsampled);
         cairo_surface_destroy(downsampled);
     } else {
-        set_cairo_surface_ci( downsampled, ci_fp );
+        set_cairo_surface_ci(downsampled, color_interpolation);
 
         slot.set(_output, downsampled);
         cairo_surface_destroy(downsampled);
     }
 }
 
-void FilterGaussian::area_enlarge(Geom::IntRect &area, Geom::Affine const &trans)
+void FilterGaussian::area_enlarge(Geom::IntRect &area, Geom::Affine const &trans) const
 {
     int area_x = _effect_area_scr(_deviation_x * trans.expansionX());
     int area_y = _effect_area_scr(_deviation_y * trans.expansionY());
@@ -718,7 +701,7 @@ void FilterGaussian::area_enlarge(Geom::IntRect &area, Geom::Affine const &trans
     area.expandBy(area_max);
 }
 
-bool FilterGaussian::can_handle_affine(Geom::Affine const &)
+bool FilterGaussian::can_handle_affine(Geom::Affine const &) const
 {
     // Previously we tried to be smart and return true for rotations.
     // However, the transform passed here is NOT the total transform
@@ -727,7 +710,7 @@ bool FilterGaussian::can_handle_affine(Geom::Affine const &)
     return false;
 }
 
-double FilterGaussian::complexity(Geom::Affine const &trans)
+double FilterGaussian::complexity(Geom::Affine const &trans) const
 {
     int area_x = _effect_area_scr(_deviation_x * trans.expansionX());
     int area_y = _effect_area_scr(_deviation_y * trans.expansionY());
@@ -736,21 +719,21 @@ double FilterGaussian::complexity(Geom::Affine const &trans)
 
 void FilterGaussian::set_deviation(double deviation)
 {
-    if(std::isfinite(deviation) && deviation >= 0) {
+    if (std::isfinite(deviation) && deviation >= 0) {
         _deviation_x = _deviation_y = deviation;
     }
 }
 
 void FilterGaussian::set_deviation(double x, double y)
 {
-    if(std::isfinite(x) && x >= 0 && std::isfinite(y) && y >= 0) {
+    if (std::isfinite(x) && x >= 0 && std::isfinite(y) && y >= 0) {
         _deviation_x = x;
         _deviation_y = y;
     }
 }
 
-} /* namespace Filters */
-} /* namespace Inkscape */
+} // namespace Filters
+} // namespace Inkscape
 
 /*
   Local Variables:

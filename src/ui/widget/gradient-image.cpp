@@ -100,8 +100,8 @@ GradientImage::set_gradient(SPGradient *gradient)
     _gradient = gradient;
 
     if (gradient) {
-        _release_connection = gradient->connectRelease(sigc::mem_fun(this, &GradientImage::gradient_release));
-        _modified_connection = gradient->connectModified(sigc::mem_fun(this, &GradientImage::gradient_modified));
+        _release_connection = gradient->connectRelease(sigc::mem_fun(*this, &GradientImage::gradient_release));
+        _modified_connection = gradient->connectModified(sigc::mem_fun(*this, &GradientImage::gradient_modified));
     }
 
     update();

@@ -15,12 +15,12 @@
 
 #include <cassert>
 #include <vector>
-#include <glibmm/ustring.h>
 #include <list>
 #include <2geom/point.h>
 
 #include "gc-anchored.h"
 #include "inkgc/gc-alloc.h"
+#include "node-iterators.h"
 #include "util/const_char_ptr.h"
 #include "svg/svg-length.h"
 
@@ -31,9 +31,8 @@ class AttributeRecord;
 struct Document;
 class Event;
 class NodeObserver;
-struct NodeEventVector;
 
-typedef std::vector<AttributeRecord, Inkscape::GC::Alloc<AttributeRecord, Inkscape::GC::MANUAL>> AttributeVector;
+using AttributeVector = std::vector<AttributeRecord, Inkscape::GC::Alloc<AttributeRecord>>;
 
 /**
  * @brief Enumeration containing all supported node types.
@@ -206,10 +205,24 @@ public:
      *
      * @param key Name of the attribute to change
      * @param value The new value of the attribute
-     * @param is_interactive Ignored
      */
 
     void setAttribute(Util::const_char_ptr key, Util::const_char_ptr value);
+
+    /**
+     * @brief Copy attribute value from another node to this node
+     *
+     * @param key Name of the attribute to change
+     * @param source_node Node from which to take the attribute value
+     * @param remove_if_empty
+     *   If true, and the source node has no such attribute, or the source
+     *   node's value for the attribute is an empty string, the attribute
+     *   will be removed (if present) from this node.
+     *
+     * @return true if the attribute was set, false otherwise.
+     */
+
+    bool copyAttribute(Util::const_char_ptr key, Node const *source_node, bool remove_if_empty = false);
 
     /**
      * Parses the boolean value of an attribute "key" in repr and sets val accordingly, or to false if
@@ -461,7 +474,7 @@ public:
      * @param other The other node to compare
      * @param recursive Recursive mode check
      */
-    virtual bool equal(Node const *other, bool recursive) = 0;
+    virtual bool equal(Node const *other, bool recursive, bool skip_ids = false) = 0;
     /**
      * @brief Merge all children of another node with the current
      *
@@ -535,63 +548,14 @@ public:
      */
     virtual void removeSubtreeObserver(NodeObserver &observer) = 0;
 
-    /**
-     * @brief Add a set node change callbacks with an associated data
-     * @deprecated Use addObserver(NodeObserver &) instead
-     */
-    virtual void addListener(NodeEventVector const *vector, void *data) = 0;
-    /**
-     * @brief Remove a set of node change callbacks by their associated data
-     * @deprecated Use removeObserver(NodeObserver &) instead
-     */
-    virtual void removeListenerByData(void *data) = 0;
-    /**
-     * @brief Generate a sequence of events corresponding to the state of this node
-     * @deprecated Use synthesizeEvents(NodeObserver &) instead
-     */
-    virtual void synthesizeEvents(NodeEventVector const *vector, void *data) = 0;
-
     virtual void recursivePrintTree(unsigned level) = 0;
 
     /*@}*/
 
-    /**
-     * @brief A simple forward iterator class to make it so we can use stdlib algorithms
-     *
-     * What I really want is to see clearer code that looks a bit like this:
-     *
-     * for (auto child : *node->firstChild()) {}
-     *
-     * This cleans up the checks and makes it so there can be fewer errors.
-     */
-    class iterator
-    {
-    private:
-        Node *itnode;
+    using iterator = Inkscape::XML::NodeSiblingIterator;
 
-    public:
-        iterator(Node *innode)
-            : itnode(innode)
-        {}
-        iterator &operator++()
-        {
-            assert(itnode != nullptr);
-            itnode = itnode->next();
-            return *this;
-        }
-        Node *operator*() const { return itnode; }
-        bool operator==(const iterator &rhs) const { return this->itnode == rhs.itnode; }
-        bool operator!=(const iterator &rhs) const { return this->itnode != rhs.itnode; }
-        // iterator traits
-        using difference_type = Node *;
-        using value_type = Node *;
-        using pointer = const Node *;
-        using reference = const Node &;
-        using iterator_category = std::forward_iterator_tag;
-    };
-
-    /** @brief Helper to use the standard lib container functions */
-    iterator begin() { return iterator(this); }
+    /** @brief Iterator over children */
+    iterator begin() { return iterator(this->firstChild()); }
     /** @brief Helper to use the standard lib container functions */
     iterator end() { return iterator(nullptr); }
 
@@ -622,9 +586,9 @@ public:
             return this;
         }
 
-        for (auto child : *this->firstChild()) {
-            if (*child == *itr) {
-                auto found = child->findChildPath(std::next(itr), end);
+        for (auto &child : *this) {
+            if (child == *itr) {
+                auto found = child.findChildPath(std::next(itr), end);
                 if (found != nullptr) {
                     return found;
                 }

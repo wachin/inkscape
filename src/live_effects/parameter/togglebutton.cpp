@@ -6,20 +6,25 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
-#include "ui/widget/registered-widget.h"
-#include <glibmm/i18n.h>
+#include "togglebutton.h"
 
 #include <utility>
 
-#include "helper-fns.h"
+#include <glibmm/i18n.h>
+
 #include "inkscape.h"
-#include "live_effects/effect.h"
-#include "live_effects/parameter/togglebutton.h"
 #include "selection.h"
+
+#include "live_effects/effect.h"
+
 #include "svg/stringstream.h"
 #include "svg/svg.h"
+
+#include "ui/icon-names.h"
 #include "ui/icon-loader.h"
-#include "verbs.h"
+#include "ui/widget/registered-widget.h"
+
+#include "util/numeric/converters.h"
 
 namespace Inkscape {
 
@@ -40,8 +45,7 @@ ToggleButtonParam::ToggleButtonParam(const Glib::ustring &label, const Glib::ust
     checkwdg = nullptr;
 }
 
-ToggleButtonParam::~ToggleButtonParam()
-{
+ToggleButtonParam::~ToggleButtonParam() {
     if (_toggled_connection.connected()) {
         _toggled_connection.disconnect();
     }
@@ -56,7 +60,7 @@ ToggleButtonParam::param_set_default()
 bool
 ToggleButtonParam::param_readSVGValue(const gchar * strvalue)
 {
-    param_setValue(helperfns_read_bool(strvalue, defvalue));
+    param_setValue(Inkscape::Util::read_bool(strvalue, defvalue));
     return true; // not correct: if value is unacceptable, should return false!
 }
 
@@ -81,7 +85,7 @@ ToggleButtonParam::param_update_default(bool default_value)
 void 
 ToggleButtonParam::param_update_default(const gchar * default_value)
 {
-    param_update_default(helperfns_read_bool(default_value, defvalue));
+    param_update_default(Inkscape::Util::read_bool(default_value, defvalue));
 }
 
 Gtk::Widget *
@@ -133,7 +137,7 @@ ToggleButtonParam::param_newWidget()
    checkwdg->add(*Gtk::manage(box_button));
    checkwdg->setActive(value);
    checkwdg->setProgrammatically = false;
-   checkwdg->set_undo_parameters(SP_VERB_DIALOG_LIVE_PATH_EFFECT, _("Change togglebutton parameter"));
+   checkwdg->set_undo_parameters(_("Change togglebutton parameter"), INKSCAPE_ICON("dialog-path-effects"));
 
    _toggled_connection = checkwdg->signal_toggled().connect(sigc::mem_fun(*this, &ToggleButtonParam::toggled));
    return checkwdg;

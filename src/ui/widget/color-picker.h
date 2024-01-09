@@ -41,16 +41,19 @@ public:
     ColorPicker (const Glib::ustring& title,
                  const Glib::ustring& tip,
                  const guint32 rgba,
-                 bool undo);
+                 bool undo,
+                 Gtk::Button* external_button = nullptr);
 
     ~ColorPicker() override;
 
     void setRgba32 (guint32 rgba);
     void setSensitive(bool sensitive);
+    void open();
     void closeWindow();
-    sigc::connection connectChanged (const sigc::slot<void,guint>& slot)
+    sigc::connection connectChanged (const sigc::slot<void (guint)>& slot)
         { return _changed_signal.connect (slot); }
-
+    void use_transparency(bool enable);
+    guint32 get_current_color() const;
 protected:
 
     void _onSelectedColorChanged();
@@ -60,7 +63,7 @@ protected:
     ColorPreview *_preview;
 
     /*const*/ Glib::ustring _title;
-    sigc::signal<void,guint32> _changed_signal;
+    sigc::signal<void (guint32)> _changed_signal;
     guint32             _rgba;
     bool                _undo;
     bool                _updating;
@@ -70,8 +73,12 @@ protected:
     //Inkscape::UI::Dialog::Dialog _colorSelectorDialog;
     Gtk::Dialog _colorSelectorDialog;
     SelectedColor _selected_color;
+
 private:
+    void set_preview(guint32 rgba);
+
     Gtk::Widget *_color_selector;
+    bool _ignore_transparency = false;
 };
 
 
@@ -90,7 +97,7 @@ public:
     void closeWindow()
         { static_cast<ColorPicker*>(_widget)->closeWindow (); }
 
-    sigc::connection connectChanged (const sigc::slot<void,guint>& slot)
+    sigc::connection connectChanged (const sigc::slot<void (guint)>& slot)
         { return static_cast<ColorPicker*>(_widget)->connectChanged(slot); }
 };
 

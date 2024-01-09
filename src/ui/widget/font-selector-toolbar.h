@@ -82,7 +82,7 @@ private:
     bool on_key_press_event (GdkEventKey* key_event) override;
 
     // Signals
-    sigc::signal<void> changed_signal;
+    sigc::signal<void ()> changed_signal;
     void changed_emit();
     bool signal_block;
 
@@ -96,7 +96,7 @@ public:
     /**
      * Let others know that user has changed GUI settings.
      */
-    sigc::connection connectChanged(sigc::slot<void> slot) {
+    sigc::connection connectChanged(sigc::slot<void ()> slot) {
         return changed_signal.connect(slot);
     }
 };
