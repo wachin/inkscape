@@ -1,0 +1,288 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Inkscape Output</title>
+</head>
+<body>
+    <canvas id='canvas' width='480' height='360'></canvas>
+    <script>
+    var ctx = document.getElementById("canvas").getContext("2d");
+    	
+// #testContent
+	
+// #text5815
+	ctx.lineWidth = 1.000000;
+	ctx.fillStyle = 'rgb(0, 0, 0)';
+	ctx.font = "20 Arial, Helvetica, sans-serif";
+	
+// #alpha
+	
+// #A1
+	ctx.beginPath();
+	ctx.strokeStyle = 'rgb(0, 0, 0)';
+	ctx.lineWidth = 1.000000;
+	ctx.fillStyle = 'rgb(0, 0, 255)';
+	ctx.rect(30.000000, 70.000000, 67.500000, 67.500000);
+	ctx.fill();
+	ctx.stroke();
+	
+// #alpha-1
+	
+// #B1
+	ctx.beginPath();
+	ctx.strokeStyle = 'rgb(0, 0, 0)';
+	ctx.lineWidth = 1.000000;
+	ctx.fillStyle = 'rgb(0, 128, 0)';
+	ctx.rect(100.000000, 70.000000, 67.500000, 67.500000);
+	ctx.fill();
+	ctx.stroke();
+	
+// #alpha-2
+	
+// #C1
+	ctx.beginPath();
+	ctx.strokeStyle = 'rgb(0, 0, 0)';
+	ctx.lineWidth = 1.000000;
+	ctx.fillStyle = 'rgb(255, 165, 0)';
+	ctx.rect(170.000000, 70.000000, 67.500000, 67.500000);
+	ctx.fill();
+	ctx.stroke();
+	
+// #beta
+	
+// #g8555
+	
+// #g5392
+	
+// #g9603
+	
+// #g4306
+	
+// #g7856
+	
+// #D1
+	ctx.beginPath();
+	ctx.strokeStyle = 'rgb(0, 0, 0)';
+	ctx.lineWidth = 1.000000;
+	ctx.fillStyle = 'rgb(255, 215, 0)';
+	ctx.rect(240.000000, 70.000000, 67.500000, 67.500000);
+	ctx.fill();
+	ctx.stroke();
+	
+// #gamma
+	
+// #g5654
+	
+// #g6457
+	
+// #E1
+	ctx.beginPath();
+	ctx.strokeStyle = 'rgb(0, 0, 0)';
+	ctx.lineWidth = 1.000000;
+	ctx.fillStyle = 'rgb(128, 0, 128)';
+	ctx.rect(310.000000, 70.000000, 67.500000, 67.500000);
+	ctx.fill();
+	ctx.stroke();
+	
+// #g2304
+	
+// #g5347
+	
+// #F1
+	ctx.beginPath();
+	ctx.strokeStyle = 'rgb(0, 0, 0)';
+	ctx.lineWidth = 1.000000;
+	ctx.fillStyle = 'rgb(255, 0, 0)';
+	ctx.rect(380.000000, 70.000000, 67.500000, 67.500000);
+	ctx.fill();
+	ctx.stroke();
+	
+// #delta
+	
+// #A2
+	ctx.beginPath();
+	ctx.strokeStyle = 'rgb(0, 0, 0)';
+	ctx.lineWidth = 1.000100;
+	ctx.fillStyle = 'rgb(0, 0, 255)';
+	ctx.rect(30.000000, 140.000000, 67.500000, 67.500000);
+	ctx.fill();
+	ctx.stroke();
+	
+// #B2
+	ctx.beginPath();
+	ctx.strokeStyle = 'rgb(0, 0, 0)';
+	ctx.lineWidth = 1.000200;
+	ctx.fillStyle = 'rgb(0, 128, 0)';
+	ctx.rect(100.000000, 140.000000, 67.500000, 67.500000);
+	ctx.fill();
+	ctx.stroke();
+	
+// #C2
+	ctx.beginPath();
+	ctx.strokeStyle = 'rgb(0, 0, 0)';
+	ctx.lineWidth = 1.000300;
+	ctx.fillStyle = 'rgb(255, 165, 0)';
+	ctx.rect(170.000000, 140.000000, 67.500000, 67.500000);
+	ctx.fill();
+	ctx.stroke();
+	
+// #epsilon
+	
+// #D2
+	ctx.beginPath();
+	ctx.strokeStyle = 'rgb(0, 0, 0)';
+	ctx.lineWidth = 1.000000;
+	ctx.fillStyle = 'rgb(255, 215, 0)';
+	ctx.rect(240.000000, 140.000000, 67.500000, 67.500000);
+	ctx.fill();
+	ctx.stroke();
+	
+// #E2
+	ctx.beginPath();
+	ctx.strokeStyle = 'rgb(0, 0, 0)';
+	ctx.lineWidth = 1.000000;
+	ctx.fillStyle = 'rgb(128, 0, 128)';
+	ctx.rect(310.000000, 140.000000, 67.500000, 67.500000);
+	ctx.fill();
+	ctx.stroke();
+	
+// #g266
+	
+// #F2
+	ctx.beginPath();
+	ctx.strokeStyle = 'rgb(0, 0, 0)';
+	ctx.lineWidth = 1.000000;
+	ctx.fillStyle = 'rgb(255, 0, 0)';
+	ctx.rect(380.000000, 140.000000, 67.500000, 67.500000);
+	ctx.fill();
+	ctx.stroke();
+	
+// #zeta
+	
+// #A3
+	ctx.beginPath();
+	ctx.strokeStyle = 'rgb(0, 0, 0)';
+	ctx.lineWidth = 1.000000;
+	ctx.fillStyle = 'rgb(0, 0, 255)';
+	ctx.rect(30.000000, 210.000000, 67.500000, 67.500000);
+	ctx.fill();
+	ctx.stroke();
+	
+// #B3
+	ctx.beginPath();
+	ctx.strokeStyle = 'rgb(0, 0, 0)';
+	ctx.lineWidth = 1.000000;
+	ctx.fillStyle = 'rgb(0, 128, 0)';
+	ctx.rect(100.000000, 210.000000, 67.500000, 67.500000);
+	ctx.fill();
+	ctx.stroke();
+	
+// #C3
+	ctx.beginPath();
+	ctx.strokeStyle = 'rgb(0, 0, 0)';
+	ctx.lineWidth = 1.000000;
+	ctx.fillStyle = 'rgb(255, 165, 0)';
+	ctx.rect(170.000000, 210.000000, 67.500000, 67.500000);
+	ctx.fill();
+	ctx.stroke();
+	
+// #D3
+	ctx.beginPath();
+	ctx.strokeStyle = 'rgb(0, 0, 0)';
+	ctx.lineWidth = 1.000000;
+	ctx.fillStyle = 'rgb(255, 215, 0)';
+	ctx.moveTo(240.000000, 210.000000);
+	ctx.lineTo(240.000000, 277.500000);
+	ctx.quadraticCurveTo(240.000000, 277.500000, 240.000003, 277.500000);
+	ctx.lineTo(307.499997, 277.500000);
+	ctx.quadraticCurveTo(307.500000, 277.500000, 307.500000, 277.500000);
+	ctx.lineTo(307.500000, 210.000000);
+	ctx.quadraticCurveTo(307.500000, 210.000000, 307.499997, 210.000000);
+	ctx.lineTo(240.000003, 210.000000);
+	ctx.quadraticCurveTo(240.000000, 210.000000, 240.000000, 210.000000);
+	ctx.fill();
+	ctx.stroke();
+	
+// #E3
+	ctx.beginPath();
+	ctx.strokeStyle = 'rgb(0, 0, 0)';
+	ctx.lineWidth = 1.000000;
+	ctx.fillStyle = 'rgb(128, 0, 128)';
+	ctx.rect(310.000000, 210.000000, 67.500000, 67.500000);
+	ctx.fill();
+	ctx.stroke();
+	
+// #eta
+	
+// #F3
+	ctx.beginPath();
+	ctx.strokeStyle = 'rgb(0, 0, 0)';
+	ctx.lineWidth = 1.000000;
+	ctx.fillStyle = 'rgb(255, 0, 0)';
+	ctx.rect(380.000000, 210.000000, 67.500000, 67.500000);
+	ctx.fill();
+	ctx.stroke();
+	
+// #labels
+	
+// #text5447
+	ctx.lineWidth = 1.000000;
+	ctx.fillStyle = 'rgb(0, 0, 0)';
+	ctx.font = "16 Arial, Helvetica, sans-serif";
+	
+// #text4780
+	ctx.lineWidth = 1.000000;
+	ctx.fillStyle = 'rgb(0, 0, 0)';
+	ctx.font = "16 Arial, Helvetica, sans-serif";
+	
+// #text6654
+	ctx.lineWidth = 1.000000;
+	ctx.fillStyle = 'rgb(0, 0, 0)';
+	ctx.font = "16 Arial, Helvetica, sans-serif";
+	
+// #text2036
+	ctx.lineWidth = 1.000000;
+	ctx.fillStyle = 'rgb(0, 0, 0)';
+	ctx.font = "16 Arial, Helvetica, sans-serif";
+	
+// #text2897
+	ctx.lineWidth = 1.000000;
+	ctx.fillStyle = 'rgb(0, 0, 0)';
+	ctx.font = "16 Arial, Helvetica, sans-serif";
+	
+// #text167
+	ctx.lineWidth = 1.000000;
+	ctx.fillStyle = 'rgb(0, 0, 0)';
+	ctx.font = "16 Arial, Helvetica, sans-serif";
+	
+// #text3847
+	ctx.lineWidth = 1.000000;
+	ctx.fillStyle = 'rgb(0, 0, 0)';
+	ctx.font = "16 Arial, Helvetica, sans-serif";
+	
+// #text3066
+	ctx.lineWidth = 1.000000;
+	ctx.fillStyle = 'rgb(0, 0, 0)';
+	ctx.font = "16 Arial, Helvetica, sans-serif";
+	
+// #text9549
+	ctx.lineWidth = 1.000000;
+	ctx.fillStyle = 'rgb(0, 0, 0)';
+	ctx.font = "16 Arial, Helvetica, sans-serif";
+	
+// #revision
+	ctx.lineWidth = 1.000000;
+	ctx.fillStyle = 'rgb(0, 0, 0)';
+	ctx.font = "30";
+	
+// #test-frame
+	ctx.beginPath();
+	ctx.strokeStyle = 'rgb(0, 0, 0)';
+	ctx.lineWidth = 1.000000;
+	ctx.rect(1.000000, 1.000000, 478.000000, 358.000000);
+	ctx.stroke();
+
+    </script>
+</body>
+</html>

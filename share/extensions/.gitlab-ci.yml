@@ -1,0 +1,171 @@
+# Dependencies are managed in the Dockerfile in the inkscape-ci-docker
+# Git repository. Change them there, wait a bit, and then we'll use
+# the new ones here in these builds.
+image: ${IMAGE}
+
+workflow:
+  rules:
+    - when: always
+
+stages:
+  - build
+  - test
+  - coverage
+  - deploy
+variables:
+  GIT_DEPTH: "1"
+  GIT_SUBMODULE_STRATEGY: recursive
+  IMAGE: registry.gitlab.com/inkscape/inkscape-ci-docker/extensions
+
+
+.tests:
+  artifacts:
+    name: "coverage"
+    when: always
+    paths:
+      - .coverage-*
+      - htmlcov
+
+.shared-windows-runners:
+  tags:
+    - shared-windows
+    - windows
+    - windows-1809
+
+codestyle:black:
+  stage: test
+  script:
+    - source /root/pyenv-init
+    - pyenv shell 3.11.0
+    - pip install black
+    - black . --check --verbose --diff --color --exclude=other/
+
+archive:
+  stage: test
+  script:
+    - cd ..
+    - apt-get update && apt-get install zip -y
+    - zip -r extensions.zip $CI_PROJECT_NAME -x $CI_PROJECT_NAME/tests/\* -x $CI_PROJECT_NAME/.git/\*
+    - mv extensions.zip $CI_PROJECT_NAME/extensions.zip
+  artifacts:
+    paths:
+      - extensions.zip
+
+
+test:python38:
+  extends: .tests
+  script:
+    - source /root/pyenv-init
+    - pyenv shell 3.8.0
+    - tox -e py38-normal-linux
+
+test:python39:
+  extends: .tests
+  script:
+    - source /root/pyenv-init
+    - pyenv shell 3.9.0
+    - tox -e py39-normal-linux
+
+test:python310:
+  extends: .tests
+  script:
+    - source /root/pyenv-init
+    - pyenv shell 3.10.0
+    - tox -e py310-normal-linux
+
+test:python311:
+  extends: .tests
+  script:
+    - source /root/pyenv-init
+    - pyenv shell 3.11.0
+    - tox -e py311-normal-linux
+
+test:python311-windows:
+  stage: test
+  allow_failure: true # The windows run is less reliable than the Linux test runs.
+  extends:
+    - .shared-windows-runners
+    - .tests
+  script:
+    - choco install python --version 3.11.0 -y -f --no-progress
+    - $env:PATH += ";C:\\PYTHON311\\;C:\\PYTHON311\\Scripts"
+    - refreshenv
+    - "python -m pip install --upgrade pip"
+    - "python -m pip install --upgrade 'tox<4.0' poetry==1.1.14 tox-poetry 'urllib3<1.27'" # pin urllib3<1.27 until release of cachecontrol>0.12.12 wrt https://github.com/ionrock/cachecontrol/commit/8f037ba1650c446759d6db581012714f6109850f
+    - "tox -e py311-normal-win"
+
+test:coverage:
+  stage: coverage
+  script:
+    - source /root/pyenv-init
+    - pyenv shell 3.11.0
+    - pip install coverage
+    - ls -la | grep coverage
+    - echo "     C:\GitLab-Runner\builds\*\*\$CI_PROJECT_NAME" >> .coveragerc
+    - coverage3 combine .coverage-*
+    - coverage3 report -m --precision=2
+    - coverage3 html --ignore-errors --title="Coverage for Inkscape Extensions (${CI_COMMIT_REF_NAME} branch)"
+    - echo -e "\n\n"
+      "Coverage report successfully created; you can access the full HTML report at\n"
+      "  https://${CI_PROJECT_NAMESPACE}.gitlab.io/-/${CI_PROJECT_NAME}/-/jobs/${CI_JOB_ID}/artifacts/htmlcov/index.html"
+      "\n\n"
+    - pip install pylint==2.17.4
+    - python3 tests/add_pylint.py htmlcov/index.html
+    - pip install anybadge
+    - pylintscore=$(grep -Eo "[0-9]+.[0-9]+</td></tr></tfoot>" htmlcov/index.html | grep -Eo "[0-9]+.[0-9]+")
+    - anybadge -l pylint -v $pylintscore -f htmlcov/pylint.svg 6=red 8=orange 9=yellow 10=green
+  dependencies:
+    - test:python38
+    - test:python39
+    - test:python310
+    - test:python311
+    - test:python311-windows
+  when: always
+  coverage: '/TOTAL.+?(\d+.\d+%)/'
+  artifacts:
+    paths:
+      - htmlcov/
+
+
+mypy:
+  stage: test
+  when: always
+  script:
+    - source /root/pyenv-init
+    - pyenv shell 3.11.0
+    - pip install mypy
+    - mypy inkex --ignore-missing-imports
+
+sphinx:
+  stage: test
+  when: always
+  script:
+    - source /root/pyenv-init
+    - pyenv shell 3.11.0
+    - poetry install
+    - poetry run sphinx-apidoc -e -P -o docs/source/ inkex */deprecated.py
+    - cd docs
+    - poetry run make html
+    - echo -e "\n\n"
+      "Documentation for inkex module successfully created; you can access the HTML version at\n"
+      "  https://${CI_PROJECT_NAMESPACE}.gitlab.io/-/${CI_PROJECT_NAME}/-/jobs/${CI_JOB_ID}/artifacts/build/html/index.html"
+      "\n\n"
+  artifacts:
+    paths:
+      - build/html/
+
+pages:
+  stage: deploy
+  only:
+    - master@inkscape/extensions
+  when: always
+  script:
+    - mkdir -p public
+    - if test -d htmlcov/; then cp -r htmlcov/ public/coverage/; fi
+    - if test -d build/html/; then cp -r build/html/ public/documentation/; fi
+    - source /root/pyenv-init
+    - pyenv shell 3.11.0
+    - bash docs/poetry.sh > public/python-dependencies.txt # Flattened list of all dependencies
+  artifacts:
+    paths:
+      - public/

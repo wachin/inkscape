@@ -1,0 +1,12 @@
+[submodule "other/gcodetools"]
+	path = other/gcodetools
+	url = https://gitlab.com/inkscape/extras/extensions-gcodetools.git
+[submodule "other/inkman"]
+	path = other/inkman
+	url = https://gitlab.com/inkscape/extras/extension-manager.git
+[submodule "other/clipart"]
+	path = other/clipart
+	url = https://gitlab.com/inkscape/extras/inkscape-import-clipart.git
+[submodule "other/extension-xaml"]
+	path = other/extension-xaml
+	url = https://gitlab.com/inkscape/extras/extension-xaml.git
