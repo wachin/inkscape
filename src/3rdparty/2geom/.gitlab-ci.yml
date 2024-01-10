@@ -1,0 +1,99 @@
+# Dependencies are managed in the Dockerfile in the inkscape-ci-docker
+# Git repository. Recycle the one for the master Inkscape branch for now
+image: registry.gitlab.com/inkscape/inkscape-ci-docker/master
+
+variables:
+  GIT_DEPTH: "10"
+  GIT_SUBMODULE_STRATEGY: recursive
+
+# The main build of the library
+2geom:
+  stage: build
+  before_script:
+    - mkdir -p ccache
+    - export CCACHE_BASEDIR=${PWD}
+    - export CCACHE_DIR=${PWD}/ccache
+  script:
+    - mkdir -p build opt
+    - cd build
+    - cmake .. -DCMAKE_C_COMPILER_LAUNCHER=ccache
+               -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+               -DCMAKE_CXX_FLAGS="-fsanitize=address -fno-omit-frame-pointer"
+               -DCMAKE_BUILD_TYPE=Debug
+               -DCMAKE_INSTALL_PREFIX=../opt
+               -D2GEOM_BOOST_PYTHON=ON
+    - make -j3
+    - make -j3 perf
+    - make py2geom
+    - make install
+  cache:
+    paths:
+      - ccache/
+  artifacts:
+    expire_in: 1 day
+    paths:
+      - build # needed by unit tests
+      - opt   # needed by find-package
+
+# Build an executable including lib2geom as a subproject
+2geom:as-subproject:
+  stage: build
+  before_script:
+    - mkdir -p ccache
+    - export CCACHE_BASEDIR="${PWD}"
+    - export CCACHE_DIR="${PWD}/ccache"
+  script:
+    - mkdir -p opt2
+    - cd tests/dependent-project
+    - mkdir -p build-as-subproject
+    - cd build-as-subproject
+    - cmake .. -D2GEOM_AS_SUBPROJECT=ON
+               -DCMAKE_INSTALL_PREFIX=../../../opt2
+    - make -j2 main
+    - ./main
+    - make install
+  cache:
+    paths:
+      - ccache/
+
+# Build an executable linking against lib2geom found via cmake
+2geom:find-package:
+  stage: test
+  dependencies:
+    - 2geom
+  needs: ["2geom"]
+  before_script:
+    - mkdir -p ccache
+    - export CCACHE_BASEDIR="${PWD}"
+    - export CCACHE_DIR="${PWD}/ccache"
+  script:
+    - mkdir -p opt3
+    - cd tests/dependent-project
+    - mkdir -p build-with-find-package
+    - cd build-with-find-package
+    - cmake .. -D2GEOM_AS_SUBPROJECT=OFF
+               -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address"
+               -DCMAKE_INSTALL_PREFIX=../../../opt3
+               -D2Geom_DIR="$PWD/../../../opt/lib/cmake/2Geom"
+    - make -j2 main
+    - ./main
+    - make install
+  cache:
+    paths:
+      - ccache/
+
+# Run tests
+2geom:tests:
+  stage: test
+  dependencies:
+    - 2geom
+  needs: ["2geom"]
+  script:
+    - cd build
+    - make -j3 test
+  artifacts:
+    expire_in: 1 month
+    paths:
+      - build/Testing
+    expose_as: 'Test logs'
+    when: on_failure
