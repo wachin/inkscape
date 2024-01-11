@@ -2,8 +2,8 @@ doxygen_warnings.log
 doxygen/
 gtest/
 build
-share/inkscape
-share/*/*.h
+#share/inkscape
+#share/*/*.h
 src/3rdparty/cairo
 
 inkscape_devel_*.snap
