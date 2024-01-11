@@ -1,6 +1,7 @@
 # coding=utf-8
 from convert2dashes import Dashit
 from inkex.tester import ComparisonMixin, InkscapeExtensionTestMixin, TestCase
+from inkex.tester.filters import CompareNumericFuzzy
 
 
 class DashitBasicTest(ComparisonMixin, TestCase):
@@ -21,3 +22,22 @@ class DashitCommaTest(ComparisonMixin, TestCase):
     comparisons = (["--id=dashme2"],)
     effect_class = Dashit
     compare_file = ["svg/dash.svg", "svg/dash_zerolength.svg"]
+
+
+class DashitComplexTest(ComparisonMixin, TestCase):
+    comparisons = (
+        [
+            "--id=nodes1",
+            "--id=nodes2",
+            "--id=nodes3",
+            "--id=circle",
+            "--id=offset1",
+            "--id=offset2",
+            "--id=closed1",
+            "--id=closed2" "--id=shorthand1",
+            "--id=multiple",
+        ],
+    )
+    effect_class = Dashit
+    compare_filters = [CompareNumericFuzzy()]
+    compare_file = ["svg/dashes_examples.svg"]

@@ -108,9 +108,6 @@ class DxfOutlines(inkex.OutputExtension):
         self.d = [0.0]  # knot vector
         self.poly = [[0.0, 0.0]]  # LWPOLYLINE data
 
-    def save(self, stream):
-        stream.write(b"".join(self.dxf))
-
     def dxf_add(self, str):
         self.dxf.append(str.encode(self.options.char_encode))
 
@@ -370,7 +367,7 @@ class DxfOutlines(inkex.OutputExtension):
         if trans:
             self.groupmat.pop()
 
-    def effect(self):
+    def save(self, stream):
         # Warn user if name match field is empty
         if (
             self.options.layer_option
@@ -383,6 +380,9 @@ class DxfOutlines(inkex.OutputExtension):
                     "'By name match' option"
                 )
             )
+
+        if len(self.svg.xpath("//svg:use|//svg:flowRoot|//svg:text")) > 0:
+            self.preprocess(["flowRoot", "text"])
 
         # Split user layer data into a list: "layerA,layerb,LAYERC" becomes ["layera", "layerb", "layerc"]
         if self.options.layer_name:
@@ -399,7 +399,7 @@ class DxfOutlines(inkex.OutputExtension):
         with open(self.get_resource("dxf14_header.txt"), "r") as fhl:
             header = fhl.read()
             unit_map = {"px": 0, "in": 1, "ft": 2, "mm": 4, "cm": 5, "m": 6}
-            header = header.replace("<unit specifier>", str(unit_map[unit]))
+            header = header.replace("<unit specifier>", str(unit_map.get(unit, 0)))
             self.dxf_add(header)
         for node in self.svg.xpath("//svg:g"):
             if isinstance(node, Layer):
@@ -447,6 +447,8 @@ class DxfOutlines(inkex.OutputExtension):
             for layer in self.options.layer_name:
                 if layer not in self.layernames:
                     inkex.errormsg(_("Warning: Layer '{}' not found!").format(layer))
+
+        stream.write(b"".join(self.dxf))
 
 
 if __name__ == "__main__":

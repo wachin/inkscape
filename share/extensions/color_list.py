@@ -12,6 +12,7 @@ class ListColours(inkex.ColorExtension):
     _counts: Dict = defaultdict(int)
 
     def effect(self):
+        self._counts = defaultdict(int)
         super().effect()
         items = sorted(self._counts.items(), key=lambda v: -v[1])
         for color, count in items:

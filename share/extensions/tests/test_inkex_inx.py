@@ -5,12 +5,25 @@ Test elements extra logic from svg xml lxml custom classes.
 """
 
 import os
+import pathlib
+import re
 from glob import glob
 
 from inkex.utils import PY3
 from inkex.tester import TestCase
 from inkex.tester.inx import InxMixin
 from inkex.inx import InxFile
+
+
+# white-listed icons (templates), don't check those
+whitelist = {
+    "presentation-icon",
+    "dvd_box",
+    "businesscard_landscape",
+    "seamless_pattern",
+    "org.inkscape.effect.bluredge",  # internal effect
+    "org.inkscape.effect.grid",  # internal effect
+}
 
 
 class InxTestCase(InxMixin, TestCase):
@@ -144,3 +157,32 @@ class InxTestCase(InxMixin, TestCase):
             with self.subTest(inx_file=inx_file):
                 self.assertInxSchemaValid(inx_file)
                 self.assertInxIsGood(inx_file)
+
+        self.assertIcons(
+            os.path.join(self._testdir(), "../icons"),
+            os.path.join(self._testdir(), ".."),
+        )
+
+    # check that all icons have a matching extension
+    def assertIcons(self, path_icons, path_ext):
+        svgs = list(pathlib.Path(path_icons).glob("*.svg"))
+        inxs = list(pathlib.Path(path_ext).glob("*.inx"))
+
+        ids = set()
+        # collect all extension IDs
+        for inx in inxs:
+            xml = inx.read_text()
+            ext_id = re.search(r"(?sm)<id>(.*?)</id>", xml)
+            if ext_id:
+                ids.add(ext_id.group(1))
+
+        # check icons
+        for svg in svgs:
+            fname = svg.stem
+            if fname in whitelist:
+                continue
+            # skip names starting with '_' (those are "includes" linked by other icons)
+            if fname[0] != "_":
+                self.assertTrue(
+                    fname in ids, f"Icon without matching extension: {svg.name}"
+                )

@@ -26,25 +26,47 @@ Property management and parsing, CSS cascading, default value storage
     A list of all properties, their parser class, and additional information
     such as whether they are inheritable or can be given as presentation attributes
 """
-
+from __future__ import annotations
 from abc import ABC, abstractmethod
 
 import re
-from typing import Tuple, Dict, Type, Union, List, Optional
-from .interfaces.IElement import IBaseElement, ISVGDocumentElement
+from typing import (
+    Tuple,
+    Dict,
+    Type,
+    Union,
+    List,
+    Optional,
+    Callable,
+    TYPE_CHECKING,
+    cast,
+)
+from .interfaces.IElement import IBaseElement
 
 from .units import parse_unit, convert_unit
+from .utils import FragmentError, NotifyList
 
 from .colors import Color, ColorError
+
+if TYPE_CHECKING:
+    from .elements import BaseElement
 
 
 class BaseStyleValue:
     """A class encapsuling a single CSS declaration / presentation_attribute"""
 
-    def __init__(self, declaration=None, attr_name=None, value=None, important=False):
+    def __init__(
+        self,
+        declaration=None,
+        attr_name=None,
+        value=None,
+        important=False,
+        element=None,
+    ) -> None:
         self.attr_name: str
         self.value: str
         self.important: bool
+        self.callback: Optional[Callable]
         if declaration is not None and ":" in declaration:
             (
                 self.attr_name,
@@ -57,9 +79,8 @@ class BaseStyleValue:
                 self.value = value.strip()
             else:
                 # maybe its already parsed? then set it
-                self.value = self.unparse_value(value)
+                self.value = self.unparse_value(value, element=element)
             self.important = important
-            _ = self.parse_value()  # check that we can parse this value
 
     @classmethod
     def parse_declaration(cls, declaration: str) -> Tuple[str, str, bool]:
@@ -118,7 +139,7 @@ class BaseStyleValue:
         """
         return value
 
-    def unparse_value(self, value: object) -> str:
+    def unparse_value(self, value: object, element=None) -> str:
         """ "Unparses" an object, i.e. converts an object back to an attribute.
         If the result is invalid, i.e. can't be parsed, an exception is raised.
 
@@ -128,11 +149,15 @@ class BaseStyleValue:
         Returns:
             str: the attribute value
         """
-        result = self._unparse_value(value)
-        self._parse_value(result)  # check if value can be parsed (value is valid)
+        result = self._unparse_value(value, element)
+        self._parse_value(
+            result, element
+        )  # check if value can be parsed (value is valid)
         return result
 
-    def _unparse_value(self, value: object) -> str:  # pylint: disable=no-self-use
+    def _unparse_value(
+        self, value: object, element=None
+    ) -> str:  # pylint: disable=no-self-use
         return str(value)
 
     @property
@@ -156,6 +181,7 @@ class BaseStyleValue:
         attr_name: Optional[str] = None,
         value: Optional[object] = None,
         important: Optional[bool] = False,
+        element=None,
     ):
         """Create an attribute
 
@@ -165,6 +191,7 @@ class BaseStyleValue:
             value (object, optional): the attribute value. Defaults to None.
             important (bool, optional): whether the attribute is marked !important.
                 Defaults to False.
+            element (optional): the parent element
 
         Raises:
             Errors may also be raised on parsing, so make sure to handle them
@@ -181,8 +208,8 @@ class BaseStyleValue:
 
         if attr_name in all_properties:
             valuetype = all_properties[attr_name][0]
-            return valuetype(declaration, attr_name, value, important)
-        return BaseStyleValue(declaration, attr_name, value, important)
+            return valuetype(declaration, attr_name, value, important, element)
+        return BaseStyleValue(declaration, attr_name, value, important, element)
 
     def __eq__(self, other):
         if not (isinstance(other, BaseStyleValue)):
@@ -208,11 +235,10 @@ class BaseStyleValue:
         """
         try:
             value = BaseStyleValue.factory(
-                declaration=declaration, attr_name=key, value=value
+                declaration=declaration, attr_name=key, value=value, element=element
             )
             key = value.attr_name
             # Try to parse the attribute
-            _ = value.parse_value(element)
             return (key, value)
         except ValueError:
             # something went wrong during parsing, e.g. a bad attribute format
@@ -241,7 +267,7 @@ class AlphaValue(BaseStyleValue):
             return 1
         return parsed_value
 
-    def _unparse_value(self, value: object) -> str:
+    def _unparse_value(self, value: object, element=None) -> str:
         if isinstance(value, (float, int)):
             if value < 0:
                 return "0"
@@ -309,18 +335,52 @@ class URLNoneValue(BaseStyleValue):
             return None
         raise ValueError("Invalid property value")
 
-    def _unparse_value(self, value: object):
+    def _unparse_value(self, value: object, element=None):
         if isinstance(value, IBaseElement):
+            if element is not None:
+                value = self._insert_if_necessary(element, value)
             return f"url(#{value.get_id()})"
-        return super()._unparse_value(value)
+        return super()._unparse_value(value, element=None)
 
     @staticmethod
     def element_has_root(element) -> bool:
-        "Checks if an element has a root, i.e. if element.root will fail"
+        "Checks if an element has a root"
+        try:
+            _ = element.root
+            return True
+        except FragmentError:
+            return False
 
-        return not (
-            element.getparent() is None and not isinstance(element, ISVGDocumentElement)
-        )
+    def _insert_if_necessary(
+        self, element: BaseElement, value: BaseElement
+    ) -> BaseElement:
+        """Ensures that the return (value or a deep copy of it) is inside the same
+        document as element.
+
+        if element is unrooted, don't do anything (just return value)
+        If element is attached to the same document as value, return value.
+        If value is not attached to a document, attach it to the defs of element's
+        document and return value.
+        If value is already attached to another document, create a copy and return the
+        copy.
+
+        .. versionadded:: 1.4"""
+        # Check if the element is rooted and has the same root as self.element.
+        try:
+            _ = element.root
+            try:
+                if value.root != element.root:
+                    # Create a copy and attach it to the tree.
+                    copy = value.copy()
+                    element.root.defs.append(copy)
+                    return copy
+            except FragmentError:
+                element.root.defs.append(value)
+                return value
+
+        except FragmentError:
+            pass
+        return value
 
 
 class PaintValue(ColorValue, URLNoneValue):
@@ -355,18 +415,25 @@ class PaintValue(ColorValue, URLNoneValue):
                 return Color(match.group(2))
         return Color(value)
 
-    def _unparse_value(self, value: object):
+    def _unparse_value(self, value: object, element=None):
         if value is None:
             return "none"
-        return super()._unparse_value(value)
+        return super()._unparse_value(value, element=element)
 
 
 class EnumValue(BaseStyleValue):
     """Stores a value that can only have a finite set of options"""
 
-    def __init__(self, declaration=None, attr_name=None, value=None, important=False):
+    def __init__(
+        self,
+        declaration=None,
+        attr_name=None,
+        value=None,
+        important=False,
+        element=None,
+    ):
         self.valueset = all_properties[attr_name][4]
-        super().__init__(declaration, attr_name, value, important)
+        super().__init__(declaration, attr_name, value, important, element)
 
     def _parse_value(self, value: str, element=None):
         if value in self.valueset:
@@ -554,26 +621,84 @@ class FontSizeValue(BaseStyleValue):
 class StrokeDasharrayValue(BaseStyleValue):
     """Logic for the stroke-dasharray property"""
 
+    callback: Optional[Callable] = None
+
     def _parse_value(self, value: str, element=None):
         dashes = re.findall(r"[^,\s]+", value)
         if len(dashes) == 0 or value == "none":
-            return None  # no dasharray applied
+            return NotifyList([], callback=self.callback)  # no dasharray applied
         if not any(parse_unit(i) is None for i in dashes):
             dashes = [convert_unit(i, "px") for i in dashes]
         else:
-            return None
+            return NotifyList([], callback=self.callback)
         if any(i < 0 for i in dashes):
-            return None  # one negative value makes the dasharray invalid
+            # one negative value makes the dasharray invalid
+            return NotifyList([], callback=self.callback)
         if len(dashes) % 2 == 1:
             dashes = 2 * dashes
-        return dashes
+        return NotifyList(dashes, callback=self.callback)
 
-    def _unparse_value(self, value: object) -> str:
-        if value is None:
+    def _unparse_value(self, value: object, element=None) -> str:
+        if value is None or not value:
             return "none"
         if isinstance(value, list):
             return " ".join(map(str, value))
         return str(value)
+
+
+class FilterList(URLNoneValue):
+    """Stores a list of Filters
+
+    .. versionadded:: 1.4"""
+
+    callback = None
+
+    def _parse_value(self, value: str, element=None):
+        if element is None or value == "none":
+            return NotifyList([], callback=self.callback)
+
+        items = value.split()
+        try:
+            if isinstance(value, str):
+                result = tuple(
+                    match_url_and_return_element(item, element.root) for item in items
+                )
+                result = tuple(i for i in result if i is not None)
+
+        except FragmentError:
+            return NotifyList(items, callback=self.callback)
+        except ValueError:  # broken link
+            return []
+
+        # if len(result) == 0:
+        #    return None
+        # if len(result) == 1:
+        #    return result[0]
+        return NotifyList(result, callback=self.callback)
+
+    def _unparse_value(self, value: object, element: Optional[BaseElement] = None):
+        if isinstance(value, IBaseElement) or not isinstance(value, (list, tuple)):
+            value = [value]
+        if all((isinstance(i, str) for i in value)):
+            return " ".join(value)  # type: ignore
+        assert element is not None
+        value = cast("List[BaseElement]", value)
+        try:
+            _ = element.root
+            for i in value:
+                if i is None:
+                    continue
+                # insert the element
+                inserted = self._insert_if_necessary(element, cast("BaseElement", i))
+                # if a copy was created, replace the original in the list with the copy
+                if inserted is not i:
+                    for index, item in enumerate(value):
+                        if item is i:
+                            value[index] = inserted
+        except FragmentError:
+            # Element is unrooted, we skip this step.
+            pass
+        return " ".join(f"url(#{i.get_id()})" for i in value if i is not None)
 
 
 # keys: attributes, right side:
@@ -685,7 +810,7 @@ all_properties: Dict[
     ),  # the normal fill, not the <animation> one
     "fill-opacity": (AlphaValue, "1", True, True, None),
     "fill-rule": (EnumValue, "nonzero", True, True, ["nonzero", "evenodd"]),
-    "filter": (URLNoneValue, "none", True, False, None),
+    "filter": (FilterList, "none", True, False, None),
     "flood-color": (PaintValue, "black", True, False, None),
     "flood-opacity": (AlphaValue, "1", True, False, None),
     "font": (FontValue, "", True, False, None),
@@ -711,7 +836,7 @@ all_properties: Dict[
         "auto",
         True,
         True,
-        ["auto", "optimizeQuality", "optimizeSpeed"],
+        ["auto", "optimizeQuality", "optimizeSpeed", "pixelated", "crisp-edges"],
     ),
     "letter-spacing": (BaseStyleValue, "normal", True, True, None),
     "lighting-color": (ColorValue, "normal", True, False, None),

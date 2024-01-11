@@ -1096,7 +1096,7 @@ def extract_color(style, color_attrib, *opacity_attribs):
     if color_attrib in style.keys():
         if style[color_attrib] == "none":
             return [1, 1, 1, 0]
-        c = inkex.Color(style[color_attrib]).to_rgb()
+        c = style(color_attrib).to_rgb()
     else:
         c = (0, 0, 0)
 

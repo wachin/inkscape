@@ -31,7 +31,7 @@ Python setup
 ------------
 
 On every operating system, you need a working Python environment. Currently, inkex is tested 
-against Python 3.7-3.10.
+against Python 3.8-3.11.
 
 inkex manages its dependencies using `poetry <https://python-poetry.org/docs/>`_. It can be installed using::
 

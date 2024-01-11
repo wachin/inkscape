@@ -286,13 +286,11 @@ class StyleInheritanceTests(TestCase):
             (r"fill: ", ColorError),
             (r"font-variant: blue", ValueError),
         ]
+
         for decl, exceptiontype in tests:
             with self.assertRaises(exceptiontype):
                 value = BaseStyleValue.factory(declaration=decl)
                 _ = value.parse_value(doc)
-            self.assertEqual(
-                BaseStyleValue.factory_errorhandled(element=doc, declaration=decl), None
-            )
 
     def test_attribute_set_invalid(self):
         """Test if bad attribute data raises an exception when setting it on a style"""
@@ -448,12 +446,12 @@ class StyleInheritanceTests(TestCase):
         tests = [
             ("1 2 3 4", [1, 2, 3, 4]),
             ("1  2,3 4.5", [1, 2, 3, 4.5]),
-            ("1;2", None),
+            ("1;2", []),
             ("1.111", [1.111, 1.111]),
             ("1px, 2px, 3px", [1, 2, 3, 1, 2, 3]),
-            ("", None),
-            ("1 -2", None),
-            (None, None),
+            ("", []),
+            ("1 -2", []),
+            (None, []),
             ([1, 2, 3], [1, 2, 3, 1, 2, 3]),
         ]
         for value, result in tests:
@@ -465,3 +463,11 @@ class StyleInheritanceTests(TestCase):
                 self.assertAlmostTuple(
                     result, setvalue, msg=f"Expected {result}, got {setvalue}"
                 )
+
+    def test_dasharray_mutable(self):
+        elem = PathElement()
+        style = elem.style
+        sd = "stroke-dasharray"
+        style[sd] = [1, 2, 3, 4]
+        style(sd).extend([5, 6])
+        self.assertAlmostTuple(style(sd), [1, 2, 3, 4, 5, 6])

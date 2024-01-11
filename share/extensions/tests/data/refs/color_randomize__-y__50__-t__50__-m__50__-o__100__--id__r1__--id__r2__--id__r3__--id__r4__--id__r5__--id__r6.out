@@ -4,14 +4,14 @@
       <stop id="stop849" offset="0" style="stop-color:#22bb42;stop-opacity:1;opacity:0.7773566427005639"/>
       <stop id="stop851" offset="1" style="stop-color:#291f58;stop-opacity:1;opacity:0.7773566427005639"/>
     </linearGradient>
-    <linearGradient id="lg2">
-      <stop id="stop841" offset="0" style="stop-color:#75507b;stop-opacity:1"/>
-      <stop id="stop843" offset="1" style="stop-color:#cc0000;stop-opacity:1"/>
+    <linearGradient id="lg2" style="opacity:0.7773566427005639">
+      <stop id="stop841" offset="0" style="stop-color:#3c7ca1;stop-opacity:1;opacity:0.7773566427005639"/>
+      <stop id="stop843" offset="1" style="stop-color:#52551a;stop-opacity:1;opacity:0.7773566427005639"/>
     </linearGradient>
     <linearGradient id="ColorName" inkscape:swatch="solid" style="opacity:0.7773566427005639">
-      <stop id="stop841" offset="0" style="stop-color:#40a4b9;stop-opacity:1;opacity:0.7773566427005639"/>
+      <stop id="stop844" offset="0" style="stop-color:#40a4b9;stop-opacity:1;opacity:0.7773566427005639"/>
     </linearGradient>
-    <linearGradient gradientUnits="userSpaceOnUse" y2="55" x2="235" y1="15" x1="195" id="slg1" xlink:href="#lg2"/>
+    <linearGradient gradientUnits="userSpaceOnUse" y2="55" x2="235" y1="15" x1="195" id="slg1" xlink:href="#lg2" style="opacity:0.7773566427005639"/>
     <linearGradient gradientUnits="userSpaceOnUse" y2="15" x2="235" y1="55" x1="195" id="slg2" xlink:href="#lg1" style="opacity:0.7773566427005639"/>
     <linearGradient gradientUnits="userSpaceOnUse" y2="15" x2="265" y1="55" x1="195" id="slg3" xlink:href="#lg1" style="opacity:0.7773566427005639"/>
     <linearGradient gradientUnits="userSpaceOnUse" y2="15" x2="265" y1="55" x1="195" id="slg4" xlink:href="#ColorName" style="opacity:0.7773566427005639"/>
@@ -22,12 +22,7 @@
   stop-color:blue;
 }
     ]]></style>
-  <linearGradient gradientUnits="userSpaceOnUse" y2="55" x2="235" y1="15" x1="195" xlink:href="#linearGradient992" id="linearGradient6698" style="opacity:0.7773566427005639"/>
-    <linearGradient id="linearGradient992" style="opacity:0.7773566427005639">
-      <stop id="stop841" offset="0" style="stop-color:#3c7ca1;stop-opacity:1;opacity:0.7773566427005639"/>
-      <stop id="stop843" offset="1" style="stop-color:#52551a;stop-opacity:1;opacity:0.7773566427005639"/>
-    </linearGradient>
-    </defs>
+  </defs>
   <!--Regular shape with style properties-->
   <rect y="15" x="10" height="40" width="40" id="r1" style="opacity:0.7773566427005639;fill:#3c7ca1;fill-opacity:0.9;stroke:#5c7189;stroke-width:10;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:0.5;paint-order:markers fill stroke;stop-color:#636720"/>
   <!--Regular shape with css styles-->
@@ -37,7 +32,7 @@
   <!--Regular shape with swatch-->
   <rect y="15" x="160" height="40" width="40" id="r4" style="opacity:0.7773566427005639;fill:url(#slg4);fill-opacity:1;stroke:url(#slg2);stroke-width:10;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:0.5;paint-order:markers fill stroke;stop-color:#94993e"/>
   <!--Regular shape with gradients-->
-  <rect y="15" x="210" height="40" width="40" id="r4" style="opacity:1;fill:url(#slg1);fill-opacity:1;stroke:url(#slg2);stroke-width:10;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:0.5;paint-order:markers fill stroke;stop-color:#000000"/>
+  <rect y="15" x="210" height="40" width="40" id="r6" style="opacity:0.7773566427005639;fill:url(#slg1);fill-opacity:1;stroke:url(#slg2);stroke-width:10;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:0.5;paint-order:markers fill stroke;stop-color:#94993e"/>
   <!--A copy of the gradient to test url hygiene-->
   <rect y="15" x="260" height="40" width="40" id="r5" style="opacity:0.7773566427005639;fill:url(#slg1);fill-opacity:1;stroke:url(#slg3);stroke-width:10;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:0.5;paint-order:markers fill stroke;stop-color:#94993e"/>
 </svg>

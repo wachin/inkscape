@@ -186,7 +186,10 @@ class PathBuilder:
             command (Union[PathCommand, List[PathCommand]]): A (list of) PathCommand(s)
                 to be appended.
         """
-        self.current.append(command)
+        if isinstance(command, list):
+            self.current.extend(command)
+        else:
+            self.current.append(command)
 
     def terminate(self):
         """Terminates current subpath. This method does nothing by default and is

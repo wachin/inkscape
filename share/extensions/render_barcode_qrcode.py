@@ -26,10 +26,15 @@ Provide the QR Code rendering.
 from __future__ import print_function
 
 from itertools import product
+from collections import defaultdict
+
+import numpy as np
 
 import inkex
 from inkex import Group, Rectangle, Use, PathElement
+from inkex.paths import Move, zoneClose, Line, Curve
 from inkex.localization import inkex_gettext as _
+from inkex.utils import circular_pairwise
 
 
 class QRLengthError(Exception):
@@ -88,7 +93,9 @@ class QRCode(object):
 
     def _make(self, test, maskPattern):
         self.moduleCount = self.typeNumber * 4 + 17
-        self.modules = [[None] * self.moduleCount for i in range(self.moduleCount)]
+        self.modules = np.array(
+            [[None] * self.moduleCount for i in range(self.moduleCount)]
+        )
 
         self._setupPositionProbePattern(0, 0)
         self._setupPositionProbePattern(self.moduleCount - 7, 0)
@@ -263,9 +270,9 @@ class QRCode(object):
         dcdata = [None] * len(rsBlocks)
         ecdata = [None] * len(rsBlocks)
 
-        for r in range(len(rsBlocks)):
-            dcCount = rsBlocks[r].getDataCount()
-            ecCount = rsBlocks[r].getTotalCount() - dcCount
+        for r, b in enumerate(rsBlocks):
+            dcCount = b.getDataCount()
+            ecCount = b.getTotalCount() - dcCount
 
             maxDcCount = max(maxDcCount, dcCount)
             maxEcCount = max(maxEcCount, ecCount)
@@ -416,77 +423,53 @@ class QRUtil(object):
         }[maskPattern]
 
     @staticmethod
-    def getLostPoint(qrcode):
+    def getLostPoint(qrcode: QRCode):
         moduleCount = qrcode.getModuleCount()
         lostPoint = 0
 
+        other = qrcode.modules.astype("int")
+
         # LEVEL1
-        for row in range(moduleCount):
-            for col in range(moduleCount):
-                sameCount = 0
-                dark = qrcode.isDark(row, col)
-                for r in range(-1, 2):
-                    if row + r < 0 or moduleCount <= row + r:
-                        continue
-                    for c in range(-1, 2):
-                        if col + c < 0 or moduleCount <= col + c:
-                            continue
-                        if r == 0 and c == 0:
-                            continue
-                        if dark == qrcode.isDark(row + r, col + c):
-                            sameCount += 1
-                if sameCount > 5:
-                    lostPoint += 3 + sameCount - 5
+        same = np.zeros_like(other)
+        same[:-1, :] += other[:-1, :] == other[1:, :]  # east
+        same[:-1, :-1] += other[:-1, :-1] == other[1:, 1:]  # north east
+        same[:, :-1] += other[:, :-1] == other[:, 1:]  # north
+        same[1:, :-1] += other[1:, :-1] == other[:-1, 1:]  # north west
+        same[1:, :] += other[1:, :] == other[:-1, :]  # west
+        same[1:, 1:] += other[1:, 1:] == other[:-1, :-1]  # south west
+        same[:, 1:] += other[:, 1:] == other[:, :-1]  # south
+        same[:-1, 1:] += other[:-1, 1:] == other[1:, :-1]  # south east
+        lostPoint = np.sum(np.where(same > 5, 3 + same - 5, 0))
 
         # LEVEL2
-        for row in range(moduleCount - 1):
-            for col in range(moduleCount - 1):
-                count = 0
-                if qrcode.isDark(row, col):
-                    count += 1
-                if qrcode.isDark(row + 1, col):
-                    count += 1
-                if qrcode.isDark(row, col + 1):
-                    count += 1
-                if qrcode.isDark(row + 1, col + 1):
-                    count += 1
-                if count == 0 or count == 4:
-                    lostPoint += 3
+        lostPoint += 3 * np.sum(
+            np.mod(other[:-1, :-1] + other[1:, :-1] + other[:-1, 1:] + other[1:, 1:], 4)
+            == 0
+        )
 
         # LEVEL3
-        for row in range(moduleCount):
-            for col in range(moduleCount - 6):
-                if (
-                    qrcode.isDark(row, col)
-                    and not qrcode.isDark(row, col + 1)
-                    and qrcode.isDark(row, col + 2)
-                    and qrcode.isDark(row, col + 3)
-                    and qrcode.isDark(row, col + 4)
-                    and not qrcode.isDark(row, col + 5)
-                    and qrcode.isDark(row, col + 6)
-                ):
-                    lostPoint += 40
+        lostPoint += 40 * np.sum(
+            (other[:, 0:-6] == 1)
+            & (other[:, 1:-5] == 0)
+            & (other[:, 2:-4] == 1)
+            & (other[:, 3:-3] == 1)
+            & (other[:, 4:-2] == 1)
+            & (other[:, 5:-1] == 0)
+            & (other[:, 6:] == 1)
+        )
 
-        for col in range(moduleCount):
-            for row in range(moduleCount - 6):
-                if (
-                    qrcode.isDark(row, col)
-                    and not qrcode.isDark(row + 1, col)
-                    and qrcode.isDark(row + 2, col)
-                    and qrcode.isDark(row + 3, col)
-                    and qrcode.isDark(row + 4, col)
-                    and not qrcode.isDark(row + 5, col)
-                    and qrcode.isDark(row + 6, col)
-                ):
-                    lostPoint += 40
+        lostPoint += 40 * np.sum(
+            (other[0:-6] == 1)
+            & (other[1:-5, :] == 0)
+            & (other[2:-4, :] == 1)
+            & (other[3:-3, :] == 1)
+            & (other[4:-2, :] == 1)
+            & (other[5:-1, :] == 0)
+            & (other[6:, :] == 1)
+        )
 
         # LEVEL4
-        darkCount = 0
-        for col in range(moduleCount):
-            for row in range(moduleCount):
-                if qrcode.isDark(row, col):
-                    darkCount += 1
-
+        darkCount = np.sum(other)
         ratio = abs(100 * darkCount // moduleCount // moduleCount - 50) // 5
         lostPoint += ratio * 10
 
@@ -680,17 +663,11 @@ class QRMath(object):
 
     @staticmethod
     def glog(n):
-        if n < 1:
-            raise Exception("log(%s)" % n)
         return QRMath.LOG_TABLE[n]
 
     @staticmethod
     def gexp(n):
-        while n < 0:
-            n += 255
-        while n >= 256:
-            n -= 255
-        return QRMath.EXP_TABLE[n]
+        return QRMath.EXP_TABLE[n % 255]
 
 
 # initialize statics
@@ -1020,27 +997,26 @@ class GridDrawer(object):
         self.invert_code = invert_code
         self.smoothFactor = smooth_factor
         self.grid = None
+        self.row_count = 0
+        self.col_count = 0
 
     def set_grid(self, grid):
         if len({len(g) for g in grid}) != 1:
             raise Exception("The array is not rectangular")
         else:
             self.grid = grid
-
-    def row_count(self):
-        return len(self.grid) if self.grid is not None else 0
-
-    def col_count(self):
-        return len(self.grid[0]) if self.row_count() > 0 else 0
+            self.row_count = len(self.grid)
+            self.col_count = len(self.grid[0])
 
     def isDark(self, col, row):
-        inside = col >= 0 and 0 <= row < self.row_count() and col < self.col_count()
+        inside = 0 <= col < self.col_count and 0 <= row < self.row_count
         return False if not inside else self.grid[row][col] != self.invert_code
+
+    dm = {0: (1, 0), 1: (0, -1), 2: (-1, 0), 3: (0, 1)}
 
     @staticmethod
     def moveByDirection(xyd):
-        dm = {0: (1, 0), 1: (0, -1), 2: (-1, 0), 3: (0, 1)}
-        return xyd[0] + dm[xyd[2]][0], xyd[1] + dm[xyd[2]][1]
+        return xyd[0] + GridDrawer.dm[xyd[2]][0], xyd[1] + GridDrawer.dm[xyd[2]][1]
 
     @staticmethod
     def makeDirectionsTable():
@@ -1056,8 +1032,8 @@ class GridDrawer(object):
         dirTable = self.makeDirectionsTable()
         result = []
         # Create vertex
-        for row in range(self.row_count() + 1):
-            for col in range(self.col_count() + 1):
+        for row in range(self.row_count + 1):
+            for col in range(self.col_count + 1):
                 indx = (
                     (2**0 if self.isDark(col - 0, row - 1) else 0)
                     + (2**1 if self.isDark(col - 1, row - 1) else 0)
@@ -1115,8 +1091,9 @@ class QrCode(inkex.GenerateExtension):
 
         # for Python 3 ugly hack to represent bytes as str for Python2 compatibility
         text_str = str(opt.text)
+        text_in = opt.text.replace("\\n", "\n")
         cmode = [QR8BitByte, QRNumber, QRAlphaNum, QRKanji][opt.qrmode]
-        text_data = cmode(bytes(opt.text, opt.encoding).decode("latin_1"))
+        text_data = cmode(bytes(text_in, opt.encoding).decode("latin_1"))
 
         grp = Group()
         grp.set("inkscape:label", "QR Code: " + text_str)
@@ -1146,56 +1123,61 @@ class QrCode(inkex.GenerateExtension):
         self.render_svg(grp, opt.drawtype)
         return grp
 
-    def render_adv(self, greedy):
-        verts = self.draw.createVertexesForAdvDrawer()
-        qrPathStr = ""
-        while len(verts) > 0:
-            vertsIndexStart = len(verts) - 1
-            vertsIndexCur = vertsIndexStart
-            ringIndexes = []
-            ci = {}
-            for i, v in enumerate(verts):
-                ci.setdefault(v[0], []).append(i)
-            while True:
-                ringIndexes.append(vertsIndexCur)
-                nextPos = self.draw.moveByDirection(verts[vertsIndexCur])
-                nextIndexes = [i for i in ci[nextPos[0]] if verts[i][1] == nextPos[1]]
-                if len(nextIndexes) == 0 or len(nextIndexes) > 2:
-                    raise Exception("Vertex " + str(next_c) + " has no connections")
-                elif len(nextIndexes) == 1:
-                    vertsIndexNext = nextIndexes[0]
-                else:
-                    if {verts[nextIndexes[0]][2], verts[nextIndexes[1]][2]} != {
-                        (verts[vertsIndexCur][2] - 1) % 4,
-                        (verts[vertsIndexCur][2] + 1) % 4,
-                    }:
-                        raise Exception(
-                            "Bad next vertex directions "
-                            + str(verts[nextIndexes[0]])
-                            + str(verts[nextIndexes[1]])
-                        )
+    def ring_iterator(self, vertices, greedy):
+        visited = set()
+        lut = defaultdict(list)
+        for i, v in enumerate(vertices):
+            lut[v[0:2]].append(i)
 
-                    # Greedy - CCW turn, proud and neutral CW turn
-                    vertsIndexNext = (
-                        nextIndexes[0]
-                        if (greedy == "g")
-                        == (
-                            verts[nextIndexes[0]][2]
-                            == (verts[vertsIndexCur][2] + 1) % 4
-                        )
-                        else nextIndexes[1]
+        def getnext(vertex):
+            nextPos = self.draw.moveByDirection(vertex)
+            nextIndexes = lut[nextPos[0:2]]
+            if len(nextIndexes) == 0 or len(nextIndexes) > 2:
+                raise Exception("Vertex " + str(next_c) + " has no connections")
+            elif len(nextIndexes) == 1:
+                vertsIndexNext = nextIndexes[0]
+            else:
+                if {vertices[nextIndexes[0]][2], vertices[nextIndexes[1]][2]} != {
+                    (vertex[2] - 1) % 4,
+                    (vertex[2] + 1) % 4,
+                }:
+                    raise Exception(
+                        "Bad next vertex directions "
+                        + str(vertices[nextIndexes[0]])
+                        + str(vertices[nextIndexes[1]])
                     )
 
-                if vertsIndexNext == vertsIndexStart:
-                    break
+                # Greedy - CCW turn, proud and neutral CW turn
+                vertsIndexNext = (
+                    nextIndexes[0]
+                    if (greedy == "g")
+                    == (vertices[nextIndexes[0]][2] == (vertex[2] + 1) % 4)
+                    else nextIndexes[1]
+                )
+            return vertices[vertsIndexNext]
 
-                vertsIndexCur = vertsIndexNext
+        for start_vertex in reversed(vertices):
+            if start_vertex in visited:
+                continue
 
-            posStart, _ = self.draw.getSmoothPosition(verts[ringIndexes[0]])
-            qrPathStr += "M %f,%f " % self.get_svg_pos(posStart[0], posStart[1])
-            for ri in range(len(ringIndexes)):
-                vc = verts[ringIndexes[ri]]
-                vn = verts[ringIndexes[(ri + 1) % len(ringIndexes)]]
+            path = [start_vertex]
+            next_vertex = getnext(start_vertex)
+
+            while start_vertex != next_vertex:
+                path.append(next_vertex)
+                next_vertex = getnext(next_vertex)
+            else:
+                yield path
+                visited |= set(path)
+
+    def render_adv(self, greedy):
+        verts = self.draw.createVertexesForAdvDrawer()
+        it = self.ring_iterator(verts, greedy)
+        qrPath = inkex.Path()
+        for ringVertices in it:
+            posStart, _ = self.draw.getSmoothPosition(ringVertices[0])
+            qrPath.append(Move(*self.get_svg_pos(posStart[0], posStart[1])))
+            for vc, vn in circular_pairwise(ringVertices):
                 if vn[2] != vc[2]:
                     if (greedy != "n") or not vn[3]:
                         # Add bezier
@@ -1206,45 +1188,40 @@ class QrCode(inkex.GenerateExtension):
                         _, bp1 = self.draw.getSmoothPosition(vc, ex)
                         bp2, _ = self.draw.getSmoothPosition(vn, ex)
                         bf, _ = self.draw.getSmoothPosition(vn)
-                        qrPathStr += "L %f,%f " % self.get_svg_pos(bs[0], bs[1])
-                        qrPathStr += "C %f,%f %f,%f %f,%f " % (
-                            self.get_svg_pos(bp1[0], bp1[1])
-                            + self.get_svg_pos(bp2[0], bp2[1])
-                            + self.get_svg_pos(bf[0], bf[1])
+                        qrPath.append(Line(*self.get_svg_pos(bs[0], bs[1])))
+                        qrPath.append(
+                            Curve(
+                                *self.get_svg_pos(bp1[0], bp1[1]),
+                                *self.get_svg_pos(bp2[0], bp2[1]),
+                                *self.get_svg_pos(bf[0], bf[1]),
+                            )
                         )
                     else:
                         # Add straight
-                        qrPathStr += "L %f,%f " % self.get_svg_pos(vn[0], vn[1])
+                        qrPath.append(Line(*self.get_svg_pos(vn[0], vn[1])))
 
-            qrPathStr += "z "
+            qrPath.append(zoneClose())
 
-            # Delete already processed vertex
-            for i in sorted(ringIndexes, reverse=True):
-                del verts[i]
-
-        path = PathElement()
-        path.set("d", qrPathStr)
-        return path
+        return PathElement.new(path=qrPath)
 
     def render_obsolete(self):
-        for row in range(self.draw.row_count()):
-            for col in range(self.draw.col_count()):
+        for row in range(self.draw.row_count):
+            for col in range(self.draw.col_count):
                 if self.draw.isDark(col, row):
                     x, y = self.get_svg_pos(col, row)
                     return Rectangle.new(x, y, self.boxsize, self.boxsize)
 
     def render_path(self, pointStr):
-        singlePath = self.get_icon_path_str(pointStr)
-        pathStr = ""
-        for row in range(self.draw.row_count()):
-            for col in range(self.draw.col_count()):
+        singlePath = inkex.Path(self.get_icon_path_str(pointStr))
+        path = inkex.Path()
+        for row in range(self.draw.row_count):
+            for col in range(self.draw.col_count):
                 if self.draw.isDark(col, row):
                     x, y = self.get_svg_pos(col, row)
-                    pathStr += "M %f,%f " % (x, y) + singlePath + " z "
-
-        path = PathElement()
-        path.set("d", pathStr)
-        return path
+                    path.append(Move(x, y))
+                    path += singlePath
+                    path.append(zoneClose())
+        return PathElement.new(path=path)
 
     def render_selection(self):
         if len(self.svg.selection) > 0:
@@ -1267,8 +1244,8 @@ class QrCode(inkex.GenerateExtension):
             )
         )
         result = Group()
-        for row in range(self.draw.row_count()):
-            for col in range(self.draw.col_count()):
+        for row in range(self.draw.row_count):
+            for col in range(self.draw.col_count):
                 if self.draw.isDark(col, row):
                     x, y = self.get_svg_pos(col, row)
                     # Inkscape doesn't support width/height on use tags
@@ -1303,8 +1280,8 @@ class QrCode(inkex.GenerateExtension):
         if drawer is None:
             raise Exception("Unknown draw type: " + drawtype)
 
-        canvas_width = (self.draw.col_count() + 2 * self.margin) * self.boxsize
-        canvas_height = (self.draw.row_count() + 2 * self.margin) * self.boxsize
+        canvas_width = (self.draw.col_count + 2 * self.margin) * self.boxsize
+        canvas_height = (self.draw.row_count + 2 * self.margin) * self.boxsize
 
         # white background providing margin:
         rect = grp.add(Rectangle.new(0, 0, canvas_width, canvas_height))

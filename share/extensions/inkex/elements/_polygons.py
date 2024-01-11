@@ -37,7 +37,11 @@ from ._base import ShapeElement
 class PathElementBase(ShapeElement):
     """Base element for path based shapes"""
 
-    get_path = lambda self: Path(self.get("d"))
+    def get_path(self) -> Path:
+        """Gets the path of the element, which can also be used in a context manager"""
+        p = Path(self.get("d"))
+        p.callback = self.set_path
+        return p
 
     @classmethod
     def new(cls, path, **attrs):
@@ -347,8 +351,10 @@ class Polyline(ShapeElement):
 
     tag_name = "polyline"
 
-    def get_path(self):
-        return Path("M" + self.get("points"))
+    def get_path(self) -> Path:
+        p = Path("M" + self.get("points"))
+        p.callback = self.set_path
+        return p
 
     def set_path(self, path):
         points = [f"{x:g},{y:g}" for x, y in Path(path).end_points]
@@ -395,14 +401,14 @@ class RectangleBase(ShapeElement):
         lambda self: self.to_dimensionless(self.get("ry", self.get("rx", 0.0)))
     )  # pylint: disable=invalid-name
 
-    def get_path(self):
+    def get_path(self) -> Path:
         """Calculate the path as the box around the rect"""
         if self.rx or self.ry:
             # pylint: disable=invalid-name
             rx = min(self.rx if self.rx > 0 else self.ry, self.width / 2)
             ry = min(self.ry if self.ry > 0 else self.rx, self.height / 2)
             cpts = [self.left + rx, self.right - rx, self.top + ry, self.bottom - ry]
-            return (
+            return Path(
                 f"M {cpts[0]},{self.top}"
                 f"L {cpts[1]},{self.top}    "
                 f"A {rx},{ry} 0 0 1 {self.right},{cpts[2]}"
@@ -414,7 +420,9 @@ class RectangleBase(ShapeElement):
                 f"A {rx},{ry} 0 0 1 {cpts[0]},{self.top} z"
             )
 
-        return f"M {self.left},{self.top} h{self.width}v{self.height}h{-self.width} z"
+        return Path(
+            f"M {self.left},{self.top} h{self.width}v{self.height}h{-self.width} z"
+        )
 
 
 class Rectangle(RectangleBase):
@@ -430,15 +438,17 @@ class Rectangle(RectangleBase):
 class EllipseBase(ShapeElement):
     """Absorbs common part of Circle and Ellipse classes"""
 
-    def get_path(self):
+    def get_path(self) -> Path:
         """Calculate the arc path of this circle"""
         rx, ry = self.rxry()
         cx, y = self.center.x, self.center.y - ry
-        return (
-            "M {cx},{y} "
-            "a {rx},{ry} 0 1 0 {rx}, {ry} "
-            "a {rx},{ry} 0 0 0 -{rx}, -{ry} z"
-        ).format(cx=cx, y=y, rx=rx, ry=ry)
+        return Path(
+            (
+                "M {cx},{y} "
+                "a {rx},{ry} 0 1 0 {rx}, {ry} "
+                "a {rx},{ry} 0 0 0 -{rx}, -{ry} z"
+            ).format(cx=cx, y=y, rx=rx, ry=ry)
+        )
 
     @property
     def center(self):

@@ -20,3 +20,4 @@ class TestSynfigExportBasic(ComparisonMixin, TestCase):
     effect_class = SynfigExport  # Inkscape call 9f18b1246e864e6f3945f8cd64d6ca14
     compare_filters = [CompareWithoutGuids(), CompareNumericFuzzy()]
     comparisons = [()]
+    compare_file = ["svg/shapes.svg", "svg/current_color.svg"]

@@ -114,7 +114,10 @@ class Layer(Group):
     @classmethod
     def is_class_element(cls, elem):
         # type: (etree.Element) -> bool
-        return elem.attrib.get(addNS("inkscape:groupmode"), None) == "layer"
+        return (
+            elem.get("{http://www.inkscape.org/namespaces/inkscape}groupmode", None)
+            == "layer"
+        )
 
 
 class Anchor(GroupBase):

@@ -31,8 +31,9 @@ http://mathworld.wolfram.com/GreensTheorem.html
 import inkex
 
 from inkex import TextElement, TextPath, Tspan
-from inkex.bezier import csparea, cspcofm, csplength
+from inkex.bezier import csparea, cspcofm
 from inkex.localization import inkex_gettext as _
+from inkex.paths.interfaces import LengthSettings
 
 
 class MeasureLength(inkex.EffectExtension):
@@ -107,24 +108,31 @@ class MeasureLength(inkex.EffectExtension):
         if not filtered:
             raise inkex.AbortExtension(_("Please select at least one path object."))
         for node in filtered:
-            csp = node.path.transform(node.composed_transform()).to_superpath()
-            inverse_parent_transform = -node.getparent().composed_transform()
+            path: inkex.Path = node.path.transform(node.composed_transform())
             if self.options.mtype == "length":
-                slengths, stotal = csplength(csp)
-                self.group = node.getparent().add(TextElement())
-            elif self.options.mtype == "area":
-                stotal = abs(csparea(csp) * factor * self.options.scale)
+                settings = LengthSettings(error=1e-8)
+                stotal = sum(
+                    command.length(settings=settings)
+                    for command in path.proxy_iterator()
+                    if command.letter not in "mM"
+                )
                 self.group = node.getparent().add(TextElement())
             else:
-                try:
-                    xc, yc = cspcofm(csp)
-                except ValueError as err:
-                    raise inkex.AbortExtension(str(err))
-                self.group = node.getparent().add(inkex.PathElement())
-                self.group.set("id", "MassCenter_" + node.get("id"))
-                self.add_cross(self.group, xc, yc, scale)
-                self.group.transform = inverse_parent_transform
-                continue
+                csp = path.to_superpath()
+                inverse_parent_transform = -node.getparent().composed_transform()
+                if self.options.mtype == "area":
+                    stotal = abs(csparea(csp) * factor * self.options.scale)
+                    self.group = node.getparent().add(TextElement())
+                else:
+                    try:
+                        xc, yc = cspcofm(csp)
+                    except ValueError as err:
+                        raise inkex.AbortExtension(str(err))
+                    self.group = node.getparent().add(inkex.PathElement())
+                    self.group.set("id", "MassCenter_" + node.get("id"))
+                    self.add_cross(self.group, xc, yc, scale)
+                    self.group.transform = inverse_parent_transform
+                    continue
             # Format the length as string
             val = round(stotal * factor * self.options.scale, prec)
             # Transform the result back

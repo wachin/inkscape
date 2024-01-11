@@ -27,8 +27,10 @@ Provide some documentation to existing extensions about why they're failing.
 
 import os
 import sys
+import re
 import warnings
 import argparse
+import cssselect
 
 from ..transforms import Transform
 from .. import utils
@@ -36,6 +38,7 @@ from .. import units
 from ..elements._base import BaseElement, ShapeElement
 from ..elements._selected import ElementList
 from .meta import deprecate, _deprecated
+from ..styles import ConditionalStyle
 
 warnings.simplefilter("default")
 # To load each of the deprecated sub-modules (the ones without a namespace)
@@ -176,3 +179,37 @@ def transform_mul(self, matrix):
 
 Transform.__imul__ = deprecate(transform_imul, "1.2")  # type: ignore
 Transform.__mul__ = deprecate(transform_mul, "1.2")  # type: ignore
+
+
+def to_xpath(self):
+    """Depending on whether you need to apply the rule to an invididual element
+    or find all matches in a subtree, use
+
+    .. code::
+        style.matches(element)
+        style.all_matches(subtree)
+    """
+    return "|".join(self.to_xpaths())
+
+
+def to_xpaths(self):
+    """Depending on whether you need to apply the rule to an invididual element
+    or find all matches in a subtree, use
+
+    .. code::
+        style.matches(element)
+        style.all_matches(subtree)
+    """
+    result = []
+    for rule in self._rules.split(","):
+        ret = (
+            cssselect.HTMLTranslator().selector_to_xpath(cssselect.parse(rule)[0]) + " "
+        )
+        ret = re.compile(r"(::|\/)([a-z]+)(?=\W)(?!-)").sub(r"\1svg:\2", ret)
+        result.append(ret.strip())
+
+    return result
+
+
+ConditionalStyle.to_xpath = deprecate(to_xpath, "1.3.1")  # type: ignore
+ConditionalStyle.to_xpaths = deprecate(to_xpaths, "1.3.1")  # type: ignore

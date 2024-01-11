@@ -65,10 +65,11 @@ class CompareNumericFuzzy(Compare):
 
     @staticmethod
     def filter(contents):
-        func = lambda m: b"%.3f" % (float(m.group(0)))
+        func = lambda m: b"%.3f" % (float(m.group(0)) + 0)
         contents = re.sub(rb"\d+\.\d+(e[+-]\d+)?", func, contents)
         contents = re.sub(rb"(\d\.\d+?)0+\b", rb"\1", contents)
         contents = re.sub(rb"(\d)\.0+(?=\D|\b)", rb"\1", contents)
+        contents = re.sub(rb"-0(?=\D|\b)", rb"0", contents)  # Replace -0 with 0
         return contents
 
 

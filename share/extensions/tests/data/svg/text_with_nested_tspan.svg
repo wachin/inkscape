@@ -1,0 +1,38 @@
+<svg viewBox="0 0 240 40" xmlns="http://www.w3.org/2000/svg">
+  <style>
+    text {
+      font: italic 12px serif;
+    }
+    tspan {
+      font: bold 10px sans-serif;
+      fill: red;
+    }
+  </style>
+
+  <text id="main">Text Base
+<title>Title text</title>
+<desc>Desc text</desc>
+<tspan>tspan 1</tspan>
+tail 1
+<tspan>tspan 2</tspan>
+<tspan>tspan 3</tspan>
+<tspan>tspan 4</tspan>
+tail 4
+<tspan>Parent 1 tspan
+<tspan>Child 1 tspan</tspan>
+<tspan>Child 2 tspan</tspan>
+Child 2 tail</tspan>
+Parent 1 tail
+<tspan>Grandparent 1 tspan
+<tspan>Parent 2 tspan</tspan>
+<tspan>Parent 3 tspan
+<tspan>Child 3 tspan</tspan>
+<tspan>Child 4 tspan</tspan>
+Child 4 tail</tspan>
+Parent 3 tail</tspan>
+Grandparent 1 tail
+<tspan>tspan 5<title>Title tspan</title><desc>Desc tspan</desc></tspan>
+<tspan>tspan 6</tspan>
+tail 6
+</text>
+</svg>

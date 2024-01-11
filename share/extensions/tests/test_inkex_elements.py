@@ -241,6 +241,21 @@ class PathElementTestCase(ElementTestCase):
             precision=2,
         )
 
+    def test_context_manager(self):
+        """Test that modifications inside the context manager are written back"""
+        pel = PathElement.new(path=[Move(10, 10), Line(20, 20)])
+        with pel.path as path:
+            path.append(Line(20, 10))
+            path.close()
+
+        assert str(pel.path) == "M 10 10 L 20 20 L 20 10 Z"
+
+        pline = Polyline.new(points="10,10 50,50 10,15 15,10")
+        with pline.path as path:
+            path.append(Line(20, 10))
+
+        assert pline.get("points", "10,10 50,50 10,15 15,10, 20,10")
+
 
 class PolylineElementTestCase(ElementTestCase):
     """Test the polyline elements support"""
@@ -411,7 +426,9 @@ class RectTest(ElementTestCase):
 
     def test_path(self):
         """Rectangle path"""
-        self.assertEqual(self.elem.get_path(), "M 200.0,200.0 h100.0v100.0h-100.0 z")
+        self.assertEqual(
+            self.elem.get_path(), inkex.Path("M 200.0,200.0 h100.0v100.0h-100.0 z")
+        )
         self.assertEqual(str(self.elem.path), "M 200 200 h 100 v 100 h -100 z")
 
 
@@ -465,8 +482,10 @@ class CircleTest(ElementTestCase):
         """Circle path"""
         self.assertEqual(
             self.elem.get_path(),
-            "M 100.0,50.0 a 50.0,50.0 0 1 0 50.0, "
-            "50.0 a 50.0,50.0 0 0 0 -50.0, -50.0 z",
+            inkex.Path(
+                "M 100.0,50.0 a 50.0,50.0 0 1 0 50.0, "
+                "50.0 a 50.0,50.0 0 0 0 -50.0, -50.0 z"
+            ),
         )
 
 

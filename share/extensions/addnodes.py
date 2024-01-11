@@ -24,9 +24,10 @@ This extension either adds nodes to a path so that
 
 """
 import math
+from typing import cast
 import inkex
 
-from inkex import bezier, PathElement, CubicSuperPath
+from inkex import PathElement
 
 
 class AddNodes(inkex.EffectExtension):
@@ -53,34 +54,37 @@ class AddNodes(inkex.EffectExtension):
         )
 
     def effect(self):
+        maxlen = self.svg.viewport_to_unit(f"{self.options.max}{self.options.unit}")
         for node in self.svg.selection.filter(PathElement):
-            new = []
-            for sub in node.path.to_superpath():
-                new.append([sub[0][:]])
-                i = 1
-                while i <= len(sub) - 1:
-                    length = bezier.cspseglength(new[-1][-1], sub[i])
+            new = inkex.Path()
+            path = cast(inkex.Path, node.path)
+            for sub in path.proxy_iterator():
+                if sub.letter in "mM":
+                    # Add unchanged.
+                    new.append(sub.command)
+                    continue
+                length = sub.length()
+                if length < 1e-12:
+                    # Zero-length subpaths
+                    new.append(sub.command)
+                    continue
+                # compute number of splits
+                if self.options.method == "bynum":
+                    splits = self.options.segments
+                else:
+                    splits = math.ceil(length / maxlen)
+                to_split = sub
+                # We first split the command at len * 1/splits.
+                # The first part is appended, the second part is split
+                # again at then len * 1/splits and so on.
 
-                    if self.options.method == "bynum":
-                        splits = self.options.segments
-                    else:
-                        maxlen = self.svg.viewport_to_unit(
-                            f"{self.options.max}{self.options.unit}"
-                        )
-                        splits = math.ceil(length / maxlen)
+                for _ in range(splits - 1):
+                    result = to_split.split(to_split.ilength(length / splits))
+                    new.append(result[0].command)
+                    to_split = result[1]
+                new.append(to_split.command)
 
-                    for sel in range(int(splits), 1, -1):
-                        result = bezier.cspbezsplitatlength(
-                            new[-1][-1], sub[i], 1.0 / sel
-                        )
-                        better_result = [
-                            [list(el) for el in elements] for elements in result
-                        ]
-                        new[-1][-1], nxt, sub[i] = better_result
-                        new[-1].append(nxt[:])
-                    new[-1].append(sub[i])
-                    i += 1
-            node.path = CubicSuperPath(new).to_path(curves_only=False)
+            node.path = new
 
 
 if __name__ == "__main__":

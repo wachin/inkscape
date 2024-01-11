@@ -2,8 +2,6 @@
 <inkscape-extension xmlns="http://www.inkscape.org/namespace/inkscape/extension">
   <name>Plot</name>
   <id>org.ekips.filter.plot</id>
-  <dependency type="file" location="inx">hpgl_decoder.py</dependency>
-  <dependency type="file" location="inx">hpgl_encoder.py</dependency>
   <label>Please make sure that all objects you want to plot are converted to paths.</label>
   <param name="tab" type="notebook">
     <page name="connection" gui-text="Connection Settings">

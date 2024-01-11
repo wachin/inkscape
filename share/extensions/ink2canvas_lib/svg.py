@@ -128,7 +128,7 @@ class AbstractShape(Element):
 
     def start(self, gradient):
         self.gradient = gradient
-        self.ctx.write("\n// #%s" % self.attr("id"))
+        self.ctx.write("\n// #%s" % self.node.get_id())
         if self.has_transform() or self.has_clip():
             self.ctx.save()
 

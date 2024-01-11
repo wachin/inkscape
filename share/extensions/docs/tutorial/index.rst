@@ -46,4 +46,5 @@ will be covered in the more advanced topics later.
    simple-path-extension
    my-first-text-extension
    my-first-import-extension
+   object-editing
 

@@ -6,7 +6,6 @@ Test Inkex path parsing functionality.
 import re
 
 from inkex.paths import (
-    InvalidPath,
     Path,
     PathCommand,
     CubicSuperPath,
@@ -37,6 +36,25 @@ from inkex.tester import TestCase
 # pylint: disable=too-many-public-methods
 
 
+def novector(func):
+    """Raise if Vector2d() is called inside the decorated function.
+    Used to check the performance of path operations."""
+
+    def inner(self):
+        old_init = Vector2d.__init__
+
+        def temp_init(self, *args, **kwargs):
+            raise ValueError("Vector2D() should not be called for path ops")
+
+        Vector2d.__init__ = temp_init
+        try:
+            func(self)
+        finally:
+            Vector2d.__init__ = old_init
+
+    return inner
+
+
 class SegmentTest(TestCase):
     """
     Test specific segment functionality.
@@ -47,6 +65,7 @@ class SegmentTest(TestCase):
 
         return Cmd(*[random.randint(0, 10) for i in range(Cmd.nargs)])
 
+    @novector
     def test_equals(self):
         """Segments should be equalitive"""
         self.assertEqual(Move(10, 10), Move(10, 10))
@@ -202,6 +221,7 @@ class SegmentTest(TestCase):
             )
             self.assertAlmostTuple(A, B)
 
+    @novector
     def test_absolute_relative(self):
         absolutes = (
             Line,
@@ -228,7 +248,7 @@ class SegmentTest(TestCase):
             zoneClose,
         )
 
-        zero = Vector2d()
+        zero = 0
         for R, A in zip(relatives, absolutes):
             rel = self.get_random_cmd(R)
             ab = self.get_random_cmd(A)
@@ -280,6 +300,12 @@ class SegmentTest(TestCase):
             self.assertEqual(len(cmd.args), cmd.nargs)
             self.assertEqual(Cmd(*cmd.args), cmd)
 
+    def test_letters(self):
+        """For performance reasons, the letter are specified directly. Check that this
+        is correct."""
+        for letter, cl in PathCommand._letter_to_class.items():
+            assert letter == cl.letter
+
 
 class PathTest(TestCase):
     """Test path API and calculations"""
@@ -297,25 +323,29 @@ class PathTest(TestCase):
         self._assertPath(Path("& 10 10 M 20 20"), "M 20 20")
         self.assertRaises(
             TypeError,
-            Line,
+            Curve,
             [
                 40,
             ],
         )
 
+    @novector
     def test_copy(self):
         """Make a copy of a path"""
         self.assertEqual(str(Path("M 10 10").copy()), "M 10 10")
 
+    @novector
     def test_repr(self):
         """Path representation"""
         self._assertPath(repr(Path("M 10 10 10 10")), "[Move(10, 10), Line(10, 10)]")
 
+    @novector
     def test_list(self):
         """Path of previous commands"""
         path = Path(Path("M 10 10 20 20 30 30 Z")[1:-1])
         self._assertPath(path, "L 20 20 L 30 30")
 
+    @novector
     def test_passthrough(self):
         """Create a path and test the re-rendering of the commands"""
         for path in (
@@ -324,6 +354,7 @@ class PathTest(TestCase):
         ):
             self._assertPath(Path(path), path.replace(",", " "))
 
+    @novector
     def test_chained_conversion(self):
         """Paths always extrapolate chained commands"""
         for path, ret in (
@@ -336,10 +367,11 @@ class PathTest(TestCase):
         ):
             self._assertPath(Path(path), ret)
 
+    @novector
     def test_create_from_points(self):
         """Paths can be made of simple list of tuples"""
         arg = ((10, 10), (4, 5), (16, -9), (20, 20))
-        self.assertEqual(str(Path(arg)), "L 10 10 L 4 5 L 16 -9 L 20 20")
+        self.assertEqual(str(Path(arg)), "M 10 10 L 4 5 L 16 -9 L 20 20")
 
     def test_control_points(self):
         """Test how x,y points are extracted"""
@@ -442,6 +474,7 @@ class PathTest(TestCase):
         ret = Path("M 20,20 L 90,90 l 10,10 Z").translate(50, 50)
         self._assertPath(ret, "M 70 70 L 140 140 l 10 10 Z")
 
+    @novector
     def test_extending(self):
         """Paths can be extended using addition"""
         ret = Path("M 20 20") + Path("L 40 40 9 10")
@@ -518,6 +551,7 @@ class PathTest(TestCase):
             ret.to_absolute(), "M 1 2 H 3 V 3 Z M 5 2 H 7 V 3 Z M 5 4 H 7 V 5 Z"
         )
 
+    @novector
     def test_relative(self):
         """Paths can be converted to relative"""
         ret = Path("M 100 100 L 110 120 140 140 300 300")
@@ -586,6 +620,13 @@ class PathTest(TestCase):
         ret = ret.transform(Transform(scale=10))
         self.assertEqual(str(ret), "M 100 100 A 500 500 0 0 1 853.553 853.553 L 1000 0")
         self.assertRaises(ValueError, Horz([10]).transform, Transform())
+
+    @novector
+    def test_transforms_without_vector(self):
+        """Check that we can transform without invoking Vector2d()"""
+        path = Path("M 10 10 A 50,50 0 0 1 85.355333,85.355341 L 100 0")
+        transform = Transform().add_scale(1, 1)
+        path.transform(transform)
 
     def test_inline_transformations(self):
         path = Path()
@@ -710,6 +751,7 @@ class PathTest(TestCase):
             ((sqrt(3) / 2, 0.5), (-0.5, sqrt(3) / 2)),
         )
 
+    @novector
     def test_reverse(self):
         """Paths can be reversed"""
         # Testing reverse() with relative coordinates, closed path
@@ -750,9 +792,11 @@ class PathTest(TestCase):
         ret = ret.reverse()
         self._assertPath(ret, "M 500 500 q -150 -150 -400 -250")
 
+    @novector
     def test_reverse_multiple_subpaths(self):
         """Test for https://gitlab.com/inkscape/extensions/-/issues/445. First two
         examples are from the issue"""
+
         ret = Path("M 128,64 L 128,128 M 128,196 L 128,256").reverse()
         self._assertPath(ret, "M 128 256 L 128 196 M 128 128 L 128 64")
 
@@ -769,7 +813,9 @@ class PathTest(TestCase):
             "m 63 47 c -21 -9 -16 -18 -39 -4 M 103 64 c -14 8 -24 0 -34 -11 "
             "m -2 21 c -12 -10 -21 -12 -35 -7 M 58 88 l 10 4 c -7 9 -20 -2 -10 -4 z",
         )
+        # Vector2d.__init__ = old_init
 
+    @novector
     def test_break_apart(self):
         """Test breaking apart a path"""
         paths = [
@@ -872,6 +918,20 @@ class SuperPathTest(TestCase):
         )  # is line, but shoots over endpoint
 
         self.assertEqual(str(csp.to_path()), "M 10 10 L 40 40 C 100 100 50 50 60 60")
+
+    def test_is_line_2(self):
+        assert CubicSuperPath.is_line(
+            [
+                [421.20367729252575, 115.75839791826027],
+                [417.7753678856422, 120.70730419246635],
+                [411.90718253542866, 129.17827219773602],
+            ],
+            [
+                [407.12100999999996, 136.08731000000003],
+                [407.12101, 136.08731000000003],
+                [407.12101, 136.08731000000003],
+            ],
+        )
 
     def test_is_line_collinear(self):
         self.assertFalse(CubicSuperPath.collinear([1, 2], [2, 2.00001], [3, 2]))

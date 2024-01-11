@@ -412,6 +412,64 @@ def subdiv(sp, flat, i=1):
 
 def csparea(csp):
     """Get area in cubic sub-path"""
+    r"""Get total area of cubic superpath.
+
+    .. hint::
+
+        The results may be slightly inaccurate for paths containing arcs due
+        to the loss of accuracy during arc -> cubic bezier conversion.
+
+
+    The function works as follows: For each subpath,
+
+    #. compute the area of the polygon created by the path's vertices:
+
+       For a line with coordinates :math:`(x_0, y_0)` and :math:`(x_1, y_1)`, the area
+       of the trapezoid of its projection on the x axis is given by
+
+       .. math::
+
+           \frac{1}{2} (y_1 + y_0) (x_1 - x_0)
+
+       Summing the contribution of all lines of the polygon yields the polygon's area
+       (lines from left to right have a positive contribution, while those right-to
+       left have a negative area contribution, canceling out the computed area not
+       inside the polygon), so we find (setting :math:`x_{0} = x_N` etc.):
+
+       .. math::
+
+           A = \frac{1}{2} * \sum_{i=1}^N (x_i y_i - x_{i-1} y_{i-1} + x_i y_{i-1}
+           - x_{i-1} y_{i})
+
+       The first two terms cancel out in the summation over all points, and the second
+       two terms can be regrouped as
+
+       .. math::
+
+           A = \frac{1}{2} * \sum_{i=1}^N x_i (y_{i+1} -y_{i-1})
+
+    #. The contribution by the bezier curve is considered: We compute
+       the integral :math:`\int_{x(t=0)}^{x(t=1)} y dx`, i.e. the area between the x
+       axis and the curve, where :math:`y = y(t)` (the Bezier curve). By substitution
+       :math:`dx = x'(t) dt`, performing the integration and
+       subtracting the trapezoid we already considered above, we find (with control
+       points :math:`(x_{c1}, y_{c1})` and :math:`(x_{c2}, y_{c2})`)
+
+       .. math::
+
+           \Delta A &= \int_0^1 y(t) x'(t) dt - \frac{1}{2} (y_1 + y_0) (x_1 - x_0) \\
+           &= \frac{3}{20} \cdot \begin{pmatrix}
+                  & y_0(& & 2x_{c1} & + x_{c2} & -3x_1&) \\
+                + & y_{c1}(& -2x_0 & & + x_{c2} &+ x_1&) \\
+                + & y_{c2}(& -x_0 & -x_{c1} & & + 2x_1&) \\
+                + & y_1(& 3x_0 & - x_{c1} & -2 x_{c2} &&)
+           \end{pmatrix}
+
+       This is computed for every bezier and added to the area. Again, this is a signed
+       area: convex beziers have a positive area and concave ones a negative area
+       contribution.
+    """
+
     MAT_AREA = numpy.array(
         [[0, 2, 1, -3], [-2, 0, 1, 1], [-1, -1, 0, 2], [3, -1, -2, 0]]
     )
@@ -422,6 +480,7 @@ def csparea(csp):
         for x, coord in enumerate(sp):  # calculate polygon area
             area += 0.5 * sp[x - 1][1][0] * (coord[1][1] - sp[x - 2][1][1])
         for i in range(1, len(sp)):  # add contribution from cubic Bezier
+            # EXPLANATION: https://github.com/Pomax/BezierInfo-2/issues/238#issue-554619801
             vec_x = numpy.array(
                 [sp[i - 1][1][0], sp[i - 1][2][0], sp[i][0][0], sp[i][1][0]]
             )
@@ -434,7 +493,43 @@ def csparea(csp):
 
 
 def cspcofm(csp):
-    """Get cubic sub-path coefficient"""
+    r"""Get center of area / gravity for a cubic superpath.
+
+    .. hint::
+
+        The results may be slightly inaccurate for paths containing arcs due
+        to the loss of accuracy during arc -> cubic bezier conversion.
+
+    The function works similar to :func:`csparea`, only the computations are a bit more
+    difficult. Again all subpaths are considered. The total center of mass is given by
+
+    .. math::
+
+        C_y = \frac{1}{A} \int_A y dA
+
+    The integral can be expressed as a weighted sum; first, the contributions
+    of the polygon created by the path's nodes is computed. Second, we compute the
+    contribution of the Bezier curve; this is again done by an integral from which
+    the weighted CofM of the trapezoid between end points and horizontal axis is
+    removed. For the integrals, we have
+
+    .. math::
+
+        A * C_{y,bez} &= \int_A y dA = \int_{x(t=0)}^{y(t=1)} \int_{0}^{y(x)} y dy dx \\
+        &= \int_{x(t=0)}^{y(t=1)} \frac 12 y(x)^2 dx
+        = \int_0^1 \frac 12 y(t)^2  x'(t) dt \\
+        A * C_{x,bez} &= \int_A x dA = \int_{x(t=0)}^{y(t=1)} x \int_{0}^{y(x)} dy dx \\
+        &= \int_{x(t=0)}^{y(t=1)} x y(x) dx = \int_0^1 x(t) y(t) x'(t) dt
+
+    from which the trapezoids are removed, in case of the y-CofM this amounts to
+
+    .. math::
+
+        \frac{y_0}{2} (x_1-x_0)y_0 + \left(y_0 + \frac 13 (y_1 - y_0)\right)
+        \cdot  \frac 12 (y_1 - y_0) (x_1 - x_0)
+
+    """
+
     MAT_COFM_0 = numpy.array(
         [[0, 35, 10, -45], [-35, 0, 12, 23], [-10, -12, 0, 22], [45, -23, -22, 0]]
     )

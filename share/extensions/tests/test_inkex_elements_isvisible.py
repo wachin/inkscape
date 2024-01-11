@@ -3,10 +3,12 @@
 """
 Test the element APIs is_visible() method
 """
+import pytest
 from inkex.tester import TestCase
 from inkex.tester.svg import svg_file
 
 
+@pytest.mark.slow
 class IsVisibleTestCase(TestCase):
     """Test elements for is_visible() based on specified_style()"""
 

@@ -10,16 +10,8 @@ from hershey import Hershey
 
 class HersheyComparisonMixin(ComparisonMixin):
     comparisons_cmpfile_dict = {}  # pairs of args and expected outputs
-
-    def setUp(self):
-        self.effect_class = Hershey
-        self.compare_filters = [CompareNumericFuzzy(), CompareOrderIndependentStyle()]
-
-        self.comparisons = self.comparisons_cmpfile_dict.keys()
-
-    def get_compare_cmpfile(self, args, addout=None):
-        """get the correct cmpfile to compare from comparisons_dict;"""
-        return self.data_file("refs", self.comparisons_cmpfile_dict[args])
+    effect_class = Hershey
+    compare_filters = [CompareNumericFuzzy(), CompareOrderIndependentStyle()]
 
 
 class TestHersheyBasic(InkscapeExtensionTestMixin, HersheyComparisonMixin, TestCase):

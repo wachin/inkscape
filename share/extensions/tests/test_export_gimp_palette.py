@@ -8,3 +8,14 @@ class TestExportGplBasic(ComparisonMixin, TestCase):
     effect_class = ExportGimpPalette
     compare_file = "svg/colors.svg"
     compare_filters = [WindowsTextCompat()]
+
+
+class TestExportGplCurrentColor(ComparisonMixin, TestCase):
+    """Test that the currentColor attribute is correctly parsed"""
+
+    effect_class = ExportGimpPalette
+    compare_file = ["svg/current_color.svg"]
+    compare_filters = [WindowsTextCompat()]
+    comparisons = [
+        (),
+    ]

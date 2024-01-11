@@ -25,6 +25,7 @@ It is a modification of the file addnodes.py
 import inkex
 from inkex import bezier, CubicSuperPath, Group, PathElement
 from inkex.localization import inkex_gettext as _
+from inkex.paths.interfaces import ILengthSettings
 
 
 class Dashit(inkex.EffectExtension):
@@ -60,44 +61,73 @@ class Dashit(inkex.EffectExtension):
     def _convert(node):
         dashes = []
         offset = 0
+        overlap = 0
         style = node.specified_style()
         dashes = style("stroke-dasharray")
-        offset = style("stroke-dashoffset")
+        offset = float(style("stroke-dashoffset"))
+        # Correct negative offsets
+        while offset < 0:
+            offset += sum(dashes)
         if not dashes:
             return
-        new = []
-        for sub in node.path.to_superpath():
-            idash = 0
-            dash = dashes[0]
-            length = float(offset)
-            while dash < length:
-                length = length - dash
+        new = inkex.Path()
+        segment: inkex.Path.PathCommandProxy
+        for segment in node.path.to_absolute().proxy_iterator():
+            ismove = segment.letter == "M"
+            if ismove:
+                # Start a new subpath, reset dash counter.
+                idash = 0
+                dash = dashes[0]
+                remaining_length = offset
+                firstdrawn_index = -1
+            else:
+                remaining_length = segment.length() + overlap
+                current = segment
+            while dash < remaining_length:
+                if not ismove:
+                    first_part, current = current.split(current.ilength(dash - overlap))
+                    if idash % 2:  # create a gap
+                        new.append(inkex.paths.Move(first_part.cend_point))
+                    else:
+                        if firstdrawn_index == -1:
+                            firstdrawn_index = len(new)
+                        new.append(first_part.command)
+                remaining_length = remaining_length - dash
                 idash = (idash + 1) % len(dashes)
                 dash = dashes[idash]
-            new.append([sub[0][:]])
-            i = 1
-            while i < len(sub):
-                dash = dash - length
-                length = bezier.cspseglength(new[-1][-1], sub[i])
-                while dash < length:
-                    new[-1][-1], nxt, sub[i] = bezier.cspbezsplitatlength(
-                        new[-1][-1], sub[i], dash / length
-                    )
-                    if idash % 2:  # create a gap
-                        new.append([nxt[:]])
-                    else:  # splice the curve
-                        new[-1].append(nxt[:])
-                    length = length - dash
-                    idash = (idash + 1) % len(dashes)
-                    dash = dashes[idash]
-                if idash % 2:
-                    new.append([sub[i]])
+                overlap = 0
+                # We have already drawn a gap
+                if firstdrawn_index == -1:
+                    firstdrawn_index = None
+            if ismove:
+                new.append(segment.command)
+            else:
+                if idash % 2:  # Process the final part of the segment
+                    new.append(inkex.paths.Move(current.cend_point))
                 else:
-                    new[-1].append(sub[i])
-                i += 1
+                    if current.letter == "Z":
+                        # In case of ZoneClose:
+                        # Replace the firstdrawn index with a moveto, and append the
+                        # command to the end to fix linejoins
+                        new.append(inkex.paths.Line(current.cend_point))
+                        if firstdrawn_index is not None and firstdrawn_index > -1:
+                            index = firstdrawn_index
+                            while new[index].letter != "M":
+                                element = new[index]
+                                new[index] = inkex.paths.Move(
+                                    element.cend_point(0j, 0j)
+                                )
+                                new.append(element)
+                                index += 1
+                    else:
+                        if firstdrawn_index == -1:
+                            firstdrawn_index = len(new)
+                        new.append(current.to_non_shorthand())
+
+            overlap = remaining_length
         style.pop("stroke-dasharray")
         node.pop("sodipodi:type")
-        node.path = CubicSuperPath(new).to_path(rtol=1e-10)
+        node.path = new
         node.style = style
 
 

@@ -3,7 +3,7 @@ from lorem_ipsum import LoremIpsum
 from inkex.tester import ComparisonMixin, TestCase
 
 
-class LorumIpsumBasicTest(ComparisonMixin, TestCase):
+class LoremIpsumBasicTest(ComparisonMixin, TestCase):
     effect_class = LoremIpsum
     compare_file = "svg/shapes.svg"
     comparisons = [

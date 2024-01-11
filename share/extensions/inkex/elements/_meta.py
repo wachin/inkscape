@@ -170,7 +170,7 @@ class NamedView(BaseElement):
 
     @deprecate
     def new_unique_guide(
-        self, position: VectorLike, orientation: VectorLike
+        self, position: Vector2d, orientation: Vector2d
     ) -> Optional[Guide]:
         """
         .. deprecated:: 1.3
@@ -185,7 +185,7 @@ class NamedView(BaseElement):
         return self.add(elem) if self.get_similar_guide(elem) is None else None
 
     def add_unique_guide(
-        self, position: VectorLike, orientation: VectorLike
+        self, position: Vector2d, orientation: Vector2d
     ) -> Optional[Guide]:
         """Add a guide iif there is no guide that looks the same.
 
@@ -408,9 +408,42 @@ class Guide(BaseElement):
 
 
 class Metadata(BaseElement):
-    """Inkscape Metadata element"""
+    """Resource Description Framework (RDF) metadata"""
 
     tag_name = "metadata"
+
+    doc_title = property(lambda self: self._first_text("dc:title"))
+    description = property(lambda self: self._first_text("dc:description"))
+
+    rights = property(lambda self: self._first_text("dc:rights/cc:Agent/dc:title"))
+    creator = property(lambda self: self._first_text("dc:creator/cc:Agent/dc:title"))
+    publisher = property(
+        lambda self: self._first_text("dc:publisher/cc:Agent/dc:title")
+    )
+    contributor = property(
+        lambda self: self._first_text("dc:contributor/cc:Agent/dc:title")
+    )
+
+    date = property(lambda self: self._first_text("dc:date"))
+    source = property(lambda self: self._first_text("dc:source"))
+    language = property(lambda self: self._first_text("dc:language"))
+    relation = property(lambda self: self._first_text("dc:relation"))
+    coverage = property(lambda self: self._first_text("dc:coverage"))
+    identifier = property(lambda self: self._first_text("dc:identifier"))
+
+    def _first_text(self, loc):
+        """Get the work title"""
+        elem = self.findone(f"rdf:RDF/cc:Work/{loc}")
+        if elem:
+            return elem.text
+        return None
+
+    @property
+    def tags(self):
+        return [
+            elem.text
+            for elem in self.findall("rdf:RDF/cc:Work/dc:subject/rdf:Bag/rdf:li")
+        ]
 
 
 class ForeignObject(BaseElement):

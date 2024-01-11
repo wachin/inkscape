@@ -89,9 +89,10 @@ test:python311-windows:
   script:
     - choco install python --version 3.11.0 -y -f --no-progress
     - $env:PATH += ";C:\\PYTHON311\\;C:\\PYTHON311\\Scripts"
+    - $env:PYTHON_KEYRING_BACKEND = "keyring.backends.null.Keyring"
     - refreshenv
     - "python -m pip install --upgrade pip"
-    - "python -m pip install --upgrade 'tox<4.0' poetry==1.1.14 tox-poetry 'urllib3<1.27'" # pin urllib3<1.27 until release of cachecontrol>0.12.12 wrt https://github.com/ionrock/cachecontrol/commit/8f037ba1650c446759d6db581012714f6109850f
+    - "python -m pip install --upgrade 'tox<4.0' poetry tox-poetry"
     - "tox -e py311-normal-win"
 
 test:coverage:

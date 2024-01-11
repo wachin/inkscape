@@ -27,22 +27,21 @@ Provide a way to load lxml attributes with an svg API on top.
 
 import random
 import math
-import re
+from functools import cached_property
 
 from lxml import etree
 
-from ..css import ConditionalRule
 from ..interfaces.IElement import ISVGDocumentElement
 
 from ..deprecated.meta import DeprecatedSvgMixin, deprecate
 from ..units import discover_unit, parse_unit
 from ._selected import ElementList
 from ..transforms import BoundingBox
-from ..styles import StyleSheets
+from ..styles import StyleSheets, ConditionalStyle
 
 from ._base import BaseElement, ViewboxMixin
 from ._meta import StyleElement, NamedView
-from ._utils import registerNS
+from ._utils import registerNS, addNS, splitNS
 
 from typing import Optional, List, Tuple
 
@@ -65,7 +64,24 @@ class SvgDocumentElement(
         self.current_layer = None
         self.view_center = (0.0, 0.0)
         self.selection = ElementList(self)
-        self.ids = {}
+
+    @cached_property
+    def ids(self):
+        result = {}
+        for el in self.iter():
+            try:
+                id = super(etree.ElementBase, el).get("id", None)
+                if id is not None:
+                    result[id] = el
+
+                el._root = self
+            except TypeError:
+                pass  # Comments
+        return result
+
+    @cached_property
+    def stylesheet_cache(self):
+        return {node: node.stylesheet() for node in self.xpath("//svg:style")}
 
     def tostring(self):
         """Convert document to string"""
@@ -73,9 +89,7 @@ class SvgDocumentElement(
 
     def get_ids(self):
         """Returns a set of unique document ids"""
-        if not self.ids:
-            self.ids = set(self.xpath("//@id"))
-        return self.ids
+        return self.ids.keys()
 
     def get_unique_id(
         self,
@@ -111,15 +125,16 @@ class SvgDocumentElement(
         ids = self.get_ids()
         if size is None:
             size = max(math.ceil(math.log10(len(ids) or 1000)) + 1, 4)
-        if blacklist is not None:
-            ids.update(blacklist)
         new_id = None
         _from = 10**size - 1
         _to = 10**size
-        while new_id is None or new_id in ids:
+        while (
+            new_id is None
+            or new_id in ids
+            or (blacklist is not None and new_id in blacklist)
+        ):
             # Do not use randint because py2/3 incompatibility
             new_id = prefix + str(int(random.random() * _from - _to) + _to)
-        self.ids.add(new_id)
         return new_id
 
     def get_page_bbox(self, page=None) -> BoundingBox:
@@ -205,7 +220,15 @@ class SvgDocumentElement(
         if eid is not None and not literal:
             eid = eid.strip()[4:-1] if eid.startswith("url(") else eid
             eid = eid.lstrip("#")
-        return self.getElement(f'//{elm}[@id="{eid}"]')
+
+        result = self.ids.get(eid, None)
+        if result is not None:
+            if elm != "*":
+                elm_with_ns = addNS(*splitNS(elm)[::-1])
+                if not super(etree.ElementBase, result).tag == elm_with_ns:
+                    return None
+            return result
+        return None
 
     def getElementByName(self, name, elm="*"):  # pylint: disable=invalid-name
         """Get an element by it's inkscape:label (aka name)"""
@@ -213,8 +236,7 @@ class SvgDocumentElement(
 
     def getElementsByClass(self, class_name):  # pylint: disable=invalid-name
         """Get elements by it's class name"""
-
-        return self.xpath(ConditionalRule(f".{class_name}").to_xpath())
+        return ConditionalStyle(f".{class_name}").all_matches(self)
 
     def getElementsByHref(
         self, eid: str, attribute="href"
@@ -385,9 +407,9 @@ class SvgDocumentElement(
     @property
     def stylesheets(self):
         """Get all the stylesheets, bound together to one, (for reading)"""
-        sheets = StyleSheets(self)
-        for node in self.xpath("//svg:style"):
-            sheets.append(node.stylesheet())
+        sheets = StyleSheets()
+        for value in self.stylesheet_cache.values():
+            sheets.append(value)
         return sheets
 
     @property
@@ -399,6 +421,56 @@ class SvgDocumentElement(
         style_node = StyleElement()
         self.defs.append(style_node)
         return style_node.stylesheet()
+
+    def add_to_tree_callback(self, element):
+        """Callback called automatically when adding an element to the tree.
+        Updates the list of stylesheets and the ID tracker with the subtree of element.
+
+        .. versionadded:: 1.4
+
+        Args:
+            element (BaseElement): element added to the tree.
+        """
+
+        for el in element.iter():
+            self._add_individual_to_tree(el)
+
+    def _add_individual_to_tree(self, element: BaseElement):
+        if isinstance(element, etree._Comment):
+            return
+        element._root = self
+        if element.TAG == "style":
+            self.stylesheet_cache[element] = element.stylesheet()
+        new_id = element.get("id", None)
+        if new_id is not None:
+            if new_id in self.ids:
+                while new_id in self.ids:
+                    new_id += "-1"
+                super(etree.ElementBase, element).set("id", new_id)  # type: ignore
+            self.ids[new_id] = element
+
+    def remove_from_tree_callback(self, element):
+        """ "Callback called automatically when removing an element from the tree.
+        Remove elements in the subtree of element from the the list of stylesheets
+        and the ID tracker.
+
+        .. versionadded:: 1.4
+
+        Args:
+            element (BaseElement): element added to the tree.
+        """
+        for el in element.iter():
+            self._remove_individual_from_tree(el)
+
+    def _remove_individual_from_tree(self, element):
+        if isinstance(element, etree._Comment):
+            return
+        element._root = None
+        if element.TAG == "style" and element in self.stylesheet_cache:
+            self.stylesheet_cache.remove(element)
+        old_id = element.get("id", None)
+        if old_id is not None and old_id in self.ids:
+            self.ids.pop(old_id)
 
 
 def width(self):

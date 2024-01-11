@@ -186,7 +186,6 @@ class DeprecatedTest(TestCase):
 
         # methods
         self.assertEqual(e.getselected(), None)
-        self.assertEqual(e.getdocids(), None)
         node = e.getElementById("arc")
         self.assertEqual(node.tag, "{http://www.w3.org/2000/svg}path")
         self.assertEqual(node.get("id"), "arc")

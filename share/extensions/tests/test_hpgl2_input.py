@@ -816,9 +816,9 @@ class HpglStyleTests(HPGLTest):
                 """
         layer = self.run_to_layer(data, bake=True)
         # First line is solid
-        self.assertEqual(layer[0].style("stroke-dasharray"), None)
+        self.assertEqual(layer[0].style("stroke-dasharray"), [])
         # Second line has dots on every "major point"
-        self.assertEqual(layer[1].style("stroke-dasharray"), None)
+        self.assertEqual(layer[1].style("stroke-dasharray"), [])
         self.assertEqual(
             layer[1].path,
             inkex.Path(
@@ -832,7 +832,7 @@ class HpglStyleTests(HPGLTest):
         # Rectangle is a path with 5mm sized dashes (absolute):
         self.assertEqual(layer[8].style("stroke-dasharray"), [2.5, 2.5])
         # Next rectangle has solid line again
-        self.assertEqual(layer[9].style("stroke-dasharray"), None)
+        self.assertEqual(layer[9].style("stroke-dasharray"), [])
         # Next rectangle has dots in the corners
         self.assertEqual(
             layer[10].path,

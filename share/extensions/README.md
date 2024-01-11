@@ -18,7 +18,7 @@ install the files into `/usr/share/inkscape/extensions` or
 
 ## Testing
 
-These extensions are designed to have good test coverage for Python 3.7 and above.
+These extensions are designed to have good test coverage for Python 3.8 and above.
 
 You must install the program `pytest` in order to run these tests. You may run
 all tests by omitting any other parameters or select tests by adding the test
@@ -42,7 +42,7 @@ Development of both the core inkex modules, tests and each of the extensions
 contained within the core inkscape extensions repository should follow these
 basic rules of quality assurance:
 
-* Use Python 3.7 or later, no Python 2 code would be used here.
+* Use Python 3.8 or later, no Python 2 code would be used here.
 * Use [Black](https://black.readthedocs.io/en/stable/) to ensure code is written
   consistantly.
 * Write tests so that each line of an extension is covered in the coverage report.

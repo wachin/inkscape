@@ -20,13 +20,17 @@
 """
 Basic common utility functions for calculated things
 """
+from collections import OrderedDict
 import os
 import sys
 import random
 import re
 import math
+
 from argparse import ArgumentTypeError
-from itertools import tee
+from itertools import tee, cycle
+
+import numpy as np
 
 ABORT_STATUS = -5
 
@@ -236,6 +240,16 @@ def pairwise(iterable, start=True):
     return starter + list(zip(first, then))
 
 
+def circular_pairwise(l):
+    """Iterate over a list with overlapping pairs in a periodic way, i.e.
+    [1, 2, 3] -> [(1, 2), (2, 3), (3, 1)]
+
+    ..versionadded:: 1.3.1"""
+    second = cycle(l)
+    next(second)
+    return zip(l, second)
+
+
 EVAL_GLOBALS = {}
 EVAL_GLOBALS.update(random.__dict__)
 EVAL_GLOBALS.update(math.__dict__)
@@ -269,3 +283,96 @@ def is_number(string):
         return True
     except ValueError:
         return False
+
+
+def rational_limit(f: np.poly1d, g: np.poly1d, t0):
+    """Computes the limit of the rational function (f/g)(t)
+    as t approaches t0.
+
+    .. versionadded:: 1.4"""
+    assert g != np.poly1d([0])
+    if g(t0) != 0:
+        return f(t0) / g(t0)
+    elif f(t0) == 0:
+        return rational_limit(f.deriv(), g.deriv(), t0)
+    else:
+        raise ValueError("Limit does not exist.")
+
+
+def callback_method(func):
+    def notify(self, *args, **kwargs):
+        result = func(self, *args, **kwargs)
+        self._callback()
+        return result
+
+    return notify
+
+
+class NotifyList(list):
+    """A list that calls a callback after it is modified
+    (to notify a parent about the modification).
+    Modified from https://stackoverflow.com/a/13259435/3298143
+
+    .. versionadded:: 1.4"""
+
+    extend = callback_method(list.extend)
+    append = callback_method(list.append)
+    remove = callback_method(list.remove)
+    pop = callback_method(list.pop)
+    __delitem__ = callback_method(list.__delitem__)
+    __setitem__ = callback_method(list.__setitem__)
+    __iadd__ = callback_method(list.__iadd__)
+    __imul__ = callback_method(list.__imul__)
+
+    def __getitem__(self, item):
+        """Ensure that slicing returns a list of the same datatype"""
+        if isinstance(item, slice):
+            return self.__class__(list.__getitem__(self, item))
+        return list.__getitem__(self, item)
+
+    def __init__(self, *args, callback=None):
+        self.callback = None
+        list.__init__(self, *args)
+        self.callback = callback
+
+    def _callback(self):
+        if self.callback is not None:
+            self.callback(self)
+
+    def toggle(self, value):
+        """If exists, remove it, if not, add it"""
+        value = str(value)
+        if value in self:
+            return self.remove(value)
+        return self.append(value)
+
+
+class NotifyOrderedDict(OrderedDict):
+    """An OrderedDict that notifies a callback after a value is changed
+
+    .. versionadded:: 1.4"""
+
+    clear = callback_method(OrderedDict.clear)
+    popitem = callback_method(OrderedDict.popitem)
+    update = callback_method(OrderedDict.update)
+    setdefault = callback_method(OrderedDict.setdefault)
+    __setitem__ = callback_method(OrderedDict.__setitem__)
+    __delitem__ = callback_method(OrderedDict.__delitem__)
+
+    def __init__(self, *args, callback=None, **kwargs):
+        self.callback = None
+        super().__init__(*args, **kwargs)
+        self.callback = callback
+
+    def _callback(self):
+        if self.callback is not None:
+            self.callback(self)
+
+    def pop(self, key, default=None):
+        super().pop(key, default)
+        # On Python < 3.11, pop internally calls __delitem__.
+        # This does not happen in 3.11. To avoid
+        # calling the callback twice, we need to check the Python version.
+        if sys.version_info >= (3, 11):
+            if self.callback is not None:
+                self.callback(self)

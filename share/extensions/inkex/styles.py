@@ -26,61 +26,34 @@ import re
 import sys
 from collections import OrderedDict
 from typing import MutableMapping, Union, Iterable, TYPE_CHECKING
+from lxml import etree
 
 from .interfaces.IElement import IBaseElement
 
 from .colors import Color
 from .properties import BaseStyleValue, all_properties, ShorthandValue
-from .css import ConditionalRule
+from .css import CSSCompiler, parser
 
-from .utils import FragmentError
+from .utils import FragmentError, NotifyList, NotifyOrderedDict
+from .elements._utils import NSS
 
 if TYPE_CHECKING:
     from .elements._svg import SvgDocumentElement
 
 
-class Classes(list):
+class Classes(NotifyList):
     """A list of classes applied to an element (used in css and js)"""
 
-    def __init__(self, classes=None, callback=None):
-        self.callback = None
+    def __init__(self, classes=None, callback=None, element=None):
         if isinstance(classes, str):
             classes = classes.split()
-        super().__init__(classes or ())
-        self.callback = callback
+        super().__init__(classes or (), callback=callback)
 
     def __str__(self):
         return " ".join(self)
 
-    def _callback(self):
-        if self.callback is not None:
-            self.callback(self)
 
-    def __setitem__(self, index, value):
-        super().__setitem__(index, value)
-        self._callback()
-
-    def append(self, value):
-        value = str(value)
-        if value not in self:
-            super().append(value)
-            self._callback()
-
-    def remove(self, value):
-        value = str(value)
-        if value in self:
-            super().remove(value)
-            self._callback()
-
-    def toggle(self, value):
-        """If exists, remove it, if not, add it"""
-        value = str(value)
-        if value in self:
-            return self.remove(value)
-        return self.append(value)
-
-
-class Style(OrderedDict, MutableMapping[str, Union[str, BaseStyleValue]]):
+class Style(NotifyOrderedDict, MutableMapping[str, Union[str, BaseStyleValue]]):
     """A list of style directives
 
     .. versionchanged:: 1.2
@@ -111,22 +84,23 @@ class Style(OrderedDict, MutableMapping[str, Union[str, BaseStyleValue]]):
 
     def __init__(self, style=None, callback=None, element=None, **kw):
         self.element = element
-        # This callback is set twice because this is 'pre-initial' data (no callback)
-        self.callback = None
         # Either a string style or kwargs (with dashes as underscores).
         style = style or [(k.replace("_", "-"), v) for k, v in kw.items()]
         if isinstance(style, str):
-            style = self._parse_str(style)
+            style = self._parse_str(style, element)
         # Order raw dictionaries so tests can be made reliable
         if isinstance(style, dict) and not isinstance(style, OrderedDict):
             style = [(name, style[name]) for name in sorted(style)]
         # Should accept dict, Style, parsed string, list etc.
-        super().__init__(style)
-        # Now after the initial data, the callback makes sense.
-        self.callback = callback
+        super().__init__(style, callback=callback)
 
-    @staticmethod
-    def _parse_str(style: str, element=None) -> Iterable[BaseStyleValue]:
+    def _attr_callback(self, key):
+        def inner(value):
+            self[key] = value
+
+        return inner
+
+    def _parse_str(self, style: str, element=None) -> Iterable[BaseStyleValue]:
         """Create a dictionary from the value of a CSS rule (such as an inline style or
         from an embedded style sheet), including its !important state, parsing the value
         if possible.
@@ -144,6 +118,7 @@ class Style(OrderedDict, MutableMapping[str, Union[str, BaseStyleValue]]):
                 result = BaseStyleValue.factory_errorhandled(
                     element, declaration=declaration.strip()
                 )
+                result[1].callback = self._attr_callback(result[0])
                 if result is not None:
                     yield result
 
@@ -205,9 +180,6 @@ class Style(OrderedDict, MutableMapping[str, Union[str, BaseStyleValue]]):
                 if not (self.get_importance(key) and not other.get_importance(key)):
                     self[key] = other.get_store(key)
 
-        if self.callback is not None:
-            self.callback(self)
-
     def add_inherited(self, parent):
         """Creates a new Style containing all parent styles with importance "!important"
         and current styles with importance "!important"
@@ -248,20 +220,6 @@ class Style(OrderedDict, MutableMapping[str, Union[str, BaseStyleValue]]):
             if isinstance(element, ShorthandValue):
                 element.apply_shorthand(self)
 
-    def __delitem__(self, key):
-        super().__delitem__(key)
-        if self.callback is not None:
-            self.callback(self)
-
-    def pop(self, key, default=None):
-        super().pop(key, default)
-        # On Python < 3.11, pop internally calls __delitem__.
-        # This does not happen in 3.11. To avoid
-        # calling the callback twice, we need to check the Python version.
-        if sys.version_info >= (3, 11):
-            if self.callback is not None:
-                self.callback(self)
-
     def __setitem__(self, key, value):
         """Sets a style value.
 
@@ -283,7 +241,10 @@ class Style(OrderedDict, MutableMapping[str, Union[str, BaseStyleValue]]):
             Error: Other exceptions may be raised when converting non-string objects."""
         if not isinstance(value, BaseStyleValue) or value is None:
             # try to convert the value using the factory
-            value = BaseStyleValue.factory(attr_name=key, value=value)
+            value = BaseStyleValue.factory(
+                attr_name=key, value=value, element=self.element
+            )
+            value.callback = self._attr_callback(key)
             # check if the set attribute is valid
             _ = value.parse_value(self.element)
         elif key != value.attr_name:
@@ -292,8 +253,6 @@ class Style(OrderedDict, MutableMapping[str, Union[str, BaseStyleValue]]):
                 provided key is different from the attribute name given in the value"""
             )
         super().__setitem__(key, value)
-        if self.callback is not None:
-            self.callback(self)
 
     def __getitem__(self, key):
         """Returns the unparsed value of the element (minus a possible ``!important``)
@@ -339,8 +298,9 @@ class Style(OrderedDict, MutableMapping[str, Union[str, BaseStyleValue]]):
         # style is not set, return the default value
         if key in all_properties or default is not None:
             defvalue = BaseStyleValue.factory(
-                attr_name=key, value=default or all_properties[key][1]
+                attr_name=key, value=default or all_properties[key][1], element=element
             )
+            defvalue.callback = self._attr_callback(key)
             return (
                 defvalue.parse_value()
             )  # default values are independent of the element
@@ -379,8 +339,7 @@ class Style(OrderedDict, MutableMapping[str, Union[str, BaseStyleValue]]):
             super().__getitem__(key).important = importance
         else:
             raise KeyError()
-        if self.callback is not None:
-            self.callback(self)
+        self._callback()
 
     def get_color(self, name="fill"):
         """Get the color AND opacity as one Color object"""
@@ -435,7 +394,7 @@ class Style(OrderedDict, MutableMapping[str, Union[str, BaseStyleValue]]):
             Style: the cascaded style
         """
         try:
-            styles = list(element.root.stylesheets.lookup_specificity(element.get_id()))
+            styles = list(element.root.stylesheets.lookup_specificity(element))
         except FragmentError:
             styles = []
 
@@ -491,34 +450,22 @@ class StyleSheets(list):
     re-created on the fly by lxml so lookups have to be centralised.
     """
 
-    def __init__(self, svg=None):
-        super().__init__()
-        self.svg = svg
-
-    def lookup(self, element_id, svg=None):
+    def lookup(self, element):
         """
         Find all styles for this element.
         """
-        # This is aweful, but required because we can't know for sure
-        # what might have changed in the xml tree.
-        if svg is None:
-            svg = self.svg
         for sheet in self:
-            for style in sheet.lookup(element_id, svg=svg):
+            for style in sheet.lookup(element):
                 yield style
 
-    def lookup_specificity(self, element_id, svg=None):
+    def lookup_specificity(self, element):
         """
         Find all styles for this element and return the specificity of the match.
 
         .. versionadded:: 1.2
         """
-        # This is aweful, but required because we can't know for sure
-        # what might have changed in the xml tree.
-        if svg is None:
-            svg = self.svg
         for sheet in self:
-            for style in sheet.lookup_specificity(element_id, svg=svg):
+            for style in sheet.lookup_specificity(element):
                 yield style
 
 
@@ -568,31 +515,27 @@ class StyleSheet(list):
         super().append(other)
         self._callback()
 
-    def lookup(self, element_id, svg):
-        """Lookup the element_id against all the styles in this sheet"""
+    def lookup(self, element):
+        """Lookup the element against all the styles in this sheet"""
         for style in self:
-            for elem in svg.xpath(style.to_xpath()):
-                if elem.get("id", None) == element_id:
-                    yield style
+            if any(style.checks(element)):
+                yield style
 
-    def lookup_specificity(self, element_id, svg):
+    def lookup_specificity(self, element):
         """Lookup the element_id against all the styles in this sheet
         and return the specificity of the match
 
         Args:
-            element_id (str): the id of the element that styles are being queried for
-            svg (SvgDocumentElement): The document that contains both element and the
-                styles
+            element: the element of the element that styles are being queried for
 
         Yields:
             Tuple[ConditionalStyle, Tuple[int, int, int]]: all matched styles and the
             specificity of the match
         """
         for style in self:
-            for rule, spec in zip(style.to_xpaths(), style.get_specificities()):
-                for elem in svg.xpath(rule):
-                    if elem.get("id", None) == element_id:
-                        yield (style, spec)
+            for rule, check in zip(style.rules, style.checks):
+                if check(element):
+                    yield (style, rule.specificity)
 
 
 class ConditionalStyle(Style):
@@ -604,7 +547,29 @@ class ConditionalStyle(Style):
 
     def __init__(self, rules="*", style=None, callback=None, **kwargs):
         super().__init__(style=style, callback=callback, **kwargs)
-        self.rules = [ConditionalRule(rule) for rule in rules.split(",")]
+        self._rules: str = rules
+        self.rules = list(parser.parse(rules, namespaces=NSS))
+        self.checks = [
+            CSSCompiler.compile_node(selector.parsed_tree) for selector in self.rules
+        ]
+
+    def matches(self, element: etree.Element):
+        """Checks if an individual element matches this selector.
+
+        .. versionadded:: 1.4"""
+        if isinstance(element, etree._Comment):
+            return False
+        if any(check(element) for check in self.checks):
+            return True
+        return False
+
+    def all_matches(self, document: etree.Element):
+        """Get all matches of this selector in document as iterator.
+
+        .. versionadded:: 1.4"""
+        for el in document.iter():
+            if self.matches(el):
+                yield el
 
     def __str__(self):
         """Return this style as a css entry with class"""
@@ -614,23 +579,9 @@ class ConditionalStyle(Style):
             return f"{rules} {{\n  {content};\n}}"
         return f"{rules} {{}}"
 
-    def to_xpath(self):
-        """Convert all rules to an xpath"""
-        # This can be converted to cssselect.CSSSelector (lxml.cssselect) later if we
-        # have coverage problems. The main reason we're not is that cssselect is doing
-        # exactly this xpath transform and provides no extra functionality for reverse
-        # lookups.
-        return "|".join(self.to_xpaths())
-
-    def to_xpaths(self):
-        """Gets a list of xpaths for all rules of this ConditionalStyle
-
-        .. versionadded:: 1.2"""
-        return [rule.to_xpath() for rule in self.rules]
-
     def get_specificities(self):
         """Gets an iterator of the specificity of all rules in this ConditionalStyle
 
         .. versionadded:: 1.2"""
         for rule in self.rules:
-            yield rule.get_specificity()
+            yield rule.specificity

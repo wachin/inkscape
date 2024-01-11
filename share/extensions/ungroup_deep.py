@@ -118,6 +118,7 @@ class UngroupDeep(inkex.EffectExtension):
 
         node_transform = node.transform
         node_clippathurl = node.get("clip-path")
+        node_parent.remove(node)
         for child in reversed(list(node)):
             if not isinstance(child, inkex.BaseElement):
                 continue
@@ -127,7 +128,6 @@ class UngroupDeep(inkex.EffectExtension):
                 self._merge_style(child, node_style)
             self._merge_clippath(child, node_clippathurl)
             node_parent.insert(node_index, child)
-        node_parent.remove(node)
 
     # Put all ungrouping restrictions here
     def _want_ungroup(self, node, depth, height):

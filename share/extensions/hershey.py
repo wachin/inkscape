@@ -18,7 +18,7 @@
 #
 
 """
-Hershey Text 3.0.7, 2022-03-16
+Hershey Text 3.0.8, 2023-10-22
 
 Copyright 2023, Windell H. Oskay, www.evilmadscientist.com
 
@@ -1130,7 +1130,7 @@ Evil Mad Scientist Laboratories
 
             if parent_transform is None:
                 return trans
-            return Transform(parent_transform) * Transform(trans)
+            return Transform(parent_transform) @ Transform(trans)
         return self.doc_transform
 
     def recursively_parse_flowroot(self, node_list, parent_info):
@@ -1368,7 +1368,7 @@ Evil Mad Scientist Laboratories
                 # Note: the transform has already been applied
                 if (x != 0) or (y != 0):
                     _trans_string = "translate({0:.6E}, {1:.6E})".format(x, y)
-                    ref_transform = Transform(_matrix) * Transform(_trans_string)
+                    ref_transform = Transform(_matrix) @ Transform(_trans_string)
                 else:
                     ref_transform = local_transform
 

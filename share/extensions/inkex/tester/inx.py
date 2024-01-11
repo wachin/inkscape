@@ -91,6 +91,12 @@ class InxMixin:
                     inxdefault,
                     f"Default value is not the same for {inx.filename}:param:{param}",
                 )
+            inxchoices = params[param]["choices"]
+            argschoices = args[param]["choices"]
+            if argschoices is not None and len(argschoices) > 0:
+                assert set(inxchoices).issubset(
+                    argschoices
+                ), f"params don't match: inx={inxchoices}, py={argschoices}"
 
     def introspect_arg_parser(self, arg_parser):
         """Pull apart the arg parser to find out what we have in it"""
@@ -148,13 +154,27 @@ def _load_inx_schemas():
         ".schema": etree.Schematron,  # "pre-ISO-Schematron"
     }
 
-    for name in resources.contents(__package__):
+    try:
+        _contents = resources.contents
+    except AttributeError:
+
+        def _contents(pkg):
+            return [path.name for path in resources.files(pkg).iterdir()]
+
+    for name in _contents(__package__):
         _, ext = os.path.splitext(name)
         schema_class = _SCHEMA_CLASSES.get(ext)
         if schema_class is None:
             continue
 
-        with resources.open_binary(__package__, name) as fp:
+        try:
+            _open_binary = resources.open_binary
+        except AttributeError:
+
+            def _open_binary(pkg, res):
+                return resources.files(pkg).joinpath(res).open("rb")
+
+        with _open_binary(__package__, name) as fp:
             schema_doc = etree.parse(fp)
         yield name, schema_class(schema_doc)
 

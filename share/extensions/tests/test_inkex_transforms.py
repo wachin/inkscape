@@ -3,6 +3,9 @@
 Test Inkex transformational logic.
 """
 from math import sqrt, pi
+
+import pytest
+import numpy as np
 from inkex.transforms import (
     Vector2d,
     ImmutableVector2d,
@@ -13,11 +16,20 @@ from inkex.transforms import (
 )
 from inkex.utils import PY3
 from inkex.tester import TestCase
-import pytest
 
 
 class ImmutableVector2dTest(TestCase):
     """Test the ImmutableVector2d object"""
+
+    def test_numpy_conversion(self):
+        """Check that vectors work fine in numpy datatypes (they are complex under
+        the hood)"""
+        import numpy as np
+
+        vecs = [ImmutableVector2d(1, 2), 1 + 2j, Vector2d(0, 5)]
+        res = np.array(vecs)
+        assert "complex" in str(res.dtype)
+        assert np.allclose(vecs, [1 + 2j, 1 + 2j, 0 + 5j])
 
     def test_vector_creation(self):
         """Test ImmutableVector2d creation"""
@@ -41,7 +53,6 @@ class ImmutableVector2dTest(TestCase):
         self.assertEqual(vec4.x, -5)
         self.assertEqual(vec4.y, 8)
 
-        self.assertRaises(ValueError, ImmutableVector2d, (1))
         self.assertRaises(ValueError, ImmutableVector2d, (1, 2, 3))
 
     def test_binary_operators(self):
@@ -146,7 +157,6 @@ class Vector2dTest(TestCase):
         self.assertEqual(vec3.x, 15)
         self.assertEqual(vec3.y, 22)
 
-        self.assertRaises(ValueError, Vector2d, (1))
         self.assertRaises(ValueError, Vector2d, (1, 2, 3))
         self.assertRaises(ValueError, Vector2d, 1, 2, 3)
 
@@ -159,9 +169,6 @@ class Vector2dTest(TestCase):
         self.assertEqual(vec0.y, 2)
 
         self.assertRaises(ValueError, Vector2d, "a,2")
-        self.assertRaises(ValueError, Vector2d, 1)
-        # invalid fallback
-        self.assertRaises(ValueError, Vector2d, 1, fallback="a")
 
         # fallback
         vec0 = Vector2d("a,3", fallback=(1, 2))
@@ -206,8 +213,6 @@ class Vector2dTest(TestCase):
         self.assertTrue(vec.is_close((1.0 / 3, 1.0 / 6)))
         vec //= 1.0 / 3
         self.assertTrue(vec.is_close((1, 0.5)))
-        self.assertFalse(vec0.is_close((15, 22)))
-        self.assertTrue(vec0.is_close(vec))
 
     def test_unary_operators(self):
         """Test unary operators"""
@@ -221,17 +226,6 @@ class Vector2dTest(TestCase):
         self.assertEqual(str(Vector2d(1, 2)), "1, 2")
         self.assertEqual(repr(Vector2d(1, 2)), "Vector2d(1, 2)")
         self.assertEqual(Vector2d(1, 2).to_tuple(), (1, 2))
-
-    def test_assign(self):
-        """Test vector2d assignement"""
-        vec = Vector2d(10, 20)
-        vec.assign(5, 10)
-        self.assertAlmostTuple(vec, (5, 10))
-        vec.assign((7, 11))
-        self.assertAlmostTuple(vec, (7, 11))
-        self.assertAlmostTuple(vec.assign(10, 20).assign(96, 11), (96, 11))
-        self.assertAlmostTuple(vec.assign(10, 20).assign(45, 22), (45, 22))
-        self.assertTrue(vec.assign(0, 0) is vec)
 
     def test_getitem(self):
         """Test getitem for Vector2D"""
@@ -799,3 +793,12 @@ class ExtremaTest(TestCase):
         cmin, cmax = quadratic_extrema(a, a, a)
         self.assertAlmostEqual(cmin, a, delta=1e-6)
         self.assertAlmostEqual(cmax, a, delta=1e-6)
+
+    def test_numpy_conversion(self):
+        """Conversion to numpy"""
+
+        arr = [1 + 2j, Vector2d(2, 3)]
+        npa = np.array(arr)
+        assert npa.dtype == np.complex128
+        assert npa[0] == 1 + 2j
+        assert npa[1] == 2 + 3j

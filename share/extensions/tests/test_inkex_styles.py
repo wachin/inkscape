@@ -152,67 +152,53 @@ class StyleSheetTest(TestCase):
 
     def test_lookup_by_id(self):
         """ID CSS lookup"""
-        self.assertTrue(
-            self.css[0].to_xpath()
-            in ["//*[@id='layer1']", "descendant-or-self::*[@id = 'layer1']"]
-        )
-        elem = self.svg.getElement(self.css[0].to_xpath())
+        matches = list(self.css[0].all_matches(self.svg))
+        assert len(matches) == 1
+        elem = matches[0]
         self.assertEqual(elem.get("id"), "layer1")
 
     def test_lookup_by_element(self):
         """Element name CSS lookup"""
-        self.assertTrue(
-            self.css[1].to_xpath() in ["//svg:circle", "descendant-or-self::svg:circle"]
-        )
-        elems = list(self.svg.xpath(self.css[1].to_xpath()))
+        elems = list(self.css[1].all_matches(self.svg))
         self.assertEqual(len(elems), 2)
         self.assertEqual(elems[0].get("id"), "circle1")
         self.assertEqual(elems[1].get("id"), "circle2")
 
     def test_lookup_by_class(self):
         """Class name CSS lookup"""
-        self.assertTrue(
-            self.css[2].to_xpath()
-            in [
-                "//*[contains(concat(' ', normalize-space(@class), ' '), ' two ')]",
-                "descendant-or-self::*[@class and contains"
-                "(concat(' ', normalize-space(@class), ' '), ' two ')]",
-            ]
-        )
-        elem = self.svg.getElement(self.css[2].to_xpath())
+        matches = list(self.css[2].all_matches(self.svg))
+        assert len(matches) == 1
+        elem = matches[0]
         self.assertEqual(elem.get("id"), "rect2")
 
     def test_lookup_and(self):
         """Multiple CSS lookups"""
-        self.assertTrue(
-            self.css[3].to_xpath()
-            in [
-                "//*[@id='rect3']"
-                "[contains(concat(' ', normalize-space(@class), ' '), ' three ')]",
-                # cssselect 1.1.0
-                "descendant-or-self::*[@id = 'rect3' and "
-                "(@class and contains(concat(' ', normalize-space(@class), ' '), ' three '))]",
-                # cssselect 1.2.0
-                "descendant-or-self::*[(@id = 'rect3') and "
-                "(@class and contains(concat(' ', normalize-space(@class), ' '), ' three '))]",
-            ]
-        )
-        elem = self.svg.getElement(self.css[3].to_xpath())
+        with self.assertWarns(DeprecationWarning):
+            xpath = self.css[3].to_xpath()
+            self.assertIn(
+                xpath,
+                [
+                    "//*[@id='rect3']"
+                    "[contains(concat(' ', normalize-space(@class), ' '), ' three ')]",
+                    # cssselect 1.1.0
+                    "descendant-or-self::*[@id = 'rect3' and "
+                    "(@class and contains(concat(' ', normalize-space(@class), ' '), ' three '))]",
+                    # cssselect 1.2.0
+                    "descendant-or-self::*[(@id = 'rect3') and "
+                    "(@class and contains(concat(' ', normalize-space(@class), ' '), ' three '))]",
+                ],
+            )
+            elem_old = self.svg.getElement(xpath)
+
+        matches = list(self.css[3].all_matches(self.svg))
+        assert len(matches) == 1
+        elem = matches[0]
+        assert elem == elem_old
         self.assertEqual(elem.get("id"), "rect3")
 
     def test_lookup_or(self):
         """SVG rules can look up the right elements"""
-        self.assertTrue(
-            self.css[6].to_xpath()
-            in [
-                "//*[@id='circle1']|//*[@id='circle2']|"
-                "//*[contains(concat(' ', normalize-space(@class), ' '), ' two ')]",
-                "descendant-or-self::*[@id = 'circle1']|descendant-or-self::*[@id = 'circle2']"
-                "|descendant-or-self::*[@class and contains(concat(' ', "
-                "normalize-space(@class), ' '), ' two ')]",
-            ]
-        )
-        elems = self.svg.xpath(self.css[6].to_xpath())
+        elems = list(self.css[6].all_matches(self.svg))
         self.assertEqual(len(elems), 3)
         self.assertEqual(elems[0].get("id"), "rect2")
         self.assertEqual(elems[1].get("id"), "circle1")

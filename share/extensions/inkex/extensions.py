@@ -452,7 +452,7 @@ class ColorExtension(EffectExtension):
                 elem.style.set_color(rgba_result, name)
 
             if isinstance(value, (LinearGradient, RadialGradient, Pattern)):
-                gradients.track(value, elem, self._ref_cloned, style=style, name=name)
+                gradients.track(value, elem, self._ref_cloned, element=elem, name=name)
                 if value.href is not None:
                     gradients.track(value.href, elem, self._xlink_cloned, linker=value)
         # Then opacities (usually does nothing)
@@ -464,9 +464,9 @@ class ColorExtension(EffectExtension):
             if result not in (value, 1):  # only modify if not equal to old or default
                 elem.style[name] = result
 
-    def _ref_cloned(self, old_id, new_id, style, name):
+    def _ref_cloned(self, old_id, new_id, element, name):
         self._renamed[old_id] = new_id
-        style[name] = f"url(#{new_id})"
+        element.style[name] = f"url(#{new_id})"
 
     def _xlink_cloned(self, old_id, new_id, linker):  # pylint: disable=unused-argument
         lid = linker.get("id")

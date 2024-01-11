@@ -141,4 +141,4 @@ class InsetShadow(inkex.EffectExtension):
 
 
 if __name__ == "__main__":
-    Edge3D().run()
+    InsetShadow().run()

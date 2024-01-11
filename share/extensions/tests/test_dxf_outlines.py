@@ -21,6 +21,17 @@ class DFXOutlineBasicTest(ComparisonMixin, InkscapeExtensionTestMixin, TestCase)
     compare_filters = [WindowsTextCompat()]
 
 
+class DXFOutlineTestPxUnit(ComparisonMixin, TestCase):
+    """Test for https://gitlab.com/inkscape/extensions/-/issues/542"""
+
+    effect_class = DxfOutlines
+    compare_file = ["svg/units_pt.svg"]
+    comparisons = [
+        (),
+    ]
+    compare_filters = [WindowsTextCompat()]
+
+
 def run_extension(document, *args) -> str:
     output = BytesIO()
     ext = DxfOutlines()

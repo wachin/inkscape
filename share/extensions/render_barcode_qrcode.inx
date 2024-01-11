@@ -2,7 +2,7 @@
 <inkscape-extension xmlns="http://www.inkscape.org/namespace/inkscape/extension">
   <name>QR Code</name>
   <id>org.inkscape.qr_code</id>
-  <param name="text" type="string" gui-text="Text:" gui-description="The content of the QR code, most commonly a web link.">https://inkscape.org</param>
+  <param name="text" type="string" appearance="multiline"  gui-text="Text:" gui-description="The content of the QR code, most commonly a web link.">https://inkscape.org</param>
   <param name="typenumber" type="optiongroup" appearance="combo" gui-description="With 'Auto', the extension will choose the best size, depending upon the length of the text and the selected error correction level." gui-text="Size, in unit squares:">
     <option value="0">Auto</option>
     <option translatable="no" value="1">21x21</option>
